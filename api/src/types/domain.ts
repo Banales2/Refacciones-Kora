@@ -3,3 +3,17 @@ export interface Pieza {
   numero_serie: string
   descripcion: string
 }
+
+export interface PiezaConCantidad extends Pieza {
+  cantidad_total: number
+}
+
+export interface LoteConProveedor {
+  id: number
+  fecha_compra: string
+  costo_unitario: number
+  cantidad_inicial: number
+  cantidad_disponible: number
+  num_factura: string | null
+  proveedor: string
+}

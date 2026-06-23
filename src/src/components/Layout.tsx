@@ -14,6 +14,7 @@ import {
 import { useDisclosure } from '@mantine/hooks'
 import { useAuth } from '../hooks/useAuth'
 import Dashboard from './Dashboard'
+import Piezas from '../pages/Piezas'
 
 type Section = 'dashboard' | 'piezas' | 'vehiculos' | 'mantenimientos' | 'requerimientos'
 
@@ -137,9 +138,9 @@ export default function Layout() {
 
       {/* ── Contenido ── */}
       <AppShell.Main>
-        {section === 'dashboard' ? (
-          <Dashboard />
-        ) : (
+        {section === 'dashboard' && <Dashboard />}
+        {section === 'piezas' && <Piezas />}
+        {section !== 'dashboard' && section !== 'piezas' && (
           <SectionPlaceholder section={section} />
         )}
       </AppShell.Main>

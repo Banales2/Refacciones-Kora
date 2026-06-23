@@ -1,13 +1,13 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { Pieza } from '../types/domain'
+import { Pieza, PiezaConCantidad, LoteConProveedor } from '../types/domain'
 import { RefaccionCreate, RefaccionUpdate } from '../schemas/refaccionSchema'
 
 export async function findAll(params: {
   offset: number
   pageSize: number
   search?: string
-}): Promise<{ data: Pieza[]; total: number }> {
+}): Promise<{ data: PiezaConCantidad[]; total: number }> {
   const pool = await getPool()
   const result = await pool
     .request()
@@ -15,9 +15,14 @@ export async function findAll(params: {
     .input('offset', params.offset)
     .input('pageSize', params.pageSize)
     .query(`
-      SELECT id, numero_serie, descripcion FROM piezas
-      WHERE (@search IS NULL OR numero_serie LIKE @search OR descripcion LIKE @search)
-      ORDER BY numero_serie
+      SELECT
+        p.id, p.numero_serie, p.descripcion,
+        COALESCE(SUM(l.cantidad_disponible), 0) AS cantidad_total
+      FROM piezas p
+      LEFT JOIN lotes_pieza l ON l.pieza_id = p.id
+      WHERE (@search IS NULL OR p.numero_serie LIKE @search OR p.descripcion LIKE @search)
+      GROUP BY p.id, p.numero_serie, p.descripcion
+      ORDER BY p.numero_serie
       OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
 
       SELECT COUNT(*) AS total FROM piezas
@@ -42,6 +47,24 @@ export async function findByNumeroSerie(numeroSerie: string): Promise<Pieza | nu
     .input('ns', sql.NVarChar(80), numeroSerie)
     .query('SELECT id, numero_serie, descripcion FROM piezas WHERE numero_serie = @ns')
   return result.recordset[0] ?? null
+}
+
+export async function findLotesByPiezaId(piezaId: number): Promise<LoteConProveedor[]> {
+  const pool = await getPool()
+  const result = await pool
+    .request()
+    .input('piezaId', sql.Int, piezaId)
+    .query(`
+      SELECT
+        l.id, l.fecha_compra, l.costo_unitario,
+        l.cantidad_inicial, l.cantidad_disponible,
+        l.num_factura, pr.nombre AS proveedor
+      FROM lotes_pieza l
+      JOIN proveedores pr ON pr.id = l.proveedor_id
+      WHERE l.pieza_id = @piezaId
+      ORDER BY l.fecha_compra DESC
+    `)
+  return result.recordset
 }
 
 export async function create(data: RefaccionCreate): Promise<Pieza> {

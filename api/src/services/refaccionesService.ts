@@ -1,5 +1,5 @@
 import * as repo from '../repositories/refaccionesRepo'
-import { Pieza } from '../types/domain'
+import { Pieza, PiezaConCantidad, LoteConProveedor } from '../types/domain'
 import { RefaccionCreate, RefaccionUpdate } from '../schemas/refaccionSchema'
 import { NotFoundError, ConflictError } from '../shared/errors'
 
@@ -7,7 +7,7 @@ export async function getAll(params: {
   page: number
   pageSize: number
   search?: string
-}): Promise<{ data: Pieza[]; total: number; page: number; pageSize: number }> {
+}): Promise<{ data: PiezaConCantidad[]; total: number; page: number; pageSize: number }> {
   const offset = (params.page - 1) * params.pageSize
   const result = await repo.findAll({ offset, pageSize: params.pageSize, search: params.search })
   return { ...result, page: params.page, pageSize: params.pageSize }
@@ -17,6 +17,15 @@ export async function getById(id: number): Promise<Pieza> {
   const item = await repo.findById(id)
   if (!item) throw new NotFoundError('Refacción')
   return item
+}
+
+export async function getLotesByPiezaId(
+  piezaId: number
+): Promise<{ pieza: Pieza; lotes: LoteConProveedor[] }> {
+  const pieza = await repo.findById(piezaId)
+  if (!pieza) throw new NotFoundError('Pieza')
+  const lotes = await repo.findLotesByPiezaId(piezaId)
+  return { pieza, lotes }
 }
 
 export async function create(data: RefaccionCreate): Promise<Pieza> {
