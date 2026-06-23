@@ -4,6 +4,7 @@ build/
 .env
 .env.local
 local.settings.json
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .DS_Store
 *.log
