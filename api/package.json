@@ -13,7 +13,9 @@
   },
   "dependencies": {
     "@azure/functions": "^4.0.0",
-    "mssql": "^12.5.5"
+    "@tanstack/react-query": "^5.101.1",
+    "mssql": "^12.5.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/mssql": "^12.3.0",
