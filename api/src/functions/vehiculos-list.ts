@@ -1,27 +1,24 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
-import { audit } from '../shared/audit'
-import { RefaccionQuerySchema } from '../schemas/refaccionSchema'
-import * as service from '../services/refaccionesService'
+import { VehiculoQuerySchema } from '../schemas/vehiculoSchema'
+import * as service from '../services/vehiculosService'
 
-export async function refaccionesList(
+export async function vehiculosList(
   request: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'lector')
+    requireRole(request, 'admin', 'editor', 'lector')
 
-    const params = RefaccionQuerySchema.parse({
-      page: request.query.get('page') ?? undefined,
+    const params = VehiculoQuerySchema.parse({
+      page:     request.query.get('page')     ?? undefined,
       pageSize: request.query.get('pageSize') ?? undefined,
-      search: request.query.get('search') ?? undefined,
-      searchBy: request.query.get('searchBy') ?? undefined,
+      search:   request.query.get('search')   ?? undefined,
+      tipo:     request.query.get('tipo')     ?? undefined,
     })
 
     const result = await service.getAll(params)
-
-    await audit({ user, accion: 'VER_SENSIBLE', tabla: 'piezas' })
 
     return {
       status: 200,
@@ -35,9 +32,9 @@ export async function refaccionesList(
   }
 }
 
-app.http('refacciones-list', {
+app.http('vehiculos-list', {
   methods: ['GET'],
-  route: 'refacciones',
+  route: 'vehiculos',
   authLevel: 'anonymous',
-  handler: refaccionesList,
+  handler: vehiculosList,
 })

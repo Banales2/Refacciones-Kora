@@ -15,8 +15,10 @@ export const RefaccionQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().max(100).optional(),
+  searchBy: z.enum(['all', 'numero_serie', 'descripcion']).optional().default('all'),
 })
 
 export type RefaccionCreate = z.infer<typeof RefaccionCreateSchema>
 export type RefaccionUpdate = z.infer<typeof RefaccionUpdateSchema>
 export type RefaccionQuery = z.infer<typeof RefaccionQuerySchema>
+export type SearchBy = 'all' | 'numero_serie' | 'descripcion'

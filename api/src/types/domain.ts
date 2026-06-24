@@ -10,6 +10,8 @@ export interface PiezaConCantidad extends Pieza {
 
 export interface LoteConProveedor {
   id: number
+  pieza_id: number
+  proveedor_id: number
   fecha_compra: string
   costo_unitario: number
   cantidad_inicial: number

@@ -1,33 +1,49 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { Pieza, PiezaConCantidad, LoteConProveedor } from '../types/domain'
-import { RefaccionCreate, RefaccionUpdate } from '../schemas/refaccionSchema'
+import { RefaccionCreate, RefaccionUpdate, SearchBy } from '../schemas/refaccionSchema'
 
 export async function findAll(params: {
   offset: number
   pageSize: number
   search?: string
+  searchBy?: SearchBy
 }): Promise<{ data: PiezaConCantidad[]; total: number }> {
   const pool = await getPool()
-  const result = await pool
-    .request()
-    .input('search', params.search ? `%${params.search}%` : null)
+  const req = pool.request()
     .input('offset', params.offset)
     .input('pageSize', params.pageSize)
-    .query(`
-      SELECT
-        p.id, p.numero_serie, p.descripcion,
-        COALESCE(SUM(l.cantidad_disponible), 0) AS cantidad_total
-      FROM piezas p
-      LEFT JOIN lotes_pieza l ON l.pieza_id = p.id
-      WHERE (@search IS NULL OR p.numero_serie LIKE @search OR p.descripcion LIKE @search)
-      GROUP BY p.id, p.numero_serie, p.descripcion
-      ORDER BY p.numero_serie
-      OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
 
-      SELECT COUNT(*) AS total FROM piezas
-      WHERE (@search IS NULL OR numero_serie LIKE @search OR descripcion LIKE @search);
-    `)
+  let mainWhere = ''
+  let countWhere = ''
+  if (params.search) {
+    req.input('search', `%${params.search}%`)
+    if (params.searchBy === 'numero_serie') {
+      mainWhere = 'WHERE p.numero_serie LIKE @search'
+      countWhere = 'WHERE numero_serie LIKE @search'
+    } else if (params.searchBy === 'descripcion') {
+      mainWhere = 'WHERE p.descripcion LIKE @search'
+      countWhere = 'WHERE descripcion LIKE @search'
+    } else {
+      mainWhere = 'WHERE (p.numero_serie LIKE @search OR p.descripcion LIKE @search)'
+      countWhere = 'WHERE (numero_serie LIKE @search OR descripcion LIKE @search)'
+    }
+  }
+
+  const result = await req.query(`
+    SELECT
+      p.id, p.numero_serie, p.descripcion,
+      COALESCE(SUM(l.cantidad_disponible), 0) AS cantidad_total
+    FROM piezas p
+    LEFT JOIN lotes_pieza l ON l.pieza_id = p.id
+    ${mainWhere}
+    GROUP BY p.id, p.numero_serie, p.descripcion
+    ORDER BY p.numero_serie
+    OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
+
+    SELECT COUNT(*) AS total FROM piezas
+    ${countWhere};
+  `)
   return { data: result.recordsets[0], total: result.recordsets[1][0].total }
 }
 
@@ -56,7 +72,7 @@ export async function findLotesByPiezaId(piezaId: number): Promise<LoteConProvee
     .input('piezaId', sql.Int, piezaId)
     .query(`
       SELECT
-        l.id, l.fecha_compra, l.costo_unitario,
+        l.id, l.pieza_id, l.proveedor_id, l.fecha_compra, l.costo_unitario,
         l.cantidad_inicial, l.cantidad_disponible,
         l.num_factura, pr.nombre AS proveedor
       FROM lotes_pieza l

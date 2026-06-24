@@ -1,15 +1,16 @@
 import * as repo from '../repositories/refaccionesRepo'
 import { Pieza, PiezaConCantidad, LoteConProveedor } from '../types/domain'
-import { RefaccionCreate, RefaccionUpdate } from '../schemas/refaccionSchema'
+import { RefaccionCreate, RefaccionUpdate, SearchBy } from '../schemas/refaccionSchema'
 import { NotFoundError, ConflictError } from '../shared/errors'
 
 export async function getAll(params: {
   page: number
   pageSize: number
   search?: string
+  searchBy?: SearchBy
 }): Promise<{ data: PiezaConCantidad[]; total: number; page: number; pageSize: number }> {
   const offset = (params.page - 1) * params.pageSize
-  const result = await repo.findAll({ offset, pageSize: params.pageSize, search: params.search })
+  const result = await repo.findAll({ offset, pageSize: params.pageSize, search: params.search, searchBy: params.searchBy })
   return { ...result, page: params.page, pageSize: params.pageSize }
 }
 
