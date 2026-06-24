@@ -18,15 +18,17 @@ import Piezas from '../pages/Piezas'
 import Proveedores from '../pages/Proveedores'
 import Vehiculos from '../pages/Vehiculos'
 import Modelos from '../pages/Modelos'
+import SitiosYRutas from '../pages/SitiosYRutas'
 
-type Section = 'dashboard' | 'piezas' | 'proveedores' | 'vehiculos' | 'modelos' | 'mantenimientos'
+type Section = 'dashboard' | 'piezas' | 'proveedores' | 'vehiculos' | 'modelos' | 'sitios' | 'mantenimientos'
 
 const NAV_ITEMS: { section: Section; label: string; description: string; group?: string }[] = [
-  { section: 'piezas',         label: 'Piezas',         description: 'Catálogo e inventario'     },
-  { section: 'proveedores',    label: 'Proveedores',    description: 'Gestión de proveedores'    },
-  { section: 'vehiculos',      label: 'Vehículos',      description: 'Camiones y tractocamiones' },
-  { section: 'modelos',        label: 'Modelos',        description: 'Marcas y modelos'          },
-  { section: 'mantenimientos', label: 'Mantenimientos', description: 'Historial de servicios'    },
+  { section: 'piezas',         label: 'Piezas',         description: 'Catálogo e inventario'           },
+  { section: 'proveedores',    label: 'Proveedores',    description: 'Gestión de proveedores'          },
+  { section: 'vehiculos',      label: 'Vehículos',      description: 'Camiones y tractocamiones'       },
+  { section: 'modelos',        label: 'Modelos',        description: 'Marcas y modelos'                },
+  { section: 'sitios',         label: 'Sitios y rutas', description: 'Sucursales y rutas de transporte'},
+  { section: 'mantenimientos', label: 'Mantenimientos', description: 'Historial de servicios'          },
 ]
 
 function SectionPlaceholder({ section }: { section: Section }) {
@@ -146,7 +148,8 @@ export default function Layout() {
         {section === 'piezas'        && <Piezas />}
         {section === 'proveedores'   && <Proveedores />}
         {section === 'vehiculos'     && <Vehiculos />}
-        {section === 'modelos'       && <Modelos />}
+        {section === 'modelos'        && <Modelos />}
+        {section === 'sitios'         && <SitiosYRutas />}
         {section === 'mantenimientos' && <SectionPlaceholder section={section} />}
       </AppShell.Main>
     </AppShell>

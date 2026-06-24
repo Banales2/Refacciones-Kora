@@ -4,10 +4,11 @@ export const TIPOS_VEHICULO = ['camion', 'tractocamion', 'caja_trailer', 'utilit
 export type TipoVehiculo = typeof TIPOS_VEHICULO[number]
 
 export const VehiculoQuerySchema = z.object({
-  page:     z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  search:   z.string().max(100).optional(),
-  tipo:     z.enum(TIPOS_VEHICULO).optional(),
+  page:      z.coerce.number().int().min(1).default(1),
+  pageSize:  z.coerce.number().int().min(1).max(100).default(20),
+  search:    z.string().max(100).optional(),
+  tipo:      z.enum(TIPOS_VEHICULO).optional(),
+  modelo_id: z.coerce.number().int().positive().optional(),
 })
 
 export const VehiculoCreateSchema = z.object({

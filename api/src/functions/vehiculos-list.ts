@@ -12,10 +12,11 @@ export async function vehiculosList(
     requireRole(request, 'admin', 'editor', 'lector')
 
     const params = VehiculoQuerySchema.parse({
-      page:     request.query.get('page')     ?? undefined,
-      pageSize: request.query.get('pageSize') ?? undefined,
-      search:   request.query.get('search')   ?? undefined,
-      tipo:     request.query.get('tipo')     ?? undefined,
+      page:      request.query.get('page')      ?? undefined,
+      pageSize:  request.query.get('pageSize')  ?? undefined,
+      search:    request.query.get('search')    ?? undefined,
+      tipo:      request.query.get('tipo')      ?? undefined,
+      modelo_id: request.query.get('modelo_id') ?? undefined,
     })
 
     const result = await service.getAll(params)

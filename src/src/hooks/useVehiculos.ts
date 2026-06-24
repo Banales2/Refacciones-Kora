@@ -45,13 +45,14 @@ interface ListResponse {
   pagination: { page: number; pageSize: number; total: number }
 }
 
-export function useVehiculos(page = 1, search = '', tipo?: TipoVehiculo) {
+export function useVehiculos(page = 1, search = '', tipo?: TipoVehiculo, modeloId?: number) {
   return useQuery({
-    queryKey: ['vehiculos', page, search, tipo],
+    queryKey: ['vehiculos', page, search, tipo, modeloId],
     queryFn: () => {
       const qs = new URLSearchParams({ page: String(page) })
-      if (search) qs.set('search', search)
-      if (tipo)   qs.set('tipo', tipo)
+      if (search)   qs.set('search',    search)
+      if (tipo)     qs.set('tipo',      tipo)
+      if (modeloId) qs.set('modelo_id', String(modeloId))
       return api.get<ListResponse>(`/vehiculos?${qs}`)
     },
   })

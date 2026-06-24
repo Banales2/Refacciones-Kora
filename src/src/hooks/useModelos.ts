@@ -2,9 +2,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 export interface Modelo {
-  id:     number
-  marca:  string
-  nombre: string
+  id:         number
+  marca:      string
+  nombre:     string
+  created_at: string
+  updated_at: string
 }
 
 export interface ModeloPayload {

@@ -27,8 +27,10 @@ const SELECT_COLS = `
   v.id, v.vehiculo, v.tipo, v.modelo_id,
   m.marca, m.nombre AS modelo,
   COALESCE(c.serie, t.serie, ct.serie, u.serie) AS serie,
-  CASE WHEN v.tipo='camion'       THEN c.status       WHEN v.tipo='tractocamion' THEN t.status       ELSE NULL END AS status,
-  CASE WHEN v.tipo='camion'       THEN c.kilometraje   WHEN v.tipo='tractocamion' THEN t.kilometraje   ELSE NULL END AS kilometraje,
+  CASE WHEN v.tipo='camion'       THEN c.status       WHEN v.tipo='tractocamion' THEN t.status
+       WHEN v.tipo='caja_trailer' THEN ct.status      WHEN v.tipo='utilitario'   THEN u.status   END AS status,
+  CASE WHEN v.tipo='camion'       THEN c.kilometraje   WHEN v.tipo='tractocamion' THEN t.kilometraje
+       WHEN v.tipo='utilitario'   THEN u.kilometraje   ELSE NULL END AS kilometraje,
   CASE WHEN v.tipo='camion'       THEN c.combustible   WHEN v.tipo='tractocamion' THEN t.combustible
        WHEN v.tipo='utilitario'   THEN u.combustible   ELSE NULL END AS combustible,
   CASE WHEN v.tipo='camion'       THEN c.ubicacion     WHEN v.tipo='utilitario'   THEN u.ubicacion     ELSE NULL END AS ubicacion,
@@ -47,7 +49,8 @@ const JOINS = `
 `
 
 const WHERE_FILTER = `
-  WHERE (@tipo IS NULL OR v.tipo = @tipo)
+  WHERE (@tipo     IS NULL OR v.tipo      = @tipo)
+    AND (@modeloId IS NULL OR v.modelo_id = @modeloId)
     AND (@search IS NULL
          OR v.vehiculo LIKE @search OR m.marca LIKE @search OR m.nombre LIKE @search
          OR COALESCE(c.serie, t.serie, ct.serie, u.serie) LIKE @search)
@@ -56,12 +59,13 @@ const WHERE_FILTER = `
 // ── Read ──────────────────────────────────────────────────────────────────────
 
 export async function findAll(params: {
-  offset: number; pageSize: number; search?: string; tipo?: TipoVehiculo
+  offset: number; pageSize: number; search?: string; tipo?: TipoVehiculo; modelo_id?: number
 }): Promise<{ data: VehiculoRow[]; total: number }> {
   const pool = await getPool()
   const req = pool.request()
     .input('search',   sql.NVarChar(100), params.search ? `%${params.search}%` : null)
-    .input('tipo',     sql.NVarChar(20),  params.tipo ?? null)
+    .input('tipo',     sql.NVarChar(20),  params.tipo     ?? null)
+    .input('modeloId', sql.Int,           params.modelo_id ?? null)
     .input('offset',   sql.Int,           params.offset)
     .input('pageSize', sql.Int,           params.pageSize)
 
@@ -131,15 +135,18 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
         .query('INSERT INTO tractocamiones (vehiculo_id,serie,tonelaje,combustible,tenencia,kilometraje,status,ruta_id) VALUES (@vid,@serie,@tonelaje,@combustible,@tenencia,@km,@status,@ruta)')
     } else if (data.tipo === 'caja_trailer') {
       await sub
-        .input('serie', sql.NVarChar(80), data.serie)
-        .input('pies',  sql.Int,          data.pies!)
-        .query('INSERT INTO cajas_trailer (vehiculo_id,serie,pies) VALUES (@vid,@serie,@pies)')
+        .input('serie',  sql.NVarChar(80), data.serie)
+        .input('pies',   sql.Int,          data.pies!)
+        .input('status', sql.NVarChar(30), data.status!)
+        .query('INSERT INTO cajas_trailer (vehiculo_id,serie,pies,status) VALUES (@vid,@serie,@pies,@status)')
     } else {
       await sub
         .input('serie',       sql.NVarChar(80),  data.serie)
         .input('combustible', sql.NVarChar(30),  data.combustible!)
         .input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null)
-        .query('INSERT INTO vehiculos_utilitarios (vehiculo_id,serie,combustible,ubicacion) VALUES (@vid,@serie,@combustible,@ubicacion)')
+        .input('status',      sql.NVarChar(30),  data.status!)
+        .input('km',          sql.Int,           data.kilometraje ?? 0)
+        .query('INSERT INTO vehiculos_utilitarios (vehiculo_id,serie,combustible,ubicacion,status,kilometraje) VALUES (@vid,@serie,@combustible,@ubicacion,@status,@km)')
     }
 
     await tx.commit()
@@ -181,11 +188,14 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
     if (data.ruta_id      !== undefined) { sub.input('ruta',        sql.Int,           data.ruta_id);      subSets.push('ruta_id=@ruta') }
     if (subSets.length) await sub.query(`UPDATE tractocamiones SET ${subSets.join(',')} WHERE vehiculo_id=@vid`)
   } else if (tipo === 'caja_trailer') {
-    if (data.pies !== undefined) { sub.input('pies', sql.Int, data.pies); subSets.push('pies=@pies') }
+    if (data.pies   !== undefined) { sub.input('pies',   sql.Int,          data.pies);   subSets.push('pies=@pies')     }
+    if (data.status !== undefined) { sub.input('status', sql.NVarChar(30), data.status); subSets.push('status=@status') }
     if (subSets.length) await sub.query(`UPDATE cajas_trailer SET ${subSets.join(',')} WHERE vehiculo_id=@vid`)
   } else {
-    if (data.combustible !== undefined) { sub.input('combustible', sql.NVarChar(30),  data.combustible);  subSets.push('combustible=@combustible') }
-    if ('ubicacion' in data)            { sub.input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null); subSets.push('ubicacion=@ubicacion') }
+    if (data.combustible  !== undefined) { sub.input('combustible', sql.NVarChar(30),  data.combustible);  subSets.push('combustible=@combustible') }
+    if ('ubicacion' in data)             { sub.input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null); subSets.push('ubicacion=@ubicacion') }
+    if (data.status       !== undefined) { sub.input('status',      sql.NVarChar(30),  data.status);       subSets.push('status=@status')       }
+    if (data.kilometraje  !== undefined) { sub.input('km',          sql.Int,           data.kilometraje);  subSets.push('kilometraje=@km')      }
     if (subSets.length) await sub.query(`UPDATE vehiculos_utilitarios SET ${subSets.join(',')} WHERE vehiculo_id=@vid`)
   }
 

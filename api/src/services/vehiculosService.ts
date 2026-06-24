@@ -22,13 +22,20 @@ function validateCreate(data: VehiculoCreate) {
     requireField(data.tonelaje,    'Tonelaje')
     if (data.kilometraje == null)  throw new ValidationError('Kilometraje es requerido')
   }
-  if (t === 'caja_trailer') requireField(data.pies, 'Pies')
-  if (t === 'utilitario')   requireField(data.combustible, 'Combustible')
+  if (t === 'caja_trailer') {
+    requireField(data.pies,   'Pies')
+    requireField(data.status, 'Status')
+  }
+  if (t === 'utilitario') {
+    requireField(data.combustible, 'Combustible')
+    requireField(data.status,      'Status')
+    if (data.kilometraje == null) throw new ValidationError('Kilometraje es requerido')
+  }
 }
 
 export async function getAll(params: VehiculoQuery) {
   const offset = (params.page - 1) * params.pageSize
-  const result = await repo.findAll({ offset, pageSize: params.pageSize, search: params.search, tipo: params.tipo })
+  const result = await repo.findAll({ offset, pageSize: params.pageSize, search: params.search, tipo: params.tipo, modelo_id: params.modelo_id })
   return { ...result, page: params.page, pageSize: params.pageSize }
 }
 

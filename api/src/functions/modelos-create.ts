@@ -7,7 +7,7 @@ import * as service from '../services/modelosService'
 
 const Schema = z.object({
   marca:  z.string().min(1, 'Requerido').max(80).trim(),
-  nombre: z.string().min(1, 'Requerido').max(80).trim(),
+  nombre: z.string().min(1, 'Requerido').max(120).trim(),
 })
 
 export async function modelosCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {

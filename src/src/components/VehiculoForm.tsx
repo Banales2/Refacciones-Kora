@@ -57,8 +57,8 @@ function init(v?: VehiculoRow): FormVals {
 function needsField(tipo: TipoVehiculo | '', check: 'combustible' | 'status' | 'km' | 'sucursal' | 'ruta' | 'tonelaje' | 'pies' | 'ubicacion') {
   const t = tipo
   if (check === 'combustible') return t === 'camion' || t === 'tractocamion' || t === 'utilitario'
-  if (check === 'status')      return t === 'camion' || t === 'tractocamion'
-  if (check === 'km')          return t === 'camion' || t === 'tractocamion'
+  if (check === 'status')      return t === 'camion' || t === 'tractocamion' || t === 'caja_trailer' || t === 'utilitario'
+  if (check === 'km')          return t === 'camion' || t === 'tractocamion' || t === 'utilitario'
   if (check === 'sucursal')    return t === 'camion'
   if (check === 'ruta')        return t === 'tractocamion'
   if (check === 'tonelaje')    return t === 'tractocamion'
@@ -131,11 +131,16 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
         ruta_id:     parseInt(vals.ruta_id),
       }
     } else if (t === 'caja_trailer') {
-      extra = { pies: Number(vals.pies) }
+      extra = {
+        pies:   Number(vals.pies),
+        status: vals.status,
+      }
     } else {
       extra = {
         combustible: vals.combustible,
         ubicacion:   vals.ubicacion || null,
+        status:      vals.status,
+        kilometraje: Number(vals.kilometraje),
       }
     }
 
@@ -244,7 +249,14 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
         {(tipo === 'caja_trailer') && (
           <>
             <Divider label="Datos de la caja" labelPosition="left" />
-            <NumberInput label="Capacidad (pies)" placeholder="Ej. 53" min={1} required {...form.getInputProps('pies')} />
+            <Grid>
+              <Grid.Col span={6}>
+                <NumberInput label="Capacidad (pies)" placeholder="Ej. 53" min={1} required {...form.getInputProps('pies')} />
+              </Grid.Col>
+              <Grid.Col span={6}>
+                <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
+              </Grid.Col>
+            </Grid>
           </>
         )}
 
@@ -255,6 +267,12 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
             <Grid>
               <Grid.Col span={6}>
                 <Select label="Combustible" data={COMBUSTIBLES} placeholder="Tipo" required {...form.getInputProps('combustible')} />
+              </Grid.Col>
+              <Grid.Col span={6}>
+                <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
+              </Grid.Col>
+              <Grid.Col span={6}>
+                <NumberInput label="Kilometraje" placeholder="0" min={0} required {...form.getInputProps('kilometraje')} />
               </Grid.Col>
               <Grid.Col span={6}>
                 <TextInput label="Ubicación" placeholder="Ubicación actual (opcional)" {...form.getInputProps('ubicacion')} />
