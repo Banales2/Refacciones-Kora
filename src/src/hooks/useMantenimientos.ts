@@ -2,23 +2,25 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 export interface Mantenimiento {
-  id:            number
-  vehiculo_id:   number
-  fecha:         string | null
-  tipo:          string | null
-  tecnico:       string | null
-  costo:         number
-  km_actual:     number
-  observaciones: string | null
+  id:               number
+  vehiculo_id:      number
+  fecha:            string | null
+  tipo:             string | null
+  tecnico:          string | null
+  costo:            number
+  km_actual:        number
+  observaciones:    string | null
+  requerimiento_ids: number[]
 }
 
 export interface MantenimientoPayload {
-  fecha:          string
-  tipo?:          string | null
-  tecnico?:       string | null
-  costo?:         number
-  km_actual?:     number
-  observaciones?: string | null
+  fecha:              string
+  tipo?:              string | null
+  tecnico?:           string | null
+  costo?:             number
+  km_actual?:         number
+  observaciones?:     string | null
+  requerimiento_ids?: number[]
 }
 
 export function useMantenimientos(vehiculoId: number) {
@@ -34,7 +36,10 @@ export function useCreateMantenimiento(vehiculoId: number) {
   return useMutation({
     mutationFn: (payload: MantenimientoPayload) =>
       api.post<{ data: Mantenimiento }>(`/vehiculos/${vehiculoId}/mantenimientos`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['mantenimientos', vehiculoId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mantenimientos',  vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+    },
   })
 }
 
@@ -43,7 +48,10 @@ export function useUpdateMantenimiento(vehiculoId: number) {
   return useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: Partial<MantenimientoPayload> }) =>
       api.put<{ data: Mantenimiento }>(`/mantenimientos/${id}`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['mantenimientos', vehiculoId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mantenimientos',  vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+    },
   })
 }
 

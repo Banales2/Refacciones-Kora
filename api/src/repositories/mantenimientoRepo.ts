@@ -2,43 +2,63 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 
 export interface Mantenimiento {
-  id:            number
-  vehiculo_id:   number
-  fecha:         string | null
-  tipo:          string | null
-  tecnico:       string | null
-  costo:         number
-  km_actual:     number
-  observaciones: string | null
+  id:               number
+  vehiculo_id:      number
+  fecha:            string | null
+  tipo:             string | null
+  tecnico:          string | null
+  costo:            number
+  km_actual:        number
+  observaciones:    string | null
+  requerimiento_ids: number[]
 }
 
 export interface MantenimientoCreate {
-  vehiculo_id:   number
-  fecha:         string
-  tipo?:         string | null
-  tecnico?:      string | null
-  costo?:        number
-  km_actual?:    number
-  observaciones?: string | null
+  vehiculo_id:        number
+  fecha:              string
+  tipo?:              string | null
+  tecnico?:           string | null
+  costo?:             number
+  km_actual?:         number
+  observaciones?:     string | null
+  requerimiento_ids?: number[]
 }
 
 export interface MantenimientoUpdate {
-  fecha?:         string
-  tipo?:          string | null
-  tecnico?:       string | null
-  costo?:         number
-  km_actual?:     number
-  observaciones?: string | null
+  fecha?:             string
+  tipo?:              string | null
+  tecnico?:           string | null
+  costo?:             number
+  km_actual?:         number
+  observaciones?:     string | null
+  requerimiento_ids?: number[]
 }
 
 const COLS = 'id, vehiculo_id, fecha, tipo, tecnico, costo, km_actual, observaciones'
+
+async function attachReqIds(
+  pool: sql.ConnectionPool,
+  rows: Omit<Mantenimiento, 'requerimiento_ids'>[],
+): Promise<Mantenimiento[]> {
+  if (rows.length === 0) return []
+  const ids = rows.map(r => r.id).join(',')
+  const lr = await pool.request().query(
+    `SELECT mantenimiento_id, requerimiento_id FROM mantenimiento_requerimientos WHERE mantenimiento_id IN (${ids})`
+  )
+  const map = new Map<number, number[]>()
+  for (const { mantenimiento_id, requerimiento_id } of lr.recordset) {
+    if (!map.has(mantenimiento_id)) map.set(mantenimiento_id, [])
+    map.get(mantenimiento_id)!.push(requerimiento_id)
+  }
+  return rows.map(r => ({ ...r, requerimiento_ids: map.get(r.id) ?? [] }))
+}
 
 export async function findByVehiculo(vehiculoId: number): Promise<Mantenimiento[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
     .query(`SELECT ${COLS} FROM mantenimiento WHERE vehiculo_id=@vid ORDER BY fecha DESC`)
-  return r.recordset
+  return attachReqIds(pool, r.recordset)
 }
 
 export async function findById(id: number): Promise<Mantenimiento | null> {
@@ -46,43 +66,82 @@ export async function findById(id: number): Promise<Mantenimiento | null> {
   const r = await pool.request()
     .input('id', sql.Int, id)
     .query(`SELECT ${COLS} FROM mantenimiento WHERE id=@id`)
-  return r.recordset[0] ?? null
+  if (!r.recordset[0]) return null
+  const [row] = await attachReqIds(pool, [r.recordset[0]])
+  return row
 }
 
 export async function create(data: MantenimientoCreate): Promise<Mantenimiento> {
   const pool = await getPool()
-  const r = await pool.request()
-    .input('vid',           sql.Int,              data.vehiculo_id)
-    .input('fecha',         sql.Date,             data.fecha)
-    .input('tipo',          sql.NVarChar(80),     data.tipo          ?? null)
-    .input('tecnico',       sql.NVarChar(120),    data.tecnico       ?? null)
-    .input('costo',         sql.Int,              data.costo         ?? 0)
-    .input('kmActual',      sql.Int,              data.km_actual     ?? 0)
-    .input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null)
-    .query(`
-      INSERT INTO mantenimiento (vehiculo_id, fecha, tipo, tecnico, costo, km_actual, observaciones)
-      OUTPUT INSERTED.*
-      VALUES (@vid, @fecha, @tipo, @tecnico, @costo, @kmActual, @observaciones)
-    `)
-  return r.recordset[0]
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    const r = await tx.request()
+      .input('vid',           sql.Int,               data.vehiculo_id)
+      .input('fecha',         sql.Date,              data.fecha)
+      .input('tipo',          sql.NVarChar(80),      data.tipo          ?? null)
+      .input('tecnico',       sql.NVarChar(120),     data.tecnico       ?? null)
+      .input('costo',         sql.Int,               data.costo         ?? 0)
+      .input('kmActual',      sql.Int,               data.km_actual     ?? 0)
+      .input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null)
+      .query(`
+        INSERT INTO mantenimiento (vehiculo_id, fecha, tipo, tecnico, costo, km_actual, observaciones)
+        OUTPUT INSERTED.*
+        VALUES (@vid, @fecha, @tipo, @tecnico, @costo, @kmActual, @observaciones)
+      `)
+    const mant = r.recordset[0]
+    for (const rid of data.requerimiento_ids ?? []) {
+      await tx.request()
+        .input('mid', sql.Int, mant.id)
+        .input('rid', sql.Int, rid)
+        .query('INSERT INTO mantenimiento_requerimientos (mantenimiento_id, requerimiento_id) VALUES (@mid, @rid)')
+      await tx.request()
+        .input('rid', sql.Int, rid)
+        .query("UPDATE requerimientos_exclusivos SET status='completado', updated_at=SYSDATETIME() WHERE id=@rid AND tipo='unica'")
+    }
+    await tx.commit()
+    return { ...mant, requerimiento_ids: data.requerimiento_ids ?? [] }
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
 }
 
 export async function update(id: number, data: MantenimientoUpdate): Promise<Mantenimiento | null> {
   const pool = await getPool()
-  const sets: string[] = []
-  const req = pool.request().input('id', sql.Int, id)
-
-  if (data.fecha         !== undefined) { req.input('fecha',         sql.Date,              data.fecha);               sets.push('fecha=@fecha')                 }
-  if ('tipo'         in data)           { req.input('tipo',          sql.NVarChar(80),      data.tipo          ?? null); sets.push('tipo=@tipo')                   }
-  if ('tecnico'      in data)           { req.input('tecnico',       sql.NVarChar(120),     data.tecnico       ?? null); sets.push('tecnico=@tecnico')             }
-  if (data.costo         !== undefined) { req.input('costo',         sql.Int,               data.costo);               sets.push('costo=@costo')                 }
-  if (data.km_actual     !== undefined) { req.input('kmActual',      sql.Int,               data.km_actual);           sets.push('km_actual=@kmActual')           }
-  if ('observaciones' in data)          { req.input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null); sets.push('observaciones=@observaciones') }
-
-  if (!sets.length) return findById(id)
-
-  const r = await req.query(`UPDATE mantenimiento SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`)
-  return r.recordset[0] ?? null
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    const sets: string[] = []
+    const req = tx.request().input('id', sql.Int, id)
+    if (data.fecha         !== undefined) { req.input('fecha',         sql.Date,              data.fecha);               sets.push('fecha=@fecha')                 }
+    if ('tipo'         in data)           { req.input('tipo',          sql.NVarChar(80),      data.tipo          ?? null); sets.push('tipo=@tipo')                   }
+    if ('tecnico'      in data)           { req.input('tecnico',       sql.NVarChar(120),     data.tecnico       ?? null); sets.push('tecnico=@tecnico')             }
+    if (data.costo         !== undefined) { req.input('costo',         sql.Int,               data.costo);               sets.push('costo=@costo')                 }
+    if (data.km_actual     !== undefined) { req.input('kmActual',      sql.Int,               data.km_actual);           sets.push('km_actual=@kmActual')           }
+    if ('observaciones' in data)          { req.input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null); sets.push('observaciones=@observaciones') }
+    if (sets.length) {
+      await req.query(`UPDATE mantenimiento SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`)
+    }
+    if ('requerimiento_ids' in data) {
+      await tx.request().input('id', sql.Int, id)
+        .query('DELETE FROM mantenimiento_requerimientos WHERE mantenimiento_id=@id')
+      for (const rid of data.requerimiento_ids ?? []) {
+        await tx.request()
+          .input('mid', sql.Int, id)
+          .input('rid', sql.Int, rid)
+          .query('INSERT INTO mantenimiento_requerimientos (mantenimiento_id, requerimiento_id) VALUES (@mid, @rid)')
+        await tx.request()
+          .input('rid', sql.Int, rid)
+          .query("UPDATE requerimientos_exclusivos SET status='completado', updated_at=SYSDATETIME() WHERE id=@rid AND tipo='unica'")
+      }
+    }
+    await tx.commit()
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+  return findById(id)
 }
 
 export async function remove(id: number): Promise<boolean> {

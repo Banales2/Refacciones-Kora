@@ -14,6 +14,9 @@ import {
 } from '../hooks/useRutas'
 import type { Sucursal, SucursalPayload } from '../hooks/useSucursales'
 import type { Ruta, RutaPayload } from '../hooks/useRutas'
+import type { VehiculoRow } from '../hooks/useVehiculos'
+import Modelos from './Modelos'
+import Proveedores from './Proveedores'
 
 // ── Formulario genérico (mismo shape para sucursal y ruta) ────────────────────
 
@@ -261,19 +264,29 @@ function RutasPanel() {
 
 // ── Página principal ──────────────────────────────────────────────────────────
 
-export default function SitiosYRutas() {
+export default function SitiosYRutas({ onNavigateVehiculo }: { onNavigateVehiculo?: (v: VehiculoRow) => void }) {
   return (
     <Stack gap="md">
       <div>
-        <Text size="xl" fw={600}>Sitios y rutas</Text>
-        <Text size="sm" c="dimmed">Gestión de sucursales y rutas de transporte</Text>
+        <Text size="xl" fw={600}>Catálogos</Text>
+        <Text size="sm" c="dimmed">Modelos, proveedores, sucursales y rutas</Text>
       </div>
 
-      <Tabs defaultValue="sucursales" keepMounted={false}>
+      <Tabs defaultValue="modelos" keepMounted={false}>
         <Tabs.List>
+          <Tabs.Tab value="modelos">Modelos</Tabs.Tab>
+          <Tabs.Tab value="proveedores">Proveedores</Tabs.Tab>
           <Tabs.Tab value="sucursales">Sucursales</Tabs.Tab>
           <Tabs.Tab value="rutas">Rutas</Tabs.Tab>
         </Tabs.List>
+
+        <Tabs.Panel value="modelos" pt="md">
+          <Modelos onNavigateVehiculo={onNavigateVehiculo} />
+        </Tabs.Panel>
+
+        <Tabs.Panel value="proveedores" pt="md">
+          <Proveedores />
+        </Tabs.Panel>
 
         <Tabs.Panel value="sucursales" pt="md">
           <SucursalesPanel />

@@ -15,33 +15,18 @@ import { useDisclosure } from '@mantine/hooks'
 import { useAuth } from '../hooks/useAuth'
 import Dashboard from './Dashboard'
 import Piezas from '../pages/Piezas'
-import Proveedores from '../pages/Proveedores'
 import Vehiculos from '../pages/Vehiculos'
-import Modelos from '../pages/Modelos'
 import SitiosYRutas from '../pages/SitiosYRutas'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 
-type Section = 'dashboard' | 'piezas' | 'proveedores' | 'vehiculos' | 'modelos' | 'sitios' | 'mantenimientos'
+type Section = 'dashboard' | 'piezas' | 'vehiculos' | 'sitios'
 
-const NAV_ITEMS: { section: Section; label: string; description: string; group?: string }[] = [
-  { section: 'piezas',         label: 'Piezas',         description: 'Catálogo e inventario'           },
-  { section: 'proveedores',    label: 'Proveedores',    description: 'Gestión de proveedores'          },
-  { section: 'vehiculos',      label: 'Vehículos',      description: 'Camiones y tractocamiones'       },
-  { section: 'modelos',        label: 'Modelos',        description: 'Marcas y modelos'                },
-  { section: 'sitios',         label: 'Sitios y rutas', description: 'Sucursales y rutas de transporte'},
-  { section: 'mantenimientos', label: 'Mantenimientos', description: 'Historial de servicios'          },
+const NAV_ITEMS: { section: Section; label: string; description: string }[] = [
+  { section: 'piezas',    label: 'Piezas',      description: 'Catálogo e inventario'                       },
+  { section: 'vehiculos', label: 'Vehículos',   description: 'Camiones y tractocamiones'                   },
+  { section: 'sitios',    label: 'Catálogos',   description: 'Modelos, proveedores, sucursales y rutas'    },
 ]
 
-function SectionPlaceholder({ section }: { section: Section }) {
-  const item = NAV_ITEMS.find((i) => i.section === section)!
-  return (
-    <Stack gap="xs" pt="md">
-      <Text size="xl" fw={600}>{item.label}</Text>
-      <Text c="dimmed" size="sm">{item.description}</Text>
-      <Text c="dimmed" mt="xl" size="sm">Esta sección está en construcción.</Text>
-    </Stack>
-  )
-}
 
 export default function Layout() {
   const { user } = useAuth()
@@ -153,13 +138,10 @@ export default function Layout() {
 
       {/* ── Contenido ── */}
       <AppShell.Main>
-        {section === 'dashboard'     && <Dashboard />}
-        {section === 'piezas'        && <Piezas />}
-        {section === 'proveedores'   && <Proveedores />}
-        {section === 'vehiculos'     && <Vehiculos initialVehiculo={pendingVehiculo ?? undefined} />}
-        {section === 'modelos'        && <Modelos onNavigateVehiculo={navigateToVehiculo} />}
-        {section === 'sitios'         && <SitiosYRutas />}
-        {section === 'mantenimientos' && <SectionPlaceholder section={section} />}
+        {section === 'dashboard' && <Dashboard />}
+        {section === 'piezas'    && <Piezas />}
+        {section === 'vehiculos' && <Vehiculos initialVehiculo={pendingVehiculo ?? undefined} />}
+        {section === 'sitios'    && <SitiosYRutas onNavigateVehiculo={navigateToVehiculo} />}
       </AppShell.Main>
     </AppShell>
   )

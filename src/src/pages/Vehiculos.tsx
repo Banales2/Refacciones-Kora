@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Stack, Group, Text, TextInput, Textarea, Table, Badge,
-  Pagination, Loader, Center, Alert, Button, Select,
+  Pagination, Loader, Center, Alert, Button, Select, MultiSelect,
   Modal, ActionIcon, Tooltip, NumberInput, Switch,
-  Divider, Grid, Paper,
+  Divider, Grid, Paper, SegmentedControl,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight } from '@tabler/icons-react'
+import { IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight, IconAlertTriangle } from '@tabler/icons-react'
 import {
   useVehiculos, useCreateVehiculo, useUpdateVehiculo, useDeleteVehiculo,
 } from '../hooks/useVehiculos'
@@ -44,8 +44,8 @@ const TIPO_META: Record<TipoReq, { label: string; color: string }> = {
 }
 
 const STATUS_META: Record<StatusReq, { label: string; color: string }> = {
-  activo:     { label: 'Activo',      color: 'green'  },
-  completado: { label: 'Completado',  color: 'blue'   },
+  activo:     { label: 'Activo',      color: 'blue'  },
+  completado: { label: 'Completado',  color: 'green' },
   pausado:    { label: 'Pausado',     color: 'yellow' },
   cancelado:  { label: 'Cancelado',   color: 'red'    },
 }
@@ -78,15 +78,30 @@ function fmtIntervalo(item: RequerimientoExclusivo) {
 
 // ── Formulario de requerimiento ───────────────────────────────────────────────
 
+function fmtShort(iso: string | null | undefined) {
+  if (!iso) return null
+  return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  })
+}
+
+function todayIso() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function RequerimientoForm({
-  initial, isPending, error, onSubmit, onCancel,
+  initial, isPending, error, onSubmit, onCancel, vehiculo, lastMant,
 }: {
-  initial?: RequerimientoExclusivo
-  isPending: boolean
-  error: string | null
-  onSubmit: (p: RequerimientoPayload) => void
-  onCancel: () => void
+  initial?:   RequerimientoExclusivo
+  isPending:  boolean
+  error:      string | null
+  onSubmit:   (p: RequerimientoPayload) => void
+  onCancel:   () => void
+  vehiculo?:  VehiculoRow
+  lastMant?:  Mantenimiento | null
 }) {
+  const isEdit = !!initial
   const form = useForm({
     initialValues: {
       nombre:          initial?.nombre ?? '',
@@ -97,6 +112,7 @@ function RequerimientoForm({
       intervalo_km:    initial?.intervalo_km ?? (null as number | null),
       intervalo_meses: initial?.intervalo_meses ?? (null as number | null),
       status:          (initial?.status ?? 'activo') as StatusReq,
+      desde:           'ahora' as 'ahora' | 'ultimo',
     },
     validate: {
       nombre: (v) => !v.trim() ? 'Requerido' : v.length > 120 ? 'Máximo 120 caracteres' : null,
@@ -107,18 +123,38 @@ function RequerimientoForm({
     },
   })
 
-  const mode = form.values.trigger_mode
+  const mode  = form.values.trigger_mode
+  const desde = form.values.desde
+
+  // Baseline preview
+  const baselineKm   = desde === 'ahora' ? (vehiculo?.kilometraje ?? null)  : (lastMant?.km_actual  ?? null)
+  const baselineDate = desde === 'ahora' ? todayIso()
+    : lastMant?.fecha?.split('T')[0] ?? vehiculo?.fecha_compra?.split('T')[0] ?? null
 
   function handleSubmit(vals: typeof form.values) {
+    let fecha_inicio: string | null = null
+    let km_inicio: number | null    = null
+
+    if (!isEdit) {
+      fecha_inicio = vals.desde === 'ahora'
+        ? todayIso()
+        : lastMant?.fecha?.split('T')[0] ?? vehiculo?.fecha_compra?.split('T')[0] ?? null
+      km_inicio = vals.desde === 'ahora'
+        ? (vehiculo?.kilometraje ?? null)
+        : (lastMant?.km_actual   ?? null)
+    }
+
     onSubmit({
       nombre:          vals.nombre.trim(),
-      descripcion:     vals.descripcion?.trim() || null,
-      categoria:       vals.categoria?.trim()   || null,
+      descripcion:     vals.descripcion?.trim()  || null,
+      categoria:       vals.categoria?.trim()    || null,
       trigger_mode:    vals.trigger_mode,
       tipo:            vals.tipo,
       intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km    : null,
       intervalo_meses: (mode === 'meses' || mode === 'ambos') ? vals.intervalo_meses : null,
       status:          vals.status,
+      fecha_inicio,
+      km_inicio,
     })
   }
 
@@ -161,11 +197,33 @@ function RequerimientoForm({
           ]}
           {...form.getInputProps('status')}
         />
+
+        {!isEdit && (
+          <Stack gap={6}>
+            <Text size="sm" fw={500}>Conteo a partir de</Text>
+            <SegmentedControl
+              fullWidth
+              data={[
+                { value: 'ahora',  label: 'Ahora' },
+                { value: 'ultimo', label: 'Último mantenimiento / compra' },
+              ]}
+              {...form.getInputProps('desde')}
+            />
+            <Text size="xs" c="dimmed">
+              {baselineDate
+                ? <>Referencia: <strong>{fmtShort(baselineDate)}</strong>
+                    {baselineKm != null && <>, <strong>{baselineKm.toLocaleString('es-MX')} km</strong></>}
+                  </>
+                : 'Sin fecha de referencia disponible — el vencimiento se calculará cuando se registre un mantenimiento.'}
+            </Text>
+          </Stack>
+        )}
+
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
           <Button type="submit" loading={isPending}>
-            {initial ? 'Guardar cambios' : 'Crear requerimiento'}
+            {isEdit ? 'Guardar cambios' : 'Crear requerimiento'}
           </Button>
         </Group>
       </Stack>
@@ -173,16 +231,114 @@ function RequerimientoForm({
   )
 }
 
+// ── Lógica de vencimiento ─────────────────────────────────────────────────────
+
+function isOverdue(
+  req:          RequerimientoExclusivo,
+  vehiculo:     VehiculoRow,
+  mantenimientos: Mantenimiento[],
+): boolean {
+  if (req.status !== 'activo') return false
+
+  const now = new Date()
+
+  // Solo el mantenimiento explícitamente vinculado a este requerimiento resetea su baseline
+  const linkedMant = mantenimientos.find(m => m.requerimiento_ids.includes(req.id)) ?? null
+
+  const baseKm =
+    linkedMant?.km_actual ??
+    req.km_inicio          ??
+    0
+
+  const baseFechaStr =
+    linkedMant?.fecha?.split('T')[0]     ??
+    req.fecha_inicio?.split('T')[0]      ??
+    vehiculo.fecha_compra?.split('T')[0] ??
+    null
+  const baseFecha = baseFechaStr ? new Date(`${baseFechaStr}T12:00:00`) : null
+
+  if (req.trigger_mode === 'km' || req.trigger_mode === 'ambos') {
+    if (req.intervalo_km != null && vehiculo.kilometraje != null) {
+      if (vehiculo.kilometraje - baseKm >= req.intervalo_km) return true
+    }
+  }
+
+  if (req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') {
+    if (req.intervalo_meses != null && baseFecha) {
+      const months =
+        (now.getFullYear() - baseFecha.getFullYear()) * 12 +
+        (now.getMonth() - baseFecha.getMonth())
+      if (months >= req.intervalo_meses) return true
+    }
+  }
+
+  return false
+}
+
+function isWarning(
+  req:            RequerimientoExclusivo,
+  vehiculo:       VehiculoRow,
+  mantenimientos: Mantenimiento[],
+): boolean {
+  if (req.status !== 'activo') return false
+  if (isOverdue(req, vehiculo, mantenimientos)) return false
+
+  const now        = new Date()
+  const linkedMant = mantenimientos.find(m => m.requerimiento_ids.includes(req.id)) ?? null
+
+  const baseKm =
+    linkedMant?.km_actual ??
+    req.km_inicio          ??
+    0
+
+  const baseFechaStr =
+    linkedMant?.fecha?.split('T')[0]     ??
+    req.fecha_inicio?.split('T')[0]      ??
+    vehiculo.fecha_compra?.split('T')[0] ??
+    null
+  const baseFecha = baseFechaStr ? new Date(`${baseFechaStr}T12:00:00`) : null
+
+  if (req.trigger_mode === 'km' || req.trigger_mode === 'ambos') {
+    if (req.intervalo_km != null && vehiculo.kilometraje != null) {
+      const elapsed = vehiculo.kilometraje - baseKm
+      if (elapsed >= req.intervalo_km * 0.75) return true
+    }
+  }
+
+  if (req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') {
+    if (req.intervalo_meses != null && baseFecha) {
+      const months =
+        (now.getFullYear() - baseFecha.getFullYear()) * 12 +
+        (now.getMonth()    - baseFecha.getMonth())
+      if (months >= req.intervalo_meses - 1) return true
+    }
+  }
+
+  return false
+}
+
 // ── Sección de requerimientos ─────────────────────────────────────────────────
 
-function RequerimientosSection({ vehiculoId }: { vehiculoId: number }) {
+function RequerimientosSection({ vehiculo, mantenimientos, overdueIds = new Set<number>(), warnIds = new Set<number>() }: {
+  vehiculo:       VehiculoRow
+  mantenimientos: Mantenimiento[]
+  overdueIds?:    Set<number>
+  warnIds?:       Set<number>
+}) {
+  const vehiculoId = vehiculo.id
+  const lastMant   = mantenimientos[0] ?? null
+
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<RequerimientoExclusivo | null>(null)
   const [deleting, setDeleting]   = useState<RequerimientoExclusivo | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
   const { data, isLoading } = useRequerimientos(vehiculoId)
-  const items     = data?.data ?? []
+  const rawItems  = data?.data ?? []
+  const items     = [...rawItems].sort((a, b) => {
+    const inactive = (s: string) => s === 'completado' || s === 'cancelado' ? 1 : 0
+    return inactive(a.status) - inactive(b.status)
+  })
   const createMut = useCreateRequerimiento(vehiculoId)
   const updateMut = useUpdateRequerimiento(vehiculoId)
   const deleteMut = useDeleteRequerimiento(vehiculoId)
@@ -242,18 +398,48 @@ function RequerimientosSection({ vehiculoId }: { vehiculoId: number }) {
                 <Table.Th>Tipo</Table.Th>
                 <Table.Th>Disparador</Table.Th>
                 <Table.Th>Intervalo</Table.Th>
+                <Table.Th>Referencia</Table.Th>
                 <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
                 <Table.Th style={{ width: 80 }} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {items.map((item) => (
-                <Table.Tr key={item.id}>
+              {items.map((item) => {
+                const overdue     = overdueIds.has(item.id)
+                const warn        = !overdue && warnIds.has(item.id)
+                const linked      = mantenimientos.find(m => m.requerimiento_ids.includes(item.id))
+                const baseDateStr = linked?.fecha?.split('T')[0] ?? item.fecha_inicio?.split('T')[0] ?? null
+                const baseKmVal   = linked?.km_actual ?? item.km_inicio ?? null
+                const datePart    = fmtShort(baseDateStr) ?? '—'
+                const kmPart      = baseKmVal != null ? `${baseKmVal.toLocaleString('es-MX')} km` : '—'
+                const baseDisplay =
+                  item.trigger_mode === 'meses' ? datePart :
+                  item.trigger_mode === 'km'    ? kmPart :
+                  `${datePart} / ${kmPart}`
+                return (
+                <Table.Tr
+                  key={item.id}
+                  style={
+                    overdue ? { backgroundColor: 'var(--mantine-color-red-0)'    } :
+                    warn    ? { backgroundColor: 'var(--mantine-color-yellow-0)' } :
+                    undefined
+                  }
+                >
                   <Table.Td fw={500}>
-                    {item.nombre}
-                    {item.plantilla_origen_id && (
-                      <Text component="span" size="xs" c="dimmed" ml={6}>(plantilla)</Text>
-                    )}
+                    <Group gap={6} wrap="nowrap">
+                      {overdue && <IconAlertTriangle size={14} color="var(--mantine-color-red-6)"    />}
+                      {warn    && <IconAlertTriangle size={14} color="var(--mantine-color-yellow-7)" />}
+                      <span style={
+                        overdue ? { color: 'var(--mantine-color-red-7)'    } :
+                        warn    ? { color: 'var(--mantine-color-yellow-8)' } :
+                        undefined
+                      }>
+                        {item.nombre}
+                      </span>
+                      {item.plantilla_origen_id && (
+                        <Text component="span" size="xs" c="dimmed">(plantilla)</Text>
+                      )}
+                    </Group>
                   </Table.Td>
                   <Table.Td>{item.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
                   <Table.Td>
@@ -267,6 +453,11 @@ function RequerimientosSection({ vehiculoId }: { vehiculoId: number }) {
                     </Badge>
                   </Table.Td>
                   <Table.Td><Text size="sm">{fmtIntervalo(item)}</Text></Table.Td>
+                  <Table.Td>
+                    <Text size="sm" c={baseDisplay === '—' ? 'dimmed' : undefined}>
+                      {baseDisplay}
+                    </Text>
+                  </Table.Td>
                   <Table.Td style={{ textAlign: 'center' }}>
                     <Badge variant="light" color={STATUS_META[item.status].color} size="sm">
                       {STATUS_META[item.status].label}
@@ -287,7 +478,8 @@ function RequerimientosSection({ vehiculoId }: { vehiculoId: number }) {
                     </Group>
                   </Table.Td>
                 </Table.Tr>
-              ))}
+                )
+              })}
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>
@@ -304,6 +496,8 @@ function RequerimientosSection({ vehiculoId }: { vehiculoId: number }) {
           error={formError}
           onSubmit={handleSubmit}
           onCancel={() => setFormOpen(false)}
+          vehiculo={vehiculo}
+          lastMant={lastMant}
         />
       </Modal>
 
@@ -334,38 +528,50 @@ function toDateLocal(iso: string): Date | null {
 }
 function fromDateLocal(d: Date | null): string {
   if (!d) return ''
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const nd = d instanceof Date ? d : new Date(d as any)
+  if (isNaN(nd.getTime())) return ''
+  // Mantine entrega mezzanotte UTC; +12h lleva a mediodía UTC para leer la fecha correcta en cualquier zona horaria
+  const safe = new Date(nd.getTime() + 12 * 60 * 60 * 1000)
+  return `${safe.getUTCFullYear()}-${String(safe.getUTCMonth() + 1).padStart(2, '0')}-${String(safe.getUTCDate()).padStart(2, '0')}`
 }
 
 type MantForm = {
-  fecha:         string
-  tipo:          string
-  tecnico:       string
-  costo:         number | string
-  km_actual:     number | string
-  observaciones: string
+  fecha:             string
+  tipo:              string
+  tecnico:           string
+  costo:             number | string
+  km_actual:         number | string
+  observaciones:     string
+  requerimiento_ids: string[]
 }
 
 function initMant(m?: Mantenimiento): MantForm {
   return {
-    fecha:         m?.fecha?.split('T')[0] ?? '',
-    tipo:          m?.tipo          ?? '',
-    tecnico:       m?.tecnico       ?? '',
-    costo:         m?.costo         ?? '',
-    km_actual:     m?.km_actual     ?? '',
-    observaciones: m?.observaciones ?? '',
+    fecha:             m?.fecha?.split('T')[0] ?? '',
+    tipo:              m?.tipo          ?? '',
+    tecnico:           m?.tecnico       ?? '',
+    costo:             m?.costo         ?? '',
+    km_actual:         m?.km_actual     ?? '',
+    observaciones:     m?.observaciones ?? '',
+    requerimiento_ids: m?.requerimiento_ids?.map(String) ?? [],
   }
 }
 
 function MantenimientoForm({
-  initial, isPending, error, onSubmit, onCancel,
+  vehiculoId, initial, isPending, error, onSubmit, onCancel,
 }: {
+  vehiculoId: number
   initial?:   Mantenimiento
   isPending:  boolean
   error:      string | null
   onSubmit:   (p: MantenimientoPayload) => void
   onCancel:   () => void
 }) {
+  const { data: reqData } = useRequerimientos(vehiculoId)
+  const reqOptions = (reqData?.data ?? [])
+    .filter(r => r.status === 'activo')
+    .map(r => ({ value: String(r.id), label: r.nombre }))
+
   const form = useForm<MantForm>({
     initialValues: initMant(initial),
     validate: {
@@ -375,12 +581,13 @@ function MantenimientoForm({
 
   function handleSubmit(vals: MantForm) {
     onSubmit({
-      fecha:         vals.fecha,
-      tipo:          vals.tipo.trim()          || null,
-      tecnico:       vals.tecnico.trim()       || null,
-      costo:         vals.costo !== '' ? Number(vals.costo) : 0,
-      km_actual:     vals.km_actual !== '' ? Number(vals.km_actual) : 0,
-      observaciones: vals.observaciones.trim() || null,
+      fecha:             vals.fecha,
+      tipo:              vals.tipo.trim()          || null,
+      tecnico:           vals.tecnico.trim()       || null,
+      costo:             vals.costo !== '' ? Number(vals.costo) : 0,
+      km_actual:         vals.km_actual !== '' ? Number(vals.km_actual) : 0,
+      observaciones:     vals.observaciones.trim() || null,
+      requerimiento_ids: vals.requerimiento_ids.map(Number),
     })
   }
 
@@ -413,6 +620,16 @@ function MantenimientoForm({
           </Grid.Col>
           <Grid.Col span={12}>
             <Textarea label="Observaciones" autosize minRows={2} {...form.getInputProps('observaciones')} />
+          </Grid.Col>
+          <Grid.Col span={12}>
+            <MultiSelect
+              label="Requerimientos que cumple este mantenimiento"
+              placeholder={reqOptions.length ? 'Selecciona los requerimientos…' : 'Sin requerimientos activos'}
+              data={reqOptions}
+              searchable
+              clearable
+              {...form.getInputProps('requerimiento_ids')}
+            />
           </Grid.Col>
         </Grid>
         <Group justify="flex-end" mt="xs">
@@ -540,6 +757,7 @@ function MantenimientosSection({ vehiculoId }: { vehiculoId: number }) {
         centered size="md"
       >
         <MantenimientoForm
+          vehiculoId={vehiculoId}
           initial={editing ?? undefined}
           isPending={createMut.isPending || updateMut.isPending}
           error={formError}
@@ -588,6 +806,21 @@ function VehiculoDetalle({
 }) {
   const ti = tipoInfo(vehiculo.tipo)
 
+  const { data: reqData  } = useRequerimientos(vehiculo.id)
+  const { data: mantData } = useMantenimientos(vehiculo.id)
+
+  const { overdueIds, warnIds } = useMemo(() => {
+    const reqs  = reqData?.data  ?? []
+    const mants = mantData?.data ?? []
+    const overdueIds = new Set<number>()
+    const warnIds    = new Set<number>()
+    for (const req of reqs) {
+      if      (isOverdue(req, vehiculo, mants))  overdueIds.add(req.id)
+      else if (isWarning(req, vehiculo, mants))  warnIds.add(req.id)
+    }
+    return { overdueIds, warnIds }
+  }, [reqData, mantData, vehiculo])
+
   return (
     <Stack gap="md">
       {/* Navegación */}
@@ -599,6 +832,19 @@ function VehiculoDetalle({
         <Text size="sm" c="dimmed">/</Text>
         <Text size="sm">{vehiculo.vehiculo}</Text>
       </Group>
+
+      {overdueIds.size > 0 && (
+        <Alert color="red" title="Mantenimiento requerido" icon={<IconAlertTriangle size={16} />}>
+          Se requiere mantenimiento en{' '}
+          <strong>{overdueIds.size} requerimiento{overdueIds.size !== 1 ? 's' : ''}</strong>.
+        </Alert>
+      )}
+      {warnIds.size > 0 && (
+        <Alert color="yellow" title="Próximo a vencer" icon={<IconAlertTriangle size={16} />}>
+          <strong>{warnIds.size} requerimiento{warnIds.size !== 1 ? 's' : ''}</strong>{' '}
+          {warnIds.size !== 1 ? 'están próximos a' : 'está próximo a'} vencer (menos de 1 mes o menos del 25% del intervalo de km restante).
+        </Alert>
+      )}
 
       {/* Ficha */}
       <Paper withBorder p="md" radius="md">
@@ -685,7 +931,12 @@ function VehiculoDetalle({
       </Paper>
 
       {/* Requerimientos exclusivos */}
-      <RequerimientosSection vehiculoId={vehiculo.id} />
+      <RequerimientosSection
+        vehiculo={vehiculo}
+        mantenimientos={mantData?.data ?? []}
+        overdueIds={overdueIds}
+        warnIds={warnIds}
+      />
 
       {/* Mantenimientos */}
       <MantenimientosSection vehiculoId={vehiculo.id} />

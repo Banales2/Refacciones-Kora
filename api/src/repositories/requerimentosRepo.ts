@@ -19,6 +19,8 @@ export interface RequerimientoExclusivo {
   updated_at:          string
   vehiculo_id:         number
   plantilla_origen_id: number | null
+  fecha_inicio:        string | null
+  km_inicio:           number | null
 }
 
 export interface RequerimientoCreate {
@@ -32,21 +34,26 @@ export interface RequerimientoCreate {
   intervalo_meses?:     number | null
   status?:              StatusReq
   plantilla_origen_id?: number | null
+  fecha_inicio?:        string | null
+  km_inicio?:           number | null
 }
 
 export interface RequerimientoUpdate {
-  nombre?:         string
-  descripcion?:    string | null
-  categoria?:      string | null
-  trigger_mode?:   TriggerMode
-  tipo?:           TipoReq
-  intervalo_km?:   number | null
+  nombre?:          string
+  descripcion?:     string | null
+  categoria?:       string | null
+  trigger_mode?:    TriggerMode
+  tipo?:            TipoReq
+  intervalo_km?:    number | null
   intervalo_meses?: number | null
-  status?:         StatusReq
+  status?:          StatusReq
+  fecha_inicio?:    string | null
+  km_inicio?:       number | null
 }
 
 const COLS = `id, nombre, descripcion, categoria, intervalo_km, intervalo_meses,
-  trigger_mode, tipo, status, created_at, updated_at, vehiculo_id, plantilla_origen_id`
+  trigger_mode, tipo, status, created_at, updated_at, vehiculo_id, plantilla_origen_id,
+  fecha_inicio, km_inicio`
 
 export async function findByVehiculo(vehiculoId: number): Promise<RequerimientoExclusivo[]> {
   const pool = await getPool()
@@ -77,13 +84,15 @@ export async function create(data: RequerimientoCreate): Promise<RequerimientoEx
     .input('intervaloMes',  sql.Int,              data.intervalo_meses   ?? null)
     .input('status',        sql.NVarChar(20),     data.status            ?? 'activo')
     .input('origenId',      sql.Int,              data.plantilla_origen_id ?? null)
+    .input('fechaInicio',   sql.Date,             data.fecha_inicio        ?? null)
+    .input('kmInicio',      sql.Int,              data.km_inicio           ?? null)
     .query(`
       INSERT INTO requerimientos_exclusivos
         (vehiculo_id, nombre, descripcion, categoria, trigger_mode, tipo,
-         intervalo_km, intervalo_meses, status, plantilla_origen_id)
+         intervalo_km, intervalo_meses, status, plantilla_origen_id, fecha_inicio, km_inicio)
       OUTPUT INSERTED.*
       VALUES (@vid, @nombre, @descripcion, @categoria, @triggerMode, @tipo,
-              @intervaloKm, @intervaloMes, @status, @origenId)
+              @intervaloKm, @intervaloMes, @status, @origenId, @fechaInicio, @kmInicio)
     `)
   return r.recordset[0]
 }
@@ -100,7 +109,9 @@ export async function update(id: number, data: RequerimientoUpdate): Promise<Req
   if (data.tipo         !== undefined) { req.input('tipo',        sql.NVarChar(20),      data.tipo);             sets.push('tipo=@tipo')                  }
   if ('intervalo_km'   in data)        { req.input('intervaloKm', sql.Int,               data.intervalo_km    ?? null); sets.push('intervalo_km=@intervaloKm') }
   if ('intervalo_meses' in data)       { req.input('intervaloMes',sql.Int,               data.intervalo_meses ?? null); sets.push('intervalo_meses=@intervaloMes') }
-  if (data.status       !== undefined) { req.input('status',      sql.NVarChar(20),      data.status);           sets.push('status=@status')             }
+  if (data.status        !== undefined) { req.input('status',      sql.NVarChar(20), data.status);             sets.push('status=@status')                   }
+  if ('fecha_inicio' in data)           { req.input('fechaInicio', sql.Date,         data.fecha_inicio ?? null); sets.push('fecha_inicio=@fechaInicio')         }
+  if ('km_inicio'    in data)           { req.input('kmInicio',    sql.Int,          data.km_inicio    ?? null); sets.push('km_inicio=@kmInicio')               }
 
   const r = await req.query(
     `UPDATE requerimientos_exclusivos SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`

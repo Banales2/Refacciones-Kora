@@ -19,6 +19,8 @@ export interface RequerimientoExclusivo {
   updated_at:          string
   vehiculo_id:         number
   plantilla_origen_id: number | null
+  fecha_inicio:        string | null
+  km_inicio:           number | null
 }
 
 export interface RequerimientoPayload {
@@ -30,6 +32,8 @@ export interface RequerimientoPayload {
   intervalo_km?:    number | null
   intervalo_meses?: number | null
   status?:          StatusReq
+  fecha_inicio?:    string | null
+  km_inicio?:       number | null
 }
 
 export function useRequerimientos(vehiculoId: number) {

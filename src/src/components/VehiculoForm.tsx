@@ -65,9 +65,13 @@ function toDateLocal(iso: string): Date | null {
 
 function fromDateLocal(d: Date | null): string {
   if (!d) return ''
-  const year  = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day   = String(d.getDate()).padStart(2, '0')
+  const nd = d instanceof Date ? d : new Date(d as any)
+  if (isNaN(nd.getTime())) return ''
+  // +12h sobre medianoche UTC evita el desfase de zona horaria al leer con métodos UTC
+  const safe = new Date(nd.getTime() + 12 * 60 * 60 * 1000)
+  const year  = safe.getUTCFullYear()
+  const month = String(safe.getUTCMonth() + 1).padStart(2, '0')
+  const day   = String(safe.getUTCDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 

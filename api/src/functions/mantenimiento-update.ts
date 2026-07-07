@@ -6,12 +6,13 @@ import { audit, getClientIp } from '../shared/audit'
 import * as service from '../services/mantenimientoService'
 
 const Schema = z.object({
-  fecha:         z.string().date().optional(),
-  tipo:          z.string().max(80).trim().nullable().optional(),
-  tecnico:       z.string().max(120).trim().nullable().optional(),
-  costo:         z.coerce.number().int().min(0).optional(),
-  km_actual:     z.coerce.number().int().min(0).optional(),
-  observaciones: z.string().trim().nullable().optional(),
+  fecha:             z.string().date().optional(),
+  tipo:              z.string().max(80).trim().nullable().optional(),
+  tecnico:           z.string().max(120).trim().nullable().optional(),
+  costo:             z.coerce.number().int().min(0).optional(),
+  km_actual:         z.coerce.number().int().min(0).optional(),
+  observaciones:     z.string().trim().nullable().optional(),
+  requerimiento_ids: z.array(z.number().int().positive()).optional(),
 })
 
 export async function mantenimientoUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
