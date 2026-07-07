@@ -12,6 +12,11 @@ import {
   useVehiculos, useCreateVehiculo, useUpdateVehiculo, useDeleteVehiculo,
 } from '../hooks/useVehiculos'
 import {
+  useMantenimientos, useCreateMantenimiento, useUpdateMantenimiento, useDeleteMantenimiento,
+} from '../hooks/useMantenimientos'
+import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimientos'
+import { DateInput } from '@mantine/dates'
+import {
   useRequerimientos, useCreateRequerimiento, useUpdateRequerimiento, useDeleteRequerimiento,
 } from '../hooks/useRequerimientos'
 import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
@@ -322,6 +327,247 @@ function RequerimientosSection({ vehiculoId }: { vehiculoId: number }) {
   )
 }
 
+// ── Sección mantenimientos ────────────────────────────────────────────────────
+
+function toDateLocal(iso: string): Date | null {
+  return iso ? new Date(`${iso}T12:00:00`) : null
+}
+function fromDateLocal(d: Date | null): string {
+  if (!d) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+type MantForm = {
+  fecha:         string
+  tipo:          string
+  tecnico:       string
+  costo:         number | string
+  km_actual:     number | string
+  observaciones: string
+}
+
+function initMant(m?: Mantenimiento): MantForm {
+  return {
+    fecha:         m?.fecha?.split('T')[0] ?? '',
+    tipo:          m?.tipo          ?? '',
+    tecnico:       m?.tecnico       ?? '',
+    costo:         m?.costo         ?? '',
+    km_actual:     m?.km_actual     ?? '',
+    observaciones: m?.observaciones ?? '',
+  }
+}
+
+function MantenimientoForm({
+  initial, isPending, error, onSubmit, onCancel,
+}: {
+  initial?:   Mantenimiento
+  isPending:  boolean
+  error:      string | null
+  onSubmit:   (p: MantenimientoPayload) => void
+  onCancel:   () => void
+}) {
+  const form = useForm<MantForm>({
+    initialValues: initMant(initial),
+    validate: {
+      fecha: (v) => !v ? 'Requerido' : null,
+    },
+  })
+
+  function handleSubmit(vals: MantForm) {
+    onSubmit({
+      fecha:         vals.fecha,
+      tipo:          vals.tipo.trim()          || null,
+      tecnico:       vals.tecnico.trim()       || null,
+      costo:         vals.costo !== '' ? Number(vals.costo) : 0,
+      km_actual:     vals.km_actual !== '' ? Number(vals.km_actual) : 0,
+      observaciones: vals.observaciones.trim() || null,
+    })
+  }
+
+  return (
+    <form onSubmit={form.onSubmit(handleSubmit)}>
+      <Stack gap="sm">
+        {error && <Alert color="red" title="Error">{error}</Alert>}
+        <Grid>
+          <Grid.Col span={6}>
+            <DateInput
+              label="Fecha" required
+              placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
+              clearable maxDate={new Date()}
+              value={toDateLocal(form.values.fecha)}
+              onChange={(d) => form.setFieldValue('fecha', fromDateLocal(d as Date | null))}
+              error={form.errors.fecha as string}
+            />
+          </Grid.Col>
+          <Grid.Col span={6}>
+            <TextInput label="Tipo" placeholder="Preventivo, Correctivo…" {...form.getInputProps('tipo')} />
+          </Grid.Col>
+          <Grid.Col span={6}>
+            <TextInput label="Técnico" placeholder="Nombre del técnico" {...form.getInputProps('tecnico')} />
+          </Grid.Col>
+          <Grid.Col span={3}>
+            <NumberInput label="Kilometraje" placeholder="0" min={0} {...form.getInputProps('km_actual')} />
+          </Grid.Col>
+          <Grid.Col span={3}>
+            <NumberInput label="Costo ($)" placeholder="0" min={0} {...form.getInputProps('costo')} />
+          </Grid.Col>
+          <Grid.Col span={12}>
+            <Textarea label="Observaciones" autosize minRows={2} {...form.getInputProps('observaciones')} />
+          </Grid.Col>
+        </Grid>
+        <Group justify="flex-end" mt="xs">
+          <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
+          <Button type="submit" loading={isPending}>{initial ? 'Guardar cambios' : 'Registrar'}</Button>
+        </Group>
+      </Stack>
+    </form>
+  )
+}
+
+function MantenimientosSection({ vehiculoId }: { vehiculoId: number }) {
+  const [formOpen, setFormOpen]   = useState(false)
+  const [editing, setEditing]     = useState<Mantenimiento | null>(null)
+  const [deleting, setDeleting]   = useState<Mantenimiento | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const { data, isLoading } = useMantenimientos(vehiculoId)
+  const items      = data?.data ?? []
+  const createMut  = useCreateMantenimiento(vehiculoId)
+  const updateMut  = useUpdateMantenimiento(vehiculoId)
+  const deleteMut  = useDeleteMantenimiento(vehiculoId)
+
+  function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
+  function openEdit(m: Mantenimiento) { setEditing(m); setFormError(null); setFormOpen(true) }
+
+  function handleSubmit(payload: MantenimientoPayload) {
+    setFormError(null)
+    if (editing) {
+      updateMut.mutate({ id: editing.id, payload }, {
+        onSuccess: () => setFormOpen(false),
+        onError:   (e: Error) => setFormError(e.message),
+      })
+    } else {
+      createMut.mutate(payload, {
+        onSuccess: () => setFormOpen(false),
+        onError:   (e: Error) => setFormError(e.message),
+      })
+    }
+  }
+
+  function fmtFecha(iso: string | null) {
+    if (!iso) return '—'
+    return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    })
+  }
+
+  return (
+    <>
+      <Divider
+        label={
+          <Group gap="xs">
+            <Text size="sm" fw={500}>Mantenimientos ({items.length})</Text>
+            <Tooltip label="Registrar mantenimiento">
+              <ActionIcon variant="light" color="blue" size="xs" onClick={openCreate}>
+                <IconPlus size={12} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        }
+        labelPosition="left"
+      />
+
+      {isLoading ? (
+        <Center py="md"><Loader size="sm" /></Center>
+      ) : items.length === 0 ? (
+        <Center py="md">
+          <Stack align="center" gap="xs">
+            <Text c="dimmed" size="sm">No hay mantenimientos registrados.</Text>
+            <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={openCreate}>
+              Registrar mantenimiento
+            </Button>
+          </Stack>
+        </Center>
+      ) : (
+        <Table.ScrollContainer minWidth={500}>
+          <Table striped highlightOnHover withTableBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Fecha</Table.Th>
+                <Table.Th>Tipo</Table.Th>
+                <Table.Th>Técnico</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Kilometraje</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Costo</Table.Th>
+                <Table.Th style={{ width: 80 }} />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {items.map((m) => (
+                <Table.Tr key={m.id}>
+                  <Table.Td fw={500}>{fmtFecha(m.fecha)}</Table.Td>
+                  <Table.Td>{m.tipo ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
+                  <Table.Td>{m.tecnico ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
+                    {m.km_actual ? `${m.km_actual.toLocaleString('es-MX')} km` : <Text component="span" c="dimmed" size="sm">—</Text>}
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
+                    {m.costo ? `$${m.costo.toLocaleString('es-MX')}` : <Text component="span" c="dimmed" size="sm">—</Text>}
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap={4} justify="flex-end">
+                      <Tooltip label="Editar">
+                        <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(m)}>
+                          <IconPencil size={14} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip label="Eliminar">
+                        <ActionIcon variant="subtle" color="red" size="sm" onClick={() => setDeleting(m)}>
+                          <IconTrash size={14} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      )}
+
+      <Modal
+        opened={formOpen} onClose={() => setFormOpen(false)}
+        title={editing ? 'Editar mantenimiento' : 'Registrar mantenimiento'}
+        centered size="md"
+      >
+        <MantenimientoForm
+          initial={editing ?? undefined}
+          isPending={createMut.isPending || updateMut.isPending}
+          error={formError}
+          onSubmit={handleSubmit}
+          onCancel={() => setFormOpen(false)}
+        />
+      </Modal>
+
+      <Modal
+        opened={deleting !== null} onClose={() => setDeleting(null)}
+        title="Eliminar mantenimiento" centered size="sm"
+      >
+        <Stack gap="md">
+          <Text>¿Eliminar el mantenimiento del <strong>{fmtFecha(deleting?.fecha ?? null)}</strong>?</Text>
+          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
+            <Button color="red" loading={deleteMut.isPending}
+              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
+              Eliminar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </>
+  )
+}
+
 // ── Vista de detalle ──────────────────────────────────────────────────────────
 
 function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
@@ -418,6 +664,16 @@ function VehiculoDetalle({
                   <InfoItem label="Ubicación" value={vehiculo.ubicacion} />
                 </Grid.Col>
               )}
+              {vehiculo.fecha_compra && (
+                <Grid.Col span={{ base: 6, sm: 3 }}>
+                  <InfoItem
+                    label="Fecha de compra"
+                    value={new Date(vehiculo.fecha_compra).toLocaleDateString('es-MX', {
+                      day: '2-digit', month: 'short', year: 'numeric',
+                    })}
+                  />
+                </Grid.Col>
+              )}
             </Grid>
           </Stack>
           <Tooltip label="Editar vehículo">
@@ -430,18 +686,21 @@ function VehiculoDetalle({
 
       {/* Requerimientos exclusivos */}
       <RequerimientosSection vehiculoId={vehiculo.id} />
+
+      {/* Mantenimientos */}
+      <MantenimientosSection vehiculoId={vehiculo.id} />
     </Stack>
   )
 }
 
 // ── Lista de vehículos ────────────────────────────────────────────────────────
 
-export default function Vehiculos() {
+export default function Vehiculos({ initialVehiculo }: { initialVehiculo?: VehiculoRow }) {
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
   const [debouncedSearch]       = useDebouncedValue(search, 400)
   const [tipo, setTipo]         = useState<TipoVehiculo | undefined>(undefined)
-  const [selected, setSelected] = useState<VehiculoRow | null>(null)
+  const [selected, setSelected] = useState<VehiculoRow | null>(initialVehiculo ?? null)
 
   const [formOpen,   setFormOpen]   = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)

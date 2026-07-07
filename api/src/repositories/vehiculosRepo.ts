@@ -3,30 +3,31 @@ import { getPool } from '../shared/db'
 import { TipoVehiculo, VehiculoCreate, VehiculoUpdate } from '../schemas/vehiculoSchema'
 
 export interface VehiculoRow {
-  id:          number
-  vehiculo:    string
-  tipo:        TipoVehiculo
-  modelo_id:   number
-  marca:       string
-  modelo:      string
-  serie:       string
-  status:      string | null
-  kilometraje: number | null
-  combustible: string | null
-  ubicacion:   string | null
-  sucursal_id: number | null
-  sucursal:    string | null
-  tonelaje:    number | null
-  tenencia:    string | null
-  ruta_id:     number | null
-  ruta:        string | null
-  pies:        number | null
+  id:           number
+  vehiculo:     string
+  tipo:         TipoVehiculo
+  modelo_id:    number
+  marca:        string
+  modelo:       string
+  serie:        string
+  status:       string | null
+  kilometraje:  number | null
+  combustible:  string | null
+  ubicacion:    string | null
+  sucursal_id:  number | null
+  sucursal:     string | null
+  tonelaje:     number | null
+  tenencia:     string | null
+  ruta_id:      number | null
+  ruta:         string | null
+  pies:         number | null
+  fecha_compra: string | null
 }
 
 // ── Shared SQL fragments ──────────────────────────────────────────────────────
 
 const SELECT_COLS = `
-  v.id, v.vehiculo, v.tipo, v.modelo_id,
+  v.id, v.vehiculo, v.tipo, v.modelo_id, v.fecha_compra,
   m.marca, m.nombre AS modelo,
   COALESCE(c.serie, t.serie, ct.serie, u.serie) AS serie,
   CASE WHEN v.tipo='camion'       THEN c.status       WHEN v.tipo='tractocamion' THEN t.status
@@ -107,10 +108,11 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
   await tx.begin()
   try {
     const vRes = await tx.request()
-      .input('vehiculo',  sql.NVarChar(120), data.vehiculo)
-      .input('modelo_id', sql.Int,           data.modelo_id)
-      .input('tipo',      sql.NVarChar(20),  data.tipo)
-      .query('INSERT INTO vehiculos (vehiculo, modelo_id, tipo) OUTPUT INSERTED.id VALUES (@vehiculo, @modelo_id, @tipo)')
+      .input('vehiculo',     sql.NVarChar(120), data.vehiculo)
+      .input('modelo_id',    sql.Int,           data.modelo_id)
+      .input('tipo',         sql.NVarChar(20),  data.tipo)
+      .input('fechaCompra',  sql.Date,          data.fecha_compra ?? null)
+      .query('INSERT INTO vehiculos (vehiculo, modelo_id, tipo, fecha_compra) OUTPUT INSERTED.id VALUES (@vehiculo, @modelo_id, @tipo, @fechaCompra)')
     const vid = vRes.recordset[0].id
 
     const sub = tx.request().input('vid', sql.Int, vid)
@@ -163,8 +165,9 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
   // Update base table
   const baseReq = pool.request().input('id', sql.Int, id)
   const baseSets: string[] = []
-  if (data.vehiculo  !== undefined) { baseReq.input('vehiculo',  sql.NVarChar(120), data.vehiculo);  baseSets.push('vehiculo=@vehiculo') }
-  if (data.modelo_id !== undefined) { baseReq.input('modelo_id', sql.Int,           data.modelo_id); baseSets.push('modelo_id=@modelo_id') }
+  if (data.vehiculo    !== undefined) { baseReq.input('vehiculo',    sql.NVarChar(120), data.vehiculo);    baseSets.push('vehiculo=@vehiculo') }
+  if (data.modelo_id   !== undefined) { baseReq.input('modelo_id',   sql.Int,           data.modelo_id);   baseSets.push('modelo_id=@modelo_id') }
+  if ('fecha_compra' in data)         { baseReq.input('fechaCompra', sql.Date,          data.fecha_compra ?? null); baseSets.push('fecha_compra=@fechaCompra') }
   if (baseSets.length) await baseReq.query(`UPDATE vehiculos SET ${baseSets.join(',')} WHERE id=@id`)
 
   // Update subtable

@@ -16,7 +16,7 @@ import {
 import { useVehiculos } from '../hooks/useVehiculos'
 import type { Modelo, ModeloPayload } from '../hooks/useModelos'
 import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode, TipoPlantilla } from '../hooks/usePlantilla'
-import type { TipoVehiculo } from '../hooks/useVehiculos'
+import type { TipoVehiculo, VehiculoRow } from '../hooks/useVehiculos'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -380,11 +380,12 @@ function PlantillaSection({ modeloId }: { modeloId: number }) {
 // ── Vista de detalle ──────────────────────────────────────────────────────────
 
 function ModeloDetalle({
-  modelo, onBack, onEdit,
+  modelo, onBack, onEdit, onNavigateVehiculo,
 }: {
   modelo: Modelo
   onBack: () => void
   onEdit: (m: Modelo) => void
+  onNavigateVehiculo?: (v: VehiculoRow) => void
 }) {
   const { data, isLoading, isError } = useVehiculos(1, '', undefined, modelo.id)
   const vehiculos = data?.data ?? []
@@ -452,13 +453,18 @@ function ModeloDetalle({
                 <Table.Th>Serie</Table.Th>
                 <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>Kilometraje</Table.Th>
+                {onNavigateVehiculo && <Table.Th style={{ width: 32 }} />}
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {vehiculos.map((v) => {
                 const t = TIPOS[v.tipo]
                 return (
-                  <Table.Tr key={v.id}>
+                  <Table.Tr
+                    key={v.id}
+                    onClick={() => onNavigateVehiculo?.(v)}
+                    style={{ cursor: onNavigateVehiculo ? 'pointer' : undefined }}
+                  >
                     <Table.Td fw={500}>{v.vehiculo}</Table.Td>
                     <Table.Td>
                       <Badge color={t.color} variant="light" size="sm">{t.label}</Badge>
@@ -474,6 +480,11 @@ function ModeloDetalle({
                         ? `${v.kilometraje.toLocaleString('es-MX')} km`
                         : <Text component="span" c="dimmed" size="sm">—</Text>}
                     </Table.Td>
+                    {onNavigateVehiculo && (
+                      <Table.Td>
+                        <IconChevronRight size={14} color="var(--mantine-color-dimmed)" />
+                      </Table.Td>
+                    )}
                   </Table.Tr>
                 )
               })}
@@ -487,7 +498,7 @@ function ModeloDetalle({
 
 // ── Lista de modelos ──────────────────────────────────────────────────────────
 
-export default function Modelos() {
+export default function Modelos({ onNavigateVehiculo }: { onNavigateVehiculo?: (v: VehiculoRow) => void }) {
   const [search, setSearch]       = useState('')
   const [debounced]               = useDebouncedValue(search, 300)
   const [formOpen, setFormOpen]   = useState(false)
@@ -535,6 +546,7 @@ export default function Modelos() {
           modelo={selected}
           onBack={() => setSelected(null)}
           onEdit={(m) => openEdit(m)}
+          onNavigateVehiculo={onNavigateVehiculo}
         />
         <Modal
           opened={formOpen} onClose={() => setFormOpen(false)}

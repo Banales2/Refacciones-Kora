@@ -19,6 +19,7 @@ import Proveedores from '../pages/Proveedores'
 import Vehiculos from '../pages/Vehiculos'
 import Modelos from '../pages/Modelos'
 import SitiosYRutas from '../pages/SitiosYRutas'
+import type { VehiculoRow } from '../hooks/useVehiculos'
 
 type Section = 'dashboard' | 'piezas' | 'proveedores' | 'vehiculos' | 'modelos' | 'sitios' | 'mantenimientos'
 
@@ -47,11 +48,19 @@ export default function Layout() {
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure()
   const [desktopCollapsed, setDesktopCollapsed] = useState(false)
   const [section, setSection] = useState<Section>('dashboard')
+  const [pendingVehiculo, setPendingVehiculo] = useState<VehiculoRow | null>(null)
 
   const rol = user?.userRoles.find((r) => !['anonymous', 'authenticated'].includes(r))
 
   function navigate(s: Section) {
+    if (s !== 'vehiculos') setPendingVehiculo(null)
     setSection(s)
+    if (mobileOpened) toggleMobile()
+  }
+
+  function navigateToVehiculo(v: VehiculoRow) {
+    setPendingVehiculo(v)
+    setSection('vehiculos')
     if (mobileOpened) toggleMobile()
   }
 
@@ -147,8 +156,8 @@ export default function Layout() {
         {section === 'dashboard'     && <Dashboard />}
         {section === 'piezas'        && <Piezas />}
         {section === 'proveedores'   && <Proveedores />}
-        {section === 'vehiculos'     && <Vehiculos />}
-        {section === 'modelos'        && <Modelos />}
+        {section === 'vehiculos'     && <Vehiculos initialVehiculo={pendingVehiculo ?? undefined} />}
+        {section === 'modelos'        && <Modelos onNavigateVehiculo={navigateToVehiculo} />}
         {section === 'sitios'         && <SitiosYRutas />}
         {section === 'mantenimientos' && <SectionPlaceholder section={section} />}
       </AppShell.Main>

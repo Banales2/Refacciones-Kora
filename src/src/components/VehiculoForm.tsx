@@ -3,6 +3,7 @@ import {
   Stack, Grid, TextInput, NumberInput, Select, Divider,
   Badge, Text, Button, Group, Alert,
 } from '@mantine/core'
+import { DateInput } from '@mantine/dates'
 import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
 import { useModelos } from '../hooks/useModelos'
 import { useSucursales } from '../hooks/useSucursales'
@@ -21,37 +22,53 @@ const COMBUSTIBLES = ['Diesel', 'Gasolina', 'Gas LP', 'Gas Natural', 'Eléctrico
 const STATUSES     = ['Activo', 'Inactivo', 'Taller', 'Baja'].map((s) => ({ value: s, label: s }))
 
 type FormVals = {
-  tipo:        TipoVehiculo | ''
-  vehiculo:    string
-  modelo_id:   string
-  serie:       string
-  combustible: string
-  kilometraje: number | string
-  status:      string
-  ubicacion:   string
-  sucursal_id: string
-  tonelaje:    number | string
-  tenencia:    string
-  ruta_id:     string
-  pies:        number | string
+  tipo:         TipoVehiculo | ''
+  vehiculo:     string
+  modelo_id:    string
+  serie:        string
+  combustible:  string
+  kilometraje:  number | string
+  status:       string
+  ubicacion:    string
+  sucursal_id:  string
+  tonelaje:     number | string
+  tenencia:     string
+  ruta_id:      string
+  pies:         number | string
+  fecha_compra: string
 }
 
 function init(v?: VehiculoRow): FormVals {
   return {
-    tipo:        v?.tipo        ?? '',
-    vehiculo:    v?.vehiculo    ?? '',
-    modelo_id:   v?.modelo_id   != null ? String(v.modelo_id)   : '',
-    serie:       v?.serie       ?? '',
-    combustible: v?.combustible ?? '',
-    kilometraje: v?.kilometraje ?? '',
-    status:      v?.status      ?? '',
-    ubicacion:   v?.ubicacion   ?? '',
-    sucursal_id: v?.sucursal_id != null ? String(v.sucursal_id) : '',
-    tonelaje:    v?.tonelaje    ?? '',
-    tenencia:    v?.tenencia    ?? '',
-    ruta_id:     v?.ruta_id     != null ? String(v.ruta_id)     : '',
-    pies:        v?.pies        ?? '',
+    tipo:         v?.tipo        ?? '',
+    vehiculo:     v?.vehiculo    ?? '',
+    modelo_id:    v?.modelo_id   != null ? String(v.modelo_id)   : '',
+    serie:        v?.serie       ?? '',
+    combustible:  v?.combustible ?? '',
+    kilometraje:  v?.kilometraje ?? '',
+    status:       v?.status      ?? '',
+    ubicacion:    v?.ubicacion   ?? '',
+    sucursal_id:  v?.sucursal_id != null ? String(v.sucursal_id) : '',
+    tonelaje:     v?.tonelaje    ?? '',
+    tenencia:     v?.tenencia    ?? '',
+    ruta_id:      v?.ruta_id     != null ? String(v.ruta_id)     : '',
+    pies:         v?.pies        ?? '',
+    fecha_compra: v?.fecha_compra ? v.fecha_compra.split('T')[0] : '',
   }
+}
+
+function toDateLocal(iso: string): Date | null {
+  if (!iso) return null
+  // T12:00:00 evita que el offset de zona horaria cambie el día
+  return new Date(`${iso}T12:00:00`)
+}
+
+function fromDateLocal(d: Date | null): string {
+  if (!d) return ''
+  const year  = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day   = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function needsField(tipo: TipoVehiculo | '', check: 'combustible' | 'status' | 'km' | 'sucursal' | 'ruta' | 'tonelaje' | 'pies' | 'ubicacion') {
@@ -107,9 +124,10 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
   function handleSubmit(vals: FormVals) {
     const t = (isEdit ? initial!.tipo : vals.tipo) as TipoVehiculo
     const base = {
-      vehiculo:  vals.vehiculo,
-      modelo_id: parseInt(vals.modelo_id),
-      serie:     vals.serie,
+      vehiculo:     vals.vehiculo,
+      modelo_id:    parseInt(vals.modelo_id),
+      serie:        vals.serie,
+      fecha_compra: vals.fecha_compra || null,
     }
 
     let extra: Record<string, unknown> = {}
@@ -192,6 +210,16 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
           required
           nothingFoundMessage="Sin resultados"
           {...form.getInputProps('modelo_id')}
+        />
+
+        <DateInput
+          label="Fecha de compra"
+          placeholder="dd/mm/aaaa"
+          valueFormat="DD/MM/YYYY"
+          clearable
+          maxDate={new Date()}
+          value={toDateLocal(form.values.fecha_compra)}
+          onChange={(d) => form.setFieldValue('fecha_compra', fromDateLocal(d as Date | null))}
         />
 
         {/* Campos condicionales — camion */}

@@ -29,22 +29,25 @@ export const VehiculoCreateSchema = z.object({
   tenencia:    z.string().max(50).trim().nullable().optional(),
   ruta_id:     z.coerce.number().int().positive().optional(),
   // caja_trailer
-  pies:        z.coerce.number().int().positive().optional(),
+  pies:         z.coerce.number().int().positive().optional(),
+  // general
+  fecha_compra: z.string().date().nullable().optional(),
 })
 
 export const VehiculoUpdateSchema = z.object({
-  vehiculo:    z.string().min(1).max(120).trim().optional(),
-  modelo_id:   z.coerce.number().int().min(1).optional(),
-  serie:       z.string().min(1).max(80).trim().optional(),
-  combustible: z.string().max(30).trim().optional(),
-  kilometraje: z.coerce.number().int().min(0).optional(),
-  status:      z.string().max(30).trim().optional(),
-  ubicacion:   z.string().max(200).trim().nullable().optional(),
-  sucursal_id: z.coerce.number().int().positive().optional(),
-  tonelaje:    z.coerce.number().int().positive().optional(),
-  tenencia:    z.string().max(50).trim().nullable().optional(),
-  ruta_id:     z.coerce.number().int().positive().optional(),
-  pies:        z.coerce.number().int().positive().optional(),
+  vehiculo:     z.string().min(1).max(120).trim().optional(),
+  modelo_id:    z.coerce.number().int().min(1).optional(),
+  serie:        z.string().min(1).max(80).trim().optional(),
+  combustible:  z.string().max(30).trim().optional(),
+  kilometraje:  z.coerce.number().int().min(0).optional(),
+  status:       z.string().max(30).trim().optional(),
+  ubicacion:    z.string().max(200).trim().nullable().optional(),
+  sucursal_id:  z.coerce.number().int().positive().optional(),
+  tonelaje:     z.coerce.number().int().positive().optional(),
+  tenencia:     z.string().max(50).trim().nullable().optional(),
+  ruta_id:      z.coerce.number().int().positive().optional(),
+  pies:         z.coerce.number().int().positive().optional(),
+  fecha_compra: z.string().date().nullable().optional(),
 })
 
 export type VehiculoQuery  = z.infer<typeof VehiculoQuerySchema>

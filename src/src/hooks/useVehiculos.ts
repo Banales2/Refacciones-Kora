@@ -4,40 +4,42 @@ import { api } from '../lib/api'
 export type TipoVehiculo = 'camion' | 'tractocamion' | 'caja_trailer' | 'utilitario'
 
 export interface VehiculoRow {
-  id:          number
-  vehiculo:    string
-  tipo:        TipoVehiculo
-  modelo_id:   number
-  marca:       string
-  modelo:      string
-  serie:       string
-  status:      string | null
-  kilometraje: number | null
-  combustible: string | null
-  ubicacion:   string | null
-  sucursal_id: number | null
-  sucursal:    string | null
-  tonelaje:    number | null
-  tenencia:    string | null
-  ruta_id:     number | null
-  ruta:        string | null
-  pies:        number | null
+  id:           number
+  vehiculo:     string
+  tipo:         TipoVehiculo
+  modelo_id:    number
+  marca:        string
+  modelo:       string
+  serie:        string
+  status:       string | null
+  kilometraje:  number | null
+  combustible:  string | null
+  ubicacion:    string | null
+  sucursal_id:  number | null
+  sucursal:     string | null
+  tonelaje:     number | null
+  tenencia:     string | null
+  ruta_id:      number | null
+  ruta:         string | null
+  pies:         number | null
+  fecha_compra: string | null
 }
 
 export interface VehiculoCreatePayload {
-  tipo:        TipoVehiculo
-  vehiculo:    string
-  modelo_id:   number
-  serie:       string
-  combustible?: string
-  kilometraje?: number
-  status?:      string
-  ubicacion?:   string | null
-  sucursal_id?: number
-  tonelaje?:    number
-  tenencia?:    string | null
-  ruta_id?:     number
-  pies?:        number
+  tipo:          TipoVehiculo
+  vehiculo:      string
+  modelo_id:     number
+  serie:         string
+  combustible?:  string
+  kilometraje?:  number
+  status?:       string
+  ubicacion?:    string | null
+  sucursal_id?:  number
+  tonelaje?:     number
+  tenencia?:     string | null
+  ruta_id?:      number
+  pies?:         number
+  fecha_compra?: string | null
 }
 
 export interface VehiculoUpdatePayload extends Omit<VehiculoCreatePayload, 'tipo'> {}
