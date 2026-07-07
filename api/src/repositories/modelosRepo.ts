@@ -31,7 +31,7 @@ export async function create(marca: string, nombre: string): Promise<Modelo> {
   const r = await pool.request()
     .input('marca',  sql.NVarChar(80),  marca)
     .input('nombre', sql.NVarChar(120), nombre)
-    .query(`INSERT INTO modelos (marca, nombre) OUTPUT INSERTED.${COLS} VALUES (@marca, @nombre)`)
+    .query(`INSERT INTO modelos (marca, nombre) OUTPUT INSERTED.* VALUES (@marca, @nombre)`)
   return r.recordset[0]
 }
 
@@ -42,7 +42,7 @@ export async function update(id: number, marca?: string, nombre?: string): Promi
   if (marca  !== undefined) { req.input('marca',  sql.NVarChar(80),  marca);  sets.push('marca=@marca')   }
   if (nombre !== undefined) { req.input('nombre', sql.NVarChar(120), nombre); sets.push('nombre=@nombre') }
   const r = await req.query(
-    `UPDATE modelos SET ${sets.join(',')} OUTPUT INSERTED.${COLS} WHERE id=@id`
+    `UPDATE modelos SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`
   )
   return r.recordset[0] ?? null
 }

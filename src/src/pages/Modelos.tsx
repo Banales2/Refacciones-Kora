@@ -356,17 +356,19 @@ function PlantillaSection({ modeloId }: { modeloId: number }) {
 
       <Modal
         opened={deleting !== null} onClose={() => setDeleting(null)}
-        title="Eliminar requerimiento" centered size="sm"
+        title="Eliminar requerimiento de plantilla" centered size="sm"
       >
         <Stack gap="md">
-          <Text>¿Eliminar <strong>{deleting?.nombre}</strong>? Esta acción no se puede deshacer.</Text>
-          <Text size="sm" c="dimmed">No podrá eliminarse si ya fue asignado a vehículos.</Text>
+          <Text>¿Estás seguro de eliminar <strong>{deleting?.nombre}</strong>?</Text>
+          <Alert color="orange" title="Atención" variant="light">
+            Todos los vehículos con este modelo perderán este requerimiento.
+          </Alert>
           {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
             <Button color="red" loading={deleteMut.isPending}
               onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
+              Sí, eliminar
             </Button>
           </Group>
         </Stack>

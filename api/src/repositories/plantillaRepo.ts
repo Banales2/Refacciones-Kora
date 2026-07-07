@@ -76,7 +76,7 @@ export async function create(data: PlantillaCreate): Promise<PlantillaRequerimie
     .query(`
       INSERT INTO plantilla_requerimientos_modelo
         (modelo_id, nombre, descripcion, categoria, trigger_mode, tipo, intervalo_km, intervalo_meses, activo)
-      OUTPUT INSERTED.${COLS}
+      OUTPUT INSERTED.*
       VALUES (@modeloId, @nombre, @descripcion, @categoria, @triggerMode, @tipo, @intervaloKm, @intervaloMeses, @activo)
     `)
   return r.recordset[0]
@@ -97,23 +97,96 @@ export async function update(id: number, data: PlantillaUpdate): Promise<Plantil
   if (data.activo        !== undefined) { req.input('activo',         sql.Bit,               data.activo);          sets.push('activo=@activo')              }
 
   const r = await req.query(
-    `UPDATE plantilla_requerimientos_modelo SET ${sets.join(',')} OUTPUT INSERTED.${COLS} WHERE id=@id`
+    `UPDATE plantilla_requerimientos_modelo SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`
   )
   return r.recordset[0] ?? null
 }
 
-export async function countExclusivos(id: number): Promise<number> {
+export async function copyModelToVehicle(vehiculoId: number, modeloId: number): Promise<void> {
   const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('SELECT COUNT(*) AS cnt FROM requerimientos_exclusivos WHERE plantilla_origen_id=@id')
-  return r.recordset[0].cnt
+  await pool.request()
+    .input('vehiculoId', sql.Int, vehiculoId)
+    .input('modeloId',   sql.Int, modeloId)
+    .query(`
+      INSERT INTO requerimientos_exclusivos
+        (vehiculo_id, nombre, descripcion, categoria, trigger_mode, tipo,
+         intervalo_km, intervalo_meses, status, plantilla_origen_id)
+      SELECT
+        @vehiculoId, p.nombre, p.descripcion, p.categoria, p.trigger_mode, p.tipo,
+        p.intervalo_km, p.intervalo_meses, 'activo', p.id
+      FROM plantilla_requerimientos_modelo p
+      WHERE p.modelo_id = @modeloId
+        AND p.activo = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM requerimientos_exclusivos re
+          WHERE re.vehiculo_id = @vehiculoId AND re.plantilla_origen_id = p.id
+        )
+    `)
+}
+
+export async function copyToVehicles(plantilla: PlantillaRequerimiento): Promise<void> {
+  if (!plantilla.activo) return
+  const pool = await getPool()
+  await pool.request()
+    .input('nombre',        sql.NVarChar(120),     plantilla.nombre)
+    .input('descripcion',   sql.NVarChar(sql.MAX), plantilla.descripcion ?? null)
+    .input('categoria',     sql.NVarChar(80),      plantilla.categoria   ?? null)
+    .input('triggerMode',   sql.NVarChar(20),      plantilla.trigger_mode)
+    .input('tipo',          sql.NVarChar(20),      plantilla.tipo)
+    .input('intervaloKm',   sql.Int,               plantilla.intervalo_km    ?? null)
+    .input('intervaloMes',  sql.Int,               plantilla.intervalo_meses ?? null)
+    .input('plantillaId',   sql.Int,               plantilla.id)
+    .input('modeloId',      sql.Int,               plantilla.modelo_id)
+    .query(`
+      INSERT INTO requerimientos_exclusivos
+        (vehiculo_id, nombre, descripcion, categoria, trigger_mode, tipo,
+         intervalo_km, intervalo_meses, status, plantilla_origen_id)
+      SELECT
+        v.id, @nombre, @descripcion, @categoria, @triggerMode, @tipo,
+        @intervaloKm, @intervaloMes, 'activo', @plantillaId
+      FROM vehiculos v
+      WHERE v.modelo_id = @modeloId
+        AND NOT EXISTS (
+          SELECT 1 FROM requerimientos_exclusivos re
+          WHERE re.vehiculo_id = v.id AND re.plantilla_origen_id = @plantillaId
+        )
+    `)
+}
+
+export async function syncLinked(plantilla: PlantillaRequerimiento): Promise<void> {
+  const pool = await getPool()
+  await pool.request()
+    .input('nombre',        sql.NVarChar(120),     plantilla.nombre)
+    .input('descripcion',   sql.NVarChar(sql.MAX), plantilla.descripcion ?? null)
+    .input('categoria',     sql.NVarChar(80),      plantilla.categoria   ?? null)
+    .input('triggerMode',   sql.NVarChar(20),      plantilla.trigger_mode)
+    .input('tipo',          sql.NVarChar(20),      plantilla.tipo)
+    .input('intervaloKm',   sql.Int,               plantilla.intervalo_km    ?? null)
+    .input('intervaloMes',  sql.Int,               plantilla.intervalo_meses ?? null)
+    .input('plantillaId',   sql.Int,               plantilla.id)
+    .query(`
+      UPDATE requerimientos_exclusivos SET
+        nombre=@nombre, descripcion=@descripcion, categoria=@categoria,
+        trigger_mode=@triggerMode, tipo=@tipo,
+        intervalo_km=@intervaloKm, intervalo_meses=@intervaloMes,
+        updated_at=SYSDATETIME()
+      WHERE plantilla_origen_id=@plantillaId
+    `)
 }
 
 export async function remove(id: number): Promise<boolean> {
   const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM plantilla_requerimientos_modelo OUTPUT DELETED.id WHERE id=@id')
-  return r.recordset.length > 0
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    await tx.request().input('id', sql.Int, id)
+      .query('DELETE FROM requerimientos_exclusivos WHERE plantilla_origen_id=@id')
+    const r = await tx.request().input('id', sql.Int, id)
+      .query('DELETE FROM plantilla_requerimientos_modelo OUTPUT DELETED.id WHERE id=@id')
+    await tx.commit()
+    return r.recordset.length > 0
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
 }

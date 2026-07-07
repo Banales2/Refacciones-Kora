@@ -16,9 +16,11 @@ export interface VehiculoRow {
   combustible: string | null
   ubicacion:   string | null
   sucursal_id: number | null
+  sucursal:    string | null
   tonelaje:    number | null
   tenencia:    string | null
   ruta_id:     number | null
+  ruta:        string | null
   pies:        number | null
 }
 

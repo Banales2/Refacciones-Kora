@@ -1,4 +1,5 @@
 import * as repo from '../repositories/vehiculosRepo'
+import * as plantillaRepo from '../repositories/plantillaRepo'
 import { getPool } from '../shared/db'
 import { VehiculoQuery, VehiculoCreate, VehiculoUpdate, TipoVehiculo } from '../schemas/vehiculoSchema'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
@@ -41,7 +42,9 @@ export async function getAll(params: VehiculoQuery) {
 
 export async function create(data: VehiculoCreate) {
   validateCreate(data)
-  return repo.create(data)
+  const vehicle = await repo.create(data)
+  await plantillaRepo.copyModelToVehicle(vehicle.id, data.modelo_id)
+  return vehicle
 }
 
 export async function update(id: number, data: VehiculoUpdate) {

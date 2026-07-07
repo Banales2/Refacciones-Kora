@@ -35,5 +35,6 @@ export function handleError(err: unknown, context: InvocationContext): HttpRespo
   if (err instanceof AppError) return { status: err.status, jsonBody: { error: err.message, code: err.code } }
   if (err instanceof ZodError) return { status: 400, jsonBody: { error: 'Datos inválidos', details: err.flatten().fieldErrors } }
   context.error('Error no manejado:', err)
-  return { status: 500, jsonBody: { error: 'Error interno' } }
+  const detail = err instanceof Error ? err.message : String(err)
+  return { status: 500, jsonBody: { error: 'Error interno', detail } }
 }

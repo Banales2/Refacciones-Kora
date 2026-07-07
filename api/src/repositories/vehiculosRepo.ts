@@ -15,9 +15,11 @@ export interface VehiculoRow {
   combustible: string | null
   ubicacion:   string | null
   sucursal_id: number | null
+  sucursal:    string | null
   tonelaje:    number | null
   tenencia:    string | null
   ruta_id:     number | null
+  ruta:        string | null
   pies:        number | null
 }
 
@@ -34,8 +36,8 @@ const SELECT_COLS = `
   CASE WHEN v.tipo='camion'       THEN c.combustible   WHEN v.tipo='tractocamion' THEN t.combustible
        WHEN v.tipo='utilitario'   THEN u.combustible   ELSE NULL END AS combustible,
   CASE WHEN v.tipo='camion'       THEN c.ubicacion     WHEN v.tipo='utilitario'   THEN u.ubicacion     ELSE NULL END AS ubicacion,
-  c.sucursal_id,
-  t.tonelaje, t.tenencia, t.ruta_id,
+  c.sucursal_id, s.nombre AS sucursal,
+  t.tonelaje, t.tenencia, t.ruta_id, r.nombre AS ruta,
   ct.pies
 `
 
@@ -46,6 +48,8 @@ const JOINS = `
   LEFT JOIN tractocamiones       t  ON t.vehiculo_id  = v.id
   LEFT JOIN cajas_trailer        ct ON ct.vehiculo_id = v.id
   LEFT JOIN vehiculos_utilitarios u  ON u.vehiculo_id  = v.id
+  LEFT JOIN sucursales           s  ON s.id = c.sucursal_id
+  LEFT JOIN rutas                r  ON r.id = t.ruta_id
 `
 
 const WHERE_FILTER = `
@@ -91,11 +95,7 @@ export async function countDependencies(id: number): Promise<number> {
   const pool = await getPool()
   const result = await pool.request()
     .input('id', sql.Int, id)
-    .query(`
-      SELECT
-        (SELECT COUNT(*) FROM mantenimiento          WHERE vehiculo_id = @id) +
-        (SELECT COUNT(*) FROM requerimientos_exclusivos WHERE vehiculo_id = @id) AS total
-    `)
+    .query('SELECT COUNT(*) AS total FROM mantenimiento WHERE vehiculo_id = @id')
   return result.recordset[0].total
 }
 
@@ -212,6 +212,8 @@ export async function remove(id: number): Promise<void> {
     const tipo: TipoVehiculo = tipoRes.recordset[0]?.tipo
     if (!tipo) { await tx.rollback(); return }
 
+    await tx.request().input('id', sql.Int, id)
+      .query('DELETE FROM requerimientos_exclusivos WHERE vehiculo_id=@id')
     const sub = tx.request().input('id', sql.Int, id)
     const table = tipo === 'camion' ? 'camiones' : tipo === 'tractocamion' ? 'tractocamiones'
                 : tipo === 'caja_trailer' ? 'cajas_trailer' : 'vehiculos_utilitarios'
