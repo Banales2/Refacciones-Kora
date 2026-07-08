@@ -1,13 +1,15 @@
 import { Fragment, useMemo, useState } from 'react'
 import {
   SimpleGrid, Card, Text, Group, ThemeIcon, Stack, Loader, Center, Table, Divider, Badge, ActionIcon, Collapse,
+  Button,
 } from '@mantine/core'
 import { BarChart, LineChart } from '@mantine/charts'
-import { IconChevronRight } from '@tabler/icons-react'
+import { IconChevronRight, IconFileSpreadsheet, IconFileTypePdf } from '@tabler/icons-react'
 import {
   useResumenMes, useRequerimientosVencidos, useRequerimientosPorVencer, useRequerimientosHistorial,
-  type RequerimientoVencido,
+  type RequerimientoVencido, type ResumenMes,
 } from '../hooks/useDashboard'
+import { exportResumenMesToExcel, exportResumenMesToPdf } from '../lib/exportResumenMes'
 
 function formatFechaCorta(iso: string) {
   return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
@@ -67,11 +69,12 @@ function agruparPorVehiculo(items: RequerimientoVencido[]): VehiculoConRequerimi
 }
 
 function RequerimientosPorVehiculoTable({
-  items, color, emptyMessage,
+  items, color, emptyMessage, onNavigateVehiculo,
 }: {
   items: RequerimientoVencido[]
   color: string
   emptyMessage: string
+  onNavigateVehiculo?: (vehiculoId: number) => void
 }) {
   const [expandido, setExpandido] = useState<Set<number>>(new Set())
   const grupos = useMemo(() => agruparPorVehiculo(items), [items])
@@ -113,7 +116,25 @@ function RequerimientosPorVehiculoTable({
                       />
                     </ActionIcon>
                   </Table.Td>
-                  <Table.Td fw={500}>{g.vehiculo_nombre}</Table.Td>
+                  <Table.Td>
+                    {onNavigateVehiculo ? (
+                      <Text
+                        component="button"
+                        size="sm"
+                        fw={500}
+                        c="blue"
+                        style={{
+                          cursor: 'pointer', background: 'none', border: 'none', padding: 0,
+                          textDecoration: 'underline', textUnderlineOffset: 2,
+                        }}
+                        onClick={(e) => { e.stopPropagation(); onNavigateVehiculo(g.vehiculo_id) }}
+                      >
+                        {g.vehiculo_nombre}
+                      </Text>
+                    ) : (
+                      <Text size="sm" fw={500}>{g.vehiculo_nombre}</Text>
+                    )}
+                  </Table.Td>
                   <Table.Td style={{ textAlign: 'center' }}>
                     <Badge color={color} variant="light">{g.requerimientos.length}</Badge>
                   </Table.Td>
@@ -143,11 +164,12 @@ function RequerimientosPorVehiculoTable({
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-export default function Dashboard() {
+export default function Dashboard({ onNavigateVehiculo }: { onNavigateVehiculo?: (vehiculoId: number) => void }) {
   const { data: resumen, isLoading: loadingResumen } = useResumenMes()
   const { data: vencidosData, isLoading: loadingVencidos } = useRequerimientosVencidos()
   const { data: porVencerData, isLoading: loadingPorVencer } = useRequerimientosPorVencer()
   const { data: historialData, isLoading: loadingHistorial } = useRequerimientosHistorial(12)
+  const [exportando, setExportando] = useState<'excel' | 'pdf' | null>(null)
 
   const vencidos = vencidosData?.data ?? []
   const porVencer = porVencerData?.data ?? []
@@ -158,12 +180,56 @@ export default function Dashboard() {
     costo:    v.costo_total,
   }))
 
+  async function handleExportExcel(data: ResumenMes) {
+    setExportando('excel')
+    try {
+      await exportResumenMesToExcel(data)
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setExportando(null)
+    }
+  }
+
+  async function handleExportPdf(data: ResumenMes) {
+    setExportando('pdf')
+    try {
+      await exportResumenMesToPdf(data)
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setExportando(null)
+    }
+  }
+
   return (
     <Stack gap="xl">
-      <div>
-        <Text size="xl" fw={600}>Resumen general</Text>
-        <Text c="dimmed" size="sm">Vista general del sistema</Text>
-      </div>
+      <Group justify="space-between" align="flex-end" wrap="wrap">
+        <div>
+          <Text size="xl" fw={600}>Resumen general</Text>
+          <Text c="dimmed" size="sm">Vista general del sistema</Text>
+        </div>
+        <Group gap="xs">
+          <Button
+            variant="default" size="xs"
+            leftSection={<IconFileSpreadsheet size={16} />}
+            loading={exportando === 'excel'}
+            disabled={!resumen || exportando !== null}
+            onClick={() => resumen && handleExportExcel(resumen.data)}
+          >
+            Exportar Excel
+          </Button>
+          <Button
+            variant="default" size="xs"
+            leftSection={<IconFileTypePdf size={16} />}
+            loading={exportando === 'pdf'}
+            disabled={!resumen || exportando !== null}
+            onClick={() => resumen && handleExportPdf(resumen.data)}
+          >
+            Exportar PDF
+          </Button>
+        </Group>
+      </Group>
 
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3, xl: 5 }} spacing="md">
         <StatCard
@@ -315,7 +381,9 @@ export default function Dashboard() {
       {/* ── Requerimientos vencidos hoy ── */}
       <Card withBorder padding="lg" radius="md">
         <Text fw={600} mb={2}>Vehículos con requerimientos sin cumplir</Text>
-        <Text size="xs" c="dimmed" mb="md">Haz clic en un vehículo para ver el detalle.</Text>
+        <Text size="xs" c="dimmed" mb="md">
+          Haz clic en la fila para ver el detalle, o en el nombre del vehículo para abrir su ficha.
+        </Text>
         {loadingVencidos ? (
           <Center py="xl"><Loader size="sm" /></Center>
         ) : (
@@ -323,6 +391,7 @@ export default function Dashboard() {
             items={vencidos}
             color="red"
             emptyMessage="No hay requerimientos vencidos hoy."
+            onNavigateVehiculo={onNavigateVehiculo}
           />
         )}
       </Card>
@@ -330,7 +399,9 @@ export default function Dashboard() {
       {/* ── Requerimientos por vencer ── */}
       <Card withBorder padding="lg" radius="md">
         <Text fw={600} mb={2}>Vehículos con requerimientos por vencer</Text>
-        <Text size="xs" c="dimmed" mb="md">Haz clic en un vehículo para ver el detalle.</Text>
+        <Text size="xs" c="dimmed" mb="md">
+          Haz clic en la fila para ver el detalle, o en el nombre del vehículo para abrir su ficha.
+        </Text>
         {loadingPorVencer ? (
           <Center py="xl"><Loader size="sm" /></Center>
         ) : (
@@ -338,6 +409,7 @@ export default function Dashboard() {
             items={porVencer}
             color="orange"
             emptyMessage="No hay requerimientos próximos a vencer."
+            onNavigateVehiculo={onNavigateVehiculo}
           />
         )}
       </Card>

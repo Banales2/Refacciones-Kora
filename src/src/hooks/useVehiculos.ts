@@ -62,6 +62,14 @@ export function useVehiculos(page = 1, search = '', tipo?: TipoVehiculo, modeloI
   })
 }
 
+export function useVehiculo(id?: number) {
+  return useQuery({
+    queryKey: ['vehiculos', 'detalle', id],
+    queryFn: () => api.get<{ data: VehiculoRow }>(`/vehiculos/${id}`),
+    enabled: id !== undefined,
+  })
+}
+
 export function useCreateVehiculo() {
   const qc = useQueryClient()
   return useMutation({

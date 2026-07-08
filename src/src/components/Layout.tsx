@@ -34,17 +34,29 @@ export default function Layout() {
   const [desktopCollapsed, setDesktopCollapsed] = useState(false)
   const [section, setSection] = useState<Section>('dashboard')
   const [pendingVehiculo, setPendingVehiculo] = useState<VehiculoRow | null>(null)
+  const [pendingVehiculoId, setPendingVehiculoId] = useState<number | null>(null)
 
   const rol = user?.userRoles.find((r) => !['anonymous', 'authenticated'].includes(r))
 
   function navigate(s: Section) {
-    if (s !== 'vehiculos') setPendingVehiculo(null)
+    if (s !== 'vehiculos') {
+      setPendingVehiculo(null)
+      setPendingVehiculoId(null)
+    }
     setSection(s)
     if (mobileOpened) toggleMobile()
   }
 
   function navigateToVehiculo(v: VehiculoRow) {
     setPendingVehiculo(v)
+    setPendingVehiculoId(null)
+    setSection('vehiculos')
+    if (mobileOpened) toggleMobile()
+  }
+
+  function navigateToVehiculoId(id: number) {
+    setPendingVehiculo(null)
+    setPendingVehiculoId(id)
     setSection('vehiculos')
     if (mobileOpened) toggleMobile()
   }
@@ -138,9 +150,14 @@ export default function Layout() {
 
       {/* ── Contenido ── */}
       <AppShell.Main>
-        {section === 'dashboard' && <Dashboard />}
+        {section === 'dashboard' && <Dashboard onNavigateVehiculo={navigateToVehiculoId} />}
         {section === 'piezas'    && <Piezas />}
-        {section === 'vehiculos' && <Vehiculos initialVehiculo={pendingVehiculo ?? undefined} />}
+        {section === 'vehiculos' && (
+          <Vehiculos
+            initialVehiculo={pendingVehiculo ?? undefined}
+            initialVehiculoId={pendingVehiculoId ?? undefined}
+          />
+        )}
         {section === 'sitios'    && <SitiosYRutas onNavigateVehiculo={navigateToVehiculo} />}
       </AppShell.Main>
     </AppShell>

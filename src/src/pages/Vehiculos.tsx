@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Stack, Group, Text, TextInput, Textarea, Table, Badge,
   Pagination, Loader, Center, Alert, Button, Select, MultiSelect,
@@ -9,7 +9,7 @@ import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
 import { IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight, IconAlertTriangle } from '@tabler/icons-react'
 import {
-  useVehiculos, useCreateVehiculo, useUpdateVehiculo, useDeleteVehiculo,
+  useVehiculos, useVehiculo, useCreateVehiculo, useUpdateVehiculo, useDeleteVehiculo,
 } from '../hooks/useVehiculos'
 import {
   useMantenimientos, useCreateMantenimiento, useUpdateMantenimiento, useDeleteMantenimiento,
@@ -960,12 +960,28 @@ function VehiculoDetalle({
 
 // ── Lista de vehículos ────────────────────────────────────────────────────────
 
-export default function Vehiculos({ initialVehiculo }: { initialVehiculo?: VehiculoRow }) {
+export default function Vehiculos({
+  initialVehiculo, initialVehiculoId,
+}: {
+  initialVehiculo?:   VehiculoRow
+  initialVehiculoId?: number
+}) {
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
   const [debouncedSearch]       = useDebouncedValue(search, 400)
   const [tipo, setTipo]         = useState<TipoVehiculo | undefined>(undefined)
   const [selected, setSelected] = useState<VehiculoRow | null>(initialVehiculo ?? null)
+
+  const [pendingId]      = useState(initialVehiculo ? undefined : initialVehiculoId)
+  const { data: pendingVehiculoData } = useVehiculo(pendingId)
+  const appliedPendingId = useRef(false)
+
+  useEffect(() => {
+    if (pendingVehiculoData && !appliedPendingId.current) {
+      appliedPendingId.current = true
+      setSelected(pendingVehiculoData.data)
+    }
+  }, [pendingVehiculoData])
 
   const [formOpen,   setFormOpen]   = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -1027,6 +1043,11 @@ export default function Vehiculos({ initialVehiculo }: { initialVehiculo?: Vehic
   }
 
   const isPending = createMut.isPending || updateMut.isPending
+
+  // ── Esperando el vehículo referenciado desde otra pantalla ──
+  if (pendingId !== undefined && !selected) {
+    return <Center py="xl"><Loader /></Center>
+  }
 
   // ── Vista detalle ──
   if (selected) {

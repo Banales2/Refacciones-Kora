@@ -40,6 +40,12 @@ export async function getAll(params: VehiculoQuery) {
   return { ...result, page: params.page, pageSize: params.pageSize }
 }
 
+export async function getById(id: number) {
+  const vehiculo = await repo.findById(id)
+  if (!vehiculo) throw new NotFoundError('Vehículo')
+  return vehiculo
+}
+
 export async function create(data: VehiculoCreate) {
   validateCreate(data)
   const vehicle = await repo.create(data)
