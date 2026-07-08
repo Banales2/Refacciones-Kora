@@ -22,6 +22,7 @@ import {
 import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
 import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, TipoReq, StatusReq } from '../hooks/useRequerimientos'
 import { VehiculoForm } from '../components/VehiculoForm'
+import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -568,9 +569,10 @@ function MantenimientoForm({
   onCancel:   () => void
 }) {
   const { data: reqData } = useRequerimientos(vehiculoId)
+  const linkedIds = new Set(initial?.requerimiento_ids ?? [])
   const reqOptions = (reqData?.data ?? [])
-    .filter(r => r.status === 'activo')
-    .map(r => ({ value: String(r.id), label: r.nombre }))
+    .filter(r => r.status === 'activo' || linkedIds.has(r.id))
+    .map(r => ({ value: String(r.id), label: r.status !== 'activo' ? `${r.nombre} (completado)` : r.nombre }))
 
   const form = useForm<MantForm>({
     initialValues: initMant(initial),
@@ -642,10 +644,11 @@ function MantenimientoForm({
 }
 
 function MantenimientosSection({ vehiculoId }: { vehiculoId: number }) {
-  const [formOpen, setFormOpen]   = useState(false)
-  const [editing, setEditing]     = useState<Mantenimiento | null>(null)
-  const [deleting, setDeleting]   = useState<Mantenimiento | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
+  const [formOpen, setFormOpen]     = useState(false)
+  const [editing, setEditing]       = useState<Mantenimiento | null>(null)
+  const [deleting, setDeleting]     = useState<Mantenimiento | null>(null)
+  const [formError, setFormError]   = useState<string | null>(null)
+  const [detalleId, setDetalleId]   = useState<number | null>(null)
 
   const { data, isLoading } = useMantenimientos(vehiculoId)
   const items      = data?.data ?? []
@@ -714,13 +717,13 @@ function MantenimientosSection({ vehiculoId }: { vehiculoId: number }) {
                 <Table.Th>Tipo</Table.Th>
                 <Table.Th>Técnico</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>Kilometraje</Table.Th>
-                <Table.Th style={{ textAlign: 'right' }}>Costo</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Costo total</Table.Th>
                 <Table.Th style={{ width: 80 }} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {items.map((m) => (
-                <Table.Tr key={m.id}>
+                <Table.Tr key={m.id} onClick={() => setDetalleId(m.id)} style={{ cursor: 'pointer' }}>
                   <Table.Td fw={500}>{fmtFecha(m.fecha)}</Table.Td>
                   <Table.Td>{m.tipo ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
                   <Table.Td>{m.tecnico ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
@@ -728,9 +731,18 @@ function MantenimientosSection({ vehiculoId }: { vehiculoId: number }) {
                     {m.km_actual ? `${m.km_actual.toLocaleString('es-MX')} km` : <Text component="span" c="dimmed" size="sm">—</Text>}
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
-                    {m.costo ? `$${m.costo.toLocaleString('es-MX')}` : <Text component="span" c="dimmed" size="sm">—</Text>}
+                    {m.costo || m.piezas_total ? (
+                      <Tooltip
+                        label={`Mantenimiento: $${m.costo.toLocaleString('es-MX')} + Piezas: $${m.piezas_total.toLocaleString('es-MX')}`}
+                        disabled={!m.piezas_total}
+                      >
+                        <Text component="span" size="sm">
+                          ${(m.costo + m.piezas_total).toLocaleString('es-MX')}
+                        </Text>
+                      </Tooltip>
+                    ) : <Text component="span" c="dimmed" size="sm">—</Text>}
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td onClick={(e) => e.stopPropagation()}>
                     <Group gap={4} justify="flex-end">
                       <Tooltip label="Editar">
                         <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(m)}>
@@ -782,6 +794,8 @@ function MantenimientosSection({ vehiculoId }: { vehiculoId: number }) {
           </Group>
         </Stack>
       </Modal>
+
+      <MantenimientoDetalleDrawer mantenimientoId={detalleId} onClose={() => setDetalleId(null)} />
     </>
   )
 }

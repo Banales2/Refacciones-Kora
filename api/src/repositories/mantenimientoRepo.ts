@@ -11,6 +11,7 @@ export interface Mantenimiento {
   km_actual:        number
   observaciones:    string | null
   requerimiento_ids: number[]
+  piezas_total:     number
 }
 
 export interface MantenimientoCreate {
@@ -38,8 +39,8 @@ const COLS = 'id, vehiculo_id, fecha, tipo, tecnico, costo, km_actual, observaci
 
 async function attachReqIds(
   pool: sql.ConnectionPool,
-  rows: Omit<Mantenimiento, 'requerimiento_ids'>[],
-): Promise<Mantenimiento[]> {
+  rows: Omit<Mantenimiento, 'requerimiento_ids' | 'piezas_total'>[],
+): Promise<Omit<Mantenimiento, 'piezas_total'>[]> {
   if (rows.length === 0) return []
   const ids = rows.map(r => r.id).join(',')
   const lr = await pool.request().query(
@@ -53,12 +54,32 @@ async function attachReqIds(
   return rows.map(r => ({ ...r, requerimiento_ids: map.get(r.id) ?? [] }))
 }
 
+async function attachPiezasTotal(
+  pool: sql.ConnectionPool,
+  rows: Omit<Mantenimiento, 'piezas_total'>[],
+): Promise<Mantenimiento[]> {
+  if (rows.length === 0) return []
+  const ids = rows.map(r => r.id).join(',')
+  const pr = await pool.request().query(`
+    SELECT mantenimiento_id, SUM(cantidad * costo_unitario) AS piezas_total
+    FROM detalle_mtto_pieza
+    WHERE mantenimiento_id IN (${ids})
+    GROUP BY mantenimiento_id
+  `)
+  const map = new Map<number, number>()
+  for (const { mantenimiento_id, piezas_total } of pr.recordset) {
+    map.set(mantenimiento_id, piezas_total)
+  }
+  return rows.map(r => ({ ...r, piezas_total: map.get(r.id) ?? 0 }))
+}
+
 export async function findByVehiculo(vehiculoId: number): Promise<Mantenimiento[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
     .query(`SELECT ${COLS} FROM mantenimiento WHERE vehiculo_id=@vid ORDER BY fecha DESC`)
-  return attachReqIds(pool, r.recordset)
+  const withReqs = await attachReqIds(pool, r.recordset)
+  return attachPiezasTotal(pool, withReqs)
 }
 
 export async function findById(id: number): Promise<Mantenimiento | null> {
@@ -67,7 +88,8 @@ export async function findById(id: number): Promise<Mantenimiento | null> {
     .input('id', sql.Int, id)
     .query(`SELECT ${COLS} FROM mantenimiento WHERE id=@id`)
   if (!r.recordset[0]) return null
-  const [row] = await attachReqIds(pool, [r.recordset[0]])
+  const [withReqs] = await attachReqIds(pool, [r.recordset[0]])
+  const [row] = await attachPiezasTotal(pool, [withReqs])
   return row
 }
 
@@ -100,7 +122,7 @@ export async function create(data: MantenimientoCreate): Promise<Mantenimiento> 
         .query("UPDATE requerimientos_exclusivos SET status='completado', updated_at=SYSDATETIME() WHERE id=@rid AND tipo='unica'")
     }
     await tx.commit()
-    return { ...mant, requerimiento_ids: data.requerimiento_ids ?? [] }
+    return { ...mant, requerimiento_ids: data.requerimiento_ids ?? [], piezas_total: 0 }
   } catch (err) {
     await tx.rollback()
     throw err
@@ -124,9 +146,15 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
       await req.query(`UPDATE mantenimiento SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`)
     }
     if ('requerimiento_ids' in data) {
+      const prevIds = (await tx.request().input('id', sql.Int, id)
+        .query('SELECT requerimiento_id FROM mantenimiento_requerimientos WHERE mantenimiento_id=@id'))
+        .recordset.map((r: { requerimiento_id: number }) => r.requerimiento_id)
+      const nextIds = data.requerimiento_ids ?? []
+      const removedIds = prevIds.filter(rid => !nextIds.includes(rid))
+
       await tx.request().input('id', sql.Int, id)
         .query('DELETE FROM mantenimiento_requerimientos WHERE mantenimiento_id=@id')
-      for (const rid of data.requerimiento_ids ?? []) {
+      for (const rid of nextIds) {
         await tx.request()
           .input('mid', sql.Int, id)
           .input('rid', sql.Int, rid)
@@ -134,6 +162,11 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
         await tx.request()
           .input('rid', sql.Int, rid)
           .query("UPDATE requerimientos_exclusivos SET status='completado', updated_at=SYSDATETIME() WHERE id=@rid AND tipo='unica'")
+      }
+      for (const rid of removedIds) {
+        await tx.request()
+          .input('rid', sql.Int, rid)
+          .query("UPDATE requerimientos_exclusivos SET status='activo', updated_at=SYSDATETIME() WHERE id=@rid AND tipo='unica' AND status='completado'")
       }
     }
     await tx.commit()
@@ -146,8 +179,27 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
 
 export async function remove(id: number): Promise<boolean> {
   const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM mantenimiento OUTPUT DELETED.id WHERE id=@id')
-  return r.recordset.length > 0
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    const linkedIds = (await tx.request().input('id', sql.Int, id)
+      .query('SELECT requerimiento_id FROM mantenimiento_requerimientos WHERE mantenimiento_id=@id'))
+      .recordset.map((r: { requerimiento_id: number }) => r.requerimiento_id)
+
+    const r = await tx.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM mantenimiento OUTPUT DELETED.id WHERE id=@id')
+
+    for (const rid of linkedIds) {
+      await tx.request()
+        .input('rid', sql.Int, rid)
+        .query("UPDATE requerimientos_exclusivos SET status='activo', updated_at=SYSDATETIME() WHERE id=@rid AND tipo='unica' AND status='completado'")
+    }
+
+    await tx.commit()
+    return r.recordset.length > 0
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
 }

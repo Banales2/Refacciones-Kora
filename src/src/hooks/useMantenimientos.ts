@@ -11,6 +11,7 @@ export interface Mantenimiento {
   km_actual:        number
   observaciones:    string | null
   requerimiento_ids: number[]
+  piezas_total:     number
 }
 
 export interface MantenimientoPayload {
