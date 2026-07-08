@@ -1,8 +1,13 @@
+import { Fragment, useMemo, useState } from 'react'
 import {
-  SimpleGrid, Card, Text, Group, ThemeIcon, Stack, Loader, Center, Table, Divider,
+  SimpleGrid, Card, Text, Group, ThemeIcon, Stack, Loader, Center, Table, Divider, Badge, ActionIcon, Collapse,
 } from '@mantine/core'
 import { BarChart, LineChart } from '@mantine/charts'
-import { useResumenMes, useRequerimientosVencidos, useRequerimientosPorVencer, useRequerimientosHistorial } from '../hooks/useDashboard'
+import { IconChevronRight } from '@tabler/icons-react'
+import {
+  useResumenMes, useRequerimientosVencidos, useRequerimientosPorVencer, useRequerimientosHistorial,
+  type RequerimientoVencido,
+} from '../hooks/useDashboard'
 
 function formatFechaCorta(iso: string) {
   return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
@@ -36,6 +41,103 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
         </ThemeIcon>
       </Group>
     </Card>
+  )
+}
+
+// ─── Requerimientos agrupados por vehículo ───────────────────────────────────
+
+interface VehiculoConRequerimientos {
+  vehiculo_id:     number
+  vehiculo_nombre: string
+  requerimientos:  RequerimientoVencido[]
+}
+
+function agruparPorVehiculo(items: RequerimientoVencido[]): VehiculoConRequerimientos[] {
+  const map = new Map<number, VehiculoConRequerimientos>()
+  for (const item of items) {
+    const entry = map.get(item.vehiculo_id) ?? {
+      vehiculo_id: item.vehiculo_id, vehiculo_nombre: item.vehiculo_nombre, requerimientos: [],
+    }
+    entry.requerimientos.push(item)
+    map.set(item.vehiculo_id, entry)
+  }
+  return [...map.values()].sort(
+    (a, b) => b.requerimientos.length - a.requerimientos.length || a.vehiculo_nombre.localeCompare(b.vehiculo_nombre)
+  )
+}
+
+function RequerimientosPorVehiculoTable({
+  items, color, emptyMessage,
+}: {
+  items: RequerimientoVencido[]
+  color: string
+  emptyMessage: string
+}) {
+  const [expandido, setExpandido] = useState<Set<number>>(new Set())
+  const grupos = useMemo(() => agruparPorVehiculo(items), [items])
+
+  if (grupos.length === 0) {
+    return <Center py="xl"><Text c="dimmed" size="sm">{emptyMessage}</Text></Center>
+  }
+
+  function toggle(vehiculoId: number) {
+    setExpandido(prev => {
+      const next = new Set(prev)
+      if (next.has(vehiculoId)) next.delete(vehiculoId)
+      else next.add(vehiculoId)
+      return next
+    })
+  }
+
+  return (
+    <Table.ScrollContainer minWidth={420}>
+      <Table striped withTableBorder>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th style={{ width: 32 }} />
+            <Table.Th>Vehículo</Table.Th>
+            <Table.Th style={{ textAlign: 'center' }}>Requerimientos</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {grupos.map(g => {
+            const abierto = expandido.has(g.vehiculo_id)
+            return (
+              <Fragment key={g.vehiculo_id}>
+                <Table.Tr style={{ cursor: 'pointer' }} onClick={() => toggle(g.vehiculo_id)}>
+                  <Table.Td>
+                    <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Expandir">
+                      <IconChevronRight
+                        size={14}
+                        style={{ transform: abierto ? 'rotate(90deg)' : undefined, transition: 'transform 100ms' }}
+                      />
+                    </ActionIcon>
+                  </Table.Td>
+                  <Table.Td fw={500}>{g.vehiculo_nombre}</Table.Td>
+                  <Table.Td style={{ textAlign: 'center' }}>
+                    <Badge color={color} variant="light">{g.requerimientos.length}</Badge>
+                  </Table.Td>
+                </Table.Tr>
+                <Table.Tr>
+                  <Table.Td colSpan={3} style={{ padding: abierto ? undefined : 0, border: abierto ? undefined : 'none' }}>
+                    <Collapse expanded={abierto}>
+                      <Stack gap={4} py="xs" pl="xl">
+                        {g.requerimientos.map(r => (
+                          <Group key={r.id} justify="space-between" wrap="nowrap">
+                            <Text size="sm">{r.nombre}</Text>
+                            <Text size="xs" c="dimmed">{r.categoria ?? '—'}</Text>
+                          </Group>
+                        ))}
+                      </Stack>
+                    </Collapse>
+                  </Table.Td>
+                </Table.Tr>
+              </Fragment>
+            )
+          })}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
   )
 }
 
@@ -212,63 +314,31 @@ export default function Dashboard() {
 
       {/* ── Requerimientos vencidos hoy ── */}
       <Card withBorder padding="lg" radius="md">
-        <Text fw={600} mb="xs">Requerimientos sin cumplir hoy</Text>
+        <Text fw={600} mb={2}>Vehículos con requerimientos sin cumplir</Text>
+        <Text size="xs" c="dimmed" mb="md">Haz clic en un vehículo para ver el detalle.</Text>
         {loadingVencidos ? (
           <Center py="xl"><Loader size="sm" /></Center>
-        ) : vencidos.length === 0 ? (
-          <Center py="xl"><Text c="dimmed" size="sm">No hay requerimientos vencidos hoy.</Text></Center>
         ) : (
-          <Table.ScrollContainer minWidth={420}>
-            <Table striped withTableBorder>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Vehículo</Table.Th>
-                  <Table.Th>Requerimiento</Table.Th>
-                  <Table.Th>Categoría</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {vencidos.map(v => (
-                  <Table.Tr key={v.id}>
-                    <Table.Td fw={500}>{v.vehiculo_nombre}</Table.Td>
-                    <Table.Td>{v.nombre}</Table.Td>
-                    <Table.Td>{v.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
+          <RequerimientosPorVehiculoTable
+            items={vencidos}
+            color="red"
+            emptyMessage="No hay requerimientos vencidos hoy."
+          />
         )}
       </Card>
 
       {/* ── Requerimientos por vencer ── */}
       <Card withBorder padding="lg" radius="md">
-        <Text fw={600} mb="xs">Requerimientos por vencer</Text>
+        <Text fw={600} mb={2}>Vehículos con requerimientos por vencer</Text>
+        <Text size="xs" c="dimmed" mb="md">Haz clic en un vehículo para ver el detalle.</Text>
         {loadingPorVencer ? (
           <Center py="xl"><Loader size="sm" /></Center>
-        ) : porVencer.length === 0 ? (
-          <Center py="xl"><Text c="dimmed" size="sm">No hay requerimientos próximos a vencer.</Text></Center>
         ) : (
-          <Table.ScrollContainer minWidth={420}>
-            <Table striped withTableBorder>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Vehículo</Table.Th>
-                  <Table.Th>Requerimiento</Table.Th>
-                  <Table.Th>Categoría</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {porVencer.map(v => (
-                  <Table.Tr key={v.id}>
-                    <Table.Td fw={500}>{v.vehiculo_nombre}</Table.Td>
-                    <Table.Td>{v.nombre}</Table.Td>
-                    <Table.Td>{v.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
+          <RequerimientosPorVehiculoTable
+            items={porVencer}
+            color="orange"
+            emptyMessage="No hay requerimientos próximos a vencer."
+          />
         )}
       </Card>
     </Stack>
