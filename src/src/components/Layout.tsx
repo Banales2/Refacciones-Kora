@@ -17,14 +17,16 @@ import Dashboard from './Dashboard'
 import Piezas from '../pages/Piezas'
 import Vehiculos from '../pages/Vehiculos'
 import SitiosYRutas from '../pages/SitiosYRutas'
+import Calendario from '../pages/Calendario'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 
-type Section = 'dashboard' | 'piezas' | 'vehiculos' | 'sitios'
+type Section = 'dashboard' | 'piezas' | 'vehiculos' | 'sitios' | 'calendario'
 
 const NAV_ITEMS: { section: Section; label: string; description: string }[] = [
-  { section: 'piezas',    label: 'Piezas',      description: 'Catálogo e inventario'                       },
-  { section: 'vehiculos', label: 'Vehículos',   description: 'Camiones y tractocamiones'                   },
-  { section: 'sitios',    label: 'Catálogos',   description: 'Modelos, proveedores, sucursales y rutas'    },
+  { section: 'piezas',     label: 'Piezas',      description: 'Catálogo e inventario'                       },
+  { section: 'vehiculos',  label: 'Vehículos',   description: 'Camiones y tractocamiones'                   },
+  { section: 'calendario', label: 'Calendario',  description: 'Fechas de mantenimiento'                     },
+  { section: 'sitios',     label: 'Catálogos',   description: 'Modelos, proveedores, sucursales y rutas'    },
 ]
 
 
@@ -159,6 +161,7 @@ export default function Layout() {
           />
         )}
         {section === 'sitios'    && <SitiosYRutas onNavigateVehiculo={navigateToVehiculo} />}
+        {section === 'calendario' && <Calendario onNavigateVehiculo={navigateToVehiculoId} />}
       </AppShell.Main>
     </AppShell>
   )

@@ -72,6 +72,10 @@ export async function getResumenMes() {
   }
 }
 
+export async function getMantenimientosCalendario() {
+  return repo.findAllMantenimientosConVehiculo()
+}
+
 function diffMeses(base: Date, ahora: Date): number {
   return (ahora.getFullYear() - base.getFullYear()) * 12 + (ahora.getMonth() - base.getMonth())
 }

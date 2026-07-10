@@ -74,3 +74,22 @@ export function useRequerimientosHistorial(meses = 12) {
     queryFn: () => api.get<{ data: HistorialDia[] }>(`/dashboard/requerimientos-historial?meses=${meses}`),
   })
 }
+
+export interface MantenimientoCalendario {
+  id:              number
+  vehiculo_id:     number
+  vehiculo_nombre: string
+  vehiculo_tipo:   string
+  tipo:            string | null
+  tecnico:         string | null
+  fecha:           string
+  costo:           number
+  piezas_total:    number
+}
+
+export function useMantenimientosCalendario() {
+  return useQuery({
+    queryKey: ['dashboard', 'mantenimientos-calendario'],
+    queryFn: () => api.get<{ data: MantenimientoCalendario[] }>('/dashboard/mantenimientos-calendario'),
+  })
+}

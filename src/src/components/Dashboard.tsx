@@ -10,6 +10,7 @@ import {
   type RequerimientoVencido, type ResumenMes,
 } from '../hooks/useDashboard'
 import { exportResumenMesToExcel, exportResumenMesToPdf } from '../lib/exportResumenMes'
+import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
 
 function formatFechaCorta(iso: string) {
   return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
@@ -25,22 +26,6 @@ function formatFecha(iso: string) {
   return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
     day: '2-digit', month: 'short', year: 'numeric',
   })
-}
-
-const TIPO_COLORS: Record<string, string> = {
-  camion:       'blue',
-  tractocamion: 'violet',
-  caja_trailer: 'orange',
-  utilitario:   'teal',
-  montacargas:  'yellow',
-}
-
-const TIPO_LABELS: Record<string, string> = {
-  camion:       'Camión',
-  tractocamion: 'Tractocamión',
-  caja_trailer: 'Caja de trailer',
-  utilitario:   'Vehículo unitario',
-  montacargas:  'Montacargas',
 }
 
 // ─── Tarjeta de KPI ───────────────────────────────────────────────────────────

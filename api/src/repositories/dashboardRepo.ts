@@ -34,6 +34,37 @@ export async function findMantenimientosEnRango(start: string, end: string): Pro
   return r.recordset
 }
 
+export interface MantenimientoCalendario {
+  id:               number
+  vehiculo_id:      number
+  vehiculo_nombre:  string
+  vehiculo_tipo:    string
+  tipo:             string | null
+  tecnico:          string | null
+  fecha:            string
+  costo:            number
+  piezas_total:     number
+}
+
+export async function findAllMantenimientosConVehiculo(): Promise<MantenimientoCalendario[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT m.id, m.vehiculo_id, CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
+           v.tipo AS vehiculo_tipo, m.tipo, m.tecnico,
+           m.fecha, m.costo, COALESCE(pt.piezas_total, 0) AS piezas_total
+    FROM mantenimiento m
+    JOIN vehiculos v ON v.id = m.vehiculo_id
+    JOIN modelos mo ON mo.id = v.modelo_id
+    LEFT JOIN (
+      SELECT mantenimiento_id, SUM(cantidad * costo_unitario) AS piezas_total
+      FROM detalle_mtto_pieza
+      GROUP BY mantenimiento_id
+    ) pt ON pt.mantenimiento_id = m.id
+    ORDER BY m.fecha DESC
+  `)
+  return r.recordset
+}
+
 export interface LoteMes {
   id:               number
   numero_serie:     string
