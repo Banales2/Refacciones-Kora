@@ -100,7 +100,7 @@ function linkedMantenimiento(requerimientoId: number, mantenimientos: Mantenimie
   )
 }
 
-function RequerimientoForm({
+export function RequerimientoForm({
   initial, isPending, error, onSubmit, onCancel, vehiculo, lastMant,
 }: {
   initial?:   RequerimientoExclusivo
@@ -826,7 +826,7 @@ type MantForm = {
   requerimiento_ids: string[]
 }
 
-function initMant(m?: Mantenimiento): MantForm {
+function initMant(m?: Mantenimiento, prefillRequerimientoIds?: number[]): MantForm {
   return {
     fecha:             m?.fecha?.split('T')[0] ?? '',
     tipo:              m?.tipo          ?? '',
@@ -834,30 +834,31 @@ function initMant(m?: Mantenimiento): MantForm {
     costo:             m?.costo         ?? '',
     km_actual:         m?.km_actual     ?? '',
     observaciones:     m?.observaciones ?? '',
-    requerimiento_ids: m?.requerimiento_ids?.map(String) ?? [],
+    requerimiento_ids: m?.requerimiento_ids?.map(String) ?? prefillRequerimientoIds?.map(String) ?? [],
   }
 }
 
-function MantenimientoForm({
-  vehiculoId, tipoVehiculo, initial, isPending, error, onSubmit, onCancel,
+export function MantenimientoForm({
+  vehiculoId, tipoVehiculo, initial, prefillRequerimientoIds, isPending, error, onSubmit, onCancel,
 }: {
-  vehiculoId:    number
-  tipoVehiculo?: TipoVehiculo
-  initial?:      Mantenimiento
-  isPending:     boolean
-  error:         string | null
-  onSubmit:      (p: MantenimientoPayload) => void
-  onCancel:      () => void
+  vehiculoId:               number
+  tipoVehiculo?:            TipoVehiculo
+  initial?:                 Mantenimiento
+  prefillRequerimientoIds?: number[]
+  isPending:                boolean
+  error:                    string | null
+  onSubmit:                 (p: MantenimientoPayload) => void
+  onCancel:                 () => void
 }) {
   const tieneKilometraje = tipoVehiculo !== 'montacargas' && tipoVehiculo !== 'caja_trailer'
   const { data: reqData } = useRequerimientos(vehiculoId)
-  const linkedIds = new Set(initial?.requerimiento_ids ?? [])
+  const linkedIds = new Set(initial?.requerimiento_ids ?? prefillRequerimientoIds ?? [])
   const reqOptions = (reqData?.data ?? [])
     .filter(r => r.status === 'activo' || linkedIds.has(r.id))
     .map(r => ({ value: String(r.id), label: r.status !== 'activo' ? `${r.nombre} (completado)` : r.nombre }))
 
   const form = useForm<MantForm>({
-    initialValues: initMant(initial),
+    initialValues: initMant(initial, prefillRequerimientoIds),
     validate: {
       fecha: (v) => !v ? 'Requerido' : null,
     },
@@ -884,8 +885,7 @@ function MantenimientoForm({
             <DateInput
               label="Fecha" required
               placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
-              description="Puede ser una fecha futura (mantenimiento programado)"
-              clearable
+              clearable maxDate={new Date()}
               value={toDateLocal(form.values.fecha)}
               onChange={(d) => form.setFieldValue('fecha', fromDateLocal(d as Date | null))}
               error={form.errors.fecha as string}

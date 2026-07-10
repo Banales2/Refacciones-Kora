@@ -40,6 +40,7 @@ export function useCreateMantenimiento(vehiculoId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mantenimientos',  vehiculoId] })
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
 }
@@ -52,6 +53,7 @@ export function useUpdateMantenimiento(vehiculoId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mantenimientos',  vehiculoId] })
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
 }
@@ -60,6 +62,9 @@ export function useDeleteMantenimiento(vehiculoId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.delete(`/mantenimientos/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['mantenimientos', vehiculoId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mantenimientos', vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }

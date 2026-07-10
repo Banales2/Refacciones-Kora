@@ -124,6 +124,25 @@ function isWarning(req: RequerimientoFleet, base: Base, now: Date): boolean {
   return false
 }
 
+// Qué tan cerca está de vencer (o qué tan vencido está), como fracción del
+// intervalo ya transcurrido: 1 = justo en el límite, >1 = vencido por esa
+// proporción, <1 = todavía falta. Con 'ambos' se toma el más urgente de los dos.
+// Sirve para ordenar tanto vencidos como por-vencer de más a menos urgente.
+function calcularUrgencia(req: RequerimientoFleet, base: Base, now: Date): number {
+  const ratios: number[] = []
+  if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && req.intervalo_km != null && req.kilometraje != null) {
+    ratios.push((req.kilometraje - base.baseKm) / req.intervalo_km)
+  }
+  if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_meses != null && base.baseFecha) {
+    ratios.push(diffMeses(base.baseFecha, now) / req.intervalo_meses)
+  }
+  return ratios.length ? Math.max(...ratios) : 0
+}
+
+interface RequerimientoFleetConUrgencia extends RequerimientoFleet {
+  urgencia: number
+}
+
 async function clasificarRequerimientosFleet() {
   const requerimientos = await repo.findRequerimientosActivosFleet()
   const links = await repo.findMantenimientoLinks(requerimientos.map(r => r.id))
@@ -134,14 +153,18 @@ async function clasificarRequerimientosFleet() {
   }
 
   const now = new Date()
-  const vencidos: RequerimientoFleet[] = []
-  const porVencer: RequerimientoFleet[] = []
+  const vencidos: RequerimientoFleetConUrgencia[] = []
+  const porVencer: RequerimientoFleetConUrgencia[] = []
 
   for (const req of requerimientos) {
     const base = baseDe(req, lastLinkByReq.get(req.id) ?? null)
-    if (isOverdue(req, base, now)) vencidos.push(req)
-    else if (isWarning(req, base, now)) porVencer.push(req)
+    const urgencia = calcularUrgencia(req, base, now)
+    if (isOverdue(req, base, now)) vencidos.push({ ...req, urgencia })
+    else if (isWarning(req, base, now)) porVencer.push({ ...req, urgencia })
   }
+
+  vencidos.sort((a, b) => b.urgencia - a.urgencia)
+  porVencer.sort((a, b) => b.urgencia - a.urgencia)
 
   return { vencidos, porVencer }
 }
@@ -159,7 +182,6 @@ export async function getRequerimientosVencidos(): Promise<RequerimientoVencido[
   const { vencidos } = await clasificarRequerimientosFleet()
   return vencidos
     .map(r => ({ id: r.id, nombre: r.nombre, categoria: r.categoria, vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre }))
-    .sort((a, b) => a.vehiculo_nombre.localeCompare(b.vehiculo_nombre))
 }
 
 export async function getRequerimientosPorVencer(): Promise<RequerimientoVencido[]> {
@@ -167,7 +189,6 @@ export async function getRequerimientosPorVencer(): Promise<RequerimientoVencido
   const { porVencer } = await clasificarRequerimientosFleet()
   return porVencer
     .map(r => ({ id: r.id, nombre: r.nombre, categoria: r.categoria, vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre }))
-    .sort((a, b) => a.vehiculo_nombre.localeCompare(b.vehiculo_nombre))
 }
 
 export async function registrarSnapshotHistorial(): Promise<void> {
