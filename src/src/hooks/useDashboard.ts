@@ -4,6 +4,7 @@ import { api } from '../lib/api'
 export interface VehiculoConMantenimiento {
   vehiculo_id:     number
   vehiculo_nombre: string
+  vehiculo_tipo:   string
   cantidad:        number
   costo_total:     number
 }

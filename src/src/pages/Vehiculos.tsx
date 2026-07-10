@@ -91,6 +91,15 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Un mantenimiento programado a futuro todavía no cuenta como referencia/cumplimiento:
+// solo se toma en cuenta una vez que su fecha llega a hoy (o ya pasó).
+function linkedMantenimiento(requerimientoId: number, mantenimientos: Mantenimiento[]): Mantenimiento | undefined {
+  const hoy = todayIso()
+  return mantenimientos.find(
+    m => m.requerimiento_ids.includes(requerimientoId) && m.fecha && m.fecha.split('T')[0] <= hoy
+  )
+}
+
 function RequerimientoForm({
   initial, isPending, error, onSubmit, onCancel, vehiculo, lastMant,
 }: {
@@ -261,7 +270,7 @@ function isOverdue(
   const now = new Date()
 
   // Solo el mantenimiento explícitamente vinculado a este requerimiento resetea su baseline
-  const linkedMant = mantenimientos.find(m => m.requerimiento_ids.includes(req.id)) ?? null
+  const linkedMant = linkedMantenimiento(req.id, mantenimientos) ?? null
 
   const baseKm =
     linkedMant?.km_actual ??
@@ -302,7 +311,7 @@ function isWarning(
   if (isOverdue(req, vehiculo, mantenimientos)) return false
 
   const now        = new Date()
-  const linkedMant = mantenimientos.find(m => m.requerimiento_ids.includes(req.id)) ?? null
+  const linkedMant = linkedMantenimiento(req.id, mantenimientos) ?? null
 
   const baseKm =
     linkedMant?.km_actual ??
@@ -367,7 +376,7 @@ function RequerimientoTable({
           {items.map((item) => {
             const overdue     = overdueIds.has(item.id)
             const warn        = !overdue && warnIds.has(item.id)
-            const linked      = mantenimientos.find(m => m.requerimiento_ids.includes(item.id))
+            const linked      = linkedMantenimiento(item.id, mantenimientos)
             const baseDateStr = linked?.fecha?.split('T')[0] ?? item.fecha_inicio?.split('T')[0] ?? null
             const baseKmVal   = linked?.km_actual ?? item.km_inicio ?? null
             const datePart    = fmtShort(baseDateStr) ?? '—'
@@ -464,7 +473,7 @@ function UnicosSection({
   const pendientes  = items.filter(i => i.status !== 'completado')
 
   function fechaReferencia(item: RequerimientoExclusivo): string | null {
-    const linked = mantenimientos.find(m => m.requerimiento_ids.includes(item.id))
+    const linked = linkedMantenimiento(item.id, mantenimientos)
     return linked?.fecha ?? item.fecha_inicio ?? null
   }
 
@@ -557,7 +566,7 @@ function RequerimientoDetalleDrawer({
   const overdue = item ? overdueIds.has(item.id) : false
   const warn    = item ? !overdue && warnIds.has(item.id) : false
 
-  const linked      = item ? mantenimientos.find(m => m.requerimiento_ids.includes(item.id)) : undefined
+  const linked      = item ? linkedMantenimiento(item.id, mantenimientos) : undefined
   const baseDateStr = item ? (linked?.fecha?.split('T')[0] ?? item.fecha_inicio?.split('T')[0] ?? null) : null
   const baseKmVal   = item ? (linked?.km_actual ?? item.km_inicio ?? null) : null
   const referencia  = item
@@ -875,7 +884,8 @@ function MantenimientoForm({
             <DateInput
               label="Fecha" required
               placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
-              clearable maxDate={new Date()}
+              description="Puede ser una fecha futura (mantenimiento programado)"
+              clearable
               value={toDateLocal(form.values.fecha)}
               onChange={(d) => form.setFieldValue('fecha', fromDateLocal(d as Date | null))}
               error={form.errors.fecha as string}
@@ -973,9 +983,16 @@ function MantenimientoTable({
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {items.map((m) => (
+          {items.map((m) => {
+            const programado = !!m.fecha && m.fecha.split('T')[0] > todayIso()
+            return (
             <Table.Tr key={m.id} onClick={() => onOpenDetalle(m.id)} style={{ cursor: 'pointer' }}>
-              <Table.Td fw={500}>{fmtFecha(m.fecha)}</Table.Td>
+              <Table.Td fw={500}>
+                <Group gap={6} wrap="nowrap">
+                  {fmtFecha(m.fecha)}
+                  {programado && <Badge size="xs" variant="light" color="blue">Programado</Badge>}
+                </Group>
+              </Table.Td>
               <Table.Td>{m.tipo ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
               <Table.Td>{m.tecnico ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
               {mostrarKm && (
@@ -1010,7 +1027,8 @@ function MantenimientoTable({
                 </Group>
               </Table.Td>
             </Table.Tr>
-          ))}
+            )
+          })}
         </Table.Tbody>
       </Table>
     </Table.ScrollContainer>

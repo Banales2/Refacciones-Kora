@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Drawer, Stack, Group, Text, Table, Loader, Center, Alert,
-  ActionIcon, Button, Modal, NumberInput, Select, Grid, Divider, Tooltip,
+  ActionIcon, Button, Modal, NumberInput, Select, Grid, Divider, Tooltip, Badge,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
@@ -22,6 +22,13 @@ function fmtFecha(iso: string | null) {
   return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
     day: '2-digit', month: 'short', year: 'numeric',
   })
+}
+
+function esProgramado(iso: string | null | undefined) {
+  if (!iso) return false
+  const hoy = new Date()
+  const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+  return iso.split('T')[0] > hoyStr
 }
 
 function InfoItem({ label, value }: { label: string; value: ReactNode }) {
@@ -200,7 +207,12 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
           <Stack gap="md">
             <Group justify="space-between" align="flex-start" wrap="nowrap">
               <div>
-                <Text size="xl" fw={700}>{fmtFecha(data?.mantenimiento.fecha ?? null)}</Text>
+                <Group gap={8} align="center">
+                  <Text size="xl" fw={700}>{fmtFecha(data?.mantenimiento.fecha ?? null)}</Text>
+                  {esProgramado(data?.mantenimiento.fecha) && (
+                    <Badge size="sm" variant="light" color="blue">Programado</Badge>
+                  )}
+                </Group>
                 <Text size="sm" c="dimmed">{data?.mantenimiento.tipo ?? 'Sin tipo especificado'}</Text>
               </div>
               {onEdit && data && (

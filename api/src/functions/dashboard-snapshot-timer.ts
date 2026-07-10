@@ -3,7 +3,7 @@ import * as service from '../services/dashboardService'
 
 export async function dashboardSnapshotTimer(_myTimer: Timer, ctx: InvocationContext): Promise<void> {
   try {
-    await service.registrarSnapshotHistorial()
+    await service.ensureDailySync()
   } catch (err) {
     ctx.error('Error al registrar snapshot de requerimientos:', err)
     throw err

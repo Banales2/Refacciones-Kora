@@ -27,6 +27,22 @@ function formatFecha(iso: string) {
   })
 }
 
+const TIPO_COLORS: Record<string, string> = {
+  camion:       'blue',
+  tractocamion: 'violet',
+  caja_trailer: 'orange',
+  utilitario:   'teal',
+  montacargas:  'yellow',
+}
+
+const TIPO_LABELS: Record<string, string> = {
+  camion:       'Camión',
+  tractocamion: 'Tractocamión',
+  caja_trailer: 'Caja de trailer',
+  utilitario:   'Vehículo unitario',
+  montacargas:  'Montacargas',
+}
+
 // ─── Tarjeta de KPI ───────────────────────────────────────────────────────────
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
@@ -178,7 +194,12 @@ export default function Dashboard({ onNavigateVehiculo }: { onNavigateVehiculo?:
   const vehiculosChartData = (resumen?.data.mantenimientos.por_vehiculo ?? []).map(v => ({
     vehiculo: v.vehiculo_nombre,
     costo:    v.costo_total,
+    color:    `${TIPO_COLORS[v.vehiculo_tipo] ?? 'violet'}.6`,
   }))
+
+  const tiposPresentes = [...new Set(
+    (resumen?.data.mantenimientos.por_vehiculo ?? []).map(v => v.vehiculo_tipo)
+  )].filter(t => TIPO_COLORS[t])
 
   async function handleExportExcel(data: ResumenMes) {
     setExportando('excel')
@@ -285,6 +306,18 @@ export default function Dashboard({ onNavigateVehiculo }: { onNavigateVehiculo?:
               valueFormatter={(v) => formatMXN(v)}
               gridAxis="x"
             />
+            <Group gap="md" justify="center">
+              {tiposPresentes.map(t => (
+                <Group key={t} gap={6} wrap="nowrap">
+                  <span style={{
+                    width: 10, height: 10, borderRadius: 2,
+                    backgroundColor: `var(--mantine-color-${TIPO_COLORS[t]}-6)`,
+                    display: 'inline-block',
+                  }} />
+                  <Text size="xs" c="dimmed">{TIPO_LABELS[t] ?? t}</Text>
+                </Group>
+              ))}
+            </Group>
             <Divider />
             <Table.ScrollContainer minWidth={400}>
               <Table striped withTableBorder>

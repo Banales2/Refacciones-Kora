@@ -131,3 +131,31 @@ export async function remove(id: number): Promise<boolean> {
     .query('DELETE FROM requerimientos_exclusivos OUTPUT DELETED.id WHERE id=@id')
   return r.recordset.length > 0
 }
+
+// Recalcula el status de requerimientos únicos según la fecha del mantenimiento
+// vinculado más reciente: 'completado' si esa fecha ya llegó (<=hoy), 'activo'
+// si sigue programada a futuro. Sin `ids`, corre sobre todos los únicos con
+// algún mantenimiento vinculado (para la sincronización global diaria). Con
+// `ids`, se limita a esos requerimientos (para sincronizar tras un cambio puntual).
+export async function syncUnicaStatuses(
+  exec: sql.ConnectionPool | sql.Transaction, ids?: number[]
+): Promise<void> {
+  if (ids && ids.length === 0) return
+  const filter = ids ? `AND re.id IN (${ids.join(',')})` : ''
+  await exec.request().query(`
+    UPDATE re
+    SET re.status = CASE
+                       WHEN latest.fecha <= CAST(GETDATE() AS DATE) THEN 'completado'
+                       ELSE 'activo' END,
+        re.updated_at = SYSDATETIME()
+    FROM requerimientos_exclusivos re
+    CROSS APPLY (
+      SELECT TOP 1 m.fecha
+      FROM mantenimiento_requerimientos mr
+      JOIN mantenimiento m ON m.id = mr.mantenimiento_id
+      WHERE mr.requerimiento_id = re.id
+      ORDER BY m.fecha DESC
+    ) latest
+    WHERE re.tipo = 'unica' ${filter}
+  `)
+}

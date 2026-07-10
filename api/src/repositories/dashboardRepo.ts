@@ -5,6 +5,7 @@ export interface MantenimientoMes {
   id:               number
   vehiculo_id:      number
   vehiculo_nombre:  string
+  vehiculo_tipo:    string
   fecha:            string
   costo:            number
   piezas_total:     number
@@ -17,6 +18,7 @@ export async function findMantenimientosEnRango(start: string, end: string): Pro
     .input('end',   sql.Date, end)
     .query(`
       SELECT m.id, m.vehiculo_id, CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
+             v.tipo AS vehiculo_tipo,
              m.fecha, m.costo, COALESCE(pt.piezas_total, 0) AS piezas_total
       FROM mantenimiento m
       JOIN vehiculos v ON v.id = m.vehiculo_id
@@ -111,6 +113,7 @@ export async function findMantenimientoLinks(requerimientoIds: number[]): Promis
     FROM mantenimiento_requerimientos mr
     JOIN mantenimiento m ON m.id = mr.mantenimiento_id
     WHERE mr.requerimiento_id IN (${ids})
+      AND m.fecha <= CAST(GETDATE() AS DATE)
     ORDER BY m.fecha DESC
   `)
   return r.recordset

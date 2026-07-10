@@ -1,5 +1,32 @@
 import * as repo from '../repositories/dashboardRepo'
 import { RequerimientoFleet } from '../repositories/dashboardRepo'
+import * as requerimentosRepo from '../repositories/requerimentosRepo'
+import { getPool } from '../shared/db'
+
+// Sincroniza el status de requerimientos únicos (según la fecha del
+// mantenimiento vinculado) una vez por día calendario. Se apoya en
+// dashboard_requerimientos_historial: si ya existe una fila para hoy, ya se
+// corrió; si no, sincroniza y registra el snapshot del día, dejando
+// reportes/gráficas del dashboard al corriente. Se llama desde el timer diario
+// y desde las lecturas del dashboard/requerimientos, así que corre "una vez al
+// día" sin importar si dispara por uso de la app o por el cron.
+let sincronizandoHoy: Promise<void> | null = null
+export async function ensureDailySync(): Promise<void> {
+  const hoy = new Date().toISOString().split('T')[0]
+  const manana = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const yaHoy = await repo.findHistorial(hoy, manana)
+  if (yaHoy.length > 0) return
+
+  // Evita carreras si varias peticiones llegan a la vez el primer momento del día
+  if (!sincronizandoHoy) {
+    sincronizandoHoy = (async () => {
+      const pool = await getPool()
+      await requerimentosRepo.syncUnicaStatuses(pool)
+      await registrarSnapshotHistorial()
+    })().finally(() => { sincronizandoHoy = null })
+  }
+  await sincronizandoHoy
+}
 
 function rangoMesActual(): { start: string; end: string } {
   const now = new Date()
@@ -16,10 +43,10 @@ export async function getResumenMes() {
     repo.findLotesEnRango(start, end),
   ])
 
-  const porVehiculo = new Map<number, { vehiculo_id: number; vehiculo_nombre: string; cantidad: number; costo_total: number }>()
+  const porVehiculo = new Map<number, { vehiculo_id: number; vehiculo_nombre: string; vehiculo_tipo: string; cantidad: number; costo_total: number }>()
   for (const m of mantenimientos) {
     const entry = porVehiculo.get(m.vehiculo_id) ?? {
-      vehiculo_id: m.vehiculo_id, vehiculo_nombre: m.vehiculo_nombre, cantidad: 0, costo_total: 0,
+      vehiculo_id: m.vehiculo_id, vehiculo_nombre: m.vehiculo_nombre, vehiculo_tipo: m.vehiculo_tipo, cantidad: 0, costo_total: 0,
     }
     entry.cantidad += 1
     entry.costo_total += m.costo + m.piezas_total
@@ -124,6 +151,7 @@ export interface RequerimientoVencido {
 }
 
 export async function getRequerimientosVencidos(): Promise<RequerimientoVencido[]> {
+  await ensureDailySync()
   const { vencidos } = await clasificarRequerimientosFleet()
   return vencidos
     .map(r => ({ id: r.id, nombre: r.nombre, categoria: r.categoria, vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre }))
@@ -131,6 +159,7 @@ export async function getRequerimientosVencidos(): Promise<RequerimientoVencido[
 }
 
 export async function getRequerimientosPorVencer(): Promise<RequerimientoVencido[]> {
+  await ensureDailySync()
   const { porVencer } = await clasificarRequerimientosFleet()
   return porVencer
     .map(r => ({ id: r.id, nombre: r.nombre, categoria: r.categoria, vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre }))
@@ -144,6 +173,7 @@ export async function registrarSnapshotHistorial(): Promise<void> {
 }
 
 export async function getHistorial(meses = 12): Promise<repo.HistorialDia[]> {
+  await ensureDailySync()
   const now = new Date()
   const start = new Date(now.getFullYear(), now.getMonth() - meses, 1)
   const fmt = (d: Date) => d.toISOString().split('T')[0]
