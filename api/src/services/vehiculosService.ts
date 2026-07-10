@@ -24,13 +24,19 @@ function validateCreate(data: VehiculoCreate) {
     if (data.kilometraje == null)  throw new ValidationError('Kilometraje es requerido')
   }
   if (t === 'caja_trailer') {
-    requireField(data.pies,   'Pies')
-    requireField(data.status, 'Status')
+    requireField(data.pies,    'Pies')
+    requireField(data.status,  'Status')
+    requireField(data.ruta_id, 'Ruta')
   }
   if (t === 'utilitario') {
     requireField(data.combustible, 'Combustible')
     requireField(data.status,      'Status')
     if (data.kilometraje == null) throw new ValidationError('Kilometraje es requerido')
+  }
+  if (t === 'montacargas') {
+    requireField(data.combustible, 'Combustible')
+    requireField(data.status,      'Status')
+    requireField(data.sucursal_id, 'Sucursal')
   }
 }
 

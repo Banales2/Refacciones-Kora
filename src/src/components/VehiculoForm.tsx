@@ -14,6 +14,7 @@ const TIPO_META: Record<TipoVehiculo, { label: string; color: string }> = {
   tractocamion: { label: 'Tractocamión',     color: 'violet' },
   caja_trailer: { label: 'Caja de trailer',  color: 'orange' },
   utilitario:   { label: 'Vehículo unitario',color: 'teal'   },
+  montacargas:  { label: 'Montacargas',      color: 'yellow' },
 }
 
 const TIPOS_OPTIONS = Object.entries(TIPO_META).map(([v, m]) => ({ value: v, label: m.label }))
@@ -23,9 +24,9 @@ const STATUSES     = ['Activo', 'Inactivo', 'Taller', 'Baja'].map((s) => ({ valu
 
 type FormVals = {
   tipo:         TipoVehiculo | ''
-  vehiculo:     string
   modelo_id:    string
   serie:        string
+  placas:       string
   combustible:  string
   kilometraje:  number | string
   status:       string
@@ -41,9 +42,9 @@ type FormVals = {
 function init(v?: VehiculoRow): FormVals {
   return {
     tipo:         v?.tipo        ?? '',
-    vehiculo:     v?.vehiculo    ?? '',
     modelo_id:    v?.modelo_id   != null ? String(v.modelo_id)   : '',
     serie:        v?.serie       ?? '',
+    placas:       v?.placas      ?? '',
     combustible:  v?.combustible ?? '',
     kilometraje:  v?.kilometraje ?? '',
     status:       v?.status      ?? '',
@@ -77,14 +78,14 @@ function fromDateLocal(d: Date | null): string {
 
 function needsField(tipo: TipoVehiculo | '', check: 'combustible' | 'status' | 'km' | 'sucursal' | 'ruta' | 'tonelaje' | 'pies' | 'ubicacion') {
   const t = tipo
-  if (check === 'combustible') return t === 'camion' || t === 'tractocamion' || t === 'utilitario'
-  if (check === 'status')      return t === 'camion' || t === 'tractocamion' || t === 'caja_trailer' || t === 'utilitario'
+  if (check === 'combustible') return t === 'camion' || t === 'tractocamion' || t === 'utilitario' || t === 'montacargas'
+  if (check === 'status')      return t === 'camion' || t === 'tractocamion' || t === 'caja_trailer' || t === 'utilitario' || t === 'montacargas'
   if (check === 'km')          return t === 'camion' || t === 'tractocamion' || t === 'utilitario'
-  if (check === 'sucursal')    return t === 'camion'
-  if (check === 'ruta')        return t === 'tractocamion'
+  if (check === 'sucursal')    return t === 'camion' || t === 'montacargas'
+  if (check === 'ruta')        return t === 'tractocamion' || t === 'caja_trailer'
   if (check === 'tonelaje')    return t === 'tractocamion'
   if (check === 'pies')        return t === 'caja_trailer'
-  if (check === 'ubicacion')   return t === 'camion' || t === 'utilitario'
+  if (check === 'ubicacion')   return t === 'camion' || t === 'utilitario' || t === 'montacargas'
   return false
 }
 
@@ -110,7 +111,6 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
     initialValues: init(initial),
     validate: {
       tipo:        (v) => !isEdit && !v ? 'Requerido' : null,
-      vehiculo:    (v) => !v.trim() ? 'Requerido' : null,
       modelo_id:   (v) => !v ? 'Requerido' : null,
       serie:       (v) => !v.trim() ? 'Requerido' : null,
       combustible: (v, vals) => needsField(vals.tipo, 'combustible') && !v ? 'Requerido' : null,
@@ -128,9 +128,9 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
   function handleSubmit(vals: FormVals) {
     const t = (isEdit ? initial!.tipo : vals.tipo) as TipoVehiculo
     const base = {
-      vehiculo:     vals.vehiculo,
       modelo_id:    parseInt(vals.modelo_id),
       serie:        vals.serie,
+      placas:       vals.placas.trim() || null,
       fecha_compra: vals.fecha_compra || null,
     }
 
@@ -154,8 +154,16 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
       }
     } else if (t === 'caja_trailer') {
       extra = {
-        pies:   Number(vals.pies),
-        status: vals.status,
+        pies:    Number(vals.pies),
+        status:  vals.status,
+        ruta_id: parseInt(vals.ruta_id),
+      }
+    } else if (t === 'montacargas') {
+      extra = {
+        combustible: vals.combustible,
+        ubicacion:   vals.ubicacion || null,
+        status:      vals.status,
+        sucursal_id: parseInt(vals.sucursal_id),
       }
     } else {
       extra = {
@@ -196,16 +204,6 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
           />
         )}
 
-        {/* Campos comunes */}
-        <Grid>
-          <Grid.Col span={8}>
-            <TextInput label="Nombre / Identificador" placeholder="Ej. Camión 01" required {...form.getInputProps('vehiculo')} />
-          </Grid.Col>
-          <Grid.Col span={4}>
-            <TextInput label="No. de serie" placeholder="Serie" required {...form.getInputProps('serie')} />
-          </Grid.Col>
-        </Grid>
-
         <Select
           label="Marca / Modelo"
           placeholder="Selecciona un modelo"
@@ -215,6 +213,18 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
           nothingFoundMessage="Sin resultados"
           {...form.getInputProps('modelo_id')}
         />
+
+        {/* Campos comunes */}
+        <Grid>
+          <Grid.Col span={tipo === 'montacargas' ? 12 : 6}>
+            <TextInput label="No. de serie" placeholder="Serie" required {...form.getInputProps('serie')} />
+          </Grid.Col>
+          {tipo !== 'montacargas' && (
+            <Grid.Col span={6}>
+              <TextInput label="Placas" placeholder="Ej. ABC-123-A" {...form.getInputProps('placas')} />
+            </Grid.Col>
+          )}
+        </Grid>
 
         <DateInput
           label="Fecha de compra"
@@ -287,6 +297,30 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
               </Grid.Col>
               <Grid.Col span={6}>
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
+              </Grid.Col>
+              <Grid.Col span={12}>
+                <Select label="Ruta" data={rutasOpts} placeholder="Ruta asignada" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
+              </Grid.Col>
+            </Grid>
+          </>
+        )}
+
+        {/* Campos condicionales — montacargas */}
+        {(tipo === 'montacargas') && (
+          <>
+            <Divider label="Datos del montacargas" labelPosition="left" />
+            <Grid>
+              <Grid.Col span={6}>
+                <Select label="Combustible" data={COMBUSTIBLES} placeholder="Tipo" required {...form.getInputProps('combustible')} />
+              </Grid.Col>
+              <Grid.Col span={6}>
+                <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
+              </Grid.Col>
+              <Grid.Col span={6}>
+                <Select label="Sucursal" data={sucursalesOpts} placeholder="Sucursal" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('sucursal_id')} />
+              </Grid.Col>
+              <Grid.Col span={6}>
+                <TextInput label="Ubicación" placeholder="Ubicación actual (opcional)" {...form.getInputProps('ubicacion')} />
               </Grid.Col>
             </Grid>
           </>

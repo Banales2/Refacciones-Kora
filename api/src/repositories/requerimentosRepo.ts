@@ -21,6 +21,7 @@ export interface RequerimientoExclusivo {
   plantilla_origen_id: number | null
   fecha_inicio:        string | null
   km_inicio:           number | null
+  fecha_reporte:       string | null
 }
 
 export interface RequerimientoCreate {
@@ -36,6 +37,7 @@ export interface RequerimientoCreate {
   plantilla_origen_id?: number | null
   fecha_inicio?:        string | null
   km_inicio?:           number | null
+  fecha_reporte?:       string | null
 }
 
 export interface RequerimientoUpdate {
@@ -49,11 +51,12 @@ export interface RequerimientoUpdate {
   status?:          StatusReq
   fecha_inicio?:    string | null
   km_inicio?:       number | null
+  fecha_reporte?:   string | null
 }
 
 const COLS = `id, nombre, descripcion, categoria, intervalo_km, intervalo_meses,
   trigger_mode, tipo, status, created_at, updated_at, vehiculo_id, plantilla_origen_id,
-  fecha_inicio, km_inicio`
+  fecha_inicio, km_inicio, fecha_reporte`
 
 export async function findByVehiculo(vehiculoId: number): Promise<RequerimientoExclusivo[]> {
   const pool = await getPool()
@@ -86,13 +89,14 @@ export async function create(data: RequerimientoCreate): Promise<RequerimientoEx
     .input('origenId',      sql.Int,              data.plantilla_origen_id ?? null)
     .input('fechaInicio',   sql.Date,             data.fecha_inicio        ?? null)
     .input('kmInicio',      sql.Int,              data.km_inicio           ?? null)
+    .input('fechaReporte',  sql.Date,             data.fecha_reporte       ?? null)
     .query(`
       INSERT INTO requerimientos_exclusivos
         (vehiculo_id, nombre, descripcion, categoria, trigger_mode, tipo,
-         intervalo_km, intervalo_meses, status, plantilla_origen_id, fecha_inicio, km_inicio)
+         intervalo_km, intervalo_meses, status, plantilla_origen_id, fecha_inicio, km_inicio, fecha_reporte)
       OUTPUT INSERTED.*
       VALUES (@vid, @nombre, @descripcion, @categoria, @triggerMode, @tipo,
-              @intervaloKm, @intervaloMes, @status, @origenId, @fechaInicio, @kmInicio)
+              @intervaloKm, @intervaloMes, @status, @origenId, @fechaInicio, @kmInicio, @fechaReporte)
     `)
   return r.recordset[0]
 }
@@ -112,6 +116,7 @@ export async function update(id: number, data: RequerimientoUpdate): Promise<Req
   if (data.status        !== undefined) { req.input('status',      sql.NVarChar(20), data.status);             sets.push('status=@status')                   }
   if ('fecha_inicio' in data)           { req.input('fechaInicio', sql.Date,         data.fecha_inicio ?? null); sets.push('fecha_inicio=@fechaInicio')         }
   if ('km_inicio'    in data)           { req.input('kmInicio',    sql.Int,          data.km_inicio    ?? null); sets.push('km_inicio=@kmInicio')               }
+  if ('fecha_reporte' in data)          { req.input('fechaReporte', sql.Date,        data.fecha_reporte ?? null); sets.push('fecha_reporte=@fechaReporte')       }
 
   const r = await req.query(
     `UPDATE requerimientos_exclusivos SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`

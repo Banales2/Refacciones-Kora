@@ -21,6 +21,7 @@ export interface RequerimientoExclusivo {
   plantilla_origen_id: number | null
   fecha_inicio:        string | null
   km_inicio:           number | null
+  fecha_reporte:       string | null
 }
 
 export interface RequerimientoPayload {
@@ -34,6 +35,7 @@ export interface RequerimientoPayload {
   status?:          StatusReq
   fecha_inicio?:    string | null
   km_inicio?:       number | null
+  fecha_reporte?:   string | null
 }
 
 export function useRequerimientos(vehiculoId: number) {

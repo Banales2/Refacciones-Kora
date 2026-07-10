@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   Drawer, Stack, Group, Text, Table, Loader, Center, Alert,
-  ActionIcon, Button, Modal, NumberInput, Select,
+  ActionIcon, Button, Modal, NumberInput, Select, Grid, Divider, Tooltip,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
@@ -9,10 +10,27 @@ import {
   useDetalleMtto, useCreateDetalleMtto, useUpdateDetalleMtto, useDeleteDetalleMtto,
 } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPieza, DetalleMttoPayload } from '../hooks/useDetalleMtto'
+import type { Mantenimiento } from '../hooks/useMantenimientos'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
+}
+
+function fmtFecha(iso: string | null) {
+  if (!iso) return '—'
+  return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  })
+}
+
+function InfoItem({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div>
+      <Text size="xs" c="dimmed">{label}</Text>
+      <Text size="sm">{value ?? <Text component="span" c="dimmed">—</Text>}</Text>
+    </div>
+  )
 }
 
 // ─── Formulario de detalle ───────────────────────────────────────────────────
@@ -84,6 +102,7 @@ function DetalleForm({
             placeholder="Selecciona la pieza usada"
             data={loteOptions}
             searchable
+            required
             value={form.values.lote_id || null}
             onChange={handleLoteChange}
             error={form.errors.lote_id as string}
@@ -101,11 +120,13 @@ function DetalleForm({
           max={maxCantidad}
           clampBehavior="blur"
           allowDecimal={false}
+          required
           description={maxCantidad !== undefined ? `Disponible: ${maxCantidad}` : undefined}
           {...form.getInputProps('cantidad')}
         />
         <NumberInput
           label="Costo unitario" placeholder="0.00" min={0} decimalScale={2} prefix="$"
+          required
           {...form.getInputProps('costo_unitario')}
         />
         <Group justify="flex-end" mt="xs">
@@ -122,9 +143,10 @@ function DetalleForm({
 interface Props {
   mantenimientoId: number | null
   onClose: () => void
+  onEdit?: (m: Mantenimiento) => void
 }
 
-export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose }: Props) {
+export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, onEdit }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editItem, setEditItem]     = useState<DetalleMttoPieza | null>(null)
   const [deleteItem, setDeleteItem] = useState<DetalleMttoPieza | null>(null)
@@ -167,7 +189,7 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose }:
       <Drawer
         opened={mantenimientoId !== null}
         onClose={onClose}
-        title={<Text fw={700}>Piezas utilizadas en el mantenimiento</Text>}
+        title={<Text fw={700}>Detalle del mantenimiento</Text>}
         position="right"
         size="xl"
         overlayProps={{ backgroundOpacity: 0.3 }}
@@ -176,6 +198,33 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose }:
           <Center py="xl"><Loader /></Center>
         ) : (
           <Stack gap="md">
+            <Group justify="space-between" align="flex-start" wrap="nowrap">
+              <div>
+                <Text size="xl" fw={700}>{fmtFecha(data?.mantenimiento.fecha ?? null)}</Text>
+                <Text size="sm" c="dimmed">{data?.mantenimiento.tipo ?? 'Sin tipo especificado'}</Text>
+              </div>
+              {onEdit && data && (
+                <Tooltip label="Editar mantenimiento">
+                  <ActionIcon variant="light" color="blue" onClick={() => onEdit(data.mantenimiento)}>
+                    <IconPencil size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              )}
+            </Group>
+
+            <Grid gap="md">
+              <Grid.Col span={6}><InfoItem label="Técnico" value={data?.mantenimiento.tecnico} /></Grid.Col>
+              <Grid.Col span={6}>
+                <InfoItem
+                  label="Kilometraje"
+                  value={data?.mantenimiento.km_actual ? `${data.mantenimiento.km_actual.toLocaleString('es-MX')} km` : null}
+                />
+              </Grid.Col>
+              <Grid.Col span={12}><InfoItem label="Observaciones" value={data?.mantenimiento.observaciones} /></Grid.Col>
+            </Grid>
+
+            <Divider />
+
             <Group justify="space-between" align="flex-end">
               <Group gap="xl">
                 <div>

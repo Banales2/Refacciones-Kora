@@ -16,6 +16,7 @@ const Schema = z.object({
   status:          z.enum(['activo', 'completado', 'pausado', 'cancelado']).default('activo'),
   fecha_inicio:    z.string().date().nullable().optional(),
   km_inicio:       z.coerce.number().int().min(0).nullable().optional(),
+  fecha_reporte:   z.string().date().nullable().optional(),
 })
 
 export async function requerimientosCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {

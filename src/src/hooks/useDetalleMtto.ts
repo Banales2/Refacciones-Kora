@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { Mantenimiento } from './useMantenimientos'
 
 export interface DetalleMttoPieza {
   id:               number
@@ -14,7 +15,7 @@ export interface DetalleMttoPieza {
 }
 
 interface DetalleMttoResponse {
-  mantenimiento: { id: number; costo: number }
+  mantenimiento: Mantenimiento
   detalles:      DetalleMttoPieza[]
 }
 

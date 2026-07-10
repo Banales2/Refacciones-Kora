@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const TIPOS_VEHICULO = ['camion', 'tractocamion', 'caja_trailer', 'utilitario'] as const
+export const TIPOS_VEHICULO = ['camion', 'tractocamion', 'caja_trailer', 'utilitario', 'montacargas'] as const
 export type TipoVehiculo = typeof TIPOS_VEHICULO[number]
 
 export const VehiculoQuerySchema = z.object({
@@ -13,15 +13,15 @@ export const VehiculoQuerySchema = z.object({
 
 export const VehiculoCreateSchema = z.object({
   tipo:        z.enum(TIPOS_VEHICULO),
-  vehiculo:    z.string().min(1, 'Requerido').max(120).trim(),
   modelo_id:   z.coerce.number().int().min(1, 'Requerido'),
   serie:       z.string().min(1, 'Requerido').max(80).trim(),
-  // camion + tractocamion + utilitario
+  placas:      z.string().max(20).trim().nullable().optional(),
+  // camion + tractocamion + utilitario + montacargas
   combustible: z.string().max(30).trim().optional(),
-  // camion + tractocamion
+  // camion + tractocamion + utilitario
   kilometraje: z.coerce.number().int().min(0).optional(),
   status:      z.string().max(30).trim().optional(),
-  // camion
+  // camion + montacargas
   ubicacion:   z.string().max(200).trim().nullable().optional(),
   sucursal_id: z.coerce.number().int().positive().optional(),
   // tractocamion
@@ -35,9 +35,9 @@ export const VehiculoCreateSchema = z.object({
 })
 
 export const VehiculoUpdateSchema = z.object({
-  vehiculo:     z.string().min(1).max(120).trim().optional(),
   modelo_id:    z.coerce.number().int().min(1).optional(),
   serie:        z.string().min(1).max(80).trim().optional(),
+  placas:       z.string().max(20).trim().nullable().optional(),
   combustible:  z.string().max(30).trim().optional(),
   kilometraje:  z.coerce.number().int().min(0).optional(),
   status:       z.string().max(30).trim().optional(),

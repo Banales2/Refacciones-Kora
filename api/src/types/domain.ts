@@ -2,6 +2,7 @@ export interface Pieza {
   id: number
   numero_serie: string
   descripcion: string
+  categoria: string
 }
 
 export interface PiezaConCantidad extends Pieza {

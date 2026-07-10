@@ -25,6 +25,7 @@ const TIPOS: Record<TipoVehiculo, { label: string; color: string }> = {
   tractocamion: { label: 'Tractocamión',      color: 'violet' },
   caja_trailer: { label: 'Caja de trailer',   color: 'orange' },
   utilitario:   { label: 'Vehículo unitario', color: 'teal'   },
+  montacargas:  { label: 'Montacargas',       color: 'yellow' },
 }
 
 const TRIGGER_META: Record<TriggerMode, { label: string; color: string }> = {
@@ -448,9 +449,9 @@ function ModeloDetalle({
           <Table striped highlightOnHover withTableBorder>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Vehículo</Table.Th>
-                <Table.Th>Tipo</Table.Th>
                 <Table.Th>Serie</Table.Th>
+                <Table.Th>Tipo</Table.Th>
+                <Table.Th>Placas</Table.Th>
                 <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>Kilometraje</Table.Th>
                 {onNavigateVehiculo && <Table.Th style={{ width: 32 }} />}
@@ -465,11 +466,11 @@ function ModeloDetalle({
                     onClick={() => onNavigateVehiculo?.(v)}
                     style={{ cursor: onNavigateVehiculo ? 'pointer' : undefined }}
                   >
-                    <Table.Td fw={500}>{v.vehiculo}</Table.Td>
+                    <Table.Td fw={500}>{v.serie}</Table.Td>
                     <Table.Td>
                       <Badge color={t.color} variant="light" size="sm">{t.label}</Badge>
                     </Table.Td>
-                    <Table.Td>{v.serie}</Table.Td>
+                    <Table.Td>{v.placas ?? (v.tipo === 'montacargas' ? '' : <Text component="span" c="dimmed" size="sm">—</Text>)}</Table.Td>
                     <Table.Td style={{ textAlign: 'center' }}>
                       {v.status
                         ? <Badge color={statusColor(v.status)} variant="light" size="sm">{v.status}</Badge>
@@ -638,8 +639,10 @@ export default function Modelos({ onNavigateVehiculo }: { onNavigateVehiculo?: (
                     <Badge variant="light" color="gray" size="sm">{m.marca}</Badge>
                   </Table.Td>
                   <Table.Td fw={500}>{m.nombre}</Table.Td>
-                  <Table.Td c="dimmed" size="sm">
-                    {new Date(m.created_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  <Table.Td c="dimmed">
+                    <Text size="sm">
+                      {new Date(m.created_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </Text>
                   </Table.Td>
                   <Table.Td>
                     <Group gap={4} justify="flex-end" wrap="nowrap">

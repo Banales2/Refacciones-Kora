@@ -16,10 +16,11 @@ export async function findMantenimientosEnRango(start: string, end: string): Pro
     .input('start', sql.Date, start)
     .input('end',   sql.Date, end)
     .query(`
-      SELECT m.id, m.vehiculo_id, v.vehiculo AS vehiculo_nombre, m.fecha, m.costo,
-             COALESCE(pt.piezas_total, 0) AS piezas_total
+      SELECT m.id, m.vehiculo_id, CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
+             m.fecha, m.costo, COALESCE(pt.piezas_total, 0) AS piezas_total
       FROM mantenimiento m
       JOIN vehiculos v ON v.id = m.vehiculo_id
+      JOIN modelos mo ON mo.id = v.modelo_id
       LEFT JOIN (
         SELECT mantenimiento_id, SUM(cantidad * costo_unitario) AS piezas_total
         FROM detalle_mtto_pieza
@@ -77,7 +78,8 @@ export async function findRequerimientosActivosFleet(): Promise<RequerimientoFle
   const pool = await getPool()
   const r = await pool.request().query(`
     SELECT r.id, r.nombre, r.categoria, r.trigger_mode, r.intervalo_km, r.intervalo_meses,
-           r.fecha_inicio, r.km_inicio, r.vehiculo_id, v.vehiculo AS vehiculo_nombre,
+           r.fecha_inicio, r.km_inicio, r.vehiculo_id,
+           CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
            CASE WHEN v.tipo='camion'       THEN c.kilometraje
                 WHEN v.tipo='tractocamion' THEN t.kilometraje
                 WHEN v.tipo='utilitario'   THEN u.kilometraje
@@ -85,6 +87,7 @@ export async function findRequerimientosActivosFleet(): Promise<RequerimientoFle
            v.fecha_compra
     FROM requerimientos_exclusivos r
     JOIN vehiculos v ON v.id = r.vehiculo_id
+    JOIN modelos mo ON mo.id = v.modelo_id
     LEFT JOIN camiones             c ON c.vehiculo_id = v.id
     LEFT JOIN tractocamiones       t ON t.vehiculo_id = v.id
     LEFT JOIN vehiculos_utilitarios u ON u.vehiculo_id = v.id

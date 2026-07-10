@@ -152,7 +152,7 @@ export async function getHistorial(meses = 12): Promise<repo.HistorialDia[]> {
   const dias = await repo.findHistorial(fmt(start), fmt(new Date(now.getFullYear(), now.getMonth() + 1, 1)))
 
   // Si el snapshot diario aún no corrió hoy, agrega el conteo en vivo para no mostrar el día en blanco.
-  if (dias[dias.length - 1]?.fecha?.split('T')[0] !== hoy) {
+  if (toDateStr(dias[dias.length - 1]?.fecha) !== hoy) {
     const { vencidos, porVencer } = await clasificarRequerimientosFleet()
     dias.push({ fecha: hoy, vencidos: vencidos.length, por_vencer: porVencer.length })
   }

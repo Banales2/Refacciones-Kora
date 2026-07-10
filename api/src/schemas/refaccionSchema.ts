@@ -7,6 +7,7 @@ export const RefaccionCreateSchema = z.object({
     .max(80, 'Número de serie demasiado largo')
     .regex(/^[A-Z0-9-]+$/, 'Solo mayúsculas, números y guiones'),
   descripcion: z.string().min(3).max(300),
+  categoria: z.string().min(1, 'Categoría requerida').max(60),
 })
 
 export const RefaccionUpdateSchema = RefaccionCreateSchema.partial()

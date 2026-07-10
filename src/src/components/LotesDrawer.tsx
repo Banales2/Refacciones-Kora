@@ -87,11 +87,13 @@ function LoteForm({
           placeholder="Selecciona un proveedor"
           data={proveedores}
           searchable
+          required
           {...form.getInputProps('proveedor_id')}
         />
         <TextInput
           label="Fecha de compra"
           type="date"
+          required
           {...form.getInputProps('fecha_compra')}
         />
         <NumberInput
@@ -100,6 +102,7 @@ function LoteForm({
           min={0.01}
           decimalScale={2}
           prefix="$"
+          required
           {...form.getInputProps('costo_unitario')}
         />
         <NumberInput
@@ -107,6 +110,7 @@ function LoteForm({
           placeholder="0"
           min={1}
           allowDecimal={false}
+          required
           {...form.getInputProps('cantidad_inicial')}
         />
         <TextInput

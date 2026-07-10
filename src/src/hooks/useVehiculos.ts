@@ -1,16 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
-export type TipoVehiculo = 'camion' | 'tractocamion' | 'caja_trailer' | 'utilitario'
+export type TipoVehiculo = 'camion' | 'tractocamion' | 'caja_trailer' | 'utilitario' | 'montacargas'
 
 export interface VehiculoRow {
   id:           number
-  vehiculo:     string
   tipo:         TipoVehiculo
   modelo_id:    number
   marca:        string
   modelo:       string
   serie:        string
+  placas:       string | null
   status:       string | null
   kilometraje:  number | null
   combustible:  string | null
@@ -27,9 +27,9 @@ export interface VehiculoRow {
 
 export interface VehiculoCreatePayload {
   tipo:          TipoVehiculo
-  vehiculo:      string
   modelo_id:     number
   serie:         string
+  placas?:       string | null
   combustible?:  string
   kilometraje?:  number
   status?:       string
@@ -42,23 +42,31 @@ export interface VehiculoCreatePayload {
   fecha_compra?: string | null
 }
 
-export interface VehiculoUpdatePayload extends Omit<VehiculoCreatePayload, 'tipo'> {}
+export type VehiculoUpdatePayload = Partial<Omit<VehiculoCreatePayload, 'tipo'>>
 
 interface ListResponse {
   data:       VehiculoRow[]
   pagination: { page: number; pageSize: number; total: number }
 }
 
-export function useVehiculos(page = 1, search = '', tipo?: TipoVehiculo, modeloId?: number) {
+export function vehiculoLabel(v: Pick<VehiculoRow, 'marca' | 'modelo' | 'serie'>): string {
+  return `${v.marca} ${v.modelo} — ${v.serie}`
+}
+
+export function useVehiculos(
+  page = 1, search = '', tipo?: TipoVehiculo, modeloId?: number, pageSize?: number, enabled = true
+) {
   return useQuery({
-    queryKey: ['vehiculos', page, search, tipo, modeloId],
+    queryKey: ['vehiculos', page, search, tipo, modeloId, pageSize],
     queryFn: () => {
       const qs = new URLSearchParams({ page: String(page) })
       if (search)   qs.set('search',    search)
       if (tipo)     qs.set('tipo',      tipo)
       if (modeloId) qs.set('modelo_id', String(modeloId))
+      if (pageSize) qs.set('pageSize',  String(pageSize))
       return api.get<ListResponse>(`/vehiculos?${qs}`)
     },
+    enabled,
   })
 }
 
