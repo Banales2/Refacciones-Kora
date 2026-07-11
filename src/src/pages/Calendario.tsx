@@ -112,6 +112,13 @@ function addDaysIso(dateStr: string, delta: number): string {
   return d.toISOString().split('T')[0]
 }
 
+// Entre más eventos caen el mismo día, más opaco se pinta el color del cuadro.
+const TRASLAPE_RGB   = '253, 126, 20' // mantine orange-6 (agendas traslapadas)
+const REALIZADO_RGB  = '34, 139, 230' // mantine blue-6 (mantenimientos realizados)
+function overlapAlpha(count: number): number {
+  return Math.min(0.28 + (count - 1) * 0.18, 0.95)
+}
+
 // ─── Tarjeta de alerta (vencidos / por vencer) ────────────────────────────────
 
 function AlertaStat({
@@ -364,18 +371,44 @@ export default function Calendario({
   const vehiculosPorVencer = useMemo(() => agruparPorVehiculoOrdenado(porVencer), [porVencer])
   const vehiculosAlerta = alertaAbierta === 'vencidos' ? vehiculosVencidos : vehiculosPorVencer
 
-  const fechasConMantenimiento = useMemo(() => {
-    const set = new Set<string>()
-    for (const m of mantenimientos) set.add(m.fecha.split('T')[0])
-    return set
-  }, [mantenimientos])
-
-  const fechasConAgenda = useMemo(() => {
-    const set = new Set<string>()
-    for (const a of agendasPendientes) {
-      for (const d of diasEnRango(a.fecha_inicio.split('T')[0], a.fecha_fin.split('T')[0])) set.add(d)
+  // Cuenta cuántos mantenimientos se realizaron cada día, para graduar la
+  // opacidad del azul igual que se hace con el naranja de las agendas.
+  const mantenimientoCountPorDia = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const m of mantenimientos) {
+      const d = m.fecha.split('T')[0]
+      map.set(d, (map.get(d) ?? 0) + 1)
     }
-    return set
+    return map
+  }, [mantenimientos])
+  const fechasConMantenimiento = mantenimientoCountPorDia
+
+  // Cuenta cuántas agendas pendientes cubren cada día, para detectar traslapes
+  // (2+ vehículos agendados el mismo día).
+  const agendaCountPorDia = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const a of agendasPendientes) {
+      for (const d of diasEnRango(a.fecha_inicio.split('T')[0], a.fecha_fin.split('T')[0])) {
+        map.set(d, (map.get(d) ?? 0) + 1)
+      }
+    }
+    return map
+  }, [agendasPendientes])
+  const fechasConAgenda = agendaCountPorDia
+
+  // Ids de agendas cuyo rango de fechas se cruza con el de otra agenda (de
+  // cualquier vehículo), para marcarlas en la lista de "Agendas próximas".
+  const agendasTraslapadas = useMemo(() => {
+    const ids = new Set<number>()
+    for (let i = 0; i < agendasPendientes.length; i++) {
+      for (let j = i + 1; j < agendasPendientes.length; j++) {
+        const a = agendasPendientes[i], b = agendasPendientes[j]
+        const aIni = a.fecha_inicio.split('T')[0], aFin = a.fecha_fin.split('T')[0]
+        const bIni = b.fecha_inicio.split('T')[0], bFin = b.fecha_fin.split('T')[0]
+        if (aIni <= bFin && bIni <= aFin) { ids.add(a.id); ids.add(b.id) }
+      }
+    }
+    return ids
   }, [agendasPendientes])
 
   const mantenimientosDelDia = useMemo(() => {
@@ -441,33 +474,31 @@ export default function Calendario({
                   <Calendar
                     size="md"
                     highlightToday
-                    renderDay={(dateStr) => {
-                      const day = new Date(`${dateStr}T12:00:00`).getDate()
-                      const realizado = fechasConMantenimiento.has(dateStr)
-                      if (!realizado) return <div>{day}</div>
-                      return (
-                        <div
-                          style={{
-                            width: 28, height: 28, margin: '0 auto',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            borderRadius: '50%', backgroundColor: 'var(--mantine-color-blue-6)',
-                            color: 'var(--mantine-color-white)', fontWeight: 600,
-                          }}
-                        >
-                          {day}
-                        </div>
-                      )
-                    }}
                     getDayProps={(dateStr) => {
-                      const enRango   = fechasConAgenda.has(dateStr)
-                      const realizado = fechasConMantenimiento.has(dateStr)
-                      const clickable = enRango || realizado
+                      const enRango       = fechasConAgenda.has(dateStr)
+                      const mantCount     = mantenimientoCountPorDia.get(dateStr) ?? 0
+                      const realizado     = mantCount > 0
+                      const clickable     = enRango || realizado
+                      const agendaCount   = agendaCountPorDia.get(dateStr) ?? 0
+                      const traslape      = agendaCount > 1
+                      const titulo = realizado
+                        ? `${mantCount} mantenimiento${mantCount !== 1 ? 's' : ''} este día`
+                        : traslape ? `${agendaCount} vehículos agendados este día` : undefined
                       return {
                         inRange:      enRango,
                         firstInRange: enRango && !fechasConAgenda.has(addDaysIso(dateStr, -1)),
                         lastInRange:  enRango && !fechasConAgenda.has(addDaysIso(dateStr, 1)),
                         onClick: clickable ? () => setSelectedDate(dateStr) : undefined,
-                        style:   { cursor: clickable ? 'pointer' : 'default' },
+                        title:   titulo,
+                        style: {
+                          cursor: clickable ? 'pointer' : 'default',
+                          // A más eventos el mismo día, más opaco el color del cuadro.
+                          ...(mantCount > 1
+                            ? { backgroundColor: `rgba(${REALIZADO_RGB}, ${overlapAlpha(mantCount)})`, color: 'var(--mantine-color-white)' }
+                            : realizado
+                              ? { backgroundColor: 'var(--mantine-color-blue-1)', border: '1px solid var(--mantine-color-blue-4)' }
+                              : traslape ? { backgroundColor: `rgba(${TRASLAPE_RGB}, ${overlapAlpha(agendaCount)})` } : {}),
+                        },
                       }
                     }}
                   />
@@ -476,12 +507,16 @@ export default function Calendario({
               <Divider my="sm" />
               <Group gap="lg" justify="center">
                 <Group gap={6}>
-                  <span style={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: 'var(--mantine-color-blue-6)', display: 'inline-block' }} />
+                  <span style={{ width: 22, height: 14, borderRadius: 4, backgroundColor: 'var(--mantine-color-blue-1)', border: '1px solid var(--mantine-color-blue-4)', display: 'inline-block' }} />
                   <Text size="xs" c="dimmed">Realizado</Text>
                 </Group>
                 <Group gap={6}>
                   <span style={{ width: 22, height: 14, borderRadius: 4, backgroundColor: 'var(--mantine-color-orange-1)', border: '1px solid var(--mantine-color-orange-4)', display: 'inline-block' }} />
                   <Text size="xs" c="dimmed">Agendado (rango)</Text>
+                </Group>
+                <Group gap={6}>
+                  <span style={{ width: 22, height: 14, borderRadius: 4, backgroundColor: `rgba(${TRASLAPE_RGB}, ${overlapAlpha(4)})`, display: 'inline-block' }} />
+                  <Text size="xs" c="dimmed">Traslape</Text>
                 </Group>
               </Group>
             </Card>
@@ -526,6 +561,13 @@ export default function Calendario({
                                 {TIPO_LABELS[a.vehiculo_tipo] ?? a.vehiculo_tipo}
                               </Badge>
                               {atrasada && <Badge size="xs" variant="light" color="red">Atrasada</Badge>}
+                              {agendasTraslapadas.has(a.id) && (
+                                <Tooltip label="Se traslapa con otra agenda">
+                                  <Badge size="xs" variant="light" color="red" leftSection={<IconAlertTriangle size={10} />}>
+                                    Traslape
+                                  </Badge>
+                                </Tooltip>
+                              )}
                             </Group>
                             <Text size="xs" c="dimmed">
                               {fmtFecha(a.fecha_inicio)} – {fmtFecha(a.fecha_fin)}
@@ -572,7 +614,14 @@ export default function Calendario({
         <Stack gap="md">
           {agendasDelDia.length > 0 && (
             <div>
-              <Text size="xs" fw={600} c="dimmed" tt="uppercase" mb={4}>Agendado</Text>
+              <Text size="xs" fw={600} c="dimmed" tt="uppercase" mb={4}>
+                Agendado{agendasDelDia.length > 1 ? ` (${agendasDelDia.length})` : ''}
+              </Text>
+              {agendasDelDia.length > 1 && (
+                <Alert color="red" variant="light" mb="xs" icon={<IconAlertTriangle size={16} />}>
+                  {agendasDelDia.length} vehículos agendados el mismo día — revisa disponibilidad de técnicos y refacciones.
+                </Alert>
+              )}
               <Stack gap="xs">
                 {agendasDelDia.map(a => (
                   <Card key={a.id} withBorder padding="sm" radius="sm">

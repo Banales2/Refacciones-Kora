@@ -93,3 +93,54 @@ export function useMantenimientosCalendario() {
     queryFn: () => api.get<{ data: MantenimientoCalendario[] }>('/dashboard/mantenimientos-calendario'),
   })
 }
+
+export type PeriodoComparacion = 'mes' | 'semana'
+
+export interface VehiculoReporte {
+  id:                    number
+  tipo:                  string
+  marca:                 string
+  modelo:                string
+  serie:                 string
+  placas:                string | null
+  status:                string | null
+  kilometraje:           number | null
+  ubicacion:             string | null
+  sucursal_id:           number | null
+  sucursal:              string | null
+  ruta_id:               number | null
+  ruta:                  string | null
+  mantenimientos_mes:    number
+  costo_mano_obra_mes:   number
+  costo_piezas_mes:      number
+  ultimo_mantenimiento:  string | null
+  vencidos:              number
+  por_vencer:            number
+}
+
+export interface ReporteFlota {
+  periodo:      PeriodoComparacion
+  rango_costos: { start: string; end: string }
+  costos: {
+    mano_obra:           number
+    piezas_usadas:       number
+    piezas_compradas:    number
+    total_mantenimiento: number
+    total:               number
+  }
+  comparacion: {
+    rango_actual:                          { start: string; end: string }
+    rango_anterior:                        { start: string; end: string }
+    vencidos_actual:                       number
+    vencidos_anterior:                     number | null
+    requerimientos_unicos_nuevos_actual:   number
+    requerimientos_unicos_nuevos_anterior: number
+  }
+  vehiculos: VehiculoReporte[]
+}
+
+// Se pide bajo demanda (al exportar el PDF) en vez de precargarse con un hook,
+// porque agrega la flota completa y solo hace falta en ese momento.
+export function fetchReporteFlota(periodo: PeriodoComparacion) {
+  return api.get<{ data: ReporteFlota }>(`/dashboard/reporte-flota?periodo=${periodo}`)
+}

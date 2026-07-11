@@ -1,15 +1,5 @@
 import type { ResumenMes } from '../hooks/useDashboard'
 
-function formatMXN(n: number) {
-  return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 })
-}
-
-function formatFecha(iso: string) {
-  return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
-}
-
 function rangoLabel(resumen: ResumenMes) {
   const inicio = new Date(`${resumen.rango.start}T12:00:00`)
   return inicio.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
@@ -102,77 +92,4 @@ export async function exportResumenMesToExcel(resumen: ResumenMes) {
     new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     `${fileNameBase(resumen)}.xlsx`
   )
-}
-
-export async function exportResumenMesToPdf(resumen: ResumenMes) {
-  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
-    import('jspdf'),
-    import('jspdf-autotable'),
-  ])
-  const doc = new jsPDF()
-  const margin = 14
-  let y = 18
-
-  doc.setFontSize(16)
-  doc.text('Resumen mensual', margin, y)
-  y += 7
-  doc.setFontSize(10)
-  doc.setTextColor(100)
-  doc.text(rangoLabel(resumen), margin, y)
-  doc.setTextColor(0)
-  y += 10
-
-  doc.setFontSize(11)
-  const costoTotalMes = resumen.mantenimientos.costo_total + resumen.piezas.costo_total
-  const kpis = [
-    `Mantenimientos: ${resumen.mantenimientos.count}  ·  Costo: ${formatMXN(resumen.mantenimientos.costo_total)}`,
-    `Piezas compradas: ${resumen.piezas.count}  ·  Costo: ${formatMXN(resumen.piezas.costo_total)}`,
-    `Costo total del mes: ${formatMXN(costoTotalMes)}`,
-  ]
-  for (const line of kpis) {
-    doc.text(line, margin, y)
-    y += 6
-  }
-  y += 6
-
-  doc.setFontSize(12)
-  doc.text('Mantenimientos por vehículo', margin, y)
-  autoTable(doc, {
-    startY: y + 4,
-    margin: { left: margin, right: margin },
-    head: [['Vehículo', 'Mantenimientos', 'Costo total']],
-    body: resumen.mantenimientos.por_vehiculo.map(v => [
-      v.vehiculo_nombre, String(v.cantidad), formatMXN(v.costo_total),
-    ]),
-    foot: [['Total', String(resumen.mantenimientos.count), formatMXN(resumen.mantenimientos.costo_total)]],
-    headStyles: { fillColor: [51, 51, 51] },
-    footStyles: { fillColor: [230, 230, 230], textColor: 20, fontStyle: 'bold' },
-    styles: { fontSize: 9 },
-  })
-
-  let finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable?.finalY ?? y + 20
-  finalY += 12
-  if (finalY > 260) {
-    doc.addPage()
-    finalY = 18
-  }
-
-  doc.setFontSize(12)
-  doc.text('Piezas compradas', margin, finalY)
-  autoTable(doc, {
-    startY: finalY + 4,
-    margin: { left: margin, right: margin },
-    head: [['Pieza', 'Proveedor', 'Fecha', 'Cant.', 'Costo unit.', 'Subtotal']],
-    body: resumen.piezas.lotes.map(l => [
-      l.numero_serie, l.proveedor, formatFecha(l.fecha_compra),
-      String(l.cantidad_inicial), formatMXN(l.costo_unitario),
-      formatMXN(l.cantidad_inicial * l.costo_unitario),
-    ]),
-    foot: [['', '', '', '', 'Total', formatMXN(resumen.piezas.costo_total)]],
-    headStyles: { fillColor: [51, 51, 51] },
-    footStyles: { fillColor: [230, 230, 230], textColor: 20, fontStyle: 'bold' },
-    styles: { fontSize: 9 },
-  })
-
-  doc.save(`${fileNameBase(resumen)}.pdf`)
 }

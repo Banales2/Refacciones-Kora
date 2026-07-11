@@ -1,7 +1,70 @@
 import * as repo from '../repositories/dashboardRepo'
 import { RequerimientoFleet } from '../repositories/dashboardRepo'
 import * as requerimentosRepo from '../repositories/requerimentosRepo'
+import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import { getPool } from '../shared/db'
+
+const MX_TZ = 'America/Mexico_City'
+
+// Azure Functions corre en UTC. Entre ~18:00 y 23:59 hora de México, en UTC ya
+// es "mañana" — usar new Date().toISOString() ahí adelanta el snapshot diario
+// (y por lo tanto la tendencia del dashboard) un día. Estas funciones anclan
+// "hoy" a la fecha calendario de México sin importar la zona horaria del server.
+function fechaMexico(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: MX_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+}
+
+function partesMexico(d: Date = new Date()): { year: number; month: number; day: number } {
+  const [year, month, day] = fechaMexico(d).split('-').map(Number)
+  return { year, month, day }
+}
+
+// Ancla el "ahora" de México a mediodía para poder leerlo de vuelta con
+// getFullYear()/getMonth() sin que el desfase UTC lo recorra a otro día.
+function fechaMexicoComoDate(d: Date = new Date()): Date {
+  return new Date(`${fechaMexico(d)}T12:00:00`)
+}
+
+function sumarMeses(year: number, month: number, delta: number): { year: number; month: number } {
+  const total = year * 12 + (month - 1) + delta
+  const m = ((total % 12) + 12) % 12
+  return { year: (total - m) / 12, month: m + 1 }
+}
+
+function addDias(fechaYMD: string, dias: number): string {
+  const d = new Date(`${fechaYMD}T12:00:00`)
+  d.setDate(d.getDate() + dias)
+  return fechaMexico(d)
+}
+
+// Lunes de la semana que contiene `d`, como fecha calendario de México.
+function inicioSemanaMexico(d: Date = new Date()): string {
+  const hoy = fechaMexico(d)
+  const dow = fechaMexicoComoDate(d).getDay() // 0=domingo..6=sábado
+  const diffToMonday = (dow + 6) % 7
+  return addDias(hoy, -diffToMonday)
+}
+
+interface Rango { start: string; end: string }
+
+// Rango actual y anterior según el periodo elegido, ambos como [start, end).
+function rangoActualYAnterior(periodo: 'mes' | 'semana'): { actual: Rango; anterior: Rango } {
+  if (periodo === 'semana') {
+    const inicioActual = inicioSemanaMexico()
+    return {
+      actual:   { start: inicioActual, end: addDias(inicioActual, 7) },
+      anterior: { start: addDias(inicioActual, -7), end: inicioActual },
+    }
+  }
+  const { year, month } = partesMexico()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const sig = sumarMeses(year, month, 1)
+  const ant = sumarMeses(year, month, -1)
+  return {
+    actual:   { start: `${year}-${pad(month)}-01`,       end: `${sig.year}-${pad(sig.month)}-01` },
+    anterior: { start: `${ant.year}-${pad(ant.month)}-01`, end: `${year}-${pad(month)}-01` },
+  }
+}
 
 // Sincroniza el status de requerimientos únicos (según la fecha del
 // mantenimiento vinculado) una vez por día calendario. Se apoya en
@@ -12,8 +75,8 @@ import { getPool } from '../shared/db'
 // día" sin importar si dispara por uso de la app o por el cron.
 let sincronizandoHoy: Promise<void> | null = null
 export async function ensureDailySync(): Promise<void> {
-  const hoy = new Date().toISOString().split('T')[0]
-  const manana = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const hoy = fechaMexico()
+  const manana = fechaMexico(new Date(Date.now() + 24 * 60 * 60 * 1000))
   const yaHoy = await repo.findHistorial(hoy, manana)
   if (yaHoy.length > 0) return
 
@@ -29,11 +92,10 @@ export async function ensureDailySync(): Promise<void> {
 }
 
 function rangoMesActual(): { start: string; end: string } {
-  const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-  const fmt = (d: Date) => d.toISOString().split('T')[0]
-  return { start: fmt(start), end: fmt(end) }
+  const { year, month } = partesMexico()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const sig = sumarMeses(year, month, 1)
+  return { start: `${year}-${pad(month)}-01`, end: `${sig.year}-${pad(sig.month)}-01` }
 }
 
 export async function getResumenMes() {
@@ -152,7 +214,7 @@ async function clasificarRequerimientosFleet() {
     if (!lastLinkByReq.has(l.requerimiento_id)) lastLinkByReq.set(l.requerimiento_id, l)
   }
 
-  const now = new Date()
+  const now = fechaMexicoComoDate()
   const vencidos: RequerimientoFleetConUrgencia[] = []
   const porVencer: RequerimientoFleetConUrgencia[] = []
 
@@ -193,18 +255,21 @@ export async function getRequerimientosPorVencer(): Promise<RequerimientoVencido
 
 export async function registrarSnapshotHistorial(): Promise<void> {
   const { vencidos, porVencer } = await clasificarRequerimientosFleet()
-  const hoy = new Date().toISOString().split('T')[0]
+  const hoy = fechaMexico()
   await repo.upsertSnapshotHistorial(hoy, vencidos.length, porVencer.length)
 }
 
 export async function getHistorial(meses = 12): Promise<repo.HistorialDia[]> {
   await ensureDailySync()
-  const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth() - meses, 1)
-  const fmt = (d: Date) => d.toISOString().split('T')[0]
-  const hoy = fmt(now)
+  const hoy = fechaMexico()
+  const { year, month } = partesMexico()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const ini = sumarMeses(year, month, -meses)
+  const sig = sumarMeses(year, month, 1)
+  const start = `${ini.year}-${pad(ini.month)}-01`
+  const end   = `${sig.year}-${pad(sig.month)}-01`
 
-  const dias = await repo.findHistorial(fmt(start), fmt(new Date(now.getFullYear(), now.getMonth() + 1, 1)))
+  const dias = await repo.findHistorial(start, end)
 
   // Si el snapshot diario aún no corrió hoy, agrega el conteo en vivo para no mostrar el día en blanco.
   if (toDateStr(dias[dias.length - 1]?.fecha) !== hoy) {
@@ -213,4 +278,118 @@ export async function getHistorial(meses = 12): Promise<repo.HistorialDia[]> {
   }
 
   return dias
+}
+
+// ─── Reporte de flota (PDF) ────────────────────────────────────────────────────
+
+export interface VehiculoReporte {
+  id:                    number
+  tipo:                  string
+  marca:                 string
+  modelo:                string
+  serie:                 string
+  placas:                string | null
+  status:                string | null
+  kilometraje:           number | null
+  ubicacion:             string | null
+  sucursal_id:           number | null
+  sucursal:              string | null
+  ruta_id:               number | null
+  ruta:                  string | null
+  mantenimientos_mes:    number
+  costo_mano_obra_mes:   number
+  costo_piezas_mes:      number
+  ultimo_mantenimiento:  string | null
+  vencidos:              number
+  por_vencer:            number
+}
+
+export interface ReporteFlota {
+  periodo:      'mes' | 'semana'
+  rango_costos: Rango
+  costos: {
+    mano_obra:           number
+    piezas_usadas:       number
+    piezas_compradas:    number
+    total_mantenimiento: number
+    total:               number
+  }
+  comparacion: {
+    rango_actual:                          Rango
+    rango_anterior:                        Rango
+    vencidos_actual:                       number
+    vencidos_anterior:                     number | null
+    requerimientos_unicos_nuevos_actual:   number
+    requerimientos_unicos_nuevos_anterior: number
+  }
+  vehiculos: VehiculoReporte[]
+}
+
+export async function getReporteFlota(periodo: 'mes' | 'semana' = 'mes'): Promise<ReporteFlota> {
+  await ensureDailySync()
+
+  const rangoMes = rangoMesActual()
+  const [vehiculosBase, costosPorVehiculo, lotes, clasificacion] = await Promise.all([
+    vehiculosRepo.findAllParaReporte(),
+    repo.findCostosPorVehiculoEnRango(rangoMes.start, rangoMes.end),
+    repo.findLotesEnRango(rangoMes.start, rangoMes.end),
+    clasificarRequerimientosFleet(),
+  ])
+
+  const costosMap = new Map(costosPorVehiculo.map(c => [c.vehiculo_id, c]))
+  const vencidosPorVehiculo = new Map<number, number>()
+  for (const r of clasificacion.vencidos)  vencidosPorVehiculo.set(r.vehiculo_id, (vencidosPorVehiculo.get(r.vehiculo_id) ?? 0) + 1)
+  const porVencerPorVehiculo = new Map<number, number>()
+  for (const r of clasificacion.porVencer) porVencerPorVehiculo.set(r.vehiculo_id, (porVencerPorVehiculo.get(r.vehiculo_id) ?? 0) + 1)
+
+  const vehiculos: VehiculoReporte[] = vehiculosBase.map(v => {
+    const c = costosMap.get(v.id)
+    return {
+      id: v.id, tipo: v.tipo, marca: v.marca, modelo: v.modelo, serie: v.serie,
+      placas: v.placas, status: v.status, kilometraje: v.kilometraje,
+      ubicacion: v.ubicacion, sucursal_id: v.sucursal_id, sucursal: v.sucursal,
+      ruta_id: v.ruta_id, ruta: v.ruta,
+      mantenimientos_mes:   c?.mantenimientos_count ?? 0,
+      costo_mano_obra_mes:  c?.costo_mano_obra ?? 0,
+      costo_piezas_mes:     c?.costo_piezas ?? 0,
+      ultimo_mantenimiento: toDateStr(c?.ultimo_mantenimiento ?? null),
+      vencidos:             vencidosPorVehiculo.get(v.id) ?? 0,
+      por_vencer:           porVencerPorVehiculo.get(v.id) ?? 0,
+    }
+  })
+
+  const manoObra        = costosPorVehiculo.reduce((s, c) => s + c.costo_mano_obra, 0)
+  const piezasUsadas     = costosPorVehiculo.reduce((s, c) => s + c.costo_piezas, 0)
+  const piezasCompradas  = lotes.reduce((s, l) => s + l.cantidad_inicial * l.costo_unitario, 0)
+
+  const { actual, anterior } = rangoActualYAnterior(periodo)
+  // Último día cubierto por el periodo anterior: la referencia contra la que
+  // comparamos el snapshot histórico de vencidos.
+  const fechaRefAnterior = addDias(anterior.end, -1)
+  const [snapshotAnterior, unicosActual, unicosAnterior] = await Promise.all([
+    repo.findHistorialCercano(fechaRefAnterior),
+    repo.countRequerimientosUnicosCreados(actual.start, actual.end),
+    repo.countRequerimientosUnicosCreados(anterior.start, anterior.end),
+  ])
+
+  return {
+    periodo,
+    rango_costos: rangoMes,
+    costos: {
+      mano_obra:           manoObra,
+      piezas_usadas:       piezasUsadas,
+      piezas_compradas:    piezasCompradas,
+      total_mantenimiento: manoObra + piezasUsadas,
+      total:               manoObra + piezasUsadas + piezasCompradas,
+    },
+    comparacion: {
+      rango_actual:   actual,
+      rango_anterior: anterior,
+      vencidos_actual:                       clasificacion.vencidos.length,
+      vencidos_anterior:                     snapshotAnterior?.vencidos ?? null,
+      requerimientos_unicos_nuevos_actual:   unicosActual,
+      requerimientos_unicos_nuevos_anterior: unicosAnterior,
+    },
+    vehiculos,
+  }
 }

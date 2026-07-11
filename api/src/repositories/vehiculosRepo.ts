@@ -89,6 +89,16 @@ export async function findAll(params: {
   return { data: result.recordsets[0], total: result.recordsets[1][0].total }
 }
 
+// Sin paginar: para reportes que necesitan la flota completa de una sola vez.
+export async function findAllParaReporte(): Promise<VehiculoRow[]> {
+  const pool = await getPool()
+  const result = await pool.request().query(`
+    SELECT ${SELECT_COLS} ${JOINS}
+    ORDER BY v.tipo, m.marca, m.nombre, v.numero_serie
+  `)
+  return result.recordset
+}
+
 export async function findById(id: number): Promise<VehiculoRow | null> {
   const pool = await getPool()
   const result = await pool.request()

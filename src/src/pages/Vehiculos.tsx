@@ -860,7 +860,8 @@ export function MantenimientoForm({
   const form = useForm<MantForm>({
     initialValues: initMant(initial, prefillRequerimientoIds),
     validate: {
-      fecha: (v) => !v ? 'Requerido' : null,
+      fecha:             (v) => !v ? 'Requerido' : null,
+      requerimiento_ids: (v) => v.length === 0 ? 'Selecciona al menos un requerimiento' : null,
     },
   })
 
@@ -911,6 +912,7 @@ export function MantenimientoForm({
           <Grid.Col span={12}>
             <MultiSelect
               label="Requerimientos que cumple este mantenimiento"
+              required
               placeholder={reqOptions.length ? 'Selecciona los requerimientos…' : 'Sin requerimientos activos'}
               data={reqOptions}
               searchable

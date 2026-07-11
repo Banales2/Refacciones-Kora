@@ -1,15 +1,17 @@
 import { Fragment, useMemo, useState } from 'react'
 import {
   SimpleGrid, Card, Text, Group, ThemeIcon, Stack, Loader, Center, Table, Divider, Badge, ActionIcon, Collapse,
-  Button,
+  Button, SegmentedControl,
 } from '@mantine/core'
 import { BarChart, LineChart } from '@mantine/charts'
 import { IconChevronRight, IconFileSpreadsheet, IconFileTypePdf } from '@tabler/icons-react'
 import {
   useResumenMes, useRequerimientosVencidos, useRequerimientosPorVencer, useRequerimientosHistorial,
-  type RequerimientoVencido, type ResumenMes,
+  fetchReporteFlota, type RequerimientoVencido, type ResumenMes, type PeriodoComparacion,
 } from '../hooks/useDashboard'
-import { exportResumenMesToExcel, exportResumenMesToPdf } from '../lib/exportResumenMes'
+import { useSucursales } from '../hooks/useSucursales'
+import { exportResumenMesToExcel } from '../lib/exportResumenMes'
+import { exportReporteFlotaToPdf } from '../lib/exportReporteFlota'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
 
 function formatFechaCorta(iso: string) {
@@ -170,7 +172,9 @@ export default function Dashboard({ onNavigateVehiculo }: { onNavigateVehiculo?:
   const { data: vencidosData, isLoading: loadingVencidos } = useRequerimientosVencidos()
   const { data: porVencerData, isLoading: loadingPorVencer } = useRequerimientosPorVencer()
   const { data: historialData, isLoading: loadingHistorial } = useRequerimientosHistorial(12)
+  const { data: sucursalesData } = useSucursales()
   const [exportando, setExportando] = useState<'excel' | 'pdf' | null>(null)
+  const [periodoComparacion, setPeriodoComparacion] = useState<PeriodoComparacion>('mes')
 
   const vencidos = vencidosData?.data ?? []
   const porVencer = porVencerData?.data ?? []
@@ -197,10 +201,11 @@ export default function Dashboard({ onNavigateVehiculo }: { onNavigateVehiculo?:
     }
   }
 
-  async function handleExportPdf(data: ResumenMes) {
+  async function handleExportPdf() {
     setExportando('pdf')
     try {
-      await exportResumenMesToPdf(data)
+      const reporte = await fetchReporteFlota(periodoComparacion)
+      await exportReporteFlotaToPdf(reporte.data, sucursalesData?.data ?? [])
     } catch (e) {
       alert((e as Error).message)
     } finally {
@@ -215,7 +220,7 @@ export default function Dashboard({ onNavigateVehiculo }: { onNavigateVehiculo?:
           <Text size="xl" fw={600}>Resumen general</Text>
           <Text c="dimmed" size="sm">Vista general del sistema</Text>
         </div>
-        <Group gap="xs">
+        <Group gap="xs" align="center" wrap="wrap">
           <Button
             variant="default" size="xs"
             leftSection={<IconFileSpreadsheet size={16} />}
@@ -225,12 +230,25 @@ export default function Dashboard({ onNavigateVehiculo }: { onNavigateVehiculo?:
           >
             Exportar Excel
           </Button>
+          <Group gap={6} align="center" wrap="nowrap">
+            <Text size="xs" c="dimmed">Comparar vs:</Text>
+            <SegmentedControl
+              size="xs"
+              value={periodoComparacion}
+              onChange={(v) => setPeriodoComparacion(v as PeriodoComparacion)}
+              disabled={exportando !== null}
+              data={[
+                { label: 'Mes pasado',   value: 'mes' },
+                { label: 'Semana pasada', value: 'semana' },
+              ]}
+            />
+          </Group>
           <Button
             variant="default" size="xs"
             leftSection={<IconFileTypePdf size={16} />}
             loading={exportando === 'pdf'}
-            disabled={!resumen || exportando !== null}
-            onClick={() => resumen && handleExportPdf(resumen.data)}
+            disabled={exportando !== null}
+            onClick={handleExportPdf}
           >
             Exportar PDF
           </Button>

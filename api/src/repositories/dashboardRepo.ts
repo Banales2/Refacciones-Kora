@@ -150,6 +150,50 @@ export async function findMantenimientoLinks(requerimientoIds: number[]): Promis
   return r.recordset
 }
 
+export interface CostoVehiculoMes {
+  vehiculo_id:           number
+  mantenimientos_count:  number
+  costo_mano_obra:       number
+  costo_piezas:          number
+  ultimo_mantenimiento:  string | Date | null
+}
+
+export async function findCostosPorVehiculoEnRango(start: string, end: string): Promise<CostoVehiculoMes[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('start', sql.Date, start)
+    .input('end',   sql.Date, end)
+    .query(`
+      SELECT m.vehiculo_id,
+             COUNT(*) AS mantenimientos_count,
+             SUM(m.costo) AS costo_mano_obra,
+             SUM(COALESCE(pt.piezas_total, 0)) AS costo_piezas,
+             MAX(m.fecha) AS ultimo_mantenimiento
+      FROM mantenimiento m
+      LEFT JOIN (
+        SELECT mantenimiento_id, SUM(cantidad * costo_unitario) AS piezas_total
+        FROM detalle_mtto_pieza
+        GROUP BY mantenimiento_id
+      ) pt ON pt.mantenimiento_id = m.id
+      WHERE m.fecha >= @start AND m.fecha < @end
+      GROUP BY m.vehiculo_id
+    `)
+  return r.recordset
+}
+
+export async function countRequerimientosUnicosCreados(start: string, end: string): Promise<number> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('start', sql.Date, start)
+    .input('end',   sql.Date, end)
+    .query(`
+      SELECT COUNT(*) AS total
+      FROM requerimientos_exclusivos
+      WHERE tipo = 'unica' AND created_at >= @start AND created_at < @end
+    `)
+  return r.recordset[0].total
+}
+
 export interface HistorialDia {
   fecha:      string
   vencidos:   number
@@ -185,4 +229,20 @@ export async function findHistorial(start: string, end: string): Promise<Histori
       ORDER BY fecha ASC
     `)
   return r.recordset
+}
+
+// Snapshot diario más cercano a `fecha` (dentro de `toleranciaDias`), para
+// comparaciones periodo-contra-periodo cuando no hay snapshot exacto de ese día.
+export async function findHistorialCercano(fecha: string, toleranciaDias = 3): Promise<HistorialDia | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('fecha', sql.Date, fecha)
+    .input('tol',   sql.Int,  toleranciaDias)
+    .query(`
+      SELECT TOP 1 fecha, vencidos, por_vencer
+      FROM dashboard_requerimientos_historial
+      WHERE ABS(DATEDIFF(day, fecha, @fecha)) <= @tol
+      ORDER BY ABS(DATEDIFF(day, fecha, @fecha)) ASC
+    `)
+  return r.recordset[0] ?? null
 }

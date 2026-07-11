@@ -12,7 +12,7 @@ const Schema = z.object({
   costo:             z.coerce.number().int().min(0).optional(),
   km_actual:         z.coerce.number().int().min(0).optional(),
   observaciones:     z.string().trim().nullable().optional(),
-  requerimiento_ids: z.array(z.number().int().positive()).optional(),
+  requerimiento_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un requerimiento').optional(),
 })
 
 export async function mantenimientoUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {

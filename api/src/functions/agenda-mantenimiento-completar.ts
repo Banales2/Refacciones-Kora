@@ -12,7 +12,7 @@ const Schema = z.object({
   costo:             z.coerce.number().int().min(0).default(0),
   km_actual:         z.coerce.number().int().min(0).default(0),
   observaciones:     z.string().trim().nullable().optional(),
-  requerimiento_ids: z.array(z.number().int().positive()).optional(),
+  requerimiento_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un requerimiento'),
 })
 
 export async function agendaMantenimientoCompletar(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
