@@ -1,3 +1,6 @@
+// Envoltorio de fetch para la API interna (/api, Azure Functions): agrega los
+// headers JSON, convierte respuestas de error en ApiError y redirige al login
+// de Azure AD cuando la sesión expiró (401).
 class ApiError extends Error {
   status: number
   code?: string

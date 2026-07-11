@@ -1,4 +1,9 @@
-import { useState, useEffect } from 'react'
+// Página Piezas: catálogo e inventario de refacciones. Sin búsqueda muestra
+// todas las piezas agrupadas por categoría (acordeón); al buscar cambia a una
+// tabla paginada. Permite CRUD de piezas (con creación de categorías nuevas
+// desde el formulario), generar el reporte PDF del inventario y abrir el
+// drawer de lotes de compra de cada pieza.
+import { useState, useMemo } from 'react'
 import {
   Stack, Group, Text, TextInput, Table, Badge,
   Pagination, Alert, Loader, Center,
@@ -6,18 +11,14 @@ import {
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
+import { IconPencil, IconTrash, IconPlus, IconFileTypePdf } from '@tabler/icons-react'
 import {
-  useRefacciones, useCreateRefaccion, useUpdateRefaccion, useDeleteRefaccion,
+  useRefacciones, useCreateRefaccion, useUpdateRefaccion, useDeleteRefaccion, fetchTodasLasPiezas,
 } from '../hooks/useRefacciones'
 import type { Pieza, SearchBy } from '../hooks/useRefacciones'
 import LotesDrawer from '../components/LotesDrawer'
-
-const CATEGORIAS = [
-  'Filtros', 'Aceites y lubricantes', 'Frenos', 'Llantas', 'Eléctrico',
-  'Suspensión y dirección', 'Motor', 'Transmisión y embrague', 'Refrigeración', 'Otros',
-]
-const CATEGORIA_OPTIONS = CATEGORIAS.map((c) => ({ value: c, label: c }))
+import { exportPiezasReporteToPdf } from '../lib/exportPiezasReporte'
+import { CATEGORIAS } from '../lib/piezasCategorias'
 
 function stockColor(qty: number) {
   if (qty === 0) return 'red'
@@ -30,12 +31,14 @@ type FormValues = { numero_serie: string; descripcion: string; categoria: string
 
 function PiezaForm({
   initial,
+  categoriasDisponibles,
   isPending,
   error,
   onSubmit,
   onCancel,
 }: {
   initial?: FormValues
+  categoriasDisponibles: string[]
   isPending: boolean
   error: string | null
   onSubmit: (v: FormValues) => void
@@ -51,9 +54,23 @@ function PiezaForm({
       descripcion: (v) =>
         v.trim().length < 3 ? 'Mínimo 3 caracteres' :
         v.length > 300 ? 'Máximo 300 caracteres' : null,
-      categoria: (v) => !v ? 'Requerido' : null,
+      categoria: (v) =>
+        !v.trim() ? 'Requerido' :
+        v.length > 60 ? 'Máximo 60 caracteres' : null,
     },
   })
+
+  const [categoriaSearch, setCategoriaSearch] = useState('')
+
+  const categoriaOptions = useMemo(() => {
+    const opts = categoriasDisponibles.map((c) => ({ value: c, label: c }))
+    const nueva = categoriaSearch.trim()
+    const yaExiste = categoriasDisponibles.some((c) => c.toLowerCase() === nueva.toLowerCase())
+    if (nueva && !yaExiste) {
+      opts.unshift({ value: nueva, label: `+ Crear categoría "${nueva}"` })
+    }
+    return opts
+  }, [categoriasDisponibles, categoriaSearch])
 
   return (
     <form onSubmit={form.onSubmit(onSubmit)}>
@@ -77,10 +94,13 @@ function PiezaForm({
         />
         <Select
           label="Categoría"
-          placeholder="Selecciona una categoría"
-          data={CATEGORIA_OPTIONS}
+          placeholder="Selecciona o escribe para crear una categoría"
+          data={categoriaOptions}
           searchable
+          onSearchChange={setCategoriaSearch}
+          nothingFoundMessage="Escribe para crear una nueva categoría"
           required
+          maxLength={60}
           {...form.getInputProps('categoria')}
         />
         {error && (
@@ -160,12 +180,18 @@ function PiezasAgrupadas({
   onEdit:   (p: Pieza) => void
   onDelete: (p: Pieza) => void
 }) {
-  const porCategoria = CATEGORIAS
+  const conocidas = CATEGORIAS
     .map((cat) => ({ categoria: cat, items: piezas.filter((p) => p.categoria === cat) }))
     .filter(({ items }) => items.length > 0)
 
-  const otras = piezas.filter((p) => !CATEGORIAS.includes(p.categoria))
-  if (otras.length > 0) porCategoria.push({ categoria: 'Sin clasificar', items: otras })
+  // Categorías creadas por el usuario (no están en la lista fija): cada una
+  // forma su propio grupo, ordenadas alfabéticamente al final.
+  const extraCategorias = Array.from(
+    new Set(piezas.filter((p) => !CATEGORIAS.includes(p.categoria)).map((p) => p.categoria))
+  ).sort((a, b) => a.localeCompare(b, 'es-MX'))
+  const extras = extraCategorias.map((cat) => ({ categoria: cat, items: piezas.filter((p) => p.categoria === cat) }))
+
+  const porCategoria = [...conocidas, ...extras]
 
   const defaultOpen = porCategoria.map(({ categoria }) => categoria)
 
@@ -198,8 +224,16 @@ export default function Piezas() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editPieza, setEditPieza] = useState<Pieza | null>(null)
   const [deletePieza, setDeletePieza] = useState<Pieza | null>(null)
+  const [exportando, setExportando] = useState(false)
 
-  useEffect(() => { setPage(1) }, [debouncedSearch, searchBy])
+  // Al cambiar la búsqueda o el campo de búsqueda se vuelve a la página 1.
+  // Se ajusta durante el render (patrón recomendado por React) en vez de en
+  // un efecto, para no disparar un render extra con la página vieja.
+  const [prevBusqueda, setPrevBusqueda] = useState({ debouncedSearch, searchBy })
+  if (prevBusqueda.debouncedSearch !== debouncedSearch || prevBusqueda.searchBy !== searchBy) {
+    setPrevBusqueda({ debouncedSearch, searchBy })
+    setPage(1)
+  }
 
   const searching = debouncedSearch.length > 0
   const { data, isLoading, isError } = useRefacciones(page, debouncedSearch, searchBy, undefined, searching)
@@ -211,6 +245,13 @@ export default function Piezas() {
   const deleteMut = useDeleteRefaccion()
 
   const totalPages = Math.ceil((data?.pagination?.total ?? 0) / (data?.pagination?.pageSize ?? 20))
+
+  const categoriasDisponibles = useMemo(() => {
+    const set = new Set(CATEGORIAS)
+    for (const p of allData?.data ?? data?.data ?? []) set.add(p.categoria)
+    if (editPieza) set.add(editPieza.categoria)
+    return Array.from(set)
+  }, [allData, data, editPieza])
 
   function handleCreate(values: FormValues) {
     createMut.mutate(values, {
@@ -232,6 +273,18 @@ export default function Piezas() {
     })
   }
 
+  async function handleExportPdf() {
+    setExportando(true)
+    try {
+      const piezas = await fetchTodasLasPiezas()
+      await exportPiezasReporteToPdf(piezas.data)
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setExportando(false)
+    }
+  }
+
   return (
     <>
       <Stack gap="md">
@@ -247,6 +300,14 @@ export default function Piezas() {
                 {searching ? data?.pagination?.total : allData?.data?.length} piezas
               </Text>
             )}
+            <Button
+              variant="default"
+              leftSection={<IconFileTypePdf size={16} />}
+              loading={exportando}
+              onClick={handleExportPdf}
+            >
+              Generar reporte
+            </Button>
             <Button
               leftSection={<IconPlus size={16} />}
               onClick={() => setCreateOpen(true)}
@@ -342,6 +403,7 @@ export default function Piezas() {
         centered
       >
         <PiezaForm
+          categoriasDisponibles={categoriasDisponibles}
           isPending={createMut.isPending}
           error={createMut.error ? (createMut.error as Error).message : null}
           onSubmit={handleCreate}
@@ -363,6 +425,7 @@ export default function Piezas() {
               descripcion:  editPieza.descripcion,
               categoria:    editPieza.categoria,
             }}
+            categoriasDisponibles={categoriasDisponibles}
             isPending={updateMut.isPending}
             error={updateMut.error ? (updateMut.error as Error).message : null}
             onSubmit={handleUpdate}

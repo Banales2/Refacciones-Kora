@@ -1,3 +1,10 @@
+// Página Vehículos: administración de la flota. La vista de lista agrupa por
+// ubicación (rutas / sucursales / unitarios) y tipo, con búsqueda paginada,
+// edición rápida de kilometraje, alta/edición/baja y reporte PDF del
+// inventario. La vista de detalle de un vehículo concentra sus datos, sus
+// mantenimientos realizados y sus requerimientos (recurrentes y únicos).
+// Exporta también MantenimientoForm y RequerimientoForm, reutilizados por el
+// Calendario.
 import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Stack, Group, Text, TextInput, Textarea, Table, Badge,
@@ -7,12 +14,14 @@ import {
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight, IconAlertTriangle } from '@tabler/icons-react'
+import { IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight, IconAlertTriangle, IconFileTypePdf } from '@tabler/icons-react'
 import {
   useVehiculos, useVehiculo, useCreateVehiculo, useUpdateVehiculo, useDeleteVehiculo, vehiculoLabel,
+  fetchTodosLosVehiculos,
 } from '../hooks/useVehiculos'
 import { useSucursales } from '../hooks/useSucursales'
 import type { Sucursal } from '../hooks/useSucursales'
+import { exportVehiculosReporteToPdf } from '../lib/exportVehiculosReporte'
 import {
   useMantenimientos, useCreateMantenimiento, useUpdateMantenimiento, useDeleteMantenimiento,
 } from '../hooks/useMantenimientos'
@@ -807,11 +816,12 @@ function RequerimientosSection({ vehiculo, mantenimientos, overdueIds = new Set<
 function toDateLocal(iso: string): Date | null {
   return iso ? new Date(`${iso}T12:00:00`) : null
 }
-function fromDateLocal(d: Date | null): string {
+// Acepta Date o string porque Mantine DateInput puede entregar cualquiera de los dos en runtime
+function fromDateLocal(d: Date | string | null): string {
   if (!d) return ''
-  const nd = d instanceof Date ? d : new Date(d as any)
+  const nd = d instanceof Date ? d : new Date(d)
   if (isNaN(nd.getTime())) return ''
-  // Mantine entrega mezzanotte UTC; +12h lleva a mediodía UTC para leer la fecha correcta en cualquier zona horaria
+  // Mantine entrega medianoche UTC; +12h lleva a mediodía UTC para leer la fecha correcta en cualquier zona horaria
   const safe = new Date(nd.getTime() + 12 * 60 * 60 * 1000)
   return `${safe.getUTCFullYear()}-${String(safe.getUTCMonth() + 1).padStart(2, '0')}-${String(safe.getUTCDate()).padStart(2, '0')}`
 }
@@ -1507,6 +1517,17 @@ function VehiculosTable({
 
 // ── Vista agrupada (Rutas / Sucursales / Unitarios) ────────────────────────────
 
+// Encabezado de cada grupo del acordeón: nombre del grupo + conteo de vehículos.
+// Vive a nivel de módulo para no recrearse en cada render del acordeón.
+function GroupHeader({ label, count }: { label: string; count: number }) {
+  return (
+    <Group justify="space-between" pr="md" wrap="nowrap">
+      <Text fw={600}>{label}</Text>
+      <Badge variant="light" color="gray">{count}</Badge>
+    </Group>
+  )
+}
+
 function VehiculosAgrupados({
   vehiculos, sucursales, onSelect, onEdit, onDelete, km,
 }: {
@@ -1529,15 +1550,6 @@ function VehiculosAgrupados({
     ...(sinSucursal.length ? ['sin-sucursal'] : []),
     'unitarios',
   ]
-
-  function GroupHeader({ label, count }: { label: string; count: number }) {
-    return (
-      <Group justify="space-between" pr="md" wrap="nowrap">
-        <Text fw={600}>{label}</Text>
-        <Badge variant="light" color="gray">{count}</Badge>
-      </Group>
-    )
-  }
 
   return (
     <Accordion key={sucursales.map(s => s.id).join(',')} multiple defaultValue={defaultOpen} variant="separated">
@@ -1615,7 +1627,14 @@ export default function Vehiculos({
   const [deleting,   setDeleting]   = useState<VehiculoRow | null>(null)
   const [formError,  setFormError]  = useState<string | null>(null)
 
-  useEffect(() => { setPage(1) }, [debouncedSearch])
+  // Al cambiar la búsqueda se vuelve a la página 1. Se ajusta durante el
+  // render (patrón recomendado por React) en vez de en un efecto, para no
+  // disparar un render extra con la página vieja.
+  const [prevBusqueda, setPrevBusqueda] = useState(debouncedSearch)
+  if (prevBusqueda !== debouncedSearch) {
+    setPrevBusqueda(debouncedSearch)
+    setPage(1)
+  }
 
   const { data, isLoading, isError } = useVehiculos(page, debouncedSearch, undefined, undefined, undefined, searching)
   const totalPages = Math.ceil(
@@ -1629,6 +1648,20 @@ export default function Vehiculos({
   const createMut = useCreateVehiculo()
   const updateMut = useUpdateVehiculo()
   const deleteMut = useDeleteVehiculo()
+
+  const [exportando, setExportando] = useState(false)
+
+  async function handleExportPdf() {
+    setExportando(true)
+    try {
+      const vehiculosRes = await fetchTodosLosVehiculos()
+      await exportVehiculosReporteToPdf(vehiculosRes.data, sucursalesData?.data ?? [])
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setExportando(false)
+    }
+  }
 
   const [editingKmId, setEditingKmId] = useState<number | null>(null)
   const [kmDraft, setKmDraft]         = useState<number | ''>('')
@@ -1735,6 +1768,14 @@ export default function Vehiculos({
           {totalVehiculos != null && (
             <Text size="sm" c="dimmed">{totalVehiculos} vehículos</Text>
           )}
+          <Button
+            size="sm" variant="default"
+            leftSection={<IconFileTypePdf size={16} />}
+            loading={exportando}
+            onClick={handleExportPdf}
+          >
+            Generar reporte
+          </Button>
           <Button size="sm" onClick={openCreate}>+ Nuevo vehículo</Button>
         </Group>
       </Group>

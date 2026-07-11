@@ -1,3 +1,5 @@
+// Agrupación de los vehículos del reporte de flota para el PDF: replica la
+// jerarquía de la pestaña Vehículos (ubicación → tipo → marca/modelo/serie).
 import type { VehiculoReporte } from '../hooks/useDashboard'
 import type { TipoVehiculo } from '../hooks/useVehiculos'
 import type { Sucursal } from '../hooks/useSucursales'

@@ -1,3 +1,4 @@
+// Catálogo de proveedores de refacciones; se referencian desde los lotes de compra.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 

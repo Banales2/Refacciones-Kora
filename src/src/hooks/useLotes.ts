@@ -1,3 +1,6 @@
+// Lotes de compra de una pieza: cada lote registra proveedor, factura, costo
+// unitario y cantidades (inicial y disponible). El stock de una pieza es la
+// suma de sus lotes; los mantenimientos descuentan de lotes específicos.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 

@@ -1,3 +1,6 @@
+// Flota de vehículos: búsqueda paginada con filtros por tipo/modelo, detalle
+// individual y CRUD. Según el tipo, un vehículo pertenece a una ruta
+// (tractocamión, caja de trailer) o a una sucursal (camión, montacargas).
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
@@ -76,6 +79,12 @@ export function useVehiculo(id?: number) {
     queryFn: () => api.get<{ data: VehiculoRow }>(`/vehiculos/${id}`),
     enabled: id !== undefined,
   })
+}
+
+// Se pide bajo demanda (al exportar el PDF) para traer el inventario completo
+// sin importar la búsqueda o página activa en pantalla.
+export function fetchTodosLosVehiculos() {
+  return api.get<ListResponse>('/vehiculos?page=1&pageSize=100')
 }
 
 export function useCreateVehiculo() {

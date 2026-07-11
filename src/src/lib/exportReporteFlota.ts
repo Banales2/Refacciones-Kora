@@ -1,3 +1,8 @@
+// Genera el PDF del reporte de flota del dashboard (jsPDF + autoTable):
+// costos del mes, comparación vs periodo anterior y detalle por vehículo
+// agrupado por ubicación. Las librerías se importan dinámicamente para no
+// cargarlas en el bundle principal.
+import type { CellHookData } from 'jspdf-autotable'
 import type { ReporteFlota } from '../hooks/useDashboard'
 import type { Sucursal } from '../hooks/useSucursales'
 import { agruparVehiculosPorUbicacion } from './agruparVehiculosReporte'
@@ -145,7 +150,7 @@ export async function exportReporteFlotaToPdf(reporte: ReporteFlota, sucursales:
           4: { halign: 'right' },  5: { halign: 'center' }, 6: { halign: 'right' },
           7: { halign: 'right' },  8: { halign: 'center' }, 9: { halign: 'center' },
         },
-        didParseCell: (data: { section: string; column: { index: number }; cell: { raw: unknown; styles: Record<string, unknown> } }) => {
+        didParseCell: (data: CellHookData) => {
           if (data.section !== 'body') return
           if (data.column.index === 8 && Number(data.cell.raw) > 0) {
             data.cell.styles.textColor = [200, 40, 40]

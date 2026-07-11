@@ -1,3 +1,5 @@
+// Colores y etiquetas por tipo de vehículo, compartidos por badges, gráficas
+// y reportes en toda la aplicación.
 export const TIPO_COLORS: Record<string, string> = {
   camion:       'blue',
   tractocamion: 'violet',

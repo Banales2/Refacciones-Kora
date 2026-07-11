@@ -1,3 +1,6 @@
+// Requerimientos de mantenimiento propios de un vehículo: tareas recurrentes
+// o únicas que vencen por kilometraje, por tiempo o por ambos. Pueden nacer
+// de la plantilla del modelo (plantilla_origen_id) o crearse a mano.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 

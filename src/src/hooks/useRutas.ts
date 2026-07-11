@@ -1,3 +1,4 @@
+// Catálogo de rutas de transporte; se asignan a tractocamiones y cajas de trailer.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 

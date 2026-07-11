@@ -1,3 +1,6 @@
+// Página Catálogos: agrupa en pestañas la administración de sucursales,
+// rutas, modelos y proveedores. Sucursales y rutas comparten el mismo
+// formulario genérico (nombre + ubicación) con CRUD.
 import { useState } from 'react'
 import {
   Stack, Group, Text, TextInput, Table, Tabs,

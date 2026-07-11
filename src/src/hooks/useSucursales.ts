@@ -1,3 +1,5 @@
+// Catálogo de sucursales; se asignan a camiones y montacargas, y sirven para
+// agrupar la flota en las vistas y los reportes.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 

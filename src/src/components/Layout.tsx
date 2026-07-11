@@ -1,3 +1,7 @@
+// Estructura general de la app (AppShell de Mantine): barra lateral de
+// navegación, encabezado con usuario/rol y render de la sección activa. La
+// navegación es por estado local (sin router); navigateToVehiculo permite
+// saltar desde cualquier pantalla al detalle de un vehículo.
 import { useState } from 'react'
 import {
   AppShell,

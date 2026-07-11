@@ -1,3 +1,6 @@
+// Página Modelos: catálogo de marcas/modelos de vehículos con su plantilla de
+// requerimientos (mantenimientos periódicos que heredan los vehículos del
+// modelo). Lista + vista de detalle con CRUD de plantilla.
 import { useState } from 'react'
 import {
   Stack, Group, Text, TextInput, Textarea, Table, Badge,

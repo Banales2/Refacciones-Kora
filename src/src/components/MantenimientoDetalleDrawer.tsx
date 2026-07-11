@@ -1,3 +1,6 @@
+// Drawer de detalle de un mantenimiento: datos generales (fecha, técnico,
+// costos) y las piezas usadas, que se descuentan de lotes con existencias.
+// Permite agregar, editar (solo cantidad/costo) y quitar piezas del detalle.
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -177,8 +180,9 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
 
   function handleUpdate(values: DetalleFormValues) {
     if (!editItem) return
-    const { lote_id: _loteId, ...payload } = toPayload(values)
-    updateMut.mutate({ id: editItem.id, ...payload }, { onSuccess: () => setEditItem(null) })
+    // Al editar no se permite cambiar el lote: solo se envían cantidad y costo
+    const { cantidad, costo_unitario } = toPayload(values)
+    updateMut.mutate({ id: editItem.id, cantidad, costo_unitario }, { onSuccess: () => setEditItem(null) })
   }
 
   function handleDelete() {

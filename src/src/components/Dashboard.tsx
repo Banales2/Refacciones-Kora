@@ -1,3 +1,7 @@
+// Dashboard (Resumen general): tarjetas de métricas del mes, gráficas de
+// costos por vehículo e historial de requerimientos, listas de vencidos y
+// por vencer, y exportaciones del periodo a Excel (resumen) y PDF (reporte
+// de flota completo).
 import { Fragment, useMemo, useState } from 'react'
 import {
   SimpleGrid, Card, Text, Group, ThemeIcon, Stack, Loader, Center, Table, Divider, Badge, ActionIcon, Collapse,

@@ -1,3 +1,5 @@
+// Detalle de un mantenimiento: las piezas usadas, cada una descontada de un
+// lote de compra específico (lote_id) con su cantidad y costo unitario.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { Mantenimiento } from './useMantenimientos'

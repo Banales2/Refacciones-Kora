@@ -1,3 +1,6 @@
+// Consultas del tablero principal: resumen de costos del mes, requerimientos
+// vencidos y por vencer, historial para la gráfica, mantenimientos del
+// calendario y el reporte de flota completo (este último bajo demanda).
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 

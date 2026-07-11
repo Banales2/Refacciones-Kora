@@ -1,3 +1,8 @@
+// Página Calendario: vista mensual con los mantenimientos realizados (azul)
+// y las agendas programadas (naranja, marcando traslapes), alertas de
+// requerimientos vencidos y por vencer, y el flujo de agendar un
+// mantenimiento futuro para cualquier vehículo (que al completarse genera el
+// mantenimiento real).
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
@@ -84,9 +89,10 @@ interface VehiculoOptionData {
 function toDateLocal(iso: string): Date | null {
   return iso ? new Date(`${iso}T12:00:00`) : null
 }
-function fromDateLocal(d: Date | null): string {
+// Acepta Date o string porque Mantine DateInput puede entregar cualquiera de los dos en runtime
+function fromDateLocal(d: Date | string | null): string {
   if (!d) return ''
-  const nd = d instanceof Date ? d : new Date(d as any)
+  const nd = d instanceof Date ? d : new Date(d)
   if (isNaN(nd.getTime())) return ''
   const safe = new Date(nd.getTime() + 12 * 60 * 60 * 1000)
   return `${safe.getUTCFullYear()}-${String(safe.getUTCMonth() + 1).padStart(2, '0')}-${String(safe.getUTCDate()).padStart(2, '0')}`
@@ -282,9 +288,12 @@ export default function Calendario({
   const [cancelarAgenda, setCancelarAgenda] = useState<AgendaConVehiculo | null>(null)
   const [completarAgenda, setCompletarAgenda] = useState<AgendaConVehiculo | null>(null)
 
-  const mantenimientos = mantData?.data ?? []
-  const agendas = (agendasData?.data ?? [])
-  const agendasPendientes = agendas.filter(a => a.status === 'pendiente')
+  // Memorizados para que conserven identidad entre renders: varios useMemo
+  // de abajo dependen de ellos y se recalcularían en cada render si fueran
+  // expresiones nuevas (`x?.data ?? []` crea un array distinto cada vez).
+  const mantenimientos = useMemo(() => mantData?.data ?? [], [mantData])
+  const agendas = useMemo(() => agendasData?.data ?? [], [agendasData])
+  const agendasPendientes = useMemo(() => agendas.filter(a => a.status === 'pendiente'), [agendas])
 
   // ── Agendar mantenimiento ──
   const [agendarOpen, setAgendarOpen]           = useState(false)
@@ -365,8 +374,8 @@ export default function Calendario({
     completarMut.mutate({ id: completarAgenda.id, payload }, { onSuccess: () => setCompletarAgenda(null) })
   }
 
-  const vencidos = vencidosData?.data ?? []
-  const porVencer = porVencerData?.data ?? []
+  const vencidos = useMemo(() => vencidosData?.data ?? [], [vencidosData])
+  const porVencer = useMemo(() => porVencerData?.data ?? [], [porVencerData])
   const vehiculosVencidos = useMemo(() => agruparPorVehiculoOrdenado(vencidos), [vencidos])
   const vehiculosPorVencer = useMemo(() => agruparPorVehiculoOrdenado(porVencer), [porVencer])
   const vehiculosAlerta = alertaAbierta === 'vencidos' ? vehiculosVencidos : vehiculosPorVencer
@@ -381,7 +390,6 @@ export default function Calendario({
     }
     return map
   }, [mantenimientos])
-  const fechasConMantenimiento = mantenimientoCountPorDia
 
   // Cuenta cuántas agendas pendientes cubren cada día, para detectar traslapes
   // (2+ vehículos agendados el mismo día).

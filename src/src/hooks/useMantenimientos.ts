@@ -1,3 +1,6 @@
+// Mantenimientos realizados a un vehículo: fecha, técnico, costo de mano de
+// obra, kilometraje y los requerimientos que satisface. El costo de piezas
+// (piezas_total) viene del detalle asociado (useDetalleMtto).
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 

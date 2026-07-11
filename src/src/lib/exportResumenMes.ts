@@ -1,3 +1,6 @@
+// Exporta el resumen del mes del dashboard a un libro de Excel (exceljs):
+// hoja de resumen de costos, mantenimientos por vehículo y lotes comprados.
+// exceljs se importa dinámicamente para no cargarlo en el bundle principal.
 import type { ResumenMes } from '../hooks/useDashboard'
 
 function rangoLabel(resumen: ResumenMes) {

@@ -1,3 +1,6 @@
+// Formulario de alta/edición de vehículos: los campos visibles y requeridos
+// dependen del tipo (p. ej. ruta para tractocamiones, sucursal para camiones,
+// pies para cajas de trailer). En edición el tipo no puede cambiarse.
 import { useForm } from '@mantine/form'
 import {
   Stack, Grid, TextInput, NumberInput, Select, Divider,
@@ -64,9 +67,10 @@ function toDateLocal(iso: string): Date | null {
   return new Date(`${iso}T12:00:00`)
 }
 
-function fromDateLocal(d: Date | null): string {
+// Acepta Date o string porque Mantine DateInput puede entregar cualquiera de los dos en runtime
+function fromDateLocal(d: Date | string | null): string {
   if (!d) return ''
-  const nd = d instanceof Date ? d : new Date(d as any)
+  const nd = d instanceof Date ? d : new Date(d)
   if (isNaN(nd.getTime())) return ''
   // +12h sobre medianoche UTC evita el desfase de zona horaria al leer con métodos UTC
   const safe = new Date(nd.getTime() + 12 * 60 * 60 * 1000)
@@ -134,7 +138,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
       fecha_compra: vals.fecha_compra || null,
     }
 
-    let extra: Record<string, unknown> = {}
+    // Campos que aplican según el tipo de vehículo (el else final cubre 'utilitario')
+    let extra: Record<string, unknown>
     if (t === 'camion') {
       extra = {
         combustible: vals.combustible,

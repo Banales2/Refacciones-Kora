@@ -1,3 +1,6 @@
+// Usuario autenticado: consulta /.auth/me (autenticación integrada de Azure
+// Static Web Apps con Azure AD) y expone el usuario, sus roles y el estado
+// de carga. App.tsx lo usa como guardia de acceso a toda la aplicación.
 import { useEffect, useState } from 'react'
 
 export interface UserInfo {

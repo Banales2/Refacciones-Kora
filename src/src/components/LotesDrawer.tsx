@@ -1,3 +1,6 @@
+// Drawer de lotes de compra de una pieza: se abre al seleccionar una pieza en
+// la página Piezas y permite ver el stock por lote (proveedor, factura, costo,
+// cantidades) y dar de alta, editar o eliminar lotes.
 import { useState } from 'react'
 import {
   Drawer, Stack, Group, Text, Badge, Table, Loader, Center, Alert,

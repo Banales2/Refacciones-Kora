@@ -1,3 +1,6 @@
+// Catálogo e inventario de piezas (refacciones): búsqueda paginada por número
+// de serie o descripción y CRUD. El stock (cantidad_total) es la suma de los
+// lotes de compra de cada pieza (useLotes).
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
@@ -29,6 +32,12 @@ export function useRefacciones(
     },
     enabled,
   })
+}
+
+// Se pide bajo demanda (al exportar el PDF) para traer el inventario completo
+// sin importar la búsqueda o página activa en pantalla.
+export function fetchTodasLasPiezas() {
+  return api.get<ListResponse>('/refacciones?page=1&pageSize=100')
 }
 
 export function useCreateRefaccion() {

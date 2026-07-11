@@ -1,3 +1,6 @@
+// Agendas de mantenimiento programado: citas futuras de taller por vehículo,
+// con su ciclo de vida (pendiente → completada, que genera el mantenimiento
+// real, o cancelada). Alimenta el Calendario y la pestaña del vehículo.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { Mantenimiento, MantenimientoPayload } from './useMantenimientos'

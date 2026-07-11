@@ -1,3 +1,6 @@
+// Aviso de actualización de la PWA: cuando el service worker detecta una
+// versión nueva muestra un banner flotante con opción de recargar ahora o
+// posponer.
 import { useRegisterSW } from 'virtual:pwa-register/react'
 
 export function PWAUpdater() {

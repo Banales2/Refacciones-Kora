@@ -1,3 +1,5 @@
+// Lotes con existencias (cantidad_disponible > 0) de todas las piezas:
+// opciones del selector al registrar piezas usadas en un mantenimiento.
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 

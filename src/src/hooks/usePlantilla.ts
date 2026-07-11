@@ -1,3 +1,6 @@
+// Plantilla de requerimientos por modelo: mantenimientos periódicos (por km,
+// meses o ambos) que se copian a cada vehículo del modelo como requerimientos
+// propios. Se administra desde la página de Modelos.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 

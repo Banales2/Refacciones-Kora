@@ -1,3 +1,5 @@
+// Página Proveedores: catálogo simple de proveedores de refacciones (CRUD).
+// Se muestra como pestaña dentro de Catálogos (SitiosYRutas).
 import { useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert,
