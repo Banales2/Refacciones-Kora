@@ -35,6 +35,7 @@ import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePa
 import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, TipoReq, StatusReq } from '../hooks/useRequerimientos'
 import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
+import RecargasSection from '../components/RecargasSection'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
@@ -1607,6 +1608,9 @@ function VehiculoDetalle({
 
       {/* Mantenimientos */}
       <MantenimientosSection vehiculoId={vehiculo.id} tipoVehiculo={vehiculo.tipo} />
+
+      {/* Recargas de combustible */}
+      <RecargasSection vehiculoId={vehiculo.id} />
     </Stack>
   )
 }

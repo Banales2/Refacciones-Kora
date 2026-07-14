@@ -34,6 +34,11 @@ function toDateInputValue(iso: string) {
   return iso.substring(0, 10)
 }
 
+function todayIso() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 // ─── Formulario de lote ──────────────────────────────────────────────────────
 
 type LoteFormValues = {
@@ -57,6 +62,7 @@ function LoteForm({
   onSubmit: (v: LoteFormValues) => void
   onCancel: () => void
 }) {
+  const hoy = todayIso()
   const { data: provData } = useProveedores()
   const proveedores = (provData?.data ?? []).map((p) => ({
     value: String(p.id),
@@ -73,7 +79,11 @@ function LoteForm({
     },
     validate: {
       proveedor_id: (v) => (!v ? 'Proveedor requerido' : null),
-      fecha_compra: (v) => (!v ? 'Fecha requerida' : null),
+      fecha_compra: (v) => {
+        if (!v) return 'Fecha requerida'
+        if (v > hoy) return 'No puede ser una fecha futura'
+        return null
+      },
       costo_unitario: (v) => (v === '' || Number(v) <= 0 ? 'Debe ser mayor a 0' : null),
       cantidad_inicial: (v) =>
         v === '' || !Number.isInteger(Number(v)) || Number(v) < 1
@@ -97,6 +107,7 @@ function LoteForm({
           label="Fecha de compra"
           type="date"
           required
+          max={hoy}
           {...form.getInputProps('fecha_compra')}
         />
         <NumberInput
