@@ -51,7 +51,7 @@ function agruparPorUbicacion(vehiculos: VehiculoRow[], sucursales: Sucursal[]): 
     if (items.length)     grupos.push({ label: sucursal.nombre,       tipos: agruparPorTipo(items) })
   }
   if (sinSucursal.length)  grupos.push({ label: 'Sin sucursal',       tipos: agruparPorTipo(sinSucursal) })
-  if (unitarios.length)    grupos.push({ label: 'Vehículos unitarios', tipos: agruparPorTipo(unitarios) })
+  if (unitarios.length)    grupos.push({ label: 'Vehículos utilitarios', tipos: agruparPorTipo(unitarios) })
   return grupos
 }
 

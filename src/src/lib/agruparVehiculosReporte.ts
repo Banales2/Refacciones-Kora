@@ -57,6 +57,6 @@ export function agruparVehiculosPorUbicacion(
     if (items.length)     grupos.push({ key: `suc-${sucursal.id}`, label: sucursal.nombre,  tipos: agruparPorTipo(items) })
   }
   if (sinSucursal.length)  grupos.push({ key: 'sin-sucursal', label: 'Sin sucursal',        tipos: agruparPorTipo(sinSucursal) })
-  if (unitarios.length)    grupos.push({ key: 'unitarios',    label: 'Vehículos unitarios', tipos: agruparPorTipo(unitarios) })
+  if (unitarios.length)    grupos.push({ key: 'unitarios',    label: 'Vehículos utilitarios', tipos: agruparPorTipo(unitarios) })
   return grupos
 }

@@ -214,12 +214,13 @@ function PiezasAgrupadas({
   )
 }
 
-export default function Piezas() {
+export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [searchBy, setSearchBy] = useState<SearchBy>('all')
   const [debouncedSearch] = useDebouncedValue(search, 400)
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  // Al llegar desde el dashboard, se abre directo el drawer de lotes de la pieza.
+  const [selectedId, setSelectedId] = useState<number | null>(initialPiezaId ?? null)
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editPieza, setEditPieza] = useState<Pieza | null>(null)

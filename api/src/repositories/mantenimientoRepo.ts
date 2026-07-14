@@ -104,7 +104,7 @@ export async function create(data: MantenimientoCreate): Promise<Mantenimiento> 
       .input('fecha',         sql.Date,              data.fecha)
       .input('tipo',          sql.NVarChar(80),      data.tipo          ?? null)
       .input('tecnico',       sql.NVarChar(120),     data.tecnico       ?? null)
-      .input('costo',         sql.Int,               data.costo         ?? 0)
+      .input('costo',         sql.Decimal(18, 2),    data.costo         ?? 0)
       .input('kmActual',      sql.Int,               data.km_actual     ?? 0)
       .input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null)
       .query(`
@@ -138,7 +138,7 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
     if (data.fecha         !== undefined) { req.input('fecha',         sql.Date,              data.fecha);               sets.push('fecha=@fecha')                 }
     if ('tipo'         in data)           { req.input('tipo',          sql.NVarChar(80),      data.tipo          ?? null); sets.push('tipo=@tipo')                   }
     if ('tecnico'      in data)           { req.input('tecnico',       sql.NVarChar(120),     data.tecnico       ?? null); sets.push('tecnico=@tecnico')             }
-    if (data.costo         !== undefined) { req.input('costo',         sql.Int,               data.costo);               sets.push('costo=@costo')                 }
+    if (data.costo         !== undefined) { req.input('costo',         sql.Decimal(18, 2),    data.costo);               sets.push('costo=@costo')                 }
     if (data.km_actual     !== undefined) { req.input('kmActual',      sql.Int,               data.km_actual);           sets.push('km_actual=@kmActual')           }
     if ('observaciones' in data)          { req.input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null); sets.push('observaciones=@observaciones') }
     if (sets.length) {
@@ -190,6 +190,20 @@ export async function remove(id: number): Promise<boolean> {
     const linkedIds = (await tx.request().input('id', sql.Int, id)
       .query('SELECT requerimiento_id FROM mantenimiento_requerimientos WHERE mantenimiento_id=@id'))
       .recordset.map((r: { requerimiento_id: number }) => r.requerimiento_id)
+
+    // Devolver al inventario las piezas consumidas y liberar la FK de detalle_mtto_pieza
+    const detalles = (await tx.request().input('id', sql.Int, id)
+      .query('DELETE FROM detalle_mtto_pieza OUTPUT DELETED.lote_id, DELETED.cantidad WHERE mantenimiento_id=@id'))
+      .recordset as { lote_id: number; cantidad: number }[]
+    for (const d of detalles) {
+      await tx.request()
+        .input('lid',  sql.Int, d.lote_id)
+        .input('cant', sql.Int, d.cantidad)
+        .query('UPDATE lotes_pieza SET cantidad_disponible = cantidad_disponible + @cant WHERE id=@lid')
+    }
+
+    await tx.request().input('id', sql.Int, id)
+      .query('DELETE FROM mantenimiento_requerimientos WHERE mantenimiento_id=@id')
 
     const r = await tx.request()
       .input('id', sql.Int, id)

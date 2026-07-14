@@ -25,7 +25,7 @@ function formatFechaCorta(iso: string) {
 }
 
 function formatMXN(n: number) {
-  return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
+  return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
 }
 
 function formatFecha(iso: string) {
@@ -171,7 +171,10 @@ function RequerimientosPorVehiculoTable({
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-export default function Dashboard({ onNavigateVehiculo }: { onNavigateVehiculo?: (vehiculoId: number) => void }) {
+export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
+  onNavigateVehiculo?: (vehiculoId: number) => void
+  onNavigatePieza?:    (piezaId: number) => void
+}) {
   const { data: resumen, isLoading: loadingResumen } = useResumenMes()
   const { data: vencidosData, isLoading: loadingVencidos } = useRequerimientosVencidos()
   const { data: porVencerData, isLoading: loadingPorVencer } = useRequerimientosPorVencer()
@@ -338,7 +341,25 @@ export default function Dashboard({ onNavigateVehiculo }: { onNavigateVehiculo?:
                 <Table.Tbody>
                   {(resumen?.data.mantenimientos.por_vehiculo ?? []).map(v => (
                     <Table.Tr key={v.vehiculo_id}>
-                      <Table.Td fw={500}>{v.vehiculo_nombre}</Table.Td>
+                      <Table.Td>
+                        {onNavigateVehiculo ? (
+                          <Text
+                            component="button"
+                            size="sm"
+                            fw={500}
+                            c="blue"
+                            style={{
+                              cursor: 'pointer', background: 'none', border: 'none', padding: 0,
+                              textDecoration: 'underline', textUnderlineOffset: 2,
+                            }}
+                            onClick={() => onNavigateVehiculo(v.vehiculo_id)}
+                          >
+                            {v.vehiculo_nombre}
+                          </Text>
+                        ) : (
+                          <Text size="sm" fw={500}>{v.vehiculo_nombre}</Text>
+                        )}
+                      </Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>{v.cantidad}</Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>{formatMXN(v.costo_total)}</Table.Td>
                     </Table.Tr>
@@ -374,7 +395,23 @@ export default function Dashboard({ onNavigateVehiculo }: { onNavigateVehiculo?:
                 {(resumen?.data.piezas.lotes ?? []).map(l => (
                   <Table.Tr key={l.id}>
                     <Table.Td>
-                      <Text size="sm" fw={500}>{l.numero_serie}</Text>
+                      {onNavigatePieza ? (
+                        <Text
+                          component="button"
+                          size="sm"
+                          fw={500}
+                          c="blue"
+                          style={{
+                            cursor: 'pointer', background: 'none', border: 'none', padding: 0,
+                            textDecoration: 'underline', textUnderlineOffset: 2,
+                          }}
+                          onClick={() => onNavigatePieza(l.pieza_id)}
+                        >
+                          {l.numero_serie}
+                        </Text>
+                      ) : (
+                        <Text size="sm" fw={500}>{l.numero_serie}</Text>
+                      )}
                       <Text size="xs" c="dimmed">{l.descripcion}</Text>
                     </Table.Td>
                     <Table.Td>{l.proveedor}</Table.Td>

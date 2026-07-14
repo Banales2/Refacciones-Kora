@@ -47,6 +47,27 @@ export function useCreateDetalleMtto(mantenimientoId: number | null) {
   })
 }
 
+// Registra de golpe las piezas capturadas al dar de alta un mantenimiento. Van
+// en serie (no en paralelo) porque cada una descuenta stock de su lote y el
+// backend valida la existencia disponible en cada alta.
+export function useCreateDetallesMtto() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ mantenimientoId, piezas }: { mantenimientoId: number; piezas: DetalleMttoPayload[] }) => {
+      for (const pieza of piezas) {
+        await api.post<{ data: DetalleMttoPieza }>(`/mantenimientos/${mantenimientoId}/detalle`, pieza)
+      }
+    },
+    onSettled: (_data, _err, { mantenimientoId }) => {
+      // Incluso si una pieza falla a medias, las anteriores sí se guardaron:
+      // se refresca igual para que la pantalla refleje el estado real.
+      qc.invalidateQueries({ queryKey: ['detalle-mtto', mantenimientoId] })
+      qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
+      qc.invalidateQueries({ queryKey: ['mantenimientos'] })
+    },
+  })
+}
+
 export function useUpdateDetalleMtto(mantenimientoId: number | null) {
   const qc = useQueryClient()
   return useMutation({

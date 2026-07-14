@@ -67,6 +67,7 @@ export async function findAllMantenimientosConVehiculo(): Promise<MantenimientoC
 
 export interface LoteMes {
   id:               number
+  pieza_id:         number
   numero_serie:     string
   descripcion:      string
   proveedor:        string
@@ -81,7 +82,7 @@ export async function findLotesEnRango(start: string, end: string): Promise<Lote
     .input('start', sql.Date, start)
     .input('end',   sql.Date, end)
     .query(`
-      SELECT l.id, p.numero_serie, p.descripcion, pr.nombre AS proveedor,
+      SELECT l.id, l.pieza_id, p.numero_serie, p.descripcion, pr.nombre AS proveedor,
              l.fecha_compra, l.cantidad_inicial, l.costo_unitario
       FROM lotes_pieza l
       JOIN piezas p ON p.id = l.pieza_id

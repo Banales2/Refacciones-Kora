@@ -12,6 +12,6 @@ export const TIPO_LABELS: Record<string, string> = {
   camion:       'Camión',
   tractocamion: 'Tractocamión',
   caja_trailer: 'Caja de trailer',
-  utilitario:   'Vehículo unitario',
+  utilitario:   'Vehículo utilitario',
   montacargas:  'Montacargas',
 }

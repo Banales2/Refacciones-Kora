@@ -9,7 +9,7 @@ const Schema = z.object({
   fecha:             z.string().date().optional(),
   tipo:              z.string().max(80).trim().nullable().optional(),
   tecnico:           z.string().max(120).trim().nullable().optional(),
-  costo:             z.coerce.number().int().min(0).optional(),
+  costo:             z.coerce.number().min(0).optional(),
   km_actual:         z.coerce.number().int().min(0).optional(),
   observaciones:     z.string().trim().nullable().optional(),
   requerimiento_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un requerimiento').optional(),

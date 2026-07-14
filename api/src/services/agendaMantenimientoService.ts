@@ -1,5 +1,5 @@
 import * as repo from '../repositories/agendaMantenimientoRepo'
-import * as mantenimientoRepo from '../repositories/mantenimientoRepo'
+import * as mantenimientoService from './mantenimientoService'
 import { NotFoundError, ValidationError } from '../shared/errors'
 import type { AgendaMantenimientoCreate, AgendaMantenimientoUpdate } from '../repositories/agendaMantenimientoRepo'
 import type { MantenimientoCreate } from '../repositories/mantenimientoRepo'
@@ -57,7 +57,9 @@ export async function completar(id: number, data: Omit<MantenimientoCreate, 'veh
   if (agenda.status !== 'pendiente') {
     throw new ValidationError('Esta agenda ya fue completada o cancelada')
   }
-  const mantenimiento = await mantenimientoRepo.create({ ...data, vehiculo_id: agenda.vehiculo_id })
+  // Vía el servicio (no el repo) para que completar una agenda también actualice
+  // el kilometraje del vehículo, igual que un alta directa.
+  const mantenimiento = await mantenimientoService.create(agenda.vehiculo_id, data)
   await repo.marcarCompletada(id, mantenimiento.id)
   return mantenimiento
 }

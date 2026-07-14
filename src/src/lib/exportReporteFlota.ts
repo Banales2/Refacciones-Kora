@@ -8,7 +8,7 @@ import type { Sucursal } from '../hooks/useSucursales'
 import { agruparVehiculosPorUbicacion } from './agruparVehiculosReporte'
 
 function formatMXN(n: number) {
-  return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
+  return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
 }
 
 function formatFecha(iso: string | null) {

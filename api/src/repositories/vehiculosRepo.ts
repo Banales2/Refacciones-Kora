@@ -179,6 +179,36 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
   }
 }
 
+// Tabla donde vive el kilometraje de cada tipo. Cajas de trailer y montacargas
+// no llevan odómetro, por eso no aparecen aquí.
+const TABLA_KM: Partial<Record<TipoVehiculo, string>> = {
+  camion:       'camiones',
+  tractocamion: 'tractocamiones',
+  utilitario:   'vehiculos_utilitarios',
+}
+
+// Sube el odómetro del vehículo al kilometraje reportado en un mantenimiento.
+// Solo avanza: un mantenimiento capturado con fecha vieja (o con un km menor al
+// ya registrado) no debe hacer retroceder el odómetro.
+export async function avanzarKilometraje(vehiculoId: number, km: number): Promise<void> {
+  const pool = await getPool()
+
+  const r = await pool.request()
+    .input('vid', sql.Int, vehiculoId)
+    .query('SELECT tipo FROM vehiculos WHERE id=@vid')
+  const tipo: TipoVehiculo | undefined = r.recordset[0]?.tipo
+  const tabla = tipo ? TABLA_KM[tipo] : undefined
+  if (!tabla) return
+
+  await pool.request()
+    .input('vid', sql.Int, vehiculoId)
+    .input('km',  sql.Int, km)
+    .query(`
+      UPDATE ${tabla} SET kilometraje=@km
+      WHERE vehiculo_id=@vid AND (kilometraje IS NULL OR @km > kilometraje)
+    `)
+}
+
 export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdate): Promise<VehiculoRow | null> {
   const pool = await getPool()
 

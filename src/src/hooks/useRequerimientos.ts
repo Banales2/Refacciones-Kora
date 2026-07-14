@@ -48,12 +48,23 @@ export function useRequerimientos(vehiculoId: number) {
   })
 }
 
+// Categorías ya usadas en toda la flota, para el selector del formulario.
+export function useRequerimientoCategorias() {
+  return useQuery({
+    queryKey: ['requerimientos-categorias'],
+    queryFn: () => api.get<{ data: string[] }>('/requerimientos/categorias'),
+  })
+}
+
 export function useCreateRequerimiento(vehiculoId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (payload: RequerimientoPayload) =>
       api.post<{ data: RequerimientoExclusivo }>(`/vehiculos/${vehiculoId}/requerimientos`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
+    },
   })
 }
 
@@ -62,7 +73,10 @@ export function useUpdateRequerimiento(vehiculoId: number) {
   return useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: Partial<RequerimientoPayload> }) =>
       api.put<{ data: RequerimientoExclusivo }>(`/requerimientos/${id}`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
+    },
   })
 }
 

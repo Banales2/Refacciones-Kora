@@ -44,6 +44,8 @@ export function useCreateMantenimiento(vehiculoId: number) {
       qc.invalidateQueries({ queryKey: ['mantenimientos',  vehiculoId] })
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
+      // Registrar el mantenimiento avanza el odómetro del vehículo.
+      qc.invalidateQueries({ queryKey: ['vehiculos'] })
     },
   })
 }

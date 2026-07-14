@@ -10,6 +10,10 @@ export async function getByVehiculo(vehiculoId: number) {
   return repo.findByVehiculo(vehiculoId)
 }
 
+export async function getCategorias() {
+  return repo.findCategorias()
+}
+
 export async function create(vehiculoId: number, data: Omit<RequerimientoCreate, 'vehiculo_id'>) {
   return repo.create({ ...data, vehiculo_id: vehiculoId })
 }

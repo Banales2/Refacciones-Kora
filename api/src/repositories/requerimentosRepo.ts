@@ -66,6 +66,20 @@ export async function findByVehiculo(vehiculoId: number): Promise<RequerimientoE
   return r.recordset
 }
 
+// Categorías ya usadas en cualquier requerimiento de la flota: alimentan el
+// selector del formulario para que una categoría creada una vez quede
+// disponible después en todos los vehículos.
+export async function findCategorias(): Promise<string[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT DISTINCT categoria
+    FROM requerimientos_exclusivos
+    WHERE categoria IS NOT NULL AND LTRIM(RTRIM(categoria)) <> ''
+    ORDER BY categoria
+  `)
+  return r.recordset.map((row: { categoria: string }) => row.categoria)
+}
+
 export async function findById(id: number): Promise<RequerimientoExclusivo | null> {
   const pool = await getPool()
   const r = await pool.request()

@@ -32,6 +32,8 @@ import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import type { TipoVehiculo, VehiculoRow } from '../hooks/useVehiculos'
 import { useMantenimientos } from '../hooks/useMantenimientos'
 import type { MantenimientoPayload } from '../hooks/useMantenimientos'
+import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
+import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
 interface VehiculoConRequerimientos {
   vehiculo_id:     number
@@ -368,10 +370,28 @@ export default function Calendario({
   // ── Cancelar / completar agenda ──
   const cancelarMut  = useCancelarAgenda(cancelarAgenda?.vehiculo_id ?? 0)
   const completarMut = useCompletarAgenda(completarAgenda?.vehiculo_id ?? 0)
+  const piezasMut    = useCreateDetallesMtto()
 
-  function handleCompletarSubmit(payload: MantenimientoPayload) {
+  function handleCompletarSubmit(payload: MantenimientoPayload, piezas: DetalleMttoPayload[]) {
     if (!completarAgenda) return
-    completarMut.mutate({ id: completarAgenda.id, payload }, { onSuccess: () => setCompletarAgenda(null) })
+    completarMut.mutate({ id: completarAgenda.id, payload }, {
+      onSuccess: (res) => {
+        if (!piezas.length) { setCompletarAgenda(null); return }
+        piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
+          onSuccess: () => setCompletarAgenda(null),
+          // El mantenimiento ya quedó registrado: se avisa y se deja su detalle
+          // abierto para completar a mano las piezas que no entraron.
+          onError: (e: Error) => {
+            setCompletarAgenda(null)
+            setDetalleId(res.data.id)
+            alert(
+              `El mantenimiento se registró, pero no se pudieron guardar todas las piezas: ${e.message}\n\n` +
+              'Revisa el detalle del mantenimiento para agregar las que falten.'
+            )
+          },
+        })
+      },
+    })
   }
 
   const vencidos = useMemo(() => vencidosData?.data ?? [], [vencidosData])
@@ -805,7 +825,7 @@ export default function Calendario({
               vehiculoId={completarAgenda.vehiculo_id}
               tipoVehiculo={completarAgenda.vehiculo_tipo as TipoVehiculo}
               prefillRequerimientoIds={completarAgenda.requerimiento_ids}
-              isPending={completarMut.isPending}
+              isPending={completarMut.isPending || piezasMut.isPending}
               error={completarMut.error ? (completarMut.error as Error).message : null}
               onSubmit={handleCompletarSubmit}
               onCancel={() => setCompletarAgenda(null)}

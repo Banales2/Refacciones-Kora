@@ -16,6 +16,8 @@ import {
   Tooltip,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
+import { useIsFetching, useQueryClient } from '@tanstack/react-query'
+import { IconRefresh } from '@tabler/icons-react'
 import { useAuth } from '../hooks/useAuth'
 import Dashboard from './Dashboard'
 import Piezas from '../pages/Piezas'
@@ -36,11 +38,14 @@ const NAV_ITEMS: { section: Section; label: string; description: string }[] = [
 
 export default function Layout() {
   const { user } = useAuth()
+  const qc = useQueryClient()
+  const fetching = useIsFetching()
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure()
   const [desktopCollapsed, setDesktopCollapsed] = useState(false)
   const [section, setSection] = useState<Section>('dashboard')
   const [pendingVehiculo, setPendingVehiculo] = useState<VehiculoRow | null>(null)
   const [pendingVehiculoId, setPendingVehiculoId] = useState<number | null>(null)
+  const [pendingPiezaId, setPendingPiezaId] = useState<number | null>(null)
 
   const rol = user?.userRoles.find((r) => !['anonymous', 'authenticated'].includes(r))
 
@@ -49,6 +54,7 @@ export default function Layout() {
       setPendingVehiculo(null)
       setPendingVehiculoId(null)
     }
+    if (s !== 'piezas') setPendingPiezaId(null)
     setSection(s)
     if (mobileOpened) toggleMobile()
   }
@@ -64,6 +70,12 @@ export default function Layout() {
     setPendingVehiculo(null)
     setPendingVehiculoId(id)
     setSection('vehiculos')
+    if (mobileOpened) toggleMobile()
+  }
+
+  function navigateToPiezaId(id: number) {
+    setPendingPiezaId(id)
+    setSection('piezas')
     if (mobileOpened) toggleMobile()
   }
 
@@ -108,6 +120,18 @@ export default function Layout() {
           </Group>
 
           <Group gap="sm">
+            <Tooltip label="Actualizar datos" position="bottom">
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size="lg"
+                loading={fetching > 0}
+                onClick={() => qc.invalidateQueries()}
+                aria-label="Actualizar datos"
+              >
+                <IconRefresh size={18} />
+              </ActionIcon>
+            </Tooltip>
             <Text size="sm" c="dimmed" visibleFrom="sm">
               {user?.userDetails}
             </Text>
@@ -156,8 +180,13 @@ export default function Layout() {
 
       {/* ── Contenido ── */}
       <AppShell.Main>
-        {section === 'dashboard' && <Dashboard onNavigateVehiculo={navigateToVehiculoId} />}
-        {section === 'piezas'    && <Piezas />}
+        {section === 'dashboard' && (
+          <Dashboard
+            onNavigateVehiculo={navigateToVehiculoId}
+            onNavigatePieza={navigateToPiezaId}
+          />
+        )}
+        {section === 'piezas'    && <Piezas initialPiezaId={pendingPiezaId ?? undefined} />}
         {section === 'vehiculos' && (
           <Vehiculos
             initialVehiculo={pendingVehiculo ?? undefined}

@@ -29,11 +29,15 @@ import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimie
 import { DateInput } from '@mantine/dates'
 import {
   useRequerimientos, useCreateRequerimiento, useUpdateRequerimiento, useDeleteRequerimiento,
+  useRequerimientoCategorias,
 } from '../hooks/useRequerimientos'
 import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
 import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, TipoReq, StatusReq } from '../hooks/useRequerimientos'
 import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
+import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
+import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
+import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -41,7 +45,7 @@ const TIPOS: { value: TipoVehiculo; label: string; color: string }[] = [
   { value: 'camion',       label: 'Camión',            color: 'blue'   },
   { value: 'tractocamion', label: 'Tractocamión',      color: 'violet' },
   { value: 'caja_trailer', label: 'Caja de trailer',   color: 'orange' },
-  { value: 'utilitario',   label: 'Vehículo unitario', color: 'teal'   },
+  { value: 'utilitario',   label: 'Vehículo utilitario', color: 'teal'   },
   { value: 'montacargas',  label: 'Montacargas',       color: 'yellow' },
 ]
 
@@ -95,6 +99,10 @@ function fmtShort(iso: string | null | undefined) {
   })
 }
 
+function formatMXN(n: number) {
+  return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
+}
+
 function todayIso() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -127,7 +135,7 @@ export function RequerimientoForm({
       nombre:          initial?.nombre ?? '',
       descripcion:     initial?.descripcion ?? '',
       categoria:       initial?.categoria ?? '',
-      trigger_mode:    (initial?.trigger_mode ?? (soloTiempo ? 'meses' : 'km')) as TriggerMode,
+      trigger_mode:    (initial?.trigger_mode ?? (soloTiempo ? 'meses' : 'ambos')) as TriggerMode,
       tipo:            (initial?.tipo ?? 'recurrente') as TipoReq,
       intervalo_km:    initial?.intervalo_km ?? (null as number | null),
       intervalo_meses: initial?.intervalo_meses ?? (null as number | null),
@@ -146,6 +154,27 @@ export function RequerimientoForm({
 
   const mode  = form.values.trigger_mode
   const desde = form.values.desde
+
+  // Categorías: las ya usadas en la flota, más la del requerimiento que se edita
+  // (por si fue eliminada del resto) y la que el usuario esté escribiendo, que
+  // se ofrece como opción para crearla.
+  const { data: categoriasData } = useRequerimientoCategorias()
+  const [categoriaSearch, setCategoriaSearch] = useState('')
+
+  const categoriaOptions = useMemo(() => {
+    const existentes = new Set(categoriasData?.data ?? [])
+    if (initial?.categoria) existentes.add(initial.categoria)
+
+    const opts = [...existentes].sort((a, b) => a.localeCompare(b, 'es-MX'))
+      .map((c) => ({ value: c, label: c }))
+
+    const nueva = categoriaSearch.trim()
+    const yaExiste = [...existentes].some((c) => c.toLowerCase() === nueva.toLowerCase())
+    if (nueva && !yaExiste) {
+      opts.unshift({ value: nueva, label: `+ Crear categoría "${nueva}"` })
+    }
+    return opts
+  }, [categoriasData, initial?.categoria, categoriaSearch])
 
   // Baseline preview
   const baselineKm   = desde === 'ahora' ? (vehiculo?.kilometraje ?? null)  : (lastMant?.km_actual  ?? null)
@@ -185,7 +214,18 @@ export function RequerimientoForm({
       <Stack gap="sm">
         <TextInput label="Nombre" placeholder="Ej. Cambio de filtro de aceite" required {...form.getInputProps('nombre')} />
         <Textarea label="Descripción" autosize minRows={2} {...form.getInputProps('descripcion')} />
-        <TextInput label="Categoría" placeholder="Ej. Motor, Frenos, Eléctrico" {...form.getInputProps('categoria')} />
+        <Select
+          label="Categoría"
+          placeholder="Selecciona o escribe para crear una categoría"
+          data={categoriaOptions}
+          searchable
+          clearable
+          onSearchChange={setCategoriaSearch}
+          nothingFoundMessage="Escribe para crear una nueva categoría"
+          maxLength={80}
+          {...form.getInputProps('categoria')}
+          onChange={(v) => form.setFieldValue('categoria', v ?? '')}
+        />
         <DateInput
           label="Fecha de reporte"
           description="Cuándo se encontró/reportó el requerimiento (opcional)"
@@ -834,17 +874,29 @@ type MantForm = {
   km_actual:         number | string
   observaciones:     string
   requerimiento_ids: string[]
+  // Piezas usadas, capturadas al registrar. Puede quedar vacío: hay
+  // mantenimientos que no consumen refacciones.
+  piezas:            PiezaLinea[]
 }
 
-function initMant(m?: Mantenimiento, prefillRequerimientoIds?: number[]): MantForm {
+type PiezaLinea = {
+  lote_id:        string
+  cantidad:       number | string
+  costo_unitario: number | string
+}
+
+function initMant(m?: Mantenimiento, prefillRequerimientoIds?: number[], kmVehiculo?: number | null): MantForm {
   return {
     fecha:             m?.fecha?.split('T')[0] ?? '',
     tipo:              m?.tipo          ?? '',
     tecnico:           m?.tecnico       ?? '',
     costo:             m?.costo         ?? '',
-    km_actual:         m?.km_actual     ?? '',
+    // Al registrar se parte del odómetro actual del vehículo; se ajusta si la
+    // lectura real del taller es otra.
+    km_actual:         m?.km_actual     ?? kmVehiculo ?? '',
     observaciones:     m?.observaciones ?? '',
     requerimiento_ids: m?.requerimiento_ids?.map(String) ?? prefillRequerimientoIds?.map(String) ?? [],
+    piezas:            [],
   }
 }
 
@@ -857,7 +909,7 @@ export function MantenimientoForm({
   prefillRequerimientoIds?: number[]
   isPending:                boolean
   error:                    string | null
-  onSubmit:                 (p: MantenimientoPayload) => void
+  onSubmit:                 (p: MantenimientoPayload, piezas: DetalleMttoPayload[]) => void
   onCancel:                 () => void
 }) {
   const tieneKilometraje = tipoVehiculo !== 'montacargas' && tipoVehiculo !== 'caja_trailer'
@@ -867,24 +919,88 @@ export function MantenimientoForm({
     .filter(r => r.status === 'activo' || linkedIds.has(r.id))
     .map(r => ({ value: String(r.id), label: r.status !== 'activo' ? `${r.nombre} (completado)` : r.nombre }))
 
+  // Las piezas solo se capturan al registrar. Al editar se gestionan desde el
+  // detalle del mantenimiento, que ya permite agregarlas, cambiarlas y quitarlas
+  // devolviendo el stock al lote.
+  const isEdit = !!initial
+  const { data: lotesData } = useLotesDisponibles(!isEdit)
+  const lotes = lotesData?.data ?? []
+
+  // El odómetro actual del vehículo precarga el campo de kilometraje al registrar.
+  const { data: vehiculoData } = useVehiculo(isEdit ? undefined : vehiculoId)
+  const kmVehiculo = vehiculoData?.data.kilometraje ?? null
+
   const form = useForm<MantForm>({
-    initialValues: initMant(initial, prefillRequerimientoIds),
+    initialValues: initMant(initial, prefillRequerimientoIds, kmVehiculo),
     validate: {
       fecha:             (v) => !v ? 'Requerido' : null,
       requerimiento_ids: (v) => v.length === 0 ? 'Selecciona al menos un requerimiento' : null,
+      piezas: {
+        lote_id:  (v: string) => !v ? 'Selecciona la pieza' : null,
+        cantidad: (v: number | string, vals: MantForm, path: string) => {
+          if (v === '' || Number(v) < 1) return 'Mínimo 1'
+          const linea = vals.piezas[Number(path.split('.')[1])]
+          const lote = lotes.find(l => String(l.id) === linea?.lote_id)
+          if (lote && Number(v) > lote.cantidad_disponible) return `Máx. ${lote.cantidad_disponible}`
+          return null
+        },
+        costo_unitario: (v: number | string) => (v === '' || Number(v) < 0 ? 'Costo inválido' : null),
+      },
     },
   })
 
+  // initialValues solo se aplica al montar, y el vehículo llega después: en
+  // cuanto resuelve se precarga el km, salvo que el usuario ya haya escrito uno.
+  const kmPrecargado = useRef(false)
+  useEffect(() => {
+    if (isEdit || kmPrecargado.current || kmVehiculo == null) return
+    kmPrecargado.current = true
+    if (form.values.km_actual === '') form.setFieldValue('km_actual', kmVehiculo)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kmVehiculo, isEdit])
+
+  const piezas = form.values.piezas
+
+  // Un lote ya elegido no se ofrece en las demás líneas: evita capturar dos
+  // veces la misma pieza y que la suma de cantidades rebase el stock.
+  function loteOptions(idx: number) {
+    const usados = new Set(piezas.filter((_, i) => i !== idx).map(p => p.lote_id))
+    return lotes
+      .filter(l => !usados.has(String(l.id)))
+      .map(l => ({
+        value: String(l.id),
+        label: `${l.numero_serie} — ${l.descripcion} (disp: ${l.cantidad_disponible}, ${formatMXN(l.costo_unitario)})`,
+      }))
+  }
+
+  function setLote(idx: number, value: string | null) {
+    form.setFieldValue(`piezas.${idx}.lote_id`, value ?? '')
+    const lote = lotes.find(l => String(l.id) === value)
+    // El costo del lote es solo el valor de arranque: se puede ajustar a mano.
+    if (lote) form.setFieldValue(`piezas.${idx}.costo_unitario`, lote.costo_unitario)
+  }
+
+  const totalPiezas = piezas.reduce(
+    (s, p) => s + (Number(p.cantidad) || 0) * (Number(p.costo_unitario) || 0), 0
+  )
+
   function handleSubmit(vals: MantForm) {
-    onSubmit({
-      fecha:             vals.fecha,
-      tipo:              vals.tipo.trim()          || null,
-      tecnico:           vals.tecnico.trim()       || null,
-      costo:             vals.costo !== '' ? Number(vals.costo) : 0,
-      km_actual:         vals.km_actual !== '' ? Number(vals.km_actual) : 0,
-      observaciones:     vals.observaciones.trim() || null,
-      requerimiento_ids: vals.requerimiento_ids.map(Number),
-    })
+    onSubmit(
+      {
+        fecha:             vals.fecha,
+        tipo:              vals.tipo.trim()          || null,
+        tecnico:           vals.tecnico.trim()       || null,
+        costo:             vals.costo !== '' ? Number(vals.costo) : 0,
+        km_actual:         vals.km_actual !== '' ? Number(vals.km_actual) : 0,
+        observaciones:     vals.observaciones.trim() || null,
+        requerimiento_ids: vals.requerimiento_ids.map(Number),
+      },
+      vals.piezas.map(p => ({
+        lote_id:        Number(p.lote_id),
+        cantidad:       Number(p.cantidad),
+        costo_unitario: Number(p.costo_unitario),
+      })),
+    )
   }
 
   return (
@@ -910,11 +1026,20 @@ export function MantenimientoForm({
           </Grid.Col>
           {tieneKilometraje && (
             <Grid.Col span={3}>
-              <NumberInput label="Kilometraje" placeholder="0" min={0} {...form.getInputProps('km_actual')} />
+              <NumberInput
+                label="Kilometraje" placeholder="0" min={0}
+                description={!isEdit && kmVehiculo != null
+                  ? `Actual: ${kmVehiculo.toLocaleString('es-MX')} km`
+                  : undefined}
+                {...form.getInputProps('km_actual')}
+              />
             </Grid.Col>
           )}
           <Grid.Col span={tieneKilometraje ? 3 : 6}>
-            <NumberInput label="Costo ($)" placeholder="0" min={0} {...form.getInputProps('costo')} />
+            <NumberInput
+              label="Costo ($)" placeholder="0.00" min={0} decimalScale={2} prefix="$"
+              {...form.getInputProps('costo')}
+            />
           </Grid.Col>
           <Grid.Col span={12}>
             <Textarea label="Observaciones" autosize minRows={2} {...form.getInputProps('observaciones')} />
@@ -931,6 +1056,85 @@ export function MantenimientoForm({
             />
           </Grid.Col>
         </Grid>
+
+        {!isEdit && (
+          <>
+            <Divider
+              label={
+                <Group gap="xs">
+                  <Text size="sm" fw={500}>Piezas usadas ({piezas.length})</Text>
+                  <Text size="xs" c="dimmed">opcional</Text>
+                </Group>
+              }
+              labelPosition="left"
+            />
+
+            {piezas.length === 0 ? (
+              <Text size="sm" c="dimmed">
+                Este mantenimiento no usa piezas. Agrégalas si se consumieron refacciones del inventario.
+              </Text>
+            ) : (
+              <Stack gap="xs">
+                {piezas.map((_, idx) => (
+                  <Grid key={idx} align="flex-start" gutter="xs">
+                    <Grid.Col span={6}>
+                      <Select
+                        label={idx === 0 ? 'Pieza / lote' : undefined}
+                        placeholder="Selecciona la pieza"
+                        data={loteOptions(idx)}
+                        searchable
+                        value={piezas[idx].lote_id || null}
+                        onChange={(v) => setLote(idx, v)}
+                        error={form.errors[`piezas.${idx}.lote_id`]}
+                      />
+                    </Grid.Col>
+                    <Grid.Col span={2}>
+                      <NumberInput
+                        label={idx === 0 ? 'Cantidad' : undefined}
+                        placeholder="0" min={1} allowDecimal={false}
+                        {...form.getInputProps(`piezas.${idx}.cantidad`)}
+                      />
+                    </Grid.Col>
+                    <Grid.Col span={3}>
+                      <NumberInput
+                        label={idx === 0 ? 'Costo unit.' : undefined}
+                        placeholder="0.00" min={0} decimalScale={2} prefix="$"
+                        {...form.getInputProps(`piezas.${idx}.costo_unitario`)}
+                      />
+                    </Grid.Col>
+                    <Grid.Col span={1}>
+                      <ActionIcon
+                        variant="subtle" color="red"
+                        mt={idx === 0 ? 25 : 4}
+                        aria-label="Quitar pieza"
+                        onClick={() => form.removeListItem('piezas', idx)}
+                      >
+                        <IconTrash size={16} />
+                      </ActionIcon>
+                    </Grid.Col>
+                  </Grid>
+                ))}
+              </Stack>
+            )}
+
+            <Group justify="space-between">
+              <Button
+                variant="light" size="xs" leftSection={<IconPlus size={14} />}
+                onClick={() => form.insertListItem('piezas', { lote_id: '', cantidad: 1, costo_unitario: '' })}
+              >
+                Agregar pieza
+              </Button>
+              {piezas.length > 0 && (
+                <Text size="sm" c="dimmed">
+                  Total piezas: <Text component="span" fw={600}>
+                    {totalPiezas.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}
+                  </Text>
+                </Text>
+              )}
+            </Group>
+          </>
+        )}
+
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
           <Button type="submit" loading={isPending}>{initial ? 'Guardar cambios' : 'Registrar'}</Button>
@@ -1015,11 +1219,11 @@ function MantenimientoTable({
               <Table.Td style={{ textAlign: 'right' }}>
                 {m.costo || m.piezas_total ? (
                   <Tooltip
-                    label={`Mantenimiento: $${m.costo.toLocaleString('es-MX')} + Piezas: $${m.piezas_total.toLocaleString('es-MX')}`}
+                    label={`Mantenimiento: ${formatMXN(m.costo)} + Piezas: ${formatMXN(m.piezas_total)}`}
                     disabled={!m.piezas_total}
                   >
                     <Text component="span" size="sm">
-                      ${(m.costo + m.piezas_total).toLocaleString('es-MX')}
+                      {formatMXN(m.costo + m.piezas_total)}
                     </Text>
                   </Tooltip>
                 ) : <Text component="span" c="dimmed" size="sm">—</Text>}
@@ -1059,23 +1263,40 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
   const createMut  = useCreateMantenimiento(vehiculoId)
   const updateMut  = useUpdateMantenimiento(vehiculoId)
   const deleteMut  = useDeleteMantenimiento(vehiculoId)
+  const piezasMut  = useCreateDetallesMtto()
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
   function openEdit(m: Mantenimiento) { setEditing(m); setFormError(null); setFormOpen(true) }
 
-  function handleSubmit(payload: MantenimientoPayload) {
+  function handleSubmit(payload: MantenimientoPayload, piezas: DetalleMttoPayload[]) {
     setFormError(null)
     if (editing) {
       updateMut.mutate({ id: editing.id, payload }, {
         onSuccess: () => setFormOpen(false),
         onError:   (e: Error) => setFormError(e.message),
       })
-    } else {
-      createMut.mutate(payload, {
-        onSuccess: () => setFormOpen(false),
-        onError:   (e: Error) => setFormError(e.message),
-      })
+      return
     }
+    createMut.mutate(payload, {
+      onSuccess: (res) => {
+        if (!piezas.length) { setFormOpen(false); return }
+        piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
+          onSuccess: () => setFormOpen(false),
+          // El mantenimiento ya quedó registrado: no se puede "deshacer" el alta,
+          // así que se abre su detalle para completar a mano las piezas que faltaron.
+          onError: (e: Error) => {
+            setFormOpen(false)
+            setDetalleId(res.data.id)
+            setFormError(null)
+            alert(
+              `El mantenimiento se registró, pero no se pudieron guardar todas las piezas: ${e.message}\n\n` +
+              'Revisa el detalle del mantenimiento para agregar las que falten.'
+            )
+          },
+        })
+      },
+      onError: (e: Error) => setFormError(e.message),
+    })
   }
 
   function fmtFecha(iso: string | null) {
@@ -1159,7 +1380,7 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
           vehiculoId={vehiculoId}
           tipoVehiculo={tipoVehiculo}
           initial={editing ?? undefined}
-          isPending={createMut.isPending || updateMut.isPending}
+          isPending={createMut.isPending || updateMut.isPending || piezasMut.isPending}
           error={formError}
           onSubmit={handleSubmit}
           onCancel={() => setFormOpen(false)}
@@ -1583,7 +1804,7 @@ function VehiculosAgrupados({
       )}
 
       <Accordion.Item value="unitarios">
-        <Accordion.Control><GroupHeader label="Vehículos unitarios" count={unitarios.length} /></Accordion.Control>
+        <Accordion.Control><GroupHeader label="Vehículos utilitarios" count={unitarios.length} /></Accordion.Control>
         <Accordion.Panel>
           <VehiculosTable
             items={unitarios}
@@ -1708,7 +1929,12 @@ export default function Vehiculos({
       )
     } else {
       createMut.mutate(payload as VehiculoCreatePayload, {
-        onSuccess: () => setFormOpen(false),
+        // Tras crearlo se abre su ficha, para seguir capturando sus datos
+        // (requerimientos, mantenimientos) sin tener que buscarlo en la lista.
+        onSuccess: (res) => {
+          setFormOpen(false)
+          setSelected(res.data)
+        },
         onError:   (e: Error) => setFormError(e.message),
       })
     }
@@ -1762,7 +1988,7 @@ export default function Vehiculos({
       <Group justify="space-between" align="flex-end">
         <div>
           <Text size="xl" fw={600}>Vehículos</Text>
-          <Text size="sm" c="dimmed">Por ruta, sucursal y vehículos unitarios</Text>
+          <Text size="sm" c="dimmed">Por ruta, sucursal y vehículos utilitarios</Text>
         </div>
         <Group gap="sm">
           {totalVehiculos != null && (

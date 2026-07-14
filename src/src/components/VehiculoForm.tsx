@@ -1,10 +1,11 @@
 // Formulario de alta/edición de vehículos: los campos visibles y requeridos
 // dependen del tipo (p. ej. ruta para tractocamiones, sucursal para camiones,
 // pies para cajas de trailer). En edición el tipo no puede cambiarse.
+import { useState } from 'react'
 import { useForm } from '@mantine/form'
 import {
   Stack, Grid, TextInput, NumberInput, Select, Divider,
-  Badge, Text, Button, Group, Alert,
+  Badge, Text, Button, Group, Alert, Modal,
 } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
 import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
@@ -16,7 +17,7 @@ const TIPO_META: Record<TipoVehiculo, { label: string; color: string }> = {
   camion:       { label: 'Camión',           color: 'blue'   },
   tractocamion: { label: 'Tractocamión',     color: 'violet' },
   caja_trailer: { label: 'Caja de trailer',  color: 'orange' },
-  utilitario:   { label: 'Vehículo unitario',color: 'teal'   },
+  utilitario:   { label: 'Vehículo utilitario',color: 'teal'   },
   montacargas:  { label: 'Montacargas',      color: 'yellow' },
 }
 
@@ -99,9 +100,11 @@ export interface VehiculoFormProps {
   error:      string | null
   onSubmit:   (payload: VehiculoCreatePayload | VehiculoUpdatePayload, tipo: TipoVehiculo) => void
   onCancel:   () => void
+  // Al crear desde la ficha de un modelo: el modelo viene fijado y no se puede cambiar.
+  lockedModeloId?: number
 }
 
-export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: VehiculoFormProps) {
+export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lockedModeloId }: VehiculoFormProps) {
   const isEdit = !!initial
   const { data: modelosData } = useModelos()
   const { data: sucursalesData } = useSucursales()
@@ -112,7 +115,10 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
   const rutasOpts      = (rutasData?.data      ?? []).map((r) => ({ value: String(r.id), label: r.nombre }))
 
   const form = useForm<FormVals>({
-    initialValues: init(initial),
+    initialValues: {
+      ...init(initial),
+      ...(lockedModeloId != null ? { modelo_id: String(lockedModeloId) } : {}),
+    },
     validate: {
       tipo:        (v) => !isEdit && !v ? 'Requerido' : null,
       modelo_id:   (v) => !v ? 'Requerido' : null,
@@ -129,7 +135,23 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
 
   const tipo = (isEdit ? initial!.tipo : form.values.tipo) as TipoVehiculo | ''
 
+  // Editar el vehículo es la única vía que puede bajar el kilometraje (el resto
+  // pasa por avanzarKilometraje en la API, que solo sube), así que se confirma.
+  const [pendingVals, setPendingVals] = useState<FormVals | null>(null)
+  const kmPrevio = isEdit && needsField(tipo, 'km') && initial!.kilometraje != null
+    ? Number(initial!.kilometraje)
+    : null
+
   function handleSubmit(vals: FormVals) {
+    const kmNuevo = Number(vals.kilometraje)
+    if (kmPrevio != null && !isNaN(kmNuevo) && kmNuevo < kmPrevio) {
+      setPendingVals(vals)
+      return
+    }
+    submit(vals)
+  }
+
+  function submit(vals: FormVals) {
     const t = (isEdit ? initial!.tipo : vals.tipo) as TipoVehiculo
     const base = {
       modelo_id:    parseInt(vals.modelo_id),
@@ -213,7 +235,9 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
           label="Marca / Modelo"
           placeholder="Selecciona un modelo"
           data={modelosOpts}
-          searchable
+          searchable={lockedModeloId == null}
+          disabled={lockedModeloId != null}
+          description={lockedModeloId != null ? 'Fijado por el modelo desde el que se está creando.' : undefined}
           required
           nothingFoundMessage="Sin resultados"
           {...form.getInputProps('modelo_id')}
@@ -359,6 +383,42 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel }: 
           </Button>
         </Group>
       </Stack>
+
+      <Modal
+        opened={pendingVals !== null}
+        onClose={() => setPendingVals(null)}
+        title="¿Disminuir el kilometraje?"
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            El kilometraje registrado es{' '}
+            <Text span fw={700}>{kmPrevio?.toLocaleString('es-MX')} km</Text> y lo estás
+            bajando a{' '}
+            <Text span fw={700}>{Number(pendingVals?.kilometraje ?? 0).toLocaleString('es-MX')} km</Text>.
+          </Text>
+          <Text size="sm" c="dimmed">
+            El kilometraje normalmente solo avanza. Corrígelo solo si el valor anterior
+            se capturó por error.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setPendingVals(null)} disabled={isPending}>
+              Cancelar
+            </Button>
+            <Button
+              color="orange"
+              loading={isPending}
+              onClick={() => {
+                const vals = pendingVals!
+                setPendingVals(null)
+                submit(vals)
+              }}
+            >
+              Sí, disminuir
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </form>
   )
 }

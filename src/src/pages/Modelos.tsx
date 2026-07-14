@@ -16,10 +16,13 @@ import {
 import {
   usePlantillaModelo, useCreatePlantilla, useUpdatePlantilla, useDeletePlantilla,
 } from '../hooks/usePlantilla'
-import { useVehiculos } from '../hooks/useVehiculos'
+import { useVehiculos, useCreateVehiculo } from '../hooks/useVehiculos'
 import type { Modelo, ModeloPayload } from '../hooks/useModelos'
 import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode, TipoPlantilla } from '../hooks/usePlantilla'
-import type { TipoVehiculo, VehiculoRow } from '../hooks/useVehiculos'
+import type {
+  TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload,
+} from '../hooks/useVehiculos'
+import { VehiculoForm } from '../components/VehiculoForm'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -27,7 +30,7 @@ const TIPOS: Record<TipoVehiculo, { label: string; color: string }> = {
   camion:       { label: 'Camión',            color: 'blue'   },
   tractocamion: { label: 'Tractocamión',      color: 'violet' },
   caja_trailer: { label: 'Caja de trailer',   color: 'orange' },
-  utilitario:   { label: 'Vehículo unitario', color: 'teal'   },
+  utilitario:   { label: 'Vehículo utilitario', color: 'teal'   },
   montacargas:  { label: 'Montacargas',       color: 'yellow' },
 }
 
@@ -394,6 +397,23 @@ function ModeloDetalle({
   const { data, isLoading, isError } = useVehiculos(1, '', undefined, modelo.id)
   const vehiculos = data?.data ?? []
 
+  const [vehiculoFormOpen, setVehiculoFormOpen] = useState(false)
+  const [vehiculoError, setVehiculoError] = useState<string | null>(null)
+  const createVehiculoMut = useCreateVehiculo()
+
+  function openCreateVehiculo() {
+    setVehiculoError(null)
+    setVehiculoFormOpen(true)
+  }
+
+  function handleCreateVehiculo(payload: VehiculoCreatePayload | VehiculoUpdatePayload) {
+    setVehiculoError(null)
+    createVehiculoMut.mutate(payload as VehiculoCreatePayload, {
+      onSuccess: () => setVehiculoFormOpen(false),
+      onError:   (e: Error) => setVehiculoError(e.message),
+    })
+  }
+
   return (
     <Stack gap="md">
       {/* Navegación */}
@@ -437,7 +457,19 @@ function ModeloDetalle({
       <PlantillaSection modeloId={modelo.id} />
 
       {/* Vehículos asignados */}
-      <Divider label={`Vehículos asignados (${vehiculos.length})`} labelPosition="left" />
+      <Divider
+        label={
+          <Group gap="xs">
+            <Text size="sm" fw={500}>Vehículos asignados ({vehiculos.length})</Text>
+            <Tooltip label="Agregar vehículo de este modelo">
+              <ActionIcon variant="light" color="blue" size="xs" onClick={openCreateVehiculo}>
+                <IconPlus size={12} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        }
+        labelPosition="left"
+      />
 
       {isLoading ? (
         <Center py="xl"><Loader /></Center>
@@ -496,6 +528,22 @@ function ModeloDetalle({
           </Table>
         </Table.ScrollContainer>
       )}
+
+      <Modal
+        opened={vehiculoFormOpen}
+        onClose={() => setVehiculoFormOpen(false)}
+        title={`Nuevo vehículo — ${modelo.marca} ${modelo.nombre}`}
+        size="lg"
+        closeOnClickOutside={false}
+      >
+        <VehiculoForm
+          lockedModeloId={modelo.id}
+          isPending={createVehiculoMut.isPending}
+          error={vehiculoError}
+          onSubmit={handleCreateVehiculo}
+          onCancel={() => setVehiculoFormOpen(false)}
+        />
+      </Modal>
     </Stack>
   )
 }

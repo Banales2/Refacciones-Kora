@@ -14,6 +14,7 @@ export interface VehiculoConMantenimiento {
 
 export interface LoteMes {
   id:               number
+  pieza_id:         number
   numero_serie:     string
   descripcion:      string
   proveedor:        string
