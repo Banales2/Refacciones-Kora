@@ -4,10 +4,13 @@ import { getPool } from '../shared/db'
 export interface PermisoCirculacion {
   id:               number
   zona_circulacion: string
+  fecha_emision:    string | null
   fecha_expiracion: string
 }
 
-const COLS = 'id, zona_circulacion, CONVERT(char(10), fecha_expiracion, 23) AS fecha_expiracion'
+const COLS = `id, zona_circulacion,
+  CONVERT(char(10), fecha_emision, 23)    AS fecha_emision,
+  CONVERT(char(10), fecha_expiracion, 23) AS fecha_expiracion`
 
 export async function findAll(): Promise<PermisoCirculacion[]> {
   const pool = await getPool()
@@ -24,36 +27,57 @@ export async function findById(id: number): Promise<PermisoCirculacion | null> {
   return r.recordset[0] ?? null
 }
 
+const OUTPUT_COLS = `INSERTED.id, INSERTED.zona_circulacion,
+  CONVERT(char(10), INSERTED.fecha_emision, 23)    AS fecha_emision,
+  CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion`
+
 export async function create(
-  zonaCirculacion: string, fechaExpiracion: string
+  zonaCirculacion: string, fechaEmision: string, fechaExpiracion: string
 ): Promise<PermisoCirculacion> {
   const pool = await getPool()
   const r = await pool.request()
-    .input('zona',  sql.NVarChar(120), zonaCirculacion)
-    .input('fecha', sql.Date,          fechaExpiracion)
+    .input('zona',      sql.NVarChar(120), zonaCirculacion)
+    .input('emision',   sql.Date,          fechaEmision)
+    .input('expira',    sql.Date,          fechaExpiracion)
     .query(`
-      INSERT INTO permisos_circulacion (zona_circulacion, fecha_expiracion)
-      OUTPUT INSERTED.id, INSERTED.zona_circulacion,
-             CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion
-      VALUES (@zona, @fecha)`)
+      INSERT INTO permisos_circulacion (zona_circulacion, fecha_emision, fecha_expiracion)
+      OUTPUT ${OUTPUT_COLS}
+      VALUES (@zona, @emision, @expira)`)
   return r.recordset[0]
 }
 
 export async function update(
-  id: number, zonaCirculacion?: string, fechaExpiracion?: string
+  id: number, zonaCirculacion?: string, fechaEmision?: string, fechaExpiracion?: string
 ): Promise<PermisoCirculacion | null> {
   const pool = await getPool()
   const sets: string[] = []
   const req = pool.request().input('id', sql.Int, id)
-  if (zonaCirculacion !== undefined) { req.input('zona',  sql.NVarChar(120), zonaCirculacion); sets.push('zona_circulacion=@zona') }
-  if (fechaExpiracion !== undefined) { req.input('fecha', sql.Date,          fechaExpiracion); sets.push('fecha_expiracion=@fecha') }
+  if (zonaCirculacion !== undefined) { req.input('zona',    sql.NVarChar(120), zonaCirculacion); sets.push('zona_circulacion=@zona') }
+  if (fechaEmision    !== undefined) { req.input('emision', sql.Date,          fechaEmision);    sets.push('fecha_emision=@emision') }
+  if (fechaExpiracion !== undefined) { req.input('expira',  sql.Date,          fechaExpiracion); sets.push('fecha_expiracion=@expira') }
   if (!sets.length) return findById(id)
   const r = await req.query(`
     UPDATE permisos_circulacion SET ${sets.join(',')}
-    OUTPUT INSERTED.id, INSERTED.zona_circulacion,
-           CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion
+    OUTPUT ${OUTPUT_COLS}
     WHERE id=@id`)
   return r.recordset[0] ?? null
+}
+
+// ¿Ya existe un permiso de la misma zona emitido en la misma fecha? exceptId
+// excluye el propio registro al editar.
+export async function existsMismaZonaYFecha(
+  zonaCirculacion: string, fechaEmision: string, exceptId?: number
+): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('zona',    sql.NVarChar(120), zonaCirculacion)
+    .input('emision', sql.Date,          fechaEmision)
+    .input('except',  sql.Int,           exceptId ?? null)
+    .query(`
+      SELECT TOP 1 id FROM permisos_circulacion
+      WHERE zona_circulacion = @zona AND fecha_emision = @emision
+        AND (@except IS NULL OR id <> @except)`)
+  return r.recordset.length > 0
 }
 
 export async function countVehiculos(id: number): Promise<number> {

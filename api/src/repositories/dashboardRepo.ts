@@ -1,6 +1,56 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 
+// ─── Seguros / permisos por vencer ──────────────────────────────────────────
+export interface SeguroPorVencer {
+  id:               number
+  poliza:           string
+  compania:         string
+  fecha_expiracion: string
+  vehiculos:        number
+}
+
+export interface PermisoPorVencer {
+  id:               number
+  zona_circulacion: string
+  fecha_expiracion: string
+  vehiculos:        number
+}
+
+// Seguros cuya fecha de expiración es <= @limite (incluye ya vencidos), con el
+// conteo de vehículos que los usan.
+export async function findSegurosPorVencer(limite: string): Promise<SeguroPorVencer[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('limite', sql.Date, limite)
+    .query(`
+      SELECT s.id, s.poliza, s.compania,
+             CONVERT(char(10), s.fecha_expiracion, 23) AS fecha_expiracion,
+             COUNT(v.id) AS vehiculos
+      FROM seguros s
+      LEFT JOIN vehiculos v ON v.seguro_id = s.id
+      WHERE s.fecha_expiracion <= @limite
+      GROUP BY s.id, s.poliza, s.compania, s.fecha_expiracion
+      ORDER BY s.fecha_expiracion`)
+  return r.recordset
+}
+
+export async function findPermisosPorVencer(limite: string): Promise<PermisoPorVencer[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('limite', sql.Date, limite)
+    .query(`
+      SELECT p.id, p.zona_circulacion,
+             CONVERT(char(10), p.fecha_expiracion, 23) AS fecha_expiracion,
+             COUNT(v.id) AS vehiculos
+      FROM permisos_circulacion p
+      LEFT JOIN vehiculos v ON v.permiso_id = p.id
+      WHERE p.fecha_expiracion <= @limite
+      GROUP BY p.id, p.zona_circulacion, p.fecha_expiracion
+      ORDER BY p.fecha_expiracion`)
+  return r.recordset
+}
+
 export interface MantenimientoMes {
   id:               number
   vehiculo_id:      number

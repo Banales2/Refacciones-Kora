@@ -37,6 +37,7 @@ import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
+import { usePiezasModelo } from '../hooks/usePiezasModelo'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
@@ -1480,6 +1481,50 @@ function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
+// Piezas específicas del modelo del vehículo. Solo lectura: se gestionan desde
+// el modelo, aquí únicamente se consultan.
+function PiezasModeloVehiculo({ modeloId }: { modeloId: number }) {
+  const { data, isLoading } = usePiezasModelo(modeloId)
+  const piezas = data?.data ?? []
+  return (
+    <>
+      <Divider
+        label={<Text size="sm" fw={500}>Piezas del modelo ({piezas.length})</Text>}
+        labelPosition="left"
+      />
+      <Text size="xs" c="dimmed">
+        Piezas que requiere este modelo. Se gestionan desde el modelo; aquí solo se consultan.
+      </Text>
+      {isLoading ? (
+        <Center py="md"><Loader size="sm" /></Center>
+      ) : piezas.length === 0 ? (
+        <Text c="dimmed" size="sm" py="sm">Este modelo no tiene piezas registradas.</Text>
+      ) : (
+        <Table.ScrollContainer minWidth={480}>
+          <Table striped withTableBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Categoría</Table.Th>
+                <Table.Th>No. de serie</Table.Th>
+                <Table.Th>Descripción</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {piezas.map((p) => (
+                <Table.Tr key={p.id}>
+                  <Table.Td><Badge variant="light" color="gray" size="sm">{p.categoria}</Badge></Table.Td>
+                  <Table.Td fw={500}>{p.numero_serie}</Table.Td>
+                  <Table.Td>{p.descripcion}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      )}
+    </>
+  )
+}
+
 function VehiculoDetalle({
   vehiculo, onBack, backLabel, onEdit, onVehiculoUpdate,
 }: {
@@ -1683,6 +1728,9 @@ function VehiculoDetalle({
           </Tooltip>
         </Group>
       </Paper>
+
+      {/* Piezas del modelo (solo lectura) */}
+      <PiezasModeloVehiculo modeloId={vehiculo.modelo_id} />
 
       {/* Requerimientos exclusivos */}
       <RequerimientosSection

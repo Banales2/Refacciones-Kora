@@ -266,6 +266,32 @@ export async function getRequerimientosPorVencer(): Promise<RequerimientoVencido
     .map(r => ({ id: r.id, nombre: r.nombre, categoria: r.categoria, vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre }))
 }
 
+// ─── Seguros / permisos por vencer ──────────────────────────────────────────
+// Ventana de alerta: se avisa de los documentos que ya vencieron o que vencen
+// dentro de este número de días.
+const DIAS_ALERTA_DOCUMENTOS = 30
+
+export interface DocumentosPorVencer {
+  seguros:  (repo.SeguroPorVencer  & { dias_restantes: number })[]
+  permisos: (repo.PermisoPorVencer & { dias_restantes: number })[]
+}
+
+export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
+  const hoy = fechaMexico()
+  const limite = addDias(hoy, DIAS_ALERTA_DOCUMENTOS)
+  const hoyDate = new Date(`${hoy}T12:00:00`)
+  const dias = (fecha: string) => diffDias(hoyDate, new Date(`${fecha}T12:00:00`))
+
+  const [seguros, permisos] = await Promise.all([
+    repo.findSegurosPorVencer(limite),
+    repo.findPermisosPorVencer(limite),
+  ])
+  return {
+    seguros:  seguros.map((s)  => ({ ...s,  dias_restantes: dias(s.fecha_expiracion) })),
+    permisos: permisos.map((p) => ({ ...p, dias_restantes: dias(p.fecha_expiracion) })),
+  }
+}
+
 export async function registrarSnapshotHistorial(): Promise<void> {
   const { vencidos, porVencer } = await clasificarRequerimientosFleet()
   const hoy = fechaMexico()

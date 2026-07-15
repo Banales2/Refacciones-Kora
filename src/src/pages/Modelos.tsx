@@ -19,6 +19,10 @@ import {
 } from '../hooks/usePlantilla'
 import { useRequerimientoCategorias } from '../hooks/useRequerimientos'
 import { useVehiculos, useCreateVehiculo } from '../hooks/useVehiculos'
+import { useRefacciones } from '../hooks/useRefacciones'
+import {
+  usePiezasModelo, useAddPiezasModelo, useRemovePiezaModelo,
+} from '../hooks/usePiezasModelo'
 import type { Modelo, ModeloPayload } from '../hooks/useModelos'
 import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode, TipoPlantilla } from '../hooks/usePlantilla'
 import type {
@@ -490,6 +494,99 @@ function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tip
   )
 }
 
+// ── Sección de piezas del modelo (relación n-n informativa) ───────────────────
+
+function PiezasModeloSection({ modeloId }: { modeloId: number }) {
+  const [seleccion, setSeleccion] = useState<string[]>([])
+  const { data, isLoading } = usePiezasModelo(modeloId)
+  const { data: piezasData } = useRefacciones(1, '', 'all', 100)
+  const addMut = useAddPiezasModelo()
+  const removeMut = useRemovePiezaModelo()
+
+  const asignadas = data?.data ?? []
+  const asignadasIds = new Set(asignadas.map((p) => p.id))
+  const opciones = (piezasData?.data ?? [])
+    .filter((p) => !asignadasIds.has(p.id))
+    .map((p) => ({ value: String(p.id), label: `${p.numero_serie} · ${p.descripcion}` }))
+
+  function handleAgregar() {
+    if (seleccion.length === 0) return
+    addMut.mutate({ modeloId, piezaIds: seleccion.map(Number) }, { onSuccess: () => setSeleccion([]) })
+  }
+
+  return (
+    <>
+      <Divider
+        label={<Text size="sm" fw={500}>Piezas específicas del modelo ({asignadas.length})</Text>}
+        labelPosition="left"
+      />
+      <Text size="xs" c="dimmed">
+        Piezas que necesita este modelo (filtro, batería, aceite exclusivo…). Es informativo: no afecta el inventario.
+      </Text>
+
+      <Group align="flex-end" gap="sm" wrap="nowrap">
+        <MultiSelect
+          flex={1}
+          searchable clearable
+          placeholder="Selecciona una o más piezas"
+          data={opciones}
+          value={seleccion}
+          onChange={setSeleccion}
+          nothingFoundMessage="Sin piezas disponibles"
+        />
+        <Button
+          leftSection={<IconPlus size={16} />}
+          onClick={handleAgregar}
+          loading={addMut.isPending}
+          disabled={seleccion.length === 0}
+        >
+          Agregar
+        </Button>
+      </Group>
+      {addMut.error && <Alert color="red">{(addMut.error as Error).message}</Alert>}
+
+      {isLoading ? (
+        <Center py="md"><Loader size="sm" /></Center>
+      ) : asignadas.length === 0 ? (
+        <Text c="dimmed" size="sm" py="sm">Este modelo no tiene piezas registradas.</Text>
+      ) : (
+        <Table.ScrollContainer minWidth={480}>
+          <Table striped highlightOnHover withTableBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Categoría</Table.Th>
+                <Table.Th>No. de serie</Table.Th>
+                <Table.Th>Descripción</Table.Th>
+                <Table.Th style={{ width: 48 }} />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {asignadas.map((p) => (
+                <Table.Tr key={p.id}>
+                  <Table.Td><Badge variant="light" color="gray" size="sm">{p.categoria}</Badge></Table.Td>
+                  <Table.Td fw={500}>{p.numero_serie}</Table.Td>
+                  <Table.Td>{p.descripcion}</Table.Td>
+                  <Table.Td>
+                    <Tooltip label="Quitar del modelo">
+                      <ActionIcon
+                        variant="subtle" color="red" size="sm"
+                        loading={removeMut.isPending && removeMut.variables?.piezaId === p.id}
+                        onClick={() => removeMut.mutate({ modeloId, piezaId: p.id })}
+                      >
+                        <IconTrash size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      )}
+    </>
+  )
+}
+
 // ── Vista de detalle ──────────────────────────────────────────────────────────
 
 function ModeloDetalle({
@@ -576,6 +673,9 @@ function ModeloDetalle({
 
       {/* Plantilla de requerimientos */}
       <PlantillaSection modeloId={modelo.id} tiposPermitidos={modelo.tipos_permitidos ?? []} />
+
+      {/* Piezas específicas del modelo */}
+      <PiezasModeloSection modeloId={modelo.id} />
 
       {/* Vehículos asignados */}
       <Divider
@@ -671,19 +771,29 @@ function ModeloDetalle({
 
 // ── Lista de modelos ──────────────────────────────────────────────────────────
 
-export default function Modelos({ onNavigateVehiculo }: { onNavigateVehiculo?: (v: VehiculoRow) => void }) {
+export default function Modelos({
+  onNavigateVehiculo, openId, onOpenIdChange,
+}: {
+  onNavigateVehiculo?: (v: VehiculoRow) => void
+  // Modelo cuyo detalle está abierto; vive en Layout para poder regresar
+  // exactamente a él al volver desde un vehículo.
+  openId?:         number | null
+  onOpenIdChange?: (id: number | null) => void
+}) {
   const [search, setSearch]       = useState('')
   const [debounced]               = useDebouncedValue(search, 300)
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Modelo | null>(null)
   const [deleting, setDeleting]   = useState<Modelo | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
-  const [selected, setSelected]   = useState<Modelo | null>(null)
 
   const { data, isLoading, isError } = useModelos()
   const createMut = useCreateModelo()
   const updateMut = useUpdateModelo()
   const deleteMut = useDeleteModelo()
+
+  // El modelo abierto se deriva del id conservado por Layout.
+  const selected = (data?.data ?? []).find((m) => m.id === openId) ?? null
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
   function openEdit(m: Modelo, e?: React.MouseEvent) {
@@ -697,10 +807,9 @@ export default function Modelos({ onNavigateVehiculo }: { onNavigateVehiculo?: (
     setFormError(null)
     if (editing) {
       updateMut.mutate({ id: editing.id, payload }, {
-        onSuccess: (res) => {
-          setFormOpen(false)
-          if (selected?.id === editing.id) setSelected(res.data)
-        },
+        // El detalle abierto se deriva de la lista, que se refresca al invalidar
+        // la query; no hay que re-sincronizar 'selected' a mano.
+        onSuccess: () => setFormOpen(false),
         onError: (e: Error) => setFormError(e.message),
       })
     } else {
@@ -717,7 +826,7 @@ export default function Modelos({ onNavigateVehiculo }: { onNavigateVehiculo?: (
       <>
         <ModeloDetalle
           modelo={selected}
-          onBack={() => setSelected(null)}
+          onBack={() => onOpenIdChange?.(null)}
           onEdit={(m) => openEdit(m)}
           onNavigateVehiculo={onNavigateVehiculo}
         />
@@ -806,7 +915,7 @@ export default function Modelos({ onNavigateVehiculo }: { onNavigateVehiculo?: (
               {modelos.map((m) => (
                 <Table.Tr
                   key={m.id}
-                  onClick={() => setSelected(m)}
+                  onClick={() => onOpenIdChange?.(m.id)}
                   style={{ cursor: 'pointer' }}
                 >
                   <Table.Td>

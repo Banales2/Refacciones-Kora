@@ -66,6 +66,9 @@ export default function Layout() {
   // regresar desde el detalle de un vehículo.
   const [seguroDrawerId, setSeguroDrawerId]   = useState<number | null>(null)
   const [permisoDrawerId, setPermisoDrawerId] = useState<number | null>(null)
+  // Modelo cuyo detalle está abierto; se conserva al saltar a un vehículo para
+  // poder regresar al mismo modelo (no solo a la lista de modelos).
+  const [modeloDetalleId, setModeloDetalleId] = useState<number | null>(null)
 
   const rol = user?.userRoles.find((r) => !['anonymous', 'authenticated'].includes(r))
 
@@ -76,6 +79,8 @@ export default function Layout() {
     }
     if (s !== 'piezas') setPendingPiezaId(null)
     setVehiculoOrigin(null)
+    // Navegación explícita por el menú: el detalle de Modelos vuelve a la lista.
+    setModeloDetalleId(null)
     setSection(s)
     if (mobileOpened) toggleMobile()
   }
@@ -96,9 +101,15 @@ export default function Layout() {
     if (mobileOpened) toggleMobile()
   }
 
-  // Regresa a la sección desde la que se abrió el vehículo.
+  // Regresa a la sección desde la que se abrió el vehículo. A diferencia de
+  // navigate(), conserva modeloDetalleId para reabrir el detalle del modelo.
   function backFromVehiculo() {
-    if (vehiculoOrigin) navigate(vehiculoOrigin)
+    if (!vehiculoOrigin) return
+    setPendingVehiculo(null)
+    setPendingVehiculoId(null)
+    setSection(vehiculoOrigin)
+    setVehiculoOrigin(null)
+    if (mobileOpened) toggleMobile()
   }
 
   function navigateToPiezaId(id: number) {
@@ -215,7 +226,13 @@ export default function Layout() {
           />
         )}
         {section === 'piezas'    && <Piezas initialPiezaId={pendingPiezaId ?? undefined} />}
-        {section === 'modelos'   && <Modelos onNavigateVehiculo={navigateToVehiculo} />}
+        {section === 'modelos'   && (
+          <Modelos
+            onNavigateVehiculo={navigateToVehiculo}
+            openId={modeloDetalleId}
+            onOpenIdChange={setModeloDetalleId}
+          />
+        )}
         {section === 'vehiculos' && (
           <Vehiculos
             initialVehiculo={pendingVehiculo ?? undefined}

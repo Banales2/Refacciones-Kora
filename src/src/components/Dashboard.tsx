@@ -11,6 +11,7 @@ import { BarChart, LineChart } from '@mantine/charts'
 import { IconChevronRight, IconFileSpreadsheet, IconFileTypePdf } from '@tabler/icons-react'
 import {
   useResumenMes, useRequerimientosVencidos, useRequerimientosPorVencer, useRequerimientosHistorial,
+  useDocumentosPorVencer,
   fetchReporteFlota, type RequerimientoVencido, type ResumenMes, type PeriodoComparacion,
 } from '../hooks/useDashboard'
 import { useSucursales } from '../hooks/useSucursales'
@@ -32,6 +33,13 @@ function formatFecha(iso: string) {
   return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
     day: '2-digit', month: 'short', year: 'numeric',
   })
+}
+
+// Etiqueta y color del estado de vencimiento de un seguro/permiso.
+function estadoVencimiento(dias: number): { label: string; color: string } {
+  if (dias < 0)   return { label: `Vencido hace ${Math.abs(dias)} día${Math.abs(dias) !== 1 ? 's' : ''}`, color: 'red' }
+  if (dias === 0) return { label: 'Vence hoy', color: 'red' }
+  return { label: `Vence en ${dias} día${dias !== 1 ? 's' : ''}`, color: 'orange' }
 }
 
 // ─── Tarjeta de KPI ───────────────────────────────────────────────────────────
@@ -179,12 +187,29 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
   const { data: vencidosData, isLoading: loadingVencidos } = useRequerimientosVencidos()
   const { data: porVencerData, isLoading: loadingPorVencer } = useRequerimientosPorVencer()
   const { data: historialData, isLoading: loadingHistorial } = useRequerimientosHistorial(12)
+  const { data: documentosData, isLoading: loadingDocumentos } = useDocumentosPorVencer()
   const { data: sucursalesData } = useSucursales()
   const [exportando, setExportando] = useState<'excel' | 'pdf' | null>(null)
   const [periodoComparacion, setPeriodoComparacion] = useState<PeriodoComparacion>('mes')
 
   const vencidos = vencidosData?.data ?? []
   const porVencer = porVencerData?.data ?? []
+
+  // Seguros + permisos por vencer, unificados y ordenados por urgencia.
+  const documentosPorVencer = useMemo(() => {
+    const doc = documentosData?.data
+    const seguros = (doc?.seguros ?? []).map((s) => ({
+      key: `s-${s.id}`, tipo: 'Seguro' as const,
+      etiqueta: `${s.poliza} — ${s.compania}`,
+      fecha_expiracion: s.fecha_expiracion, dias_restantes: s.dias_restantes, vehiculos: s.vehiculos,
+    }))
+    const permisos = (doc?.permisos ?? []).map((p) => ({
+      key: `p-${p.id}`, tipo: 'Permiso' as const,
+      etiqueta: p.zona_circulacion,
+      fecha_expiracion: p.fecha_expiracion, dias_restantes: p.dias_restantes, vehiculos: p.vehiculos,
+    }))
+    return [...seguros, ...permisos].sort((a, b) => a.dias_restantes - b.dias_restantes)
+  }, [documentosData])
   const historial = (historialData?.data ?? []).map(h => ({ ...h, fechaLabel: formatFechaCorta(h.fecha) }))
 
   const vehiculosChartData = (resumen?.data.mantenimientos.por_vehiculo ?? []).map(v => ({
@@ -296,6 +321,49 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
           color="blue"
         />
       </SimpleGrid>
+
+      {/* ── Seguros y permisos por vencer ── */}
+      <Card withBorder padding="lg" radius="md">
+        <Text fw={600} mb={2}>Seguros y permisos por vencer</Text>
+        <Text size="xs" c="dimmed" mb="md">
+          Documentos ya vencidos o próximos a vencer (dentro de 30 días). Gestiónalos en Catálogos → Seguros / Permisos.
+        </Text>
+        {loadingDocumentos ? (
+          <Center py="xl"><Loader size="sm" /></Center>
+        ) : documentosPorVencer.length === 0 ? (
+          <Center py="xl"><Text c="dimmed" size="sm">Ningún seguro o permiso por vencer. Todo en regla.</Text></Center>
+        ) : (
+          <Table.ScrollContainer minWidth={560}>
+            <Table striped withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Tipo</Table.Th>
+                  <Table.Th>Documento</Table.Th>
+                  <Table.Th>Expiración</Table.Th>
+                  <Table.Th>Estado</Table.Th>
+                  <Table.Th style={{ textAlign: 'center' }}>Vehículos</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {documentosPorVencer.map((d) => {
+                  const est = estadoVencimiento(d.dias_restantes)
+                  return (
+                    <Table.Tr key={d.key}>
+                      <Table.Td>
+                        <Badge variant="light" color={d.tipo === 'Seguro' ? 'blue' : 'grape'} size="sm">{d.tipo}</Badge>
+                      </Table.Td>
+                      <Table.Td fw={500}>{d.etiqueta}</Table.Td>
+                      <Table.Td>{formatFecha(d.fecha_expiracion)}</Table.Td>
+                      <Table.Td><Badge variant="light" color={est.color} size="sm">{est.label}</Badge></Table.Td>
+                      <Table.Td style={{ textAlign: 'center' }}>{d.vehiculos}</Table.Td>
+                    </Table.Tr>
+                  )
+                })}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+      </Card>
 
       {/* ── Vehículos con mantenimiento este mes ── */}
       <Card withBorder padding="lg" radius="md">

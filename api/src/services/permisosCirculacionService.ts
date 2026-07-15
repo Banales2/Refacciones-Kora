@@ -8,11 +8,24 @@ export async function getAll(): Promise<PermisoCirculacion[]> {
 }
 
 export async function create(data: PermisoCirculacionCreate): Promise<PermisoCirculacion> {
-  return repo.create(data.zona_circulacion, data.fecha_expiracion)
+  if (await repo.existsMismaZonaYFecha(data.zona_circulacion, data.fecha_emision)) {
+    throw new ConflictError('Ya existe un permiso de esa zona emitido en esa fecha')
+  }
+  return repo.create(data.zona_circulacion, data.fecha_emision, data.fecha_expiracion)
 }
 
 export async function update(id: number, data: PermisoCirculacionUpdate): Promise<PermisoCirculacion> {
-  const result = await repo.update(id, data.zona_circulacion, data.fecha_expiracion)
+  const actual = await repo.findById(id)
+  if (!actual) throw new NotFoundError('Permiso de circulación')
+
+  // Valores efectivos tras el update (los no enviados conservan el actual).
+  const zona    = data.zona_circulacion ?? actual.zona_circulacion
+  const emision = data.fecha_emision !== undefined ? data.fecha_emision : actual.fecha_emision
+  if (emision && await repo.existsMismaZonaYFecha(zona, emision, id)) {
+    throw new ConflictError('Ya existe un permiso de esa zona emitido en esa fecha')
+  }
+
+  const result = await repo.update(id, data.zona_circulacion, data.fecha_emision, data.fecha_expiracion)
   if (!result) throw new NotFoundError('Permiso de circulación')
   return result
 }

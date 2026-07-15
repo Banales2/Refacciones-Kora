@@ -66,6 +66,36 @@ export function useRequerimientosPorVencer() {
   })
 }
 
+export interface SeguroPorVencer {
+  id:               number
+  poliza:           string
+  compania:         string
+  fecha_expiracion: string
+  vehiculos:        number
+  dias_restantes:   number
+}
+
+export interface PermisoPorVencer {
+  id:               number
+  zona_circulacion: string
+  fecha_expiracion: string
+  vehiculos:        number
+  dias_restantes:   number
+}
+
+export interface DocumentosPorVencer {
+  seguros:  SeguroPorVencer[]
+  permisos: PermisoPorVencer[]
+}
+
+// Seguros y permisos de circulación ya vencidos o próximos a vencer (30 días).
+export function useDocumentosPorVencer() {
+  return useQuery({
+    queryKey: ['dashboard', 'documentos-por-vencer'],
+    queryFn: () => api.get<{ data: DocumentosPorVencer }>('/dashboard/documentos-por-vencer'),
+  })
+}
+
 export interface HistorialDia {
   fecha:      string
   vencidos:   number

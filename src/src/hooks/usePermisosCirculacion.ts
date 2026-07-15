@@ -7,11 +7,13 @@ import { api } from '../lib/api'
 export interface PermisoCirculacion {
   id:               number
   zona_circulacion: string
+  fecha_emision:    string | null
   fecha_expiracion: string
 }
 
 export interface PermisoCirculacionPayload {
   zona_circulacion: string
+  fecha_emision:    string
   fecha_expiracion: string
 }
 

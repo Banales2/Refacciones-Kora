@@ -2,11 +2,13 @@ import { z } from 'zod'
 
 export const PermisoCirculacionCreateSchema = z.object({
   zona_circulacion: z.string().trim().min(1, 'Zona requerida').max(120),
+  fecha_emision:    z.string().date(),
   fecha_expiracion: z.string().date(),
 })
 
 export const PermisoCirculacionUpdateSchema = z.object({
   zona_circulacion: z.string().trim().min(1).max(120).optional(),
+  fecha_emision:    z.string().date().optional(),
   fecha_expiracion: z.string().date().optional(),
 })
 

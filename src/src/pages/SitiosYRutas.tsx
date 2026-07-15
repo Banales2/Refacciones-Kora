@@ -581,6 +581,8 @@ function SegurosPanel({
   const asignando = items.find((s) => s.id === openId) ?? null
 
   const hoy = new Date().toISOString().slice(0, 10)
+  // Umbral de "por expirar": vence dentro de los próximos 30 días.
+  const limite = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
   function openEdit(s: Seguro) { setEditing(s); setFormError(null); setFormOpen(true) }
@@ -619,13 +621,17 @@ function SegurosPanel({
               </Table.Thead>
               <Table.Tbody>
                 {items.map((s) => {
-                  const vencido = s.fecha_expiracion < hoy
+                  const vencido    = s.fecha_expiracion < hoy
+                  const porExpirar = !vencido && s.fecha_expiracion <= limite
                   return (
                     <Table.Tr key={s.id} onClick={() => onOpenIdChange?.(s.id)} style={{ cursor: 'pointer' }}>
                       <Table.Td fw={500}>{s.poliza}</Table.Td>
                       <Table.Td c="dimmed">{s.compania}</Table.Td>
-                      <Table.Td c={vencido ? 'red' : undefined} fw={vencido ? 600 : undefined}>
-                        {s.fecha_expiracion}{vencido ? ' (vencido)' : ''}
+                      <Table.Td
+                        c={vencido ? 'red' : porExpirar ? 'yellow.8' : undefined}
+                        fw={vencido || porExpirar ? 600 : undefined}
+                      >
+                        {s.fecha_expiracion}{vencido ? ' (vencido)' : porExpirar ? ' (por expirar)' : ''}
                       </Table.Td>
                       <Table.Td onClick={(e) => e.stopPropagation()}>
                         <Group gap={4} justify="flex-end" wrap="nowrap">
@@ -699,20 +705,25 @@ function PermisoForm({
   onCancel: () => void
 }) {
   const form = useForm<PermisoCirculacionPayload>({
-    initialValues: initial ?? { zona_circulacion: '', fecha_expiracion: '' },
+    initialValues: initial ?? { zona_circulacion: '', fecha_emision: '', fecha_expiracion: '' },
     validate: {
       zona_circulacion: (v) => (!v.trim() ? 'Requerido' : v.length > 120 ? 'Máximo 120 caracteres' : null),
-      fecha_expiracion: (v) => (!v ? 'Requerido' : null),
+      fecha_emision:    (v) => (!v ? 'Requerido' : null),
+      fecha_expiracion: (v, vals) =>
+        !v ? 'Requerido' :
+        (vals.fecha_emision && v < vals.fecha_emision) ? 'Debe ser posterior a la emisión' : null,
     },
   })
 
   return (
     <form onSubmit={form.onSubmit((v) => onSubmit({
       zona_circulacion: v.zona_circulacion.trim(),
+      fecha_emision:    v.fecha_emision,
       fecha_expiracion: v.fecha_expiracion,
     }))}>
       <Stack gap="sm">
         <TextInput label="Zona de circulación" placeholder="Ej. Zona Metropolitana" required {...form.getInputProps('zona_circulacion')} />
+        <TextInput label="Fecha de emisión" type="date" required {...form.getInputProps('fecha_emision')} />
         <TextInput label="Fecha de expiración" type="date" required {...form.getInputProps('fecha_expiracion')} />
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Group justify="flex-end" mt="xs">
@@ -748,6 +759,8 @@ function PermisosPanel({
   const asignando = items.find((p) => p.id === openId) ?? null
 
   const hoy = new Date().toISOString().slice(0, 10)
+  // Umbral de "por expirar": vence dentro de los próximos 30 días.
+  const limite = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
   function openEdit(p: PermisoCirculacion) { setEditing(p); setFormError(null); setFormOpen(true) }
@@ -779,18 +792,24 @@ function PermisosPanel({
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Zona de circulación</Table.Th>
+                  <Table.Th>Emisión</Table.Th>
                   <Table.Th>Expiración</Table.Th>
                   <Table.Th style={{ width: 80 }} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {items.map((p) => {
-                  const vencido = p.fecha_expiracion < hoy
+                  const vencido    = p.fecha_expiracion < hoy
+                  const porExpirar = !vencido && p.fecha_expiracion <= limite
                   return (
                     <Table.Tr key={p.id} onClick={() => onOpenIdChange?.(p.id)} style={{ cursor: 'pointer' }}>
                       <Table.Td fw={500}>{p.zona_circulacion}</Table.Td>
-                      <Table.Td c={vencido ? 'red' : undefined} fw={vencido ? 600 : undefined}>
-                        {p.fecha_expiracion}{vencido ? ' (vencido)' : ''}
+                      <Table.Td c={p.fecha_emision ? undefined : 'dimmed'}>{p.fecha_emision ?? '—'}</Table.Td>
+                      <Table.Td
+                        c={vencido ? 'red' : porExpirar ? 'yellow.8' : undefined}
+                        fw={vencido || porExpirar ? 600 : undefined}
+                      >
+                        {p.fecha_expiracion}{vencido ? ' (vencido)' : porExpirar ? ' (por expirar)' : ''}
                       </Table.Td>
                       <Table.Td onClick={(e) => e.stopPropagation()}>
                         <Group gap={4} justify="flex-end" wrap="nowrap">
@@ -811,7 +830,9 @@ function PermisosPanel({
         title={editing ? `Editar — ${editing.zona_circulacion}` : 'Nuevo permiso'} centered size="sm">
         <PermisoForm
           initial={editing ? {
-            zona_circulacion: editing.zona_circulacion, fecha_expiracion: editing.fecha_expiracion,
+            zona_circulacion: editing.zona_circulacion,
+            fecha_emision:    editing.fecha_emision ?? '',
+            fecha_expiracion: editing.fecha_expiracion,
           } : undefined}
           isPending={isPending} error={formError}
           onSubmit={handleSubmit} onCancel={() => setFormOpen(false)}
