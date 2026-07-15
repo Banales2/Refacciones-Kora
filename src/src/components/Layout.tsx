@@ -29,10 +29,10 @@ import type { VehiculoRow } from '../hooks/useVehiculos'
 type Section = 'dashboard' | 'piezas' | 'vehiculos' | 'sitios' | 'calendario'
 
 const NAV_ITEMS: { section: Section; label: string; description: string }[] = [
-  { section: 'piezas',     label: 'Piezas',      description: 'Catálogo e inventario'                       },
-  { section: 'vehiculos',  label: 'Vehículos',   description: 'Camiones y tractocamiones'                   },
+  { section: 'piezas',     label: 'Refacciones', description: 'Catálogo e inventario'                       },
+  { section: 'vehiculos',  label: 'Vehículos',   description: 'Unidades de reparto y tractocamiones'        },
   { section: 'calendario', label: 'Calendario',  description: 'Fechas de mantenimiento'                     },
-  { section: 'sitios',     label: 'Catálogos',   description: 'Modelos, proveedores, sucursales y rutas'    },
+  { section: 'sitios',     label: 'Catálogos',   description: 'Modelos, proveedores, sucursales y traslados' },
 ]
 
 

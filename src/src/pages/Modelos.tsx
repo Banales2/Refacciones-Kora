@@ -1,11 +1,11 @@
 // Página Modelos: catálogo de marcas/modelos de vehículos con su plantilla de
 // requerimientos (mantenimientos periódicos que heredan los vehículos del
 // modelo). Lista + vista de detalle con CRUD de plantilla.
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   Stack, Group, Text, TextInput, Textarea, Table, Badge,
   Loader, Center, Alert, Button, ActionIcon,
-  Modal, Tooltip, Divider, Grid, Paper, Select, Switch, NumberInput,
+  Modal, Tooltip, Divider, Grid, Paper, Select, MultiSelect, Switch, NumberInput,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
@@ -16,6 +16,7 @@ import {
 import {
   usePlantillaModelo, useCreatePlantilla, useUpdatePlantilla, useDeletePlantilla,
 } from '../hooks/usePlantilla'
+import { useRequerimientoCategorias } from '../hooks/useRequerimientos'
 import { useVehiculos, useCreateVehiculo } from '../hooks/useVehiculos'
 import type { Modelo, ModeloPayload } from '../hooks/useModelos'
 import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode, TipoPlantilla } from '../hooks/usePlantilla'
@@ -27,11 +28,26 @@ import { VehiculoForm } from '../components/VehiculoForm'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const TIPOS: Record<TipoVehiculo, { label: string; color: string }> = {
-  camion:       { label: 'Camión',            color: 'blue'   },
+  camion:       { label: 'Unidad de reparto', color: 'blue'   },
   tractocamion: { label: 'Tractocamión',      color: 'violet' },
   caja_trailer: { label: 'Caja de trailer',   color: 'orange' },
   utilitario:   { label: 'Vehículo utilitario', color: 'teal'   },
   montacargas:  { label: 'Montacargas',       color: 'yellow' },
+}
+
+const TIPOS_VEHICULO_OPTIONS = (Object.keys(TIPOS) as TipoVehiculo[])
+  .map((t) => ({ value: t, label: TIPOS[t].label }))
+
+// Tipos de vehículo que llevan kilometraje. Los que no (caja_trailer,
+// montacargas) no admiten requerimientos por kilometraje.
+const KM_TIPOS: TipoVehiculo[] = ['camion', 'tractocamion', 'utilitario']
+
+// Un modelo admite requerimientos por km solo si está restringido a tipos que
+// llevan kilometraje. Si no tiene restricción (permite todos, incluidos
+// montacargas/caja sin km) o si alguno de sus tipos permitidos no lleva km, no
+// se ofrecen disparadores por kilometraje: un vehículo sin km no podría cumplirlos.
+function modeloSoportaKm(tiposPermitidos: TipoVehiculo[]) {
+  return tiposPermitidos.length > 0 && tiposPermitidos.every((t) => KM_TIPOS.includes(t))
 }
 
 const TRIGGER_META: Record<TriggerMode, { label: string; color: string }> = {
@@ -80,7 +96,11 @@ function ModeloForm({
 }) {
   const isEdit = !!initial
   const form = useForm({
-    initialValues: { marca: initial?.marca ?? '', nombre: initial?.nombre ?? '' },
+    initialValues: {
+      marca:            initial?.marca ?? '',
+      nombre:           initial?.nombre ?? '',
+      tipos_permitidos: (initial?.tipos_permitidos ?? []) as TipoVehiculo[],
+    },
     validate: {
       marca:  (v) => !v.trim() ? 'Requerido' : v.length > 80  ? 'Máximo 80 caracteres'  : null,
       nombre: (v) => !v.trim() ? 'Requerido' : v.length > 120 ? 'Máximo 120 caracteres' : null,
@@ -88,10 +108,18 @@ function ModeloForm({
   })
 
   return (
-    <form onSubmit={form.onSubmit((v) => onSubmit({ marca: v.marca, nombre: v.nombre }))}>
+    <form onSubmit={form.onSubmit((v) => onSubmit({ marca: v.marca, nombre: v.nombre, tipos_permitidos: v.tipos_permitidos }))}>
       <Stack gap="sm">
         <TextInput label="Marca"          placeholder="Ej. Kenworth" required {...form.getInputProps('marca')}  />
         <TextInput label="Nombre de modelo" placeholder="Ej. T680"  required {...form.getInputProps('nombre')} />
+        <MultiSelect
+          label="Tipos de vehículo permitidos"
+          description="Qué tipos se pueden crear con este modelo. Vacío = todos permitidos."
+          placeholder={form.values.tipos_permitidos.length ? undefined : 'Todos los tipos'}
+          data={TIPOS_VEHICULO_OPTIONS}
+          clearable
+          {...form.getInputProps('tipos_permitidos')}
+        />
 
         {isEdit && initial && (
           <>
@@ -126,20 +154,23 @@ function ModeloForm({
 // ── Formulario de plantilla ───────────────────────────────────────────────────
 
 function PlantillaForm({
-  initial, isPending, error, onSubmit, onCancel,
+  initial, isPending, error, onSubmit, onCancel, soportaKm,
 }: {
   initial?: PlantillaRequerimiento
   isPending: boolean
   error: string | null
   onSubmit: (payload: PlantillaPayload) => void
   onCancel: () => void
+  // Si el modelo no genera vehículos con kilometraje, no se ofrecen los
+  // disparadores por km (solo por tiempo).
+  soportaKm: boolean
 }) {
   const form = useForm({
     initialValues: {
       nombre:          initial?.nombre ?? '',
       descripcion:     initial?.descripcion ?? '',
       categoria:       initial?.categoria ?? '',
-      trigger_mode:    (initial?.trigger_mode ?? 'km') as TriggerMode,
+      trigger_mode:    (initial?.trigger_mode ?? (soportaKm ? 'km' : 'meses')) as TriggerMode,
       tipo:            (initial?.tipo ?? 'recurrente') as TipoPlantilla,
       intervalo_km:    initial?.intervalo_km ?? (null as number | null),
       intervalo_meses: initial?.intervalo_meses ?? (null as number | null),
@@ -155,6 +186,26 @@ function PlantillaForm({
   })
 
   const mode = form.values.trigger_mode
+
+  // Categorías: las ya usadas en los requerimientos, más la del que se edita y
+  // la que el usuario esté escribiendo, que se ofrece como opción para crearla.
+  const { data: categoriasData } = useRequerimientoCategorias()
+  const [categoriaSearch, setCategoriaSearch] = useState('')
+
+  const categoriaOptions = useMemo(() => {
+    const existentes = new Set(categoriasData?.data ?? [])
+    if (initial?.categoria) existentes.add(initial.categoria)
+
+    const opts = [...existentes].sort((a, b) => a.localeCompare(b, 'es-MX'))
+      .map((c) => ({ value: c, label: c }))
+
+    const nueva = categoriaSearch.trim()
+    const yaExiste = [...existentes].some((c) => c.toLowerCase() === nueva.toLowerCase())
+    if (nueva && !yaExiste) {
+      opts.unshift({ value: nueva, label: `+ Crear categoría "${nueva}"` })
+    }
+    return opts
+  }, [categoriasData, initial?.categoria, categoriaSearch])
 
   function handleSubmit(vals: typeof form.values) {
     onSubmit({
@@ -180,16 +231,27 @@ function PlantillaForm({
           label="Descripción" placeholder="Instrucciones o detalles adicionales"
           autosize minRows={2} {...form.getInputProps('descripcion')}
         />
-        <TextInput
-          label="Categoría" placeholder="Ej. Motor, Frenos, Eléctrico"
+        <Select
+          label="Categoría"
+          placeholder="Selecciona o escribe para crear una categoría"
+          data={categoriaOptions}
+          searchable
+          clearable
+          onSearchChange={setCategoriaSearch}
+          nothingFoundMessage="Escribe para crear una nueva categoría"
+          maxLength={80}
           {...form.getInputProps('categoria')}
+          onChange={(v) => form.setFieldValue('categoria', v ?? '')}
         />
         <Select
           label="Disparador" required
-          data={[
+          description={soportaKm ? undefined : 'Para disparadores por kilometraje, restringe el modelo a tipos con km (unidad de reparto, tractocamión o utilitario).'}
+          data={soportaKm ? [
             { value: 'km',    label: 'Por kilometraje' },
             { value: 'meses', label: 'Por tiempo (meses)' },
             { value: 'ambos', label: 'Kilometraje y tiempo' },
+          ] : [
+            { value: 'meses', label: 'Por tiempo (meses)' },
           ]}
           {...form.getInputProps('trigger_mode')}
         />
@@ -231,7 +293,8 @@ function PlantillaForm({
 
 // ── Sección plantilla ─────────────────────────────────────────────────────────
 
-function PlantillaSection({ modeloId }: { modeloId: number }) {
+function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tiposPermitidos: TipoVehiculo[] }) {
+  const soportaKm = modeloSoportaKm(tiposPermitidos)
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<PlantillaRequerimiento | null>(null)
   const [deleting, setDeleting]   = useState<PlantillaRequerimiento | null>(null)
@@ -356,6 +419,7 @@ function PlantillaSection({ modeloId }: { modeloId: number }) {
           initial={editing ?? undefined}
           isPending={createMut.isPending || updateMut.isPending}
           error={formError}
+          soportaKm={soportaKm}
           onSubmit={handleSubmit}
           onCancel={() => setFormOpen(false)}
         />
@@ -443,6 +507,20 @@ function ModeloDetalle({
                 <Text size="xs" c="dimmed">Última modificación</Text>
                 <Text size="sm">{fmtDate(modelo.updated_at)}</Text>
               </Grid.Col>
+              <Grid.Col span={12}>
+                <Text size="xs" c="dimmed">Tipos de vehículo permitidos</Text>
+                {(modelo.tipos_permitidos ?? []).length === 0 ? (
+                  <Text size="sm" c="dimmed">Todos</Text>
+                ) : (
+                  <Group gap={4} mt={2}>
+                    {(modelo.tipos_permitidos ?? []).map((t) => (
+                      <Badge key={t} variant="light" color={TIPOS[t]?.color} size="sm">
+                        {TIPOS[t]?.label ?? t}
+                      </Badge>
+                    ))}
+                  </Group>
+                )}
+              </Grid.Col>
             </Grid>
           </Stack>
           <Tooltip label="Editar modelo">
@@ -454,7 +532,7 @@ function ModeloDetalle({
       </Paper>
 
       {/* Plantilla de requerimientos */}
-      <PlantillaSection modeloId={modelo.id} />
+      <PlantillaSection modeloId={modelo.id} tiposPermitidos={modelo.tipos_permitidos ?? []} />
 
       {/* Vehículos asignados */}
       <Divider

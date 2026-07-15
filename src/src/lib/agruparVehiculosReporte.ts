@@ -52,7 +52,7 @@ export function agruparVehiculosPorUbicacion(
   const sinSucursal = conSucursal.filter(v => !sucursales.some(s => s.id === v.sucursal_id))
 
   const grupos: GrupoUbicacion[] = []
-  if (rutas.length)       grupos.push({ key: 'rutas',        label: 'Rutas',               tipos: agruparPorTipo(rutas) })
+  if (rutas.length)       grupos.push({ key: 'rutas',        label: 'Traslados',           tipos: agruparPorTipo(rutas) })
   for (const { sucursal, items } of porSucursal) {
     if (items.length)     grupos.push({ key: `suc-${sucursal.id}`, label: sucursal.nombre,  tipos: agruparPorTipo(items) })
   }

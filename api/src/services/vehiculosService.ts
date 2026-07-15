@@ -1,5 +1,6 @@
 import * as repo from '../repositories/vehiculosRepo'
 import * as plantillaRepo from '../repositories/plantillaRepo'
+import * as modelosRepo from '../repositories/modelosRepo'
 import { getPool } from '../shared/db'
 import { VehiculoQuery, VehiculoCreate, VehiculoUpdate, TipoVehiculo } from '../schemas/vehiculoSchema'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
@@ -54,9 +55,20 @@ export async function getById(id: number) {
 
 export async function create(data: VehiculoCreate) {
   validateCreate(data)
+  await validateTipoPermitido(data.modelo_id, data.tipo)
   const vehicle = await repo.create(data)
   await plantillaRepo.copyModelToVehicle(vehicle.id, data.modelo_id)
   return vehicle
+}
+
+// El modelo puede restringir qué tipos de vehículo genera (vacío = sin
+// restricción). Así se evita, p. ej., crear un montacargas desde un modelo
+// cuya plantilla asume kilometraje.
+async function validateTipoPermitido(modeloId: number, tipo: TipoVehiculo) {
+  const permitidos = await modelosRepo.findTiposPermitidos(modeloId)
+  if (permitidos.length > 0 && !permitidos.includes(tipo)) {
+    throw new ValidationError('El tipo de vehículo seleccionado no está permitido para este modelo')
+  }
 }
 
 export async function update(id: number, data: VehiculoUpdate) {

@@ -74,7 +74,7 @@ function DetalleForm({
       lote_id: '', cantidad: '', costo_unitario: '',
     },
     validate: {
-      lote_id:        (v) => (mode === 'create' && !v ? 'Pieza requerida' : null),
+      lote_id:        (v) => (mode === 'create' && !v ? 'Refacción requerida' : null),
       cantidad:       (v) => (v === '' || Number(v) < 1 ? 'Mínimo 1 unidad' : null),
       costo_unitario: (v) => (v === '' || Number(v) < 0 ? 'Costo inválido' : null),
     },
@@ -108,8 +108,8 @@ function DetalleForm({
         {error && <Alert color="red" title="Error">{error}</Alert>}
         {mode === 'create' ? (
           <Select
-            label="Pieza / lote"
-            placeholder="Selecciona la pieza usada"
+            label="Refacción / lote"
+            placeholder="Selecciona la refacción usada"
             data={loteOptions}
             searchable
             required
@@ -119,7 +119,7 @@ function DetalleForm({
           />
         ) : (
           <div>
-            <Text size="xs" c="dimmed">Pieza</Text>
+            <Text size="xs" c="dimmed">Refacción</Text>
             <Text size="sm" fw={500}>{lockedLabel}</Text>
           </div>
         )}
@@ -244,7 +244,7 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
             <Group justify="space-between" align="flex-end">
               <Group gap="xl">
                 <div>
-                  <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Costo piezas</Text>
+                  <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Costo refacciones</Text>
                   <Text fw={700} size="lg">{formatMXN(piezasTotal)}</Text>
                 </div>
                 <div>
@@ -257,20 +257,20 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
                 </div>
               </Group>
               <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setCreateOpen(true)}>
-                Agregar pieza
+                Agregar refacción
               </Button>
             </Group>
 
             {!detalles.length ? (
               <Center py="xl">
-                <Text c="dimmed">Este mantenimiento no tiene piezas registradas.</Text>
+                <Text c="dimmed">Este mantenimiento no tiene refacciones registradas.</Text>
               </Center>
             ) : (
               <Table.ScrollContainer minWidth={560}>
                 <Table withTableBorder withColumnBorders striped>
                   <Table.Thead>
                     <Table.Tr>
-                      <Table.Th>Pieza</Table.Th>
+                      <Table.Th>Refacción</Table.Th>
                       <Table.Th style={{ textAlign: 'center' }}>Cantidad</Table.Th>
                       <Table.Th style={{ textAlign: 'right' }}>Costo unit.</Table.Th>
                       <Table.Th style={{ textAlign: 'right' }}>Subtotal</Table.Th>
@@ -291,14 +291,14 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
                           <Group gap={4} justify="flex-end" wrap="nowrap">
                             <ActionIcon
                               variant="subtle" color="blue" size="sm"
-                              aria-label="Editar pieza"
+                              aria-label="Editar refacción"
                               onClick={() => setEditItem(d)}
                             >
                               <IconPencil size={14} />
                             </ActionIcon>
                             <ActionIcon
                               variant="subtle" color="red" size="sm"
-                              aria-label="Eliminar pieza"
+                              aria-label="Eliminar refacción"
                               onClick={() => setDeleteItem(d)}
                             >
                               <IconTrash size={14} />
@@ -315,7 +315,7 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
         )}
       </Drawer>
 
-      <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title="Agregar pieza" centered>
+      <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title="Agregar refacción" centered>
         <DetalleForm
           mode="create"
           isPending={createMut.isPending}
@@ -325,7 +325,7 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
         />
       </Modal>
 
-      <Modal opened={editItem !== null} onClose={() => setEditItem(null)} title="Editar pieza" centered>
+      <Modal opened={editItem !== null} onClose={() => setEditItem(null)} title="Editar refacción" centered>
         {editItem && (
           <DetalleForm
             mode="edit"
@@ -346,7 +346,7 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
 
       <Modal
         opened={deleteItem !== null} onClose={() => setDeleteItem(null)}
-        title="Eliminar pieza" centered size="sm"
+        title="Eliminar refacción" centered size="sm"
       >
         <Stack gap="md">
           <Text>

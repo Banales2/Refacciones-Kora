@@ -179,6 +179,20 @@ export async function remove(id: number): Promise<boolean> {
   const tx = pool.transaction()
   await tx.begin()
   try {
+    // Los requerimientos copiados a los vehículos pueden estar vinculados a
+    // agendas o mantenimientos; hay que soltar esos vínculos antes de borrarlos
+    // o el FK aborta el DELETE (500). Se borra solo el vínculo, no el
+    // mantenimiento/agenda en sí.
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE ar FROM agenda_requerimientos ar
+      JOIN requerimientos_exclusivos re ON re.id = ar.requerimiento_id
+      WHERE re.plantilla_origen_id = @id
+    `)
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE mr FROM mantenimiento_requerimientos mr
+      JOIN requerimientos_exclusivos re ON re.id = mr.requerimiento_id
+      WHERE re.plantilla_origen_id = @id
+    `)
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM requerimientos_exclusivos WHERE plantilla_origen_id=@id')
     const r = await tx.request().input('id', sql.Int, id)

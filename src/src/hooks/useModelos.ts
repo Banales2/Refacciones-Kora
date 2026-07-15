@@ -2,18 +2,22 @@
 // plantilla de requerimientos (usePlantilla) que se aplica a sus vehículos.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { TipoVehiculo } from './useVehiculos'
 
 export interface Modelo {
-  id:         number
-  marca:      string
-  nombre:     string
-  created_at: string
-  updated_at: string
+  id:               number
+  marca:            string
+  nombre:           string
+  // Tipos de vehículo que este modelo puede generar. Vacío = sin restricción.
+  tipos_permitidos: TipoVehiculo[]
+  created_at:       string
+  updated_at:       string
 }
 
 export interface ModeloPayload {
-  marca:  string
-  nombre: string
+  marca:             string
+  nombre:            string
+  tipos_permitidos?: TipoVehiculo[]
 }
 
 export function useModelos() {

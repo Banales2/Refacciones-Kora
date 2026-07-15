@@ -41,8 +41,8 @@ export async function exportResumenMesToExcel(resumen: ResumenMes) {
     { concepto: 'Periodo', valor: rangoLabel(resumen) },
     { concepto: 'Mantenimientos realizados', valor: resumen.mantenimientos.count },
     { concepto: 'Costo total mantenimientos', valor: resumen.mantenimientos.costo_total },
-    { concepto: 'Piezas compradas (lotes)', valor: resumen.piezas.count },
-    { concepto: 'Costo total piezas', valor: resumen.piezas.costo_total },
+    { concepto: 'Refacciones compradas (lotes)', valor: resumen.piezas.count },
+    { concepto: 'Costo total refacciones', valor: resumen.piezas.costo_total },
     { concepto: 'Costo total del mes', valor: costoTotalMes },
   ])
   for (const rowNum of [3, 5, 6]) {
@@ -63,9 +63,9 @@ export async function exportResumenMesToExcel(resumen: ResumenMes) {
   wsMtto.addRow({ vehiculo: 'Total', cantidad: resumen.mantenimientos.count, costo: resumen.mantenimientos.costo_total })
     .font = { bold: true }
 
-  const wsPiezas = wb.addWorksheet('Piezas')
+  const wsPiezas = wb.addWorksheet('Refacciones')
   wsPiezas.columns = [
-    { header: 'Pieza',          key: 'pieza',       width: 24 },
+    { header: 'Refacción',      key: 'pieza',       width: 24 },
     { header: 'Descripción',    key: 'descripcion', width: 30 },
     { header: 'Proveedor',      key: 'proveedor',   width: 22 },
     { header: 'Fecha',          key: 'fecha',       width: 14 },

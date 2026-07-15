@@ -4,10 +4,12 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import * as service from '../services/modelosService'
+import { TIPOS_VEHICULO } from '../schemas/vehiculoSchema'
 
 const Schema = z.object({
-  marca:  z.string().min(1).max(80).trim().optional(),
-  nombre: z.string().min(1).max(120).trim().optional(),
+  marca:            z.string().min(1).max(80).trim().optional(),
+  nombre:           z.string().min(1).max(120).trim().optional(),
+  tipos_permitidos: z.array(z.enum(TIPOS_VEHICULO)).optional(),
 })
 
 export async function modelosUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
@@ -15,8 +17,8 @@ export async function modelosUpdate(req: HttpRequest, ctx: InvocationContext): P
     const user = requireRole(req, 'admin', 'editor')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
-    const { marca, nombre } = Schema.parse(await req.json())
-    const updated = await service.update(id, marca, nombre)
+    const { marca, nombre, tipos_permitidos } = Schema.parse(await req.json())
+    const updated = await service.update(id, marca, nombre, tipos_permitidos)
     await audit({ user, accion: 'EDITAR', tabla: 'modelos', registroId: id, ipAddress: getClientIp(req) })
     return { status: 200, jsonBody: { data: updated } }
   } catch (err) { return handleError(err, ctx) }

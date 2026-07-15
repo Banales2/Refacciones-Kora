@@ -12,6 +12,7 @@ export interface RequerimientoExclusivo {
   categoria:           string | null
   intervalo_km:        number | null
   intervalo_meses:     number | null
+  intervalo_dias:      number | null
   trigger_mode:        TriggerMode
   tipo:                TipoReq
   status:              StatusReq
@@ -33,6 +34,7 @@ export interface RequerimientoCreate {
   tipo?:                TipoReq
   intervalo_km?:        number | null
   intervalo_meses?:     number | null
+  intervalo_dias?:      number | null
   status?:              StatusReq
   plantilla_origen_id?: number | null
   fecha_inicio?:        string | null
@@ -48,13 +50,14 @@ export interface RequerimientoUpdate {
   tipo?:            TipoReq
   intervalo_km?:    number | null
   intervalo_meses?: number | null
+  intervalo_dias?:  number | null
   status?:          StatusReq
   fecha_inicio?:    string | null
   km_inicio?:       number | null
   fecha_reporte?:   string | null
 }
 
-const COLS = `id, nombre, descripcion, categoria, intervalo_km, intervalo_meses,
+const COLS = `id, nombre, descripcion, categoria, intervalo_km, intervalo_meses, intervalo_dias,
   trigger_mode, tipo, status, created_at, updated_at, vehiculo_id, plantilla_origen_id,
   fecha_inicio, km_inicio, fecha_reporte`
 
@@ -72,9 +75,13 @@ export async function findByVehiculo(vehiculoId: number): Promise<RequerimientoE
 export async function findCategorias(): Promise<string[]> {
   const pool = await getPool()
   const r = await pool.request().query(`
-    SELECT DISTINCT categoria
-    FROM requerimientos_exclusivos
-    WHERE categoria IS NOT NULL AND LTRIM(RTRIM(categoria)) <> ''
+    SELECT categoria FROM (
+      SELECT DISTINCT categoria FROM requerimientos_exclusivos
+      WHERE categoria IS NOT NULL AND LTRIM(RTRIM(categoria)) <> ''
+      UNION
+      SELECT DISTINCT categoria FROM plantilla_requerimientos_modelo
+      WHERE categoria IS NOT NULL AND LTRIM(RTRIM(categoria)) <> ''
+    ) AS c
     ORDER BY categoria
   `)
   return r.recordset.map((row: { categoria: string }) => row.categoria)
@@ -99,6 +106,7 @@ export async function create(data: RequerimientoCreate): Promise<RequerimientoEx
     .input('tipo',          sql.NVarChar(20),     data.tipo              ?? 'recurrente')
     .input('intervaloKm',   sql.Int,              data.intervalo_km      ?? null)
     .input('intervaloMes',  sql.Int,              data.intervalo_meses   ?? null)
+    .input('intervaloDia',  sql.Int,              data.intervalo_dias    ?? null)
     .input('status',        sql.NVarChar(20),     data.status            ?? 'activo')
     .input('origenId',      sql.Int,              data.plantilla_origen_id ?? null)
     .input('fechaInicio',   sql.Date,             data.fecha_inicio        ?? null)
@@ -107,10 +115,10 @@ export async function create(data: RequerimientoCreate): Promise<RequerimientoEx
     .query(`
       INSERT INTO requerimientos_exclusivos
         (vehiculo_id, nombre, descripcion, categoria, trigger_mode, tipo,
-         intervalo_km, intervalo_meses, status, plantilla_origen_id, fecha_inicio, km_inicio, fecha_reporte)
+         intervalo_km, intervalo_meses, intervalo_dias, status, plantilla_origen_id, fecha_inicio, km_inicio, fecha_reporte)
       OUTPUT INSERTED.*
       VALUES (@vid, @nombre, @descripcion, @categoria, @triggerMode, @tipo,
-              @intervaloKm, @intervaloMes, @status, @origenId, @fechaInicio, @kmInicio, @fechaReporte)
+              @intervaloKm, @intervaloMes, @intervaloDia, @status, @origenId, @fechaInicio, @kmInicio, @fechaReporte)
     `)
   return r.recordset[0]
 }
@@ -127,6 +135,7 @@ export async function update(id: number, data: RequerimientoUpdate): Promise<Req
   if (data.tipo         !== undefined) { req.input('tipo',        sql.NVarChar(20),      data.tipo);             sets.push('tipo=@tipo')                  }
   if ('intervalo_km'   in data)        { req.input('intervaloKm', sql.Int,               data.intervalo_km    ?? null); sets.push('intervalo_km=@intervaloKm') }
   if ('intervalo_meses' in data)       { req.input('intervaloMes',sql.Int,               data.intervalo_meses ?? null); sets.push('intervalo_meses=@intervaloMes') }
+  if ('intervalo_dias'  in data)       { req.input('intervaloDia',sql.Int,               data.intervalo_dias  ?? null); sets.push('intervalo_dias=@intervaloDia') }
   if (data.status        !== undefined) { req.input('status',      sql.NVarChar(20), data.status);             sets.push('status=@status')                   }
   if ('fecha_inicio' in data)           { req.input('fechaInicio', sql.Date,         data.fecha_inicio ?? null); sets.push('fecha_inicio=@fechaInicio')         }
   if ('km_inicio'    in data)           { req.input('kmInicio',    sql.Int,          data.km_inicio    ?? null); sets.push('km_inicio=@kmInicio')               }

@@ -2,20 +2,43 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 
 export interface Modelo {
-  id:         number
-  marca:      string
-  nombre:     string
-  created_at: string
-  updated_at: string
+  id:               number
+  marca:            string
+  nombre:           string
+  // Tipos de vehículo que este modelo puede generar. Vacío = sin restricción
+  // (se permiten todos). Evita, p. ej., crear un montacargas (sin kilometraje)
+  // a partir de un modelo cuya plantilla tiene requerimientos por kilometraje.
+  tipos_permitidos: string[]
+  created_at:       string
+  updated_at:       string
 }
 
-const COLS = 'id, marca, nombre, created_at, updated_at'
+const COLS = 'id, marca, nombre, tipos_permitidos, created_at, updated_at'
+
+// En la BD se guarda como CSV ("camion,utilitario"); hacia fuera se expone como
+// arreglo. NULL/'' significa "sin restricción".
+function parseTipos(v: string | null): string[] {
+  if (!v) return []
+  return v.split(',').map((s) => s.trim()).filter(Boolean)
+}
+
+function serializeTipos(tipos: string[] | null | undefined): string | null {
+  if (!tipos || tipos.length === 0) return null
+  return tipos.join(',')
+}
+
+// Fila cruda de la BD: tipos_permitidos llega como CSV (o NULL).
+type ModeloRow = Omit<Modelo, 'tipos_permitidos'> & { tipos_permitidos: string | null }
+
+function mapRow(row: ModeloRow): Modelo {
+  return { ...row, tipos_permitidos: parseTipos(row.tipos_permitidos) }
+}
 
 export async function findAll(): Promise<Modelo[]> {
   const pool = await getPool()
   const r = await pool.request()
     .query(`SELECT ${COLS} FROM modelos ORDER BY marca, nombre`)
-  return r.recordset
+  return r.recordset.map(mapRow)
 }
 
 export async function findById(id: number): Promise<Modelo | null> {
@@ -23,28 +46,40 @@ export async function findById(id: number): Promise<Modelo | null> {
   const r = await pool.request()
     .input('id', sql.Int, id)
     .query(`SELECT ${COLS} FROM modelos WHERE id = @id`)
-  return r.recordset[0] ?? null
+  return r.recordset[0] ? mapRow(r.recordset[0]) : null
 }
 
-export async function create(marca: string, nombre: string): Promise<Modelo> {
+// Tipos permitidos de un modelo, para validar el alta de vehículos. Arreglo
+// vacío = sin restricción (o modelo inexistente: el FK lo rechazará al insertar).
+export async function findTiposPermitidos(id: number): Promise<string[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query('SELECT tipos_permitidos FROM modelos WHERE id = @id')
+  return r.recordset[0] ? parseTipos(r.recordset[0].tipos_permitidos) : []
+}
+
+export async function create(marca: string, nombre: string, tiposPermitidos?: string[]): Promise<Modelo> {
   const pool = await getPool()
   const r = await pool.request()
     .input('marca',  sql.NVarChar(80),  marca)
     .input('nombre', sql.NVarChar(120), nombre)
-    .query(`INSERT INTO modelos (marca, nombre) OUTPUT INSERTED.* VALUES (@marca, @nombre)`)
-  return r.recordset[0]
+    .input('tipos',  sql.NVarChar(200), serializeTipos(tiposPermitidos))
+    .query(`INSERT INTO modelos (marca, nombre, tipos_permitidos) OUTPUT INSERTED.* VALUES (@marca, @nombre, @tipos)`)
+  return mapRow(r.recordset[0])
 }
 
-export async function update(id: number, marca?: string, nombre?: string): Promise<Modelo | null> {
+export async function update(id: number, marca?: string, nombre?: string, tiposPermitidos?: string[]): Promise<Modelo | null> {
   const pool = await getPool()
   const sets: string[] = ['updated_at=SYSDATETIME()']
   const req = pool.request().input('id', sql.Int, id)
   if (marca  !== undefined) { req.input('marca',  sql.NVarChar(80),  marca);  sets.push('marca=@marca')   }
   if (nombre !== undefined) { req.input('nombre', sql.NVarChar(120), nombre); sets.push('nombre=@nombre') }
+  if (tiposPermitidos !== undefined) { req.input('tipos', sql.NVarChar(200), serializeTipos(tiposPermitidos)); sets.push('tipos_permitidos=@tipos') }
   const r = await req.query(
     `UPDATE modelos SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`
   )
-  return r.recordset[0] ?? null
+  return r.recordset[0] ? mapRow(r.recordset[0]) : null
 }
 
 export async function countVehiculos(id: number): Promise<number> {

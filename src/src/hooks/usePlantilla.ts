@@ -45,7 +45,10 @@ export function useCreatePlantilla(modeloId: number) {
   return useMutation({
     mutationFn: (payload: PlantillaPayload) =>
       api.post<{ data: PlantillaRequerimiento }>(`/modelos/${modeloId}/plantilla`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['plantilla', modeloId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['plantilla', modeloId] })
+      qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
+    },
   })
 }
 
@@ -54,7 +57,10 @@ export function useUpdatePlantilla(modeloId: number) {
   return useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: Partial<PlantillaPayload> }) =>
       api.put<{ data: PlantillaRequerimiento }>(`/plantilla/${id}`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['plantilla', modeloId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['plantilla', modeloId] })
+      qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
+    },
   })
 }
 

@@ -57,7 +57,7 @@ export async function exportReporteFlotaToPdf(reporte: ReporteFlota, sucursales:
   }
 
   doc.setFontSize(16)
-  doc.text('Reporte de flota', margin, y)
+  doc.text('Reporte de flotilla', margin, y)
   y += 7
   doc.setFontSize(10)
   doc.setTextColor(100)
@@ -71,10 +71,10 @@ export async function exportReporteFlotaToPdf(reporte: ReporteFlota, sucursales:
   y += 7
   doc.setFontSize(10)
   const costoLineas = [
-    `Mano de obra (mantenimiento sin piezas): ${formatMXN(reporte.costos.mano_obra)}`,
-    `Piezas usadas en mantenimientos:         ${formatMXN(reporte.costos.piezas_usadas)}`,
-    `Subtotal mantenimiento:                  ${formatMXN(reporte.costos.total_mantenimiento)}`,
-    `Piezas compradas (lotes del mes):        ${formatMXN(reporte.costos.piezas_compradas)}`,
+    `Mano de obra (mantenimiento sin refacciones): ${formatMXN(reporte.costos.mano_obra)}`,
+    `Refacciones usadas en mantenimientos:         ${formatMXN(reporte.costos.piezas_usadas)}`,
+    `Subtotal mantenimiento:                       ${formatMXN(reporte.costos.total_mantenimiento)}`,
+    `Refacciones compradas (lotes del mes):        ${formatMXN(reporte.costos.piezas_compradas)}`,
   ]
   for (const linea of costoLineas) { doc.text(linea, margin, y); y += 6 }
   doc.setFont('helvetica', 'bold')
@@ -129,7 +129,7 @@ export async function exportReporteFlotaToPdf(reporte: ReporteFlota, sucursales:
         margin: { left: margin, right: margin },
         head: [[
           'Marca / Modelo', 'Serie', 'Placas', 'Estatus', 'Km',
-          'Mtto. mes', 'Mano obra', 'Piezas', 'Vencidos', 'Por vencer', 'Último mtto.',
+          'Mtto. mes', 'Mano obra', 'Refacc.', 'Vencidos', 'Por vencer', 'Último mtto.',
         ]],
         body: sub.items.map(v => [
           `${v.marca} ${v.modelo}`,

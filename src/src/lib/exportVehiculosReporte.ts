@@ -46,7 +46,7 @@ function agruparPorUbicacion(vehiculos: VehiculoRow[], sucursales: Sucursal[]): 
   const sinSucursal = conSucursal.filter((v) => !sucursales.some((s) => s.id === v.sucursal_id))
 
   const grupos: GrupoUbicacion[] = []
-  if (rutas.length)       grupos.push({ label: 'Rutas',               tipos: agruparPorTipo(rutas) })
+  if (rutas.length)       grupos.push({ label: 'Traslados',           tipos: agruparPorTipo(rutas) })
   for (const { sucursal, items } of porSucursal) {
     if (items.length)     grupos.push({ label: sucursal.nombre,       tipos: agruparPorTipo(items) })
   }

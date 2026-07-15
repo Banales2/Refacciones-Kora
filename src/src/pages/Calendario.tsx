@@ -385,7 +385,7 @@ export default function Calendario({
             setCompletarAgenda(null)
             setDetalleId(res.data.id)
             alert(
-              `El mantenimiento se registró, pero no se pudieron guardar todas las piezas: ${e.message}\n\n` +
+              `El mantenimiento se registró, pero no se pudieron guardar todas las refacciones: ${e.message}\n\n` +
               'Revisa el detalle del mantenimiento para agregar las que falten.'
             )
           },

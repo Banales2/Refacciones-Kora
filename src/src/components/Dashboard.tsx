@@ -270,7 +270,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
           color="teal"
         />
         <StatCard
-          label="Piezas compradas del mes"
+          label="Refacciones compradas del mes"
           value={loadingResumen ? '—' : String(resumen?.data.piezas.count ?? 0)}
           sub={resumen ? formatMXN(resumen.data.piezas.costo_total) : undefined}
           color="violet"
@@ -292,7 +292,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
           value={loadingResumen ? '—' : formatMXN(
             (resumen?.data.mantenimientos.costo_total ?? 0) + (resumen?.data.piezas.costo_total ?? 0)
           )}
-          sub="Mantenimiento + piezas"
+          sub="Mantenimiento + refacciones"
           color="blue"
         />
       </SimpleGrid>
@@ -373,7 +373,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
 
       {/* ── Piezas compradas este mes ── */}
       <Card withBorder padding="lg" radius="md">
-        <Text fw={600} mb="xs">Piezas compradas este mes</Text>
+        <Text fw={600} mb="xs">Refacciones compradas este mes</Text>
         {loadingResumen ? (
           <Center py="xl"><Loader size="sm" /></Center>
         ) : (resumen?.data.piezas.lotes.length ?? 0) === 0 ? (
@@ -383,7 +383,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
             <Table striped withTableBorder>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Pieza</Table.Th>
+                  <Table.Th>Refacción</Table.Th>
                   <Table.Th>Proveedor</Table.Th>
                   <Table.Th>Fecha</Table.Th>
                   <Table.Th style={{ textAlign: 'center' }}>Cantidad</Table.Th>

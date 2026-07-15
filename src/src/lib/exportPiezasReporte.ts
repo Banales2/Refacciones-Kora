@@ -40,7 +40,7 @@ export async function exportPiezasReporteToPdf(piezas: Pieza[]) {
   }
 
   doc.setFontSize(16)
-  doc.text('Reporte de inventario de piezas', margin, y)
+  doc.text('Reporte de inventario de refacciones', margin, y)
   y += 7
   doc.setFontSize(10)
   doc.setTextColor(100)
@@ -54,7 +54,7 @@ export async function exportPiezasReporteToPdf(piezas: Pieza[]) {
   const totalStock = piezas.reduce((sum, p) => sum + p.cantidad_total, 0)
   const sinStock = piezas.filter((p) => p.cantidad_total === 0).length
   doc.text(
-    `${piezas.length} piezas · ${totalStock.toLocaleString('es-MX')} unidades en stock · ${sinStock} sin existencias`,
+    `${piezas.length} refacciones · ${totalStock.toLocaleString('es-MX')} unidades en stock · ${sinStock} sin existencias`,
     margin, y
   )
   y += 10

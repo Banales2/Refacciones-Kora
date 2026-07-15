@@ -1,7 +1,7 @@
 // Formulario de alta/edición de vehículos: los campos visibles y requeridos
 // dependen del tipo (p. ej. ruta para tractocamiones, sucursal para camiones,
 // pies para cajas de trailer). En edición el tipo no puede cambiarse.
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from '@mantine/form'
 import {
   Stack, Grid, TextInput, NumberInput, Select, Divider,
@@ -14,7 +14,7 @@ import { useSucursales } from '../hooks/useSucursales'
 import { useRutas } from '../hooks/useRutas'
 
 const TIPO_META: Record<TipoVehiculo, { label: string; color: string }> = {
-  camion:       { label: 'Camión',           color: 'blue'   },
+  camion:       { label: 'Unidad de reparto', color: 'blue'   },
   tractocamion: { label: 'Tractocamión',     color: 'violet' },
   caja_trailer: { label: 'Caja de trailer',  color: 'orange' },
   utilitario:   { label: 'Vehículo utilitario',color: 'teal'   },
@@ -133,6 +133,25 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
     },
   })
 
+  // El modelo puede restringir qué tipos de vehículo genera. Vacío = todos.
+  const selectedModeloId = lockedModeloId != null
+    ? lockedModeloId
+    : (form.values.modelo_id ? parseInt(form.values.modelo_id) : null)
+  const selectedModelo = modelosData?.data.find((m) => m.id === selectedModeloId)
+  const tiposPermitidos = selectedModelo?.tipos_permitidos ?? []
+  const tiposOptions = tiposPermitidos.length > 0
+    ? TIPOS_OPTIONS.filter((o) => tiposPermitidos.includes(o.value as TipoVehiculo))
+    : TIPOS_OPTIONS
+
+  // Si al cambiar de modelo el tipo elegido deja de estar permitido, se limpia.
+  useEffect(() => {
+    if (isEdit) return
+    if (tiposPermitidos.length > 0 && form.values.tipo && !tiposPermitidos.includes(form.values.tipo as TipoVehiculo)) {
+      form.setFieldValue('tipo', '')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModeloId, tiposPermitidos.join(',')])
+
   const tipo = (isEdit ? initial!.tipo : form.values.tipo) as TipoVehiculo | ''
 
   // Editar el vehículo es la única vía que puede bajar el kilometraje (el resto
@@ -225,7 +244,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
           <Select
             label="Tipo de vehículo"
             placeholder="Selecciona un tipo"
-            data={TIPOS_OPTIONS}
+            data={tiposOptions}
+            description={tiposPermitidos.length > 0 ? 'Limitado por los tipos permitidos del modelo.' : undefined}
             required
             {...form.getInputProps('tipo')}
           />
@@ -268,7 +288,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
         {/* Campos condicionales — camion */}
         {(tipo === 'camion') && (
           <>
-            <Divider label="Datos del camión" labelPosition="left" />
+            <Divider label="Datos de la unidad de reparto" labelPosition="left" />
             <Grid>
               <Grid.Col span={6}>
                 <Select label="Combustible" data={COMBUSTIBLES} placeholder="Tipo" required {...form.getInputProps('combustible')} />
@@ -307,7 +327,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <NumberInput label="Kilometraje" placeholder="0" min={0} required {...form.getInputProps('kilometraje')} />
               </Grid.Col>
               <Grid.Col span={6}>
-                <Select label="Ruta" data={rutasOpts} placeholder="Ruta asignada" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
+                <Select label="Traslado" data={rutasOpts} placeholder="Traslado asignado" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
               </Grid.Col>
               <Grid.Col span={12}>
                 <TextInput label="Tenencia" placeholder="Folio de tenencia (opcional)" {...form.getInputProps('tenencia')} />
@@ -328,7 +348,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
               </Grid.Col>
               <Grid.Col span={12}>
-                <Select label="Ruta" data={rutasOpts} placeholder="Ruta asignada" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
+                <Select label="Traslado" data={rutasOpts} placeholder="Traslado asignado" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
               </Grid.Col>
             </Grid>
           </>

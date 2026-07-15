@@ -16,7 +16,7 @@ export async function update(id: number, nombre?: string, ubicacion?: string) {
 export async function remove(id: number) {
   const count = await repo.countCamiones(id)
   if (count > 0)
-    throw new ConflictError(`Esta sucursal tiene ${count} camión(es) asignado(s) y no puede eliminarse`)
+    throw new ConflictError(`Esta sucursal tiene ${count} unidad(es) de reparto asignada(s) y no puede eliminarse`)
   const deleted = await repo.remove(id)
   if (!deleted) throw new NotFoundError('Sucursal')
 }

@@ -87,7 +87,7 @@ function PiezaForm({
         />
         <Textarea
           label="Descripción"
-          placeholder="Descripción de la pieza"
+          placeholder="Descripción de la refacción"
           rows={3}
           required
           {...form.getInputProps('descripcion')}
@@ -292,13 +292,13 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
         {/* Encabezado */}
         <Group justify="space-between" align="flex-end">
           <div>
-            <Text size="xl" fw={600}>Piezas</Text>
+            <Text size="xl" fw={600}>Refacciones</Text>
             <Text size="sm" c="dimmed">Catálogo e inventario de refacciones</Text>
           </div>
           <Group gap="sm" align="flex-end">
             {(searching ? data?.pagination?.total : allData?.data?.length) != null && (
               <Text size="sm" c="dimmed">
-                {searching ? data?.pagination?.total : allData?.data?.length} piezas
+                {searching ? data?.pagination?.total : allData?.data?.length} refacciones
               </Text>
             )}
             <Button
@@ -313,7 +313,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
               leftSection={<IconPlus size={16} />}
               onClick={() => setCreateOpen(true)}
             >
-              Nueva pieza
+              Nueva refacción
             </Button>
           </Group>
         </Group>
@@ -363,11 +363,11 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
             <Center py="xl"><Loader /></Center>
           ) : isError ? (
             <Alert color="red" title="Error al cargar">
-              No se pudieron obtener las piezas. Verifica la conexión.
+              No se pudieron obtener las refacciones. Verifica la conexión.
             </Alert>
           ) : data?.data?.length === 0 ? (
             <Center py="xl">
-              <Text c="dimmed">No se encontraron piezas para "{search}".</Text>
+              <Text c="dimmed">No se encontraron refacciones para "{search}".</Text>
             </Center>
           ) : (
             <>
@@ -386,7 +386,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
           <Center py="xl"><Loader /></Center>
         ) : allError ? (
           <Alert color="red" title="Error al cargar">
-            No se pudieron obtener las piezas. Verifica la conexión.
+            No se pudieron obtener las refacciones. Verifica la conexión.
           </Alert>
         ) : (
           <PiezasAgrupadas
@@ -400,7 +400,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
       <Modal
         opened={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Nueva pieza"
+        title="Nueva refacción"
         centered
       >
         <PiezaForm
@@ -416,7 +416,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
       <Modal
         opened={editPieza !== null}
         onClose={() => setEditPieza(null)}
-        title="Editar pieza"
+        title="Editar refacción"
         centered
       >
         {editPieza && (
@@ -439,7 +439,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
       <Modal
         opened={deletePieza !== null}
         onClose={() => setDeletePieza(null)}
-        title="Eliminar pieza"
+        title="Eliminar refacción"
         centered
         size="sm"
       >

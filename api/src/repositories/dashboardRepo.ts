@@ -100,6 +100,7 @@ export interface RequerimientoFleet {
   trigger_mode:    'km' | 'meses' | 'ambos'
   intervalo_km:    number | null
   intervalo_meses: number | null
+  intervalo_dias:  number | null
   fecha_inicio:    string | null
   km_inicio:       number | null
   vehiculo_id:     number
@@ -111,7 +112,7 @@ export interface RequerimientoFleet {
 export async function findRequerimientosActivosFleet(): Promise<RequerimientoFleet[]> {
   const pool = await getPool()
   const r = await pool.request().query(`
-    SELECT r.id, r.nombre, r.categoria, r.trigger_mode, r.intervalo_km, r.intervalo_meses,
+    SELECT r.id, r.nombre, r.categoria, r.trigger_mode, r.intervalo_km, r.intervalo_meses, r.intervalo_dias,
            r.fecha_inicio, r.km_inicio, r.vehiculo_id,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
            CASE WHEN v.tipo='camion'       THEN c.kilometraje

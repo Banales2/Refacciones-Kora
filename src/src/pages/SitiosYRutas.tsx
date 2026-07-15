@@ -157,7 +157,7 @@ function SucursalesPanel() {
       <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar sucursal" centered size="sm">
         <Stack gap="md">
           <Text>¿Eliminar <strong>{deleting?.nombre}</strong>?</Text>
-          <Text size="sm" c="dimmed">No podrá eliminarse si tiene camiones asignados.</Text>
+          <Text size="sm" c="dimmed">No podrá eliminarse si tiene unidades de reparto asignadas.</Text>
           {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
@@ -209,13 +209,13 @@ function RutasPanel() {
     <>
       <Stack gap="md">
         <Group justify="space-between">
-          <Text size="sm" c="dimmed">{items.length} ruta{items.length !== 1 ? 's' : ''}</Text>
-          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nueva ruta</Button>
+          <Text size="sm" c="dimmed">{items.length} traslado{items.length !== 1 ? 's' : ''}</Text>
+          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo traslado</Button>
         </Group>
 
         {isLoading ? <Center py="xl"><Loader /></Center>
-        : isError   ? <Alert color="red" title="Error">No se pudieron obtener las rutas.</Alert>
-        : items.length === 0 ? <Center py="xl"><Text c="dimmed">No hay rutas registradas.</Text></Center>
+        : isError   ? <Alert color="red" title="Error">No se pudieron obtener los traslados.</Alert>
+        : items.length === 0 ? <Center py="xl"><Text c="dimmed">No hay traslados registrados.</Text></Center>
         : (
           <Table.ScrollContainer minWidth={400}>
             <Table striped highlightOnHover withTableBorder>
@@ -246,16 +246,16 @@ function RutasPanel() {
       </Stack>
 
       <Modal opened={formOpen} onClose={() => setFormOpen(false)}
-        title={editing ? `Editar — ${editing.nombre}` : 'Nueva ruta'} centered size="sm">
+        title={editing ? `Editar — ${editing.nombre}` : 'Nuevo traslado'} centered size="sm">
         <SitioForm
           initial={editing ?? undefined}
-          labels={{ nombre: 'Nombre de la ruta', ubicacion: 'Ubicación / Descripción' }}
+          labels={{ nombre: 'Nombre del traslado', ubicacion: 'Ubicación / Descripción' }}
           isPending={isPending} error={formError}
           onSubmit={handleSubmit} onCancel={() => setFormOpen(false)}
         />
       </Modal>
 
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar ruta" centered size="sm">
+      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar traslado" centered size="sm">
         <Stack gap="md">
           <Text>¿Eliminar <strong>{deleting?.nombre}</strong>?</Text>
           <Text size="sm" c="dimmed">No podrá eliminarse si tiene tractocamiones asignados.</Text>
@@ -511,7 +511,7 @@ export default function SitiosYRutas({ onNavigateVehiculo }: { onNavigateVehicul
     <Stack gap="md">
       <div>
         <Text size="xl" fw={600}>Catálogos</Text>
-        <Text size="sm" c="dimmed">Modelos, proveedores, sucursales, rutas, gasolineras y conductores</Text>
+        <Text size="sm" c="dimmed">Modelos, proveedores, sucursales, traslados, gasolineras y conductores</Text>
       </div>
 
       <Tabs defaultValue="modelos" keepMounted={false}>
@@ -519,7 +519,7 @@ export default function SitiosYRutas({ onNavigateVehiculo }: { onNavigateVehicul
           <Tabs.Tab value="modelos">Modelos</Tabs.Tab>
           <Tabs.Tab value="proveedores">Proveedores</Tabs.Tab>
           <Tabs.Tab value="sucursales">Sucursales</Tabs.Tab>
-          <Tabs.Tab value="rutas">Rutas</Tabs.Tab>
+          <Tabs.Tab value="rutas">Traslados</Tabs.Tab>
           <Tabs.Tab value="gasolineras">Gasolineras</Tabs.Tab>
           <Tabs.Tab value="conductores">Conductores</Tabs.Tab>
         </Tabs.List>

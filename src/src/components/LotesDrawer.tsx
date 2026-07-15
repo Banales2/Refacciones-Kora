@@ -245,7 +245,7 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
 
             {!data?.lotes.length ? (
               <Center py="xl">
-                <Text c="dimmed">Esta pieza no tiene lotes registrados.</Text>
+                <Text c="dimmed">Esta refacción no tiene lotes registrados.</Text>
               </Center>
             ) : (
               <Table.ScrollContainer minWidth={560}>

@@ -15,6 +15,7 @@ export interface RequerimientoExclusivo {
   categoria:           string | null
   intervalo_km:        number | null
   intervalo_meses:     number | null
+  intervalo_dias:      number | null
   trigger_mode:        TriggerMode
   tipo:                TipoReq
   status:              StatusReq
@@ -35,6 +36,7 @@ export interface RequerimientoPayload {
   tipo?:            TipoReq
   intervalo_km?:    number | null
   intervalo_meses?: number | null
+  intervalo_dias?:  number | null
   status?:          StatusReq
   fecha_inicio?:    string | null
   km_inicio?:       number | null

@@ -5,12 +5,12 @@ export function getAll() {
   return repo.findAll()
 }
 
-export async function create(marca: string, nombre: string) {
-  return repo.create(marca.trim(), nombre.trim())
+export async function create(marca: string, nombre: string, tiposPermitidos?: string[]) {
+  return repo.create(marca.trim(), nombre.trim(), tiposPermitidos)
 }
 
-export async function update(id: number, marca?: string, nombre?: string) {
-  const result = await repo.update(id, marca?.trim(), nombre?.trim())
+export async function update(id: number, marca?: string, nombre?: string, tiposPermitidos?: string[]) {
+  const result = await repo.update(id, marca?.trim(), nombre?.trim(), tiposPermitidos)
   if (!result) throw new NotFoundError('Modelo')
   return result
 }

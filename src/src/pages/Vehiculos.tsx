@@ -43,7 +43,7 @@ import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const TIPOS: { value: TipoVehiculo; label: string; color: string }[] = [
-  { value: 'camion',       label: 'Camión',            color: 'blue'   },
+  { value: 'camion',       label: 'Unidad de reparto', color: 'blue'   },
   { value: 'tractocamion', label: 'Tractocamión',      color: 'violet' },
   { value: 'caja_trailer', label: 'Caja de trailer',   color: 'orange' },
   { value: 'utilitario',   label: 'Vehículo utilitario', color: 'teal'   },
@@ -84,10 +84,17 @@ function statusColor(s: string) {
   return 'gray'
 }
 
+// El intervalo por tiempo puede medirse en días o meses (según la unidad
+// elegida), para requerimientos recurrentes o únicos.
+function usaDias(unidad: 'dias' | 'meses') {
+  return unidad === 'dias'
+}
+
 function fmtIntervalo(item: RequerimientoExclusivo) {
   const parts: string[] = []
   if (item.intervalo_km)    parts.push(`${item.intervalo_km.toLocaleString('es-MX')} km`)
   if (item.intervalo_meses) parts.push(`${item.intervalo_meses} mes${item.intervalo_meses !== 1 ? 'es' : ''}`)
+  if (item.intervalo_dias)  parts.push(`${item.intervalo_dias} día${item.intervalo_dias !== 1 ? 's' : ''}`)
   return parts.join(' / ') || '—'
 }
 
@@ -138,17 +145,22 @@ export function RequerimientoForm({
       categoria:       initial?.categoria ?? '',
       trigger_mode:    (initial?.trigger_mode ?? (soloTiempo ? 'meses' : 'ambos')) as TriggerMode,
       tipo:            (initial?.tipo ?? 'recurrente') as TipoReq,
-      intervalo_km:    initial?.intervalo_km ?? (null as number | null),
-      intervalo_meses: initial?.intervalo_meses ?? (null as number | null),
+      intervalo_km:     initial?.intervalo_km ?? (null as number | null),
+      // Un solo campo numérico para el intervalo por tiempo; la unidad decide si
+      // se guarda como días o meses. Se inicializa con el que venga poblado.
+      intervalo_tiempo: (initial?.intervalo_dias ?? initial?.intervalo_meses) ?? (null as number | null),
+      unidad_tiempo:    (initial?.intervalo_dias != null ? 'dias' : 'meses') as 'dias' | 'meses',
       status:          (initial?.status ?? 'activo') as StatusReq,
-      fecha_reporte:   initial?.fecha_reporte?.split('T')[0] ?? '',
+      fecha_reporte:   initial?.fecha_reporte?.split('T')[0] ?? todayIso(),
       desde:           'ahora' as 'ahora' | 'ultimo',
     },
     validate: {
       nombre: (v) => !v.trim() ? 'Requerido' : v.length > 120 ? 'Máximo 120 caracteres' : null,
+      categoria: (v) => !v || !v.trim() ? 'Requerido' : null,
+      fecha_reporte: (v) => !v ? 'Requerido' : null,
       intervalo_km: (v, vals) =>
         (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
-      intervalo_meses: (v, vals) =>
+      intervalo_tiempo: (v, vals) =>
         (vals.trigger_mode === 'meses' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
     },
   })
@@ -187,13 +199,24 @@ export function RequerimientoForm({
     let km_inicio: number | null    = null
 
     if (!isEdit) {
-      fecha_inicio = vals.desde === 'ahora'
-        ? todayIso()
-        : lastMant?.fecha?.split('T')[0] ?? vehiculo?.fecha_compra?.split('T')[0] ?? null
-      km_inicio = vals.desde === 'ahora'
-        ? (vehiculo?.kilometraje ?? null)
-        : (lastMant?.km_actual   ?? null)
+      // Siempre se guarda un baseline como registro, aunque después no se use.
+      // Si se pide "último mantenimiento" y sí lo hay, se toma de ahí; en
+      // cualquier otro caso se usan los datos actuales del vehículo (hoy + km).
+      if (vals.desde === 'ultimo' && lastMant) {
+        fecha_inicio = lastMant.fecha?.split('T')[0] ?? null
+        km_inicio    = lastMant.km_actual ?? null
+      } else {
+        fecha_inicio = todayIso()
+        km_inicio    = vehiculo?.kilometraje ?? null
+      }
+    } else {
+      // Al editar no se recalcula: se conserva el baseline con el que se creó.
+      fecha_inicio = initial!.fecha_inicio?.split('T')[0] ?? null
+      km_inicio    = initial!.km_inicio ?? null
     }
+
+    const time  = mode === 'meses' || mode === 'ambos'
+    const dias  = usaDias(vals.unidad_tiempo)
 
     onSubmit({
       nombre:          vals.nombre.trim(),
@@ -201,8 +224,9 @@ export function RequerimientoForm({
       categoria:       vals.categoria?.trim()    || null,
       trigger_mode:    vals.trigger_mode,
       tipo:            vals.tipo,
-      intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km    : null,
-      intervalo_meses: (mode === 'meses' || mode === 'ambos') ? vals.intervalo_meses : null,
+      intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km : null,
+      intervalo_meses: (time && !dias) ? vals.intervalo_tiempo : null,
+      intervalo_dias:  (time &&  dias) ? vals.intervalo_tiempo : null,
       status:          vals.status,
       fecha_inicio,
       km_inicio,
@@ -216,11 +240,10 @@ export function RequerimientoForm({
         <TextInput label="Nombre" placeholder="Ej. Cambio de filtro de aceite" required {...form.getInputProps('nombre')} />
         <Textarea label="Descripción" autosize minRows={2} {...form.getInputProps('descripcion')} />
         <Select
-          label="Categoría"
+          label="Categoría" required
           placeholder="Selecciona o escribe para crear una categoría"
           data={categoriaOptions}
           searchable
-          clearable
           onSearchChange={setCategoriaSearch}
           nothingFoundMessage="Escribe para crear una nueva categoría"
           maxLength={80}
@@ -228,12 +251,21 @@ export function RequerimientoForm({
           onChange={(v) => form.setFieldValue('categoria', v ?? '')}
         />
         <DateInput
-          label="Fecha de reporte"
-          description="Cuándo se encontró/reportó el requerimiento (opcional)"
+          label="Fecha de reporte" required
+          description="Cuándo se encontró/reportó el requerimiento"
           placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
-          clearable maxDate={new Date()}
+          maxDate={new Date()}
           value={toDateLocal(form.values.fecha_reporte)}
           onChange={(d) => form.setFieldValue('fecha_reporte', fromDateLocal(d as Date | null))}
+          error={form.errors.fecha_reporte as string}
+        />
+        <Select
+          label="Tipo" required
+          data={[
+            { value: 'recurrente', label: 'Recurrente — se repite periódicamente' },
+            { value: 'unica',      label: 'Única — se realiza una sola vez' },
+          ]}
+          {...form.getInputProps('tipo')}
         />
         <Select
           label="Disparador" required
@@ -250,19 +282,25 @@ export function RequerimientoForm({
           description={soloTiempo ? 'Los montacargas solo dan seguimiento por tiempo.' : undefined}
           {...form.getInputProps('trigger_mode')}
         />
-        <Select
-          label="Tipo" required
-          data={[
-            { value: 'recurrente', label: 'Recurrente — se repite periódicamente' },
-            { value: 'unica',      label: 'Única — se realiza una sola vez' },
-          ]}
-          {...form.getInputProps('tipo')}
-        />
         {(mode === 'km' || mode === 'ambos') && (
           <NumberInput label="Intervalo de kilometraje" required min={1} suffix=" km" thousandSeparator="," {...form.getInputProps('intervalo_km')} />
         )}
         {(mode === 'meses' || mode === 'ambos') && (
-          <NumberInput label="Intervalo en meses" required min={1} suffix=" meses" {...form.getInputProps('intervalo_meses')} />
+          <Group align="flex-end" gap="sm" grow>
+            <NumberInput
+              label={form.values.tipo === 'unica' ? 'Caduca en' : 'Intervalo'} required min={1}
+              {...form.getInputProps('intervalo_tiempo')}
+            />
+            <Select
+              label="Unidad"
+              data={[
+                { value: 'dias',  label: 'Días' },
+                { value: 'meses', label: 'Meses' },
+              ]}
+              allowDeselect={false}
+              {...form.getInputProps('unidad_tiempo')}
+            />
+          </Group>
         )}
         <Select
           label="Status" required
@@ -341,6 +379,10 @@ function isOverdue(
   }
 
   if (req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') {
+    if (req.intervalo_dias != null && baseFecha) {
+      const days = Math.floor((now.getTime() - baseFecha.getTime()) / 86_400_000)
+      if (days >= req.intervalo_dias) return true
+    }
     if (req.intervalo_meses != null && baseFecha) {
       const months =
         (now.getFullYear() - baseFecha.getFullYear()) * 12 +
@@ -383,6 +425,10 @@ function isWarning(
   }
 
   if (req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') {
+    if (req.intervalo_dias != null && baseFecha) {
+      const days = Math.floor((now.getTime() - baseFecha.getTime()) / 86_400_000)
+      if (days >= req.intervalo_dias * 0.75) return true
+    }
     if (req.intervalo_meses != null && baseFecha) {
       const months =
         (now.getFullYear() - baseFecha.getFullYear()) * 12 +
@@ -935,9 +981,10 @@ export function MantenimientoForm({
     initialValues: initMant(initial, prefillRequerimientoIds, kmVehiculo),
     validate: {
       fecha:             (v) => !v ? 'Requerido' : null,
+      tipo:              (v) => !v ? 'Requerido' : null,
       requerimiento_ids: (v) => v.length === 0 ? 'Selecciona al menos un requerimiento' : null,
       piezas: {
-        lote_id:  (v: string) => !v ? 'Selecciona la pieza' : null,
+        lote_id:  (v: string) => !v ? 'Selecciona la refacción' : null,
         cantidad: (v: number | string, vals: MantForm, path: string) => {
           if (v === '' || Number(v) < 1) return 'Mínimo 1'
           const linea = vals.piezas[Number(path.split('.')[1])]
@@ -1020,7 +1067,15 @@ export function MantenimientoForm({
             />
           </Grid.Col>
           <Grid.Col span={6}>
-            <TextInput label="Tipo" placeholder="Preventivo, Correctivo…" {...form.getInputProps('tipo')} />
+            <Select
+              label="Tipo" required
+              placeholder="Selecciona el tipo"
+              data={[
+                { value: 'Preventivo', label: 'Preventivo' },
+                { value: 'Correctivo', label: 'Correctivo' },
+              ]}
+              {...form.getInputProps('tipo')}
+            />
           </Grid.Col>
           <Grid.Col span={6}>
             <TextInput label="Técnico" placeholder="Nombre del técnico" {...form.getInputProps('tecnico')} />
@@ -1063,7 +1118,7 @@ export function MantenimientoForm({
             <Divider
               label={
                 <Group gap="xs">
-                  <Text size="sm" fw={500}>Piezas usadas ({piezas.length})</Text>
+                  <Text size="sm" fw={500}>Refacciones usadas ({piezas.length})</Text>
                   <Text size="xs" c="dimmed">opcional</Text>
                 </Group>
               }
@@ -1072,7 +1127,7 @@ export function MantenimientoForm({
 
             {piezas.length === 0 ? (
               <Text size="sm" c="dimmed">
-                Este mantenimiento no usa piezas. Agrégalas si se consumieron refacciones del inventario.
+                Este mantenimiento no usa refacciones. Agrégalas si se consumieron refacciones del inventario.
               </Text>
             ) : (
               <Stack gap="xs">
@@ -1080,8 +1135,8 @@ export function MantenimientoForm({
                   <Grid key={idx} align="flex-start" gutter="xs">
                     <Grid.Col span={6}>
                       <Select
-                        label={idx === 0 ? 'Pieza / lote' : undefined}
-                        placeholder="Selecciona la pieza"
+                        label={idx === 0 ? 'Refacción / lote' : undefined}
+                        placeholder="Selecciona la refacción"
                         data={loteOptions(idx)}
                         searchable
                         value={piezas[idx].lote_id || null}
@@ -1107,7 +1162,7 @@ export function MantenimientoForm({
                       <ActionIcon
                         variant="subtle" color="red"
                         mt={idx === 0 ? 25 : 4}
-                        aria-label="Quitar pieza"
+                        aria-label="Quitar refacción"
                         onClick={() => form.removeListItem('piezas', idx)}
                       >
                         <IconTrash size={16} />
@@ -1123,11 +1178,11 @@ export function MantenimientoForm({
                 variant="light" size="xs" leftSection={<IconPlus size={14} />}
                 onClick={() => form.insertListItem('piezas', { lote_id: '', cantidad: 1, costo_unitario: '' })}
               >
-                Agregar pieza
+                Agregar refacción
               </Button>
               {piezas.length > 0 && (
                 <Text size="sm" c="dimmed">
-                  Total piezas: <Text component="span" fw={600}>
+                  Total refacciones: <Text component="span" fw={600}>
                     {totalPiezas.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}
                   </Text>
                 </Text>
@@ -1220,7 +1275,7 @@ function MantenimientoTable({
               <Table.Td style={{ textAlign: 'right' }}>
                 {m.costo || m.piezas_total ? (
                   <Tooltip
-                    label={`Mantenimiento: ${formatMXN(m.costo)} + Piezas: ${formatMXN(m.piezas_total)}`}
+                    label={`Mantenimiento: ${formatMXN(m.costo)} + Refacciones: ${formatMXN(m.piezas_total)}`}
                     disabled={!m.piezas_total}
                   >
                     <Text component="span" size="sm">
@@ -1290,7 +1345,7 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
             setDetalleId(res.data.id)
             setFormError(null)
             alert(
-              `El mantenimiento se registró, pero no se pudieron guardar todas las piezas: ${e.message}\n\n` +
+              `El mantenimiento se registró, pero no se pudieron guardar todas las refacciones: ${e.message}\n\n` +
               'Revisa el detalle del mantenimiento para agregar las que falten.'
             )
           },
@@ -1553,7 +1608,7 @@ function VehiculoDetalle({
                 <>
                   {vehiculo.ruta && (
                     <Grid.Col span={{ base: 6, sm: 3 }}>
-                      <InfoItem label="Ruta" value={vehiculo.ruta} />
+                      <InfoItem label="Traslado" value={vehiculo.ruta} />
                     </Grid.Col>
                   )}
                   {vehiculo.tonelaje !== null && (
@@ -1779,11 +1834,11 @@ function VehiculosAgrupados({
   return (
     <Accordion key={sucursales.map(s => s.id).join(',')} multiple defaultValue={defaultOpen} variant="separated">
       <Accordion.Item value="rutas">
-        <Accordion.Control><GroupHeader label="Rutas" count={rutas.length} /></Accordion.Control>
+        <Accordion.Control><GroupHeader label="Traslados" count={rutas.length} /></Accordion.Control>
         <Accordion.Panel>
           <VehiculosTable
             items={rutas} showTipo
-            extraColumn={{ header: 'Ruta', render: v => v.ruta }}
+            extraColumn={{ header: 'Traslado', render: v => v.ruta }}
             onSelect={onSelect} onEdit={onEdit} onDelete={onDelete} km={km}
           />
         </Accordion.Panel>
@@ -1992,7 +2047,7 @@ export default function Vehiculos({
       <Group justify="space-between" align="flex-end">
         <div>
           <Text size="xl" fw={600}>Vehículos</Text>
-          <Text size="sm" c="dimmed">Por ruta, sucursal y vehículos utilitarios</Text>
+          <Text size="sm" c="dimmed">Por traslado, sucursal y vehículos utilitarios</Text>
         </div>
         <Group gap="sm">
           {totalVehiculos != null && (
