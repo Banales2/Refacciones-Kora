@@ -8,6 +8,9 @@ export interface Modelo {
   id:               number
   marca:            string
   nombre:           string
+  // Año del modelo. Distingue dos modelos de igual marca/nombre pero año
+  // distinto. Null en modelos antiguos.
+  anio:             number | null
   // Tipos de vehículo que este modelo puede generar. Vacío = sin restricción.
   tipos_permitidos: TipoVehiculo[]
   created_at:       string
@@ -17,6 +20,7 @@ export interface Modelo {
 export interface ModeloPayload {
   marca:             string
   nombre:            string
+  anio?:             number | null
   tipos_permitidos?: TipoVehiculo[]
 }
 

@@ -6,6 +6,7 @@ import {
   Stack, Group, Text, TextInput, Textarea, Table, Badge,
   Loader, Center, Alert, Button, ActionIcon,
   Modal, Tooltip, Divider, Grid, Paper, Select, MultiSelect, Switch, NumberInput,
+  Autocomplete,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
@@ -95,23 +96,64 @@ function ModeloForm({
   onCancel: () => void
 }) {
   const isEdit = !!initial
+  const AÑO_MAX = new Date().getFullYear() + 1
+  const { data: modelosData } = useModelos()
+  const modelos = modelosData?.data
   const form = useForm({
     initialValues: {
       marca:            initial?.marca ?? '',
       nombre:           initial?.nombre ?? '',
+      anio:             (initial?.anio ?? '') as number | '',
       tipos_permitidos: (initial?.tipos_permitidos ?? []) as TipoVehiculo[],
     },
     validate: {
       marca:  (v) => !v.trim() ? 'Requerido' : v.length > 80  ? 'Máximo 80 caracteres'  : null,
       nombre: (v) => !v.trim() ? 'Requerido' : v.length > 120 ? 'Máximo 120 caracteres' : null,
+      anio: (v) => {
+        if (v === '' || v === null) return 'Requerido'
+        const n = Number(v)
+        if (!Number.isInteger(n) || n < 1950 || n > AÑO_MAX) return `Entre 1950 y ${AÑO_MAX}`
+        return null
+      },
     },
   })
 
+  // Marcas y nombres ya existentes, para sugerirlos (sin impedir escribir uno
+  // nuevo). Los nombres se acotan a la marca elegida; si es una marca nueva o
+  // sin coincidencias, se ofrecen todos.
+  const marcasOpts = useMemo(
+    () => [...new Set((modelos ?? []).map((m) => m.marca))].sort((a, b) => a.localeCompare(b, 'es-MX')),
+    [modelos]
+  )
+  const marcaActual = form.values.marca.trim().toLowerCase()
+  const nombresOpts = useMemo(() => {
+    const delaMarca = (modelos ?? []).filter((m) => m.marca.toLowerCase() === marcaActual)
+    const base = delaMarca.length ? delaMarca : (modelos ?? [])
+    return [...new Set(base.map((m) => m.nombre))].sort((a, b) => a.localeCompare(b, 'es-MX'))
+  }, [modelos, marcaActual])
+
   return (
-    <form onSubmit={form.onSubmit((v) => onSubmit({ marca: v.marca, nombre: v.nombre, tipos_permitidos: v.tipos_permitidos }))}>
+    <form onSubmit={form.onSubmit((v) => onSubmit({
+      marca: v.marca, nombre: v.nombre, anio: Number(v.anio), tipos_permitidos: v.tipos_permitidos,
+    }))}>
       <Stack gap="sm">
-        <TextInput label="Marca"          placeholder="Ej. Kenworth" required {...form.getInputProps('marca')}  />
-        <TextInput label="Nombre de modelo" placeholder="Ej. T680"  required {...form.getInputProps('nombre')} />
+        <Autocomplete
+          label="Marca" placeholder="Ej. Kenworth" required
+          data={marcasOpts}
+          {...form.getInputProps('marca')}
+        />
+        <Group grow align="flex-start">
+          <Autocomplete
+            label="Nombre de modelo" placeholder="Ej. T680" required
+            data={nombresOpts}
+            {...form.getInputProps('nombre')}
+          />
+          <NumberInput
+            label="Año" placeholder="Ej. 2024" required
+            min={1950} max={AÑO_MAX} allowDecimal={false}
+            {...form.getInputProps('anio')}
+          />
+        </Group>
         <MultiSelect
           label="Tipos de vehículo permitidos"
           description="Qué tipos se pueden crear con este modelo. Vacío = todos permitidos."
@@ -497,6 +539,7 @@ function ModeloDetalle({
             <Group gap="sm" align="baseline">
               <Text size="xl" fw={700}>{modelo.nombre}</Text>
               <Badge variant="light" color="gray" size="lg">{modelo.marca}</Badge>
+              {modelo.anio != null && <Badge variant="light" color="blue" size="lg">{modelo.anio}</Badge>}
             </Group>
             <Grid mt={4}>
               <Grid.Col span={{ base: 12, sm: 6 }}>
@@ -747,12 +790,14 @@ export default function Modelos({ onNavigateVehiculo }: { onNavigateVehiculo?: (
           </Text>
         </Center>
       ) : (
-        <Table.ScrollContainer minWidth={400}>
+        <Table.ScrollContainer minWidth={560}>
           <Table striped highlightOnHover withTableBorder>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Marca</Table.Th>
                 <Table.Th>Modelo</Table.Th>
+                <Table.Th>Año</Table.Th>
+                <Table.Th>Tipos permitidos</Table.Th>
                 <Table.Th>Creado</Table.Th>
                 <Table.Th style={{ width: 100 }} />
               </Table.Tr>
@@ -768,6 +813,20 @@ export default function Modelos({ onNavigateVehiculo }: { onNavigateVehiculo?: (
                     <Badge variant="light" color="gray" size="sm">{m.marca}</Badge>
                   </Table.Td>
                   <Table.Td fw={500}>{m.nombre}</Table.Td>
+                  <Table.Td>{m.anio ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
+                  <Table.Td>
+                    {(m.tipos_permitidos ?? []).length === 0 ? (
+                      <Text size="sm" c="dimmed">Todos</Text>
+                    ) : (
+                      <Group gap={4}>
+                        {m.tipos_permitidos.map((t) => (
+                          <Badge key={t} variant="light" color={TIPOS[t]?.color} size="sm">
+                            {TIPOS[t]?.label ?? t}
+                          </Badge>
+                        ))}
+                      </Group>
+                    )}
+                  </Table.Td>
                   <Table.Td c="dimmed">
                     <Text size="sm">
                       {new Date(m.created_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}

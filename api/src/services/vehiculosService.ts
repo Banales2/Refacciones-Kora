@@ -56,9 +56,24 @@ export async function getById(id: number) {
 export async function create(data: VehiculoCreate) {
   validateCreate(data)
   await validateTipoPermitido(data.modelo_id, data.tipo)
+  await validateSerieYPlacas(data.serie, data.placas)
   const vehicle = await repo.create(data)
   await plantillaRepo.copyModelToVehicle(vehicle.id, data.modelo_id)
   return vehicle
+}
+
+// El número de serie es único; las placas son únicas solo cuando existen (un
+// vehículo puede no tener placas). exceptId excluye el propio registro al editar.
+async function validateSerieYPlacas(
+  serie: string | undefined, placas: string | null | undefined, exceptId?: number
+) {
+  if (serie !== undefined && await repo.existsSerie(serie, exceptId)) {
+    throw new ConflictError(`Ya existe un vehículo con el número de serie ${serie}`)
+  }
+  const p = placas?.trim()
+  if (p && await repo.existsPlacas(p, exceptId)) {
+    throw new ConflictError(`Ya existe un vehículo con las placas ${p}`)
+  }
 }
 
 // El modelo puede restringir qué tipos de vehículo genera (vacío = sin
@@ -74,6 +89,7 @@ async function validateTipoPermitido(modeloId: number, tipo: TipoVehiculo) {
 export async function update(id: number, data: VehiculoUpdate) {
   const current = await repo.findById(id)
   if (!current) throw new NotFoundError('Vehículo')
+  await validateSerieYPlacas(data.serie, data.placas, id)
   const updated = await repo.update(id, current.tipo as TipoVehiculo, data)
   if (!updated) throw new NotFoundError('Vehículo')
   return updated

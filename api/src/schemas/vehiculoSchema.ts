@@ -32,6 +32,8 @@ export const VehiculoCreateSchema = z.object({
   pies:         z.coerce.number().int().positive().optional(),
   // general
   fecha_compra: z.string().date().nullable().optional(),
+  seguro_id:    z.coerce.number().int().positive().nullable().optional(),
+  permiso_id:   z.coerce.number().int().positive().nullable().optional(),
 })
 
 export const VehiculoUpdateSchema = z.object({
@@ -48,6 +50,8 @@ export const VehiculoUpdateSchema = z.object({
   ruta_id:      z.coerce.number().int().positive().optional(),
   pies:         z.coerce.number().int().positive().optional(),
   fecha_compra: z.string().date().nullable().optional(),
+  seguro_id:    z.coerce.number().int().positive().nullable().optional(),
+  permiso_id:   z.coerce.number().int().positive().nullable().optional(),
 })
 
 export type VehiculoQuery  = z.infer<typeof VehiculoQuerySchema>

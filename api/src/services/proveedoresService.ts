@@ -8,13 +8,21 @@ export async function getAll(): Promise<Proveedor[]> {
 }
 
 export async function create(data: ProveedorCreate): Promise<Proveedor> {
-  return repo.create(data.nombre.trim(), data.contacto ?? null)
+  const nombre = data.nombre.trim()
+  if (await repo.existsNombre(nombre)) {
+    throw new ConflictError(`Ya existe un proveedor con el nombre ${nombre}`)
+  }
+  return repo.create(nombre, data.contacto ?? null)
 }
 
 export async function update(id: number, data: ProveedorUpdate): Promise<Proveedor> {
+  const nombre = data.nombre?.trim()
+  if (nombre !== undefined && await repo.existsNombre(nombre, id)) {
+    throw new ConflictError(`Ya existe un proveedor con el nombre ${nombre}`)
+  }
   const result = await repo.update(
     id,
-    data.nombre?.trim(),
+    nombre,
     'contacto' in data ? (data.contacto ?? null) : undefined,
   )
   if (!result) throw new NotFoundError('Proveedor')

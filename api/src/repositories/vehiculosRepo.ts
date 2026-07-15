@@ -22,6 +22,14 @@ export interface VehiculoRow {
   ruta:         string | null
   pies:         number | null
   fecha_compra: string | null
+  seguro_id:        number | null
+  seguro_poliza:    string | null
+  seguro_compania:  string | null
+  seguro_expiracion: string | null
+  permiso_id:        number | null
+  permiso_zona:      string | null
+  permiso_expiracion: string | null
+  modelo_anio:       number | null
 }
 
 // ── Shared SQL fragments ──────────────────────────────────────────────────────
@@ -43,7 +51,12 @@ const SELECT_COLS = `
   COALESCE(c.sucursal_id, mc.sucursal_id) AS sucursal_id, s.nombre AS sucursal,
   t.tonelaje, t.tenencia,
   COALESCE(t.ruta_id, ct.ruta_id) AS ruta_id, r.nombre AS ruta,
-  ct.pies
+  ct.pies,
+  v.seguro_id, seg.poliza AS seguro_poliza, seg.compania AS seguro_compania,
+  CONVERT(char(10), seg.fecha_expiracion, 23) AS seguro_expiracion,
+  v.permiso_id, per.zona_circulacion AS permiso_zona,
+  CONVERT(char(10), per.fecha_expiracion, 23) AS permiso_expiracion,
+  m.anio AS modelo_anio
 `
 
 const JOINS = `
@@ -56,6 +69,8 @@ const JOINS = `
   LEFT JOIN montacargas          mc ON mc.vehiculo_id = v.id
   LEFT JOIN sucursales           s  ON s.id = COALESCE(c.sucursal_id, mc.sucursal_id)
   LEFT JOIN rutas                r  ON r.id = COALESCE(t.ruta_id, ct.ruta_id)
+  LEFT JOIN seguros              seg ON seg.id = v.seguro_id
+  LEFT JOIN permisos_circulacion per ON per.id = v.permiso_id
 `
 
 const WHERE_FILTER = `
@@ -107,6 +122,27 @@ export async function findById(id: number): Promise<VehiculoRow | null> {
   return result.recordset[0] ?? null
 }
 
+// ¿Ya hay un vehículo con este número de serie? exceptId excluye el propio al
+// editar.
+export async function existsSerie(serie: string, exceptId?: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('serie',  sql.NVarChar(80), serie)
+    .input('except', sql.Int,          exceptId ?? null)
+    .query('SELECT TOP 1 id FROM vehiculos WHERE numero_serie = @serie AND (@except IS NULL OR id <> @except)')
+  return r.recordset.length > 0
+}
+
+// ¿Ya hay un vehículo con estas placas? (solo aplica a placas no vacías).
+export async function existsPlacas(placas: string, exceptId?: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('placas', sql.NVarChar(20), placas)
+    .input('except', sql.Int,          exceptId ?? null)
+    .query('SELECT TOP 1 id FROM vehiculos WHERE placas = @placas AND (@except IS NULL OR id <> @except)')
+  return r.recordset.length > 0
+}
+
 export async function countDependencies(id: number): Promise<number> {
   const pool = await getPool()
   const result = await pool.request()
@@ -128,7 +164,9 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
       .input('serie',        sql.NVarChar(80),  data.serie)
       .input('placas',       sql.NVarChar(20),  data.placas ?? null)
       .input('fechaCompra',  sql.Date,          data.fecha_compra ?? null)
-      .query('INSERT INTO vehiculos (modelo_id, tipo, numero_serie, placas, fecha_compra) OUTPUT INSERTED.id VALUES (@modelo_id, @tipo, @serie, @placas, @fechaCompra)')
+      .input('seguroId',     sql.Int,           data.seguro_id ?? null)
+      .input('permisoId',    sql.Int,           data.permiso_id ?? null)
+      .query('INSERT INTO vehiculos (modelo_id, tipo, numero_serie, placas, fecha_compra, seguro_id, permiso_id) OUTPUT INSERTED.id VALUES (@modelo_id, @tipo, @serie, @placas, @fechaCompra, @seguroId, @permisoId)')
     const vid = vRes.recordset[0].id
 
     const sub = tx.request().input('vid', sql.Int, vid)
@@ -219,6 +257,8 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
   if (data.serie       !== undefined) { baseReq.input('serie',       sql.NVarChar(80),  data.serie);       baseSets.push('numero_serie=@serie') }
   if ('placas' in data)               { baseReq.input('placas',     sql.NVarChar(20),  data.placas ?? null); baseSets.push('placas=@placas') }
   if ('fecha_compra' in data)         { baseReq.input('fechaCompra', sql.Date,          data.fecha_compra ?? null); baseSets.push('fecha_compra=@fechaCompra') }
+  if ('seguro_id' in data)            { baseReq.input('seguroId',    sql.Int,           data.seguro_id ?? null);    baseSets.push('seguro_id=@seguroId') }
+  if ('permiso_id' in data)           { baseReq.input('permisoId',   sql.Int,           data.permiso_id ?? null);   baseSets.push('permiso_id=@permisoId') }
   if (baseSets.length) await baseReq.query(`UPDATE vehiculos SET ${baseSets.join(',')} WHERE id=@id`)
 
   // Update subtable

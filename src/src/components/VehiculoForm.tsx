@@ -12,6 +12,8 @@ import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePa
 import { useModelos } from '../hooks/useModelos'
 import { useSucursales } from '../hooks/useSucursales'
 import { useRutas } from '../hooks/useRutas'
+import { useSeguros } from '../hooks/useSeguros'
+import { usePermisosCirculacion } from '../hooks/usePermisosCirculacion'
 
 const TIPO_META: Record<TipoVehiculo, { label: string; color: string }> = {
   camion:       { label: 'Unidad de reparto', color: 'blue'   },
@@ -41,6 +43,8 @@ type FormVals = {
   ruta_id:      string
   pies:         number | string
   fecha_compra: string
+  seguro_id:    string
+  permiso_id:   string
 }
 
 function init(v?: VehiculoRow): FormVals {
@@ -59,6 +63,8 @@ function init(v?: VehiculoRow): FormVals {
     ruta_id:      v?.ruta_id     != null ? String(v.ruta_id)     : '',
     pies:         v?.pies        ?? '',
     fecha_compra: v?.fecha_compra ? v.fecha_compra.split('T')[0] : '',
+    seguro_id:    v?.seguro_id   != null ? String(v.seguro_id)   : '',
+    permiso_id:   v?.permiso_id  != null ? String(v.permiso_id)  : '',
   }
 }
 
@@ -109,10 +115,14 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
   const { data: modelosData } = useModelos()
   const { data: sucursalesData } = useSucursales()
   const { data: rutasData } = useRutas()
+  const { data: segurosData } = useSeguros()
+  const { data: permisosData } = usePermisosCirculacion()
 
-  const modelosOpts   = (modelosData?.data   ?? []).map((m) => ({ value: String(m.id), label: `${m.marca} ${m.nombre}` }))
+  const modelosOpts   = (modelosData?.data   ?? []).map((m) => ({ value: String(m.id), label: `${m.marca} ${m.nombre}${m.anio ? ` ${m.anio}` : ''}` }))
   const sucursalesOpts = (sucursalesData?.data ?? []).map((s) => ({ value: String(s.id), label: s.nombre }))
   const rutasOpts      = (rutasData?.data      ?? []).map((r) => ({ value: String(r.id), label: r.nombre }))
+  const segurosOpts    = (segurosData?.data    ?? []).map((s) => ({ value: String(s.id), label: `${s.poliza} — ${s.compania}` }))
+  const permisosOpts   = (permisosData?.data   ?? []).map((p) => ({ value: String(p.id), label: `${p.zona_circulacion} (expira ${p.fecha_expiracion})` }))
 
   const form = useForm<FormVals>({
     initialValues: {
@@ -177,6 +187,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
       serie:        vals.serie,
       placas:       vals.placas.trim() || null,
       fecha_compra: vals.fecha_compra || null,
+      seguro_id:    vals.seguro_id ? parseInt(vals.seguro_id) : null,
+      permiso_id:   vals.permiso_id ? parseInt(vals.permiso_id) : null,
     }
 
     // Campos que aplican según el tipo de vehículo (el else final cubre 'utilitario')
@@ -283,6 +295,26 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
           maxDate={new Date()}
           value={toDateLocal(form.values.fecha_compra)}
           onChange={(d) => form.setFieldValue('fecha_compra', fromDateLocal(d as Date | null))}
+        />
+
+        <Select
+          label="Seguro"
+          placeholder="Sin seguro asignado"
+          data={segurosOpts}
+          clearable
+          searchable
+          nothingFoundMessage="No hay seguros — regístralos en Catálogos → Seguros"
+          {...form.getInputProps('seguro_id')}
+        />
+
+        <Select
+          label="Permiso de circulación"
+          placeholder="Sin permiso asignado"
+          data={permisosOpts}
+          clearable
+          searchable
+          nothingFoundMessage="No hay permisos — regístralos en Catálogos → Permisos"
+          {...form.getInputProps('permiso_id')}
         />
 
         {/* Campos condicionales — camion */}

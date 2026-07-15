@@ -22,17 +22,28 @@ import { useAuth } from '../hooks/useAuth'
 import Dashboard from './Dashboard'
 import Piezas from '../pages/Piezas'
 import Vehiculos from '../pages/Vehiculos'
+import Modelos from '../pages/Modelos'
 import SitiosYRutas from '../pages/SitiosYRutas'
 import Calendario from '../pages/Calendario'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 
-type Section = 'dashboard' | 'piezas' | 'vehiculos' | 'sitios' | 'calendario'
+type Section = 'dashboard' | 'piezas' | 'modelos' | 'vehiculos' | 'sitios' | 'calendario'
+
+const SECTION_LABELS: Record<Section, string> = {
+  dashboard:  'Dashboard',
+  piezas:     'Refacciones',
+  modelos:    'Modelos',
+  vehiculos:  'Vehículos',
+  sitios:     'Catálogos',
+  calendario: 'Calendario',
+}
 
 const NAV_ITEMS: { section: Section; label: string; description: string }[] = [
   { section: 'piezas',     label: 'Refacciones', description: 'Catálogo e inventario'                       },
+  { section: 'modelos',    label: 'Modelos',     description: 'Marcas y modelos de la flota'                },
   { section: 'vehiculos',  label: 'Vehículos',   description: 'Unidades de reparto y tractocamiones'        },
   { section: 'calendario', label: 'Calendario',  description: 'Fechas de mantenimiento'                     },
-  { section: 'sitios',     label: 'Catálogos',   description: 'Modelos, proveedores, sucursales y traslados' },
+  { section: 'sitios',     label: 'Catálogos',   description: 'Proveedores, sucursales, traslados y más'    },
 ]
 
 
@@ -46,6 +57,15 @@ export default function Layout() {
   const [pendingVehiculo, setPendingVehiculo] = useState<VehiculoRow | null>(null)
   const [pendingVehiculoId, setPendingVehiculoId] = useState<number | null>(null)
   const [pendingPiezaId, setPendingPiezaId] = useState<number | null>(null)
+  // Sección desde la que se saltó al detalle de un vehículo, para poder volver.
+  const [vehiculoOrigin, setVehiculoOrigin] = useState<Section | null>(null)
+  // Pestaña activa de Catálogos; vive aquí para persistir al saltar a un
+  // vehículo y regresar a la misma pestaña (Seguros, Permisos, etc.).
+  const [sitiosTab, setSitiosTab] = useState<string | null>('proveedores')
+  // Seguro/permiso cuyo drawer de asignación estaba abierto, para reabrirlo al
+  // regresar desde el detalle de un vehículo.
+  const [seguroDrawerId, setSeguroDrawerId]   = useState<number | null>(null)
+  const [permisoDrawerId, setPermisoDrawerId] = useState<number | null>(null)
 
   const rol = user?.userRoles.find((r) => !['anonymous', 'authenticated'].includes(r))
 
@@ -55,11 +75,13 @@ export default function Layout() {
       setPendingVehiculoId(null)
     }
     if (s !== 'piezas') setPendingPiezaId(null)
+    setVehiculoOrigin(null)
     setSection(s)
     if (mobileOpened) toggleMobile()
   }
 
   function navigateToVehiculo(v: VehiculoRow) {
+    setVehiculoOrigin(section)
     setPendingVehiculo(v)
     setPendingVehiculoId(null)
     setSection('vehiculos')
@@ -67,10 +89,16 @@ export default function Layout() {
   }
 
   function navigateToVehiculoId(id: number) {
+    setVehiculoOrigin(section)
     setPendingVehiculo(null)
     setPendingVehiculoId(id)
     setSection('vehiculos')
     if (mobileOpened) toggleMobile()
+  }
+
+  // Regresa a la sección desde la que se abrió el vehículo.
+  function backFromVehiculo() {
+    if (vehiculoOrigin) navigate(vehiculoOrigin)
   }
 
   function navigateToPiezaId(id: number) {
@@ -187,13 +215,26 @@ export default function Layout() {
           />
         )}
         {section === 'piezas'    && <Piezas initialPiezaId={pendingPiezaId ?? undefined} />}
+        {section === 'modelos'   && <Modelos onNavigateVehiculo={navigateToVehiculo} />}
         {section === 'vehiculos' && (
           <Vehiculos
             initialVehiculo={pendingVehiculo ?? undefined}
             initialVehiculoId={pendingVehiculoId ?? undefined}
+            onBack={vehiculoOrigin ? backFromVehiculo : undefined}
+            backLabel={vehiculoOrigin ? SECTION_LABELS[vehiculoOrigin] : undefined}
           />
         )}
-        {section === 'sitios'    && <SitiosYRutas onNavigateVehiculo={navigateToVehiculo} />}
+        {section === 'sitios'    && (
+          <SitiosYRutas
+            onNavigateVehiculo={navigateToVehiculo}
+            activeTab={sitiosTab}
+            onTabChange={setSitiosTab}
+            seguroDrawerId={seguroDrawerId}
+            onSeguroDrawerChange={setSeguroDrawerId}
+            permisoDrawerId={permisoDrawerId}
+            onPermisoDrawerChange={setPermisoDrawerId}
+          />
+        )}
         {section === 'calendario' && <Calendario onNavigateVehiculo={navigateToVehiculoId} />}
       </AppShell.Main>
     </AppShell>

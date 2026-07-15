@@ -9,14 +9,15 @@ import { TIPOS_VEHICULO } from '../schemas/vehiculoSchema'
 const Schema = z.object({
   marca:            z.string().min(1, 'Requerido').max(80).trim(),
   nombre:           z.string().min(1, 'Requerido').max(120).trim(),
+  anio:             z.coerce.number().int().min(1950).max(2100).nullable().optional(),
   tipos_permitidos: z.array(z.enum(TIPOS_VEHICULO)).optional(),
 })
 
 export async function modelosCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
     const user = requireRole(req, 'admin', 'editor')
-    const { marca, nombre, tipos_permitidos } = Schema.parse(await req.json())
-    const created = await service.create(marca, nombre, tipos_permitidos)
+    const { marca, nombre, anio, tipos_permitidos } = Schema.parse(await req.json())
+    const created = await service.create(marca, nombre, anio ?? null, tipos_permitidos)
     await audit({ user, accion: 'CREAR', tabla: 'modelos', registroId: created.id, ipAddress: getClientIp(req) })
     return { status: 201, jsonBody: { data: created } }
   } catch (err) { return handleError(err, ctx) }

@@ -44,6 +44,16 @@ export async function update(id: number, nombre?: string, contacto?: string | nu
   return result.recordset[0] ?? null
 }
 
+// ¿Ya existe un proveedor con este nombre? exceptId excluye el propio al editar.
+export async function existsNombre(nombre: string, exceptId?: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('nombre', sql.NVarChar(100), nombre)
+    .input('except', sql.Int,           exceptId ?? null)
+    .query('SELECT TOP 1 id FROM proveedores WHERE nombre = @nombre AND (@except IS NULL OR id <> @except)')
+  return r.recordset.length > 0
+}
+
 export async function countLotes(id: number): Promise<number> {
   const pool = await getPool()
   const result = await pool.request()

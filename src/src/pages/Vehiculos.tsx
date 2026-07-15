@@ -1132,7 +1132,7 @@ export function MantenimientoForm({
             ) : (
               <Stack gap="xs">
                 {piezas.map((_, idx) => (
-                  <Grid key={idx} align="flex-start" gutter="xs">
+                  <Grid key={idx} align="flex-start" gap="xs">
                     <Grid.Col span={6}>
                       <Select
                         label={idx === 0 ? 'Refacción / lote' : undefined}
@@ -1481,10 +1481,13 @@ function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function VehiculoDetalle({
-  vehiculo, onBack, onEdit, onVehiculoUpdate,
+  vehiculo, onBack, backLabel, onEdit, onVehiculoUpdate,
 }: {
   vehiculo: VehiculoRow
   onBack: () => void
+  // Etiqueta de la sección de origen (p. ej. "Dashboard"). Si viene, el botón de
+  // regreso vuelve ahí; si no, regresa a la lista de vehículos.
+  backLabel?: string
   onEdit: (v: VehiculoRow) => void
   onVehiculoUpdate: (v: VehiculoRow) => void
 }) {
@@ -1526,10 +1529,14 @@ function VehiculoDetalle({
     <Stack gap="md">
       {/* Navegación */}
       <Group gap="xs">
-        <ActionIcon variant="subtle" color="gray" onClick={onBack}>
-          <IconArrowLeft size={18} />
-        </ActionIcon>
-        <Text size="sm" c="dimmed">Vehículos</Text>
+        <Tooltip label={backLabel ? `Regresar a ${backLabel}` : 'Regresar a Vehículos'}>
+          <ActionIcon variant="subtle" color="gray" onClick={onBack}>
+            <IconArrowLeft size={18} />
+          </ActionIcon>
+        </Tooltip>
+        <Text size="sm" c="dimmed" style={{ cursor: 'pointer' }} onClick={onBack}>
+          {backLabel ?? 'Vehículos'}
+        </Text>
         <Text size="sm" c="dimmed">/</Text>
         <Text size="sm">{vehiculoLabel(vehiculo)}</Text>
       </Group>
@@ -1544,6 +1551,11 @@ function VehiculoDetalle({
         <Alert color="yellow" title="Próximo a vencer" icon={<IconAlertTriangle size={16} />}>
           <strong>{warnIds.size} requerimiento{warnIds.size !== 1 ? 's' : ''}</strong>{' '}
           {warnIds.size !== 1 ? 'están próximos a' : 'está próximo a'} vencer (menos de 1 mes o menos del 25% del intervalo de km restante).
+        </Alert>
+      )}
+      {vehiculo.seguro_id === null && (
+        <Alert color="red" title="Sin seguro" icon={<IconAlertTriangle size={16} />}>
+          Este vehículo no tiene un seguro asignado. Asígnale uno desde el botón de editar.
         </Alert>
       )}
 
@@ -1565,6 +1577,9 @@ function VehiculoDetalle({
                 <InfoItem label="Marca / Modelo" value={`${vehiculo.marca} ${vehiculo.modelo}`} />
               </Grid.Col>
               <Grid.Col span={{ base: 6, sm: 3 }}>
+                <InfoItem label="Año del modelo" value={vehiculo.modelo_anio != null ? String(vehiculo.modelo_anio) : null} />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, sm: 3 }}>
                 <InfoItem label="Serie" value={vehiculo.serie} />
               </Grid.Col>
               {vehiculo.tipo !== 'montacargas' && (
@@ -1572,6 +1587,22 @@ function VehiculoDetalle({
                   <InfoItem label="Placas" value={vehiculo.placas} />
                 </Grid.Col>
               )}
+              <Grid.Col span={{ base: 6, sm: 3 }}>
+                <InfoItem
+                  label="Seguro"
+                  value={vehiculo.seguro_id !== null
+                    ? `${vehiculo.seguro_poliza} — ${vehiculo.seguro_compania}`
+                    : null}
+                />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, sm: 3 }}>
+                <InfoItem
+                  label="Permiso de circulación"
+                  value={vehiculo.permiso_id !== null
+                    ? `${vehiculo.permiso_zona} (expira ${vehiculo.permiso_expiracion})`
+                    : null}
+                />
+              </Grid.Col>
               {vehiculo.kilometraje !== null && (
                 <Grid.Col span={{ base: 6, sm: 3 }}>
                   {editingKm ? (
@@ -1733,7 +1764,16 @@ function VehiculosTable({
                     <Badge color={ti.color} variant="light" size="sm">{ti.label}</Badge>
                   </Table.Td>
                 )}
-                <Table.Td fw={500}>{v.marca} {v.modelo}</Table.Td>
+                <Table.Td fw={500}>
+                  <Group gap={6} wrap="nowrap">
+                    <span>{v.marca} {v.modelo}</span>
+                    {v.seguro_id === null && (
+                      <Tooltip label="Sin seguro asignado">
+                        <IconAlertTriangle size={16} color="var(--mantine-color-red-6)" />
+                      </Tooltip>
+                    )}
+                  </Group>
+                </Table.Td>
                 <Table.Td>{v.serie}</Table.Td>
                 <Table.Td>{v.placas ?? (v.tipo === 'montacargas' ? '' : <Text component="span" c="dimmed" size="sm">—</Text>)}</Table.Td>
                 {extraColumn && (
@@ -1879,16 +1919,35 @@ function VehiculosAgrupados({
 // ── Lista de vehículos ────────────────────────────────────────────────────────
 
 export default function Vehiculos({
-  initialVehiculo, initialVehiculoId,
+  initialVehiculo, initialVehiculoId, onBack, backLabel,
 }: {
   initialVehiculo?:   VehiculoRow
   initialVehiculoId?: number
+  // Cuando se llegó al detalle desde otra sección (Dashboard, Calendario,
+  // Catálogos…), onBack regresa exactamente ahí y backLabel la nombra.
+  onBack?:    () => void
+  backLabel?: string
 }) {
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
   const [debouncedSearch]       = useDebouncedValue(search, 400)
   const [selected, setSelected] = useState<VehiculoRow | null>(initialVehiculo ?? null)
+  // True mientras se muestra el vehículo con el que se entró desde otra sección;
+  // se apaga en cuanto el usuario elige otro vehículo de la lista.
+  const [externalEntry, setExternalEntry] = useState(!!(initialVehiculo || initialVehiculoId))
   const searching = debouncedSearch.length > 0
+
+  // Elegir un vehículo de la lista: deja de ser una entrada externa, así que el
+  // botón de regreso vuelve a la lista y ya no a la sección de origen.
+  function selectFromList(v: VehiculoRow) {
+    setExternalEntry(false)
+    setSelected(v)
+  }
+
+  function handleDetailBack() {
+    if (externalEntry && onBack) onBack()
+    else setSelected(null)
+  }
 
   const [pendingId]      = useState(initialVehiculo ? undefined : initialVehiculoId)
   const { data: pendingVehiculoData } = useVehiculo(pendingId)
@@ -2020,7 +2079,8 @@ export default function Vehiculos({
       <>
         <VehiculoDetalle
           vehiculo={selected}
-          onBack={() => setSelected(null)}
+          onBack={handleDetailBack}
+          backLabel={externalEntry ? backLabel : undefined}
           onEdit={(v) => openEdit(v)}
           onVehiculoUpdate={(v) => setSelected(v)}
         />
@@ -2091,7 +2151,7 @@ export default function Vehiculos({
           <>
             <VehiculosTable
               items={data?.data ?? []} showTipo
-              onSelect={setSelected} onEdit={openEdit} onDelete={openDelete} km={kmEdit}
+              onSelect={selectFromList} onEdit={openEdit} onDelete={openDelete} km={kmEdit}
             />
             {totalPages > 1 && (
               <Group justify="center">
@@ -2108,7 +2168,7 @@ export default function Vehiculos({
         <VehiculosAgrupados
           vehiculos={allData?.data ?? []}
           sucursales={sucursalesData?.data ?? []}
-          onSelect={setSelected} onEdit={openEdit} onDelete={openDelete} km={kmEdit}
+          onSelect={selectFromList} onEdit={openEdit} onDelete={openDelete} km={kmEdit}
         />
       )}
 

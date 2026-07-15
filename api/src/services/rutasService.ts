@@ -3,12 +3,20 @@ import { NotFoundError, ConflictError } from '../shared/errors'
 
 export function getAll() { return repo.findAll() }
 
-export function create(nombre: string, ubicacion: string) {
-  return repo.create(nombre.trim(), ubicacion.trim())
+export async function create(nombre: string, ubicacion: string) {
+  const n = nombre.trim()
+  if (await repo.existsNombre(n)) {
+    throw new ConflictError(`Ya existe un traslado con el nombre ${n}`)
+  }
+  return repo.create(n, ubicacion.trim())
 }
 
 export async function update(id: number, nombre?: string, ubicacion?: string) {
-  const result = await repo.update(id, nombre?.trim(), ubicacion?.trim())
+  const n = nombre?.trim()
+  if (n !== undefined && await repo.existsNombre(n, id)) {
+    throw new ConflictError(`Ya existe un traslado con el nombre ${n}`)
+  }
+  const result = await repo.update(id, n, ubicacion?.trim())
   if (!result) throw new NotFoundError('Ruta')
   return result
 }

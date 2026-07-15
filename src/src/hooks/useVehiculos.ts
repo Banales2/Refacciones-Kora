@@ -26,6 +26,14 @@ export interface VehiculoRow {
   ruta:         string | null
   pies:         number | null
   fecha_compra: string | null
+  seguro_id:         number | null
+  seguro_poliza:     string | null
+  seguro_compania:   string | null
+  seguro_expiracion: string | null
+  permiso_id:         number | null
+  permiso_zona:       string | null
+  permiso_expiracion: string | null
+  modelo_anio:        number | null
 }
 
 export interface VehiculoCreatePayload {
@@ -43,6 +51,8 @@ export interface VehiculoCreatePayload {
   ruta_id?:      number
   pies?:         number
   fecha_compra?: string | null
+  seguro_id?:    number | null
+  permiso_id?:   number | null
 }
 
 export type VehiculoUpdatePayload = Partial<Omit<VehiculoCreatePayload, 'tipo'>>
