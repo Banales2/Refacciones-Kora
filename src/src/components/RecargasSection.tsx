@@ -28,6 +28,42 @@ function formatLitros(n: number) {
   return `${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`
 }
 
+function formatKm(n: number) {
+  return `${n.toLocaleString('es-MX')} km`
+}
+
+// Rendimiento por recarga: los km recorridos son el kilometraje de esta recarga
+// menos el de la recarga anterior (en orden cronológico); en la primera el
+// anterior se toma como 0. km/L = km recorridos / litros.
+//
+// Devuelve un mapa id → km por litro (null si no se puede calcular: recarga sin
+// kilometraje, sin litros, o si el kilometraje bajó respecto al anterior).
+function calcularRendimientos(items: Recarga[]): Map<number, number | null> {
+  const asc = [...items].sort((a, b) => {
+    const fa = a.fecha.split('T')[0]
+    const fb = b.fecha.split('T')[0]
+    return fa === fb ? a.id - b.id : fa.localeCompare(fb)
+  })
+
+  const rend = new Map<number, number | null>()
+  let kmAnterior = 0
+  for (const r of asc) {
+    if (r.kilometraje == null) {
+      rend.set(r.id, null)
+      continue
+    }
+    const kmRecorridos = r.kilometraje - kmAnterior
+    const litros = Number(r.litros)
+    rend.set(r.id, litros > 0 && kmRecorridos >= 0 ? kmRecorridos / litros : null)
+    kmAnterior = r.kilometraje
+  }
+  return rend
+}
+
+function formatRendimiento(n: number) {
+  return `${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km/L`
+}
+
 function formatFecha(iso: string) {
   return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
     day: '2-digit', month: 'short', year: 'numeric',
@@ -110,6 +146,7 @@ type RecargaFormValues = {
   fecha:         string
   litros:        number | string
   costo:         number | string
+  kilometraje:   number | string
 }
 
 function RecargaForm({
@@ -136,7 +173,7 @@ function RecargaForm({
 
   const form = useForm<RecargaFormValues>({
     initialValues: initial ?? {
-      gasolinera_id: '', conductor_id: '', fecha: hoy, litros: '', costo: '',
+      gasolinera_id: '', conductor_id: '', fecha: hoy, litros: '', costo: '', kilometraje: '',
     },
     validate: {
       gasolinera_id: (v) => (!v ? 'Gasolinera requerida' : null),
@@ -148,6 +185,7 @@ function RecargaForm({
       },
       litros: (v) => (v === '' || Number(v) <= 0 ? 'Debe ser mayor a 0' : null),
       costo:  (v) => (v === '' || Number(v) < 0 ? 'No puede ser negativo' : null),
+      kilometraje: (v) => (v === '' || Number(v) < 0 ? 'No puede ser negativo' : null),
     },
   })
 
@@ -163,6 +201,7 @@ function RecargaForm({
         fecha:  v.fecha,
         litros: Number(v.litros),
         costo:  Number(v.costo),
+        kilometraje: Number(v.kilometraje),
       }))}
     >
       <Stack gap="sm">
@@ -209,6 +248,12 @@ function RecargaForm({
           min={0} decimalScale={2} step={0.01} prefix="$" thousandSeparator=","
           {...form.getInputProps('costo')}
         />
+        <NumberInput
+          label="Kilometraje" placeholder="0" required
+          min={0} step={1} suffix=" km" thousandSeparator=","
+          description="Kilometraje del vehículo al momento de la recarga"
+          {...form.getInputProps('kilometraje')}
+        />
         {precioLitro !== null && (
           <Text size="xs" c="dimmed">Precio por litro: {formatMXN(precioLitro)}</Text>
         )}
@@ -225,9 +270,10 @@ function RecargaForm({
 // ── Tabla de las recargas de un mes ───────────────────────────────────────────
 
 function RecargasTabla({
-  items, onEdit, onDelete,
+  items, rendimientos, onEdit, onDelete,
 }: {
   items: Recarga[]
+  rendimientos: Map<number, number | null>
   onEdit: (r: Recarga) => void
   onDelete: (r: Recarga) => void
 }) {
@@ -238,9 +284,11 @@ function RecargasTabla({
           <Table.Th>Fecha</Table.Th>
           <Table.Th>Gasolinera</Table.Th>
           <Table.Th>Conductor</Table.Th>
+          <Table.Th style={{ textAlign: 'right' }}>Kilometraje</Table.Th>
           <Table.Th style={{ textAlign: 'right' }}>Litros</Table.Th>
           <Table.Th style={{ textAlign: 'right' }}>Costo</Table.Th>
           <Table.Th style={{ textAlign: 'right' }}>$/L</Table.Th>
+          <Table.Th style={{ textAlign: 'right' }}>km/L</Table.Th>
           <Table.Th style={{ width: 90 }} />
         </Table.Tr>
       </Table.Thead>
@@ -248,6 +296,7 @@ function RecargasTabla({
         {items.map((r) => {
           const litros = Number(r.litros)
           const costo  = Number(r.costo)
+          const rendimiento = rendimientos.get(r.id) ?? null
           return (
             <Table.Tr key={r.id}>
               <Table.Td>{formatDiaMes(r.fecha)}</Table.Td>
@@ -256,10 +305,16 @@ function RecargasTabla({
                 <Text size="xs" c="dimmed">{r.ubicacion}</Text>
               </Table.Td>
               <Table.Td><Text size="sm">{r.conductor}</Text></Table.Td>
+              <Table.Td style={{ textAlign: 'right' }}>
+                {r.kilometraje != null ? formatKm(r.kilometraje) : '—'}
+              </Table.Td>
               <Table.Td style={{ textAlign: 'right' }}>{formatLitros(litros)}</Table.Td>
               <Table.Td style={{ textAlign: 'right' }}>{formatMXN(costo)}</Table.Td>
               <Table.Td style={{ textAlign: 'right' }} c="dimmed">
                 {litros > 0 ? formatMXN(costo / litros) : '—'}
+              </Table.Td>
+              <Table.Td style={{ textAlign: 'right' }} fw={500}>
+                {rendimiento != null ? formatRendimiento(rendimiento) : '—'}
               </Table.Td>
               <Table.Td>
                 <Group gap={4} justify="flex-end" wrap="nowrap">
@@ -314,6 +369,7 @@ export default function RecargasSection({ vehiculoId }: { vehiculoId: number }) 
   const { data, isLoading, error } = useRecargas(vehiculoId)
   const items = useMemo(() => data?.data ?? [], [data])
   const anios = useMemo(() => agrupar(items), [items])
+  const rendimientos = useMemo(() => calcularRendimientos(items), [items])
 
   // Al entrar se abre el año y el mes más recientes, que es lo que se quiere
   // ver de primera. `anios` (y sus meses) vienen ordenados descendente.
@@ -387,7 +443,7 @@ export default function RecargasSection({ vehiculoId }: { vehiculoId: number }) 
                           <ResumenGrupo label={m.label} litros={m.litros} costo={m.costo} fw={500} />
                         </Accordion.Control>
                         <Accordion.Panel>
-                          <RecargasTabla items={m.items} onEdit={openEdit} onDelete={setDeleting} />
+                          <RecargasTabla items={m.items} rendimientos={rendimientos} onEdit={openEdit} onDelete={setDeleting} />
                         </Accordion.Panel>
                       </Accordion.Item>
                     ))}
@@ -419,6 +475,7 @@ export default function RecargasSection({ vehiculoId }: { vehiculoId: number }) 
             fecha:  editing.fecha.split('T')[0],
             litros: Number(editing.litros),
             costo:  Number(editing.costo),
+            kilometraje: editing.kilometraje ?? '',
           } : undefined}
           isPending={createMut.isPending || updateMut.isPending}
           error={formError}

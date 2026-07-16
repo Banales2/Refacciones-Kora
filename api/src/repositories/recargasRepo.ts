@@ -10,6 +10,7 @@ export interface RecargaConGasolinera {
   fecha:         string
   litros:        number
   costo:         number
+  kilometraje:   number | null
   gasolinera:    string
   ubicacion:     string
   conductor:     string
@@ -17,6 +18,7 @@ export interface RecargaConGasolinera {
 
 const SELECT_RECARGA = `
   SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.fecha, r.litros, r.costo,
+         r.kilometraje,
          g.nombre AS gasolinera, g.ubicacion,
          c.nombre AS conductor
   FROM recargas_combustible r
@@ -49,10 +51,11 @@ export async function create(vehiculoId: number, data: RecargaCreate): Promise<R
     .input('fecha',         sql.Date, data.fecha)
     .input('litros',        sql.Decimal(10, 2), data.litros)
     .input('costo',         sql.Decimal(18, 2), data.costo)
+    .input('kilometraje',   sql.Int, data.kilometraje)
     .query(`
-      INSERT INTO recargas_combustible (vehiculo_id, gasolinera_id, conductor_id, fecha, litros, costo)
+      INSERT INTO recargas_combustible (vehiculo_id, gasolinera_id, conductor_id, fecha, litros, costo, kilometraje)
       OUTPUT INSERTED.id
-      VALUES (@vehiculo_id, @gasolinera_id, @conductor_id, @fecha, @litros, @costo)
+      VALUES (@vehiculo_id, @gasolinera_id, @conductor_id, @fecha, @litros, @costo, @kilometraje)
     `)
   return findById(r.recordset[0].id) as Promise<RecargaConGasolinera>
 }
@@ -81,6 +84,10 @@ export async function update(id: number, data: RecargaUpdate): Promise<RecargaCo
   if (data.costo !== undefined) {
     req.input('costo', sql.Decimal(18, 2), data.costo)
     sets.push('costo = @costo')
+  }
+  if (data.kilometraje !== undefined) {
+    req.input('kilometraje', sql.Int, data.kilometraje)
+    sets.push('kilometraje = @kilometraje')
   }
 
   if (!sets.length) return findById(id)

@@ -11,6 +11,7 @@ export interface Recarga {
   fecha:         string
   litros:        number
   costo:         number
+  kilometraje:   number | null
   gasolinera:    string
   ubicacion:     string
   conductor:     string
@@ -22,6 +23,7 @@ export interface RecargaPayload {
   fecha:         string
   litros:        number
   costo:         number
+  kilometraje:   number
 }
 
 export function useRecargas(vehiculoId: number) {

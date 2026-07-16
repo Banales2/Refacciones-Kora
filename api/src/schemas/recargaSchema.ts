@@ -17,6 +17,7 @@ export const RecargaCreateSchema = z.object({
   fecha,
   litros: z.coerce.number().positive('Debe ser mayor a 0'),
   costo:  z.coerce.number().min(0, 'No puede ser negativo'),
+  kilometraje: z.coerce.number().int().min(0, 'No puede ser negativo'),
 })
 
 export const RecargaUpdateSchema = z.object({
@@ -25,6 +26,7 @@ export const RecargaUpdateSchema = z.object({
   fecha:  fecha.optional(),
   litros: z.coerce.number().positive('Debe ser mayor a 0').optional(),
   costo:  z.coerce.number().min(0, 'No puede ser negativo').optional(),
+  kilometraje: z.coerce.number().int().min(0, 'No puede ser negativo').optional(),
 })
 
 export type RecargaCreate = z.infer<typeof RecargaCreateSchema>
