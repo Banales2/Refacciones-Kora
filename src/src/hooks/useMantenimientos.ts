@@ -9,6 +9,8 @@ export interface Mantenimiento {
   vehiculo_id:      number
   fecha:            string | null
   tipo:             string | null
+  tecnico_id:       number | null
+  // Nombre del catálogo; null si el técnico fue eliminado.
   tecnico:          string | null
   costo:            number
   km_actual:        number
@@ -20,7 +22,7 @@ export interface Mantenimiento {
 export interface MantenimientoPayload {
   fecha:              string
   tipo?:              string | null
-  tecnico?:           string | null
+  tecnico_id?:        number | null
   costo?:             number
   km_actual?:         number
   observaciones?:     string | null
@@ -55,10 +57,13 @@ export function useUpdateMantenimiento(vehiculoId: number) {
   return useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: Partial<MantenimientoPayload> }) =>
       api.put<{ data: Mantenimiento }>(`/mantenimientos/${id}`, payload),
-    onSuccess: () => {
+    onSuccess: (_res, { id }) => {
       qc.invalidateQueries({ queryKey: ['mantenimientos',  vehiculoId] })
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
+      // El drawer de detalle trae su propia copia del mantenimiento (técnico,
+      // fecha, costo…); sin esto seguiría mostrando la versión anterior.
+      qc.invalidateQueries({ queryKey: ['detalle-mtto', id] })
     },
   })
 }

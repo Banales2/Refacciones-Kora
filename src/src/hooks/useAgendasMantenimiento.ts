@@ -13,6 +13,8 @@ export interface AgendaMantenimiento {
   fecha_inicio:      string
   fecha_fin:         string
   tipo:              string | null
+  tecnico_id:        number | null
+  // Nombre del catálogo; null si el técnico fue eliminado.
   tecnico:           string | null
   observaciones:     string | null
   status:            AgendaStatus
@@ -31,7 +33,7 @@ export interface AgendaMantenimientoPayload {
   fecha_inicio:       string
   fecha_fin:          string
   tipo?:              string | null
-  tecnico?:           string | null
+  tecnico_id?:        number | null
   observaciones?:     string | null
   requerimiento_ids?: number[]
 }

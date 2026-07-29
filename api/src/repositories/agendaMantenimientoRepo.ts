@@ -9,6 +9,8 @@ export interface AgendaMantenimiento {
   fecha_inicio:     string
   fecha_fin:        string
   tipo:             string | null
+  tecnico_id:       number | null
+  // Nombre resuelto del catálogo. Queda en null si el técnico se eliminó.
   tecnico:          string | null
   observaciones:    string | null
   status:           AgendaStatus
@@ -28,7 +30,7 @@ export interface AgendaMantenimientoCreate {
   fecha_inicio:       string
   fecha_fin:          string
   tipo?:              string | null
-  tecnico?:           string | null
+  tecnico_id?:        number | null
   observaciones?:     string | null
   requerimiento_ids?: number[]
 }
@@ -37,14 +39,20 @@ export interface AgendaMantenimientoUpdate {
   fecha_inicio?:      string
   fecha_fin?:         string
   tipo?:              string | null
-  tecnico?:           string | null
+  tecnico_id?:        number | null
   observaciones?:     string | null
   status?:            AgendaStatus
   requerimiento_ids?: number[]
 }
 
-const COLS = `id, vehiculo_id, fecha_inicio, fecha_fin, tipo, tecnico, observaciones,
-  status, mantenimiento_id, created_at, updated_at`
+// El nombre del técnico sale del catálogo por join, no de la columna vieja: si
+// se eliminó del catálogo, tecnico_id quedó en NULL y aquí se ve vacío.
+const SELECT_AGENDA = `
+  SELECT a.id, a.vehiculo_id, a.fecha_inicio, a.fecha_fin, a.tipo,
+         a.tecnico_id, t.nombre AS tecnico, a.observaciones,
+         a.status, a.mantenimiento_id, a.created_at, a.updated_at
+  FROM agendas_mantenimiento a
+  LEFT JOIN tecnicos t ON t.id = a.tecnico_id`
 
 async function attachReqIds<T extends { id: number }>(
   pool: sql.ConnectionPool, rows: T[]
@@ -70,7 +78,7 @@ export async function findByVehiculo(vehiculoId: number): Promise<AgendaMantenim
   const pool = await getPool()
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
-    .query(`SELECT ${COLS} FROM agendas_mantenimiento WHERE vehiculo_id=@vid ORDER BY fecha_inicio DESC`)
+    .query(`${SELECT_AGENDA} WHERE a.vehiculo_id=@vid ORDER BY a.fecha_inicio DESC`)
   return attachReqIds(pool, r.recordset)
 }
 
@@ -78,7 +86,7 @@ export async function findById(id: number): Promise<AgendaMantenimiento | null> 
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, id)
-    .query(`SELECT ${COLS} FROM agendas_mantenimiento WHERE id=@id`)
+    .query(`${SELECT_AGENDA} WHERE a.id=@id`)
   if (!r.recordset[0]) return null
   const [row] = await attachReqIds(pool, [r.recordset[0]])
   return row
@@ -87,11 +95,13 @@ export async function findById(id: number): Promise<AgendaMantenimiento | null> 
 export async function findAllConVehiculo(): Promise<AgendaConVehiculo[]> {
   const pool = await getPool()
   const r = await pool.request().query(`
-    SELECT a.id, a.vehiculo_id, a.fecha_inicio, a.fecha_fin, a.tipo, a.tecnico, a.observaciones,
+    SELECT a.id, a.vehiculo_id, a.fecha_inicio, a.fecha_fin, a.tipo,
+           a.tecnico_id, t.nombre AS tecnico, a.observaciones,
            a.status, a.mantenimiento_id, a.created_at, a.updated_at,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
            v.tipo AS vehiculo_tipo
     FROM agendas_mantenimiento a
+    LEFT JOIN tecnicos t ON t.id = a.tecnico_id
     JOIN vehiculos v  ON v.id = a.vehiculo_id
     JOIN modelos mo   ON mo.id = v.modelo_id
     ORDER BY a.fecha_inicio DESC
@@ -109,12 +119,12 @@ export async function create(data: AgendaMantenimientoCreate): Promise<AgendaMan
       .input('fechaInicio',   sql.Date,              data.fecha_inicio)
       .input('fechaFin',      sql.Date,              data.fecha_fin)
       .input('tipo',          sql.NVarChar(80),      data.tipo ?? null)
-      .input('tecnico',       sql.NVarChar(120),     data.tecnico ?? null)
+      .input('tecnicoId',     sql.Int,               data.tecnico_id ?? null)
       .input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null)
       .query(`
-        INSERT INTO agendas_mantenimiento (vehiculo_id, fecha_inicio, fecha_fin, tipo, tecnico, observaciones)
+        INSERT INTO agendas_mantenimiento (vehiculo_id, fecha_inicio, fecha_fin, tipo, tecnico_id, observaciones)
         OUTPUT INSERTED.*
-        VALUES (@vid, @fechaInicio, @fechaFin, @tipo, @tecnico, @observaciones)
+        VALUES (@vid, @fechaInicio, @fechaFin, @tipo, @tecnicoId, @observaciones)
       `)
     const agenda = r.recordset[0]
     if (data.requerimiento_ids?.length) {
@@ -124,7 +134,9 @@ export async function create(data: AgendaMantenimientoCreate): Promise<AgendaMan
       await linkReq.query(`INSERT INTO agenda_requerimientos (agenda_id, requerimiento_id) VALUES ${values}`)
     }
     await tx.commit()
-    return { ...agenda, requerimiento_ids: data.requerimiento_ids ?? [] }
+    // Se relee para traer el nombre del técnico resuelto por el join.
+    return (await findById(agenda.id))
+      ?? { ...agenda, tecnico: null, requerimiento_ids: data.requerimiento_ids ?? [] }
   } catch (err) {
     await tx.rollback()
     throw err
@@ -142,7 +154,7 @@ export async function update(id: number, data: AgendaMantenimientoUpdate): Promi
     if (data.fecha_inicio !== undefined) { req.input('fechaInicio', sql.Date, data.fecha_inicio); sets.push('fecha_inicio=@fechaInicio') }
     if (data.fecha_fin    !== undefined) { req.input('fechaFin',    sql.Date, data.fecha_fin);    sets.push('fecha_fin=@fechaFin')       }
     if ('tipo' in data)                  { req.input('tipo',        sql.NVarChar(80),  data.tipo ?? null);          sets.push('tipo=@tipo')                 }
-    if ('tecnico' in data)               { req.input('tecnico',     sql.NVarChar(120), data.tecnico ?? null);       sets.push('tecnico=@tecnico')           }
+    if ('tecnico_id' in data)            { req.input('tecnicoId',   sql.Int,           data.tecnico_id ?? null);    sets.push('tecnico_id=@tecnicoId')      }
     if ('observaciones' in data)         { req.input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null); sets.push('observaciones=@observaciones') }
     if (data.status        !== undefined) { req.input('status',     sql.NVarChar(20),  data.status);                sets.push('status=@status')             }
 

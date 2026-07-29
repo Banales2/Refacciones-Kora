@@ -31,6 +31,7 @@ import { MantenimientoForm, RequerimientoForm } from './Vehiculos'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import type { TipoVehiculo, VehiculoRow } from '../hooks/useVehiculos'
 import { useMantenimientos } from '../hooks/useMantenimientos'
+import { useTecnicos } from '../hooks/useTecnicos'
 import type { MantenimientoPayload } from '../hooks/useMantenimientos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
@@ -162,7 +163,7 @@ type AgendaFormVals = {
   fecha_inicio:      string
   fecha_fin:         string
   tipo:              string
-  tecnico:           string
+  tecnico_id:        string
   observaciones:     string
   requerimiento_ids: string[]
 }
@@ -188,11 +189,19 @@ function AgendaForm({
     .filter(r => r.status === 'activo')
     .map(r => ({ value: String(r.id), label: r.nombre }))
 
+  // El técnico se elige del catálogo y se guarda por id.
+  const { data: tecnicosData } = useTecnicos()
+  const tecnicoOptions = (tecnicosData?.data ?? [])
+    .map(t => ({ value: String(t.id), label: t.nombre }))
+
   const form = useForm<AgendaFormVals>({
-    initialValues: { fecha_inicio: '', fecha_fin: '', tipo: '', tecnico: '', observaciones: '', requerimiento_ids: [] },
+    initialValues: { fecha_inicio: '', fecha_fin: '', tipo: '', tecnico_id: '', observaciones: '', requerimiento_ids: [] },
     validate: {
       fecha_inicio: (v) => !v ? 'Requerido' : null,
       fecha_fin:    (v, vals) => !v ? 'Requerido' : v < vals.fecha_inicio ? 'No puede ser antes del inicio' : null,
+      tipo:         (v) => !v ? 'Requerido' : null,
+      requerimiento_ids: (v) => v.length === 0 ? 'Selecciona al menos un requerimiento' : null,
+      tecnico_id:   (v) => !v ? 'Requerido' : null,
     },
   })
 
@@ -230,12 +239,29 @@ function AgendaForm({
             />
           </Grid.Col>
         </Grid>
-        <TextInput label="Tipo" placeholder="Preventivo, Correctivo… (opcional)" {...form.getInputProps('tipo')} />
-        <TextInput label="Técnico" placeholder="Nombre del técnico (opcional)" {...form.getInputProps('tecnico')} />
+        <Select
+          label="Tipo" required
+          placeholder="Selecciona el tipo"
+          data={[
+            { value: 'Preventivo', label: 'Preventivo' },
+            { value: 'Correctivo', label: 'Correctivo' },
+          ]}
+          {...form.getInputProps('tipo')}
+          onChange={(v) => form.setFieldValue('tipo', v ?? '')}
+        />
+        <Select
+          label="Técnico" required
+          placeholder="Selecciona un técnico"
+          data={tecnicoOptions}
+          searchable
+          nothingFoundMessage="Registra técnicos en Catálogos"
+          {...form.getInputProps('tecnico_id')}
+          onChange={(v) => form.setFieldValue('tecnico_id', v ?? '')}
+        />
         <div>
           <MultiSelect
             label="Requerimiento(s) que se busca resolver"
-            description="Opcional — deja vacío si el motivo es solo tiempo o una revisión general"
+            required
             placeholder={reqOptions.length ? 'Selecciona los requerimientos…' : 'Sin requerimientos activos'}
             data={reqOptions}
             searchable
@@ -360,8 +386,8 @@ export default function Calendario({
     createAgendaMut.mutate({
       fecha_inicio:      vals.fecha_inicio,
       fecha_fin:         vals.fecha_fin,
-      tipo:              vals.tipo.trim()          || null,
-      tecnico:           vals.tecnico.trim()       || null,
+      tipo:              vals.tipo,
+      tecnico_id:        Number(vals.tecnico_id),
       observaciones:     vals.observaciones.trim() || null,
       requerimiento_ids: vals.requerimiento_ids.map(Number),
     }, { onSuccess: cerrarAgendar })

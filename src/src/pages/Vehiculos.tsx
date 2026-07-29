@@ -44,6 +44,7 @@ import { usePiezasVehiculo, useSetPiezaVehiculo, useRemovePiezaVehiculo } from '
 import { useAddTiposPiezaVehiculo, useRemoveTipoPiezaVehiculo } from '../hooks/useTiposPiezaVehiculo'
 import { useTiposPieza } from '../hooks/useTiposPieza'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
+import { useTecnicos } from '../hooks/useTecnicos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
@@ -949,7 +950,7 @@ function fromDateLocal(d: Date | string | null): string {
 type MantForm = {
   fecha:             string
   tipo:              string
-  tecnico:           string
+  tecnico_id:        string
   costo:             number | string
   km_actual:         number | string
   observaciones:     string
@@ -969,7 +970,7 @@ function initMant(m?: Mantenimiento, prefillRequerimientoIds?: number[], kmVehic
   return {
     fecha:             m?.fecha?.split('T')[0] ?? '',
     tipo:              m?.tipo          ?? '',
-    tecnico:           m?.tecnico       ?? '',
+    tecnico_id:        m?.tecnico_id != null ? String(m.tecnico_id) : '',
     costo:             m?.costo         ?? '',
     // Al registrar se parte del odómetro actual del vehículo; se ajusta si la
     // lectura real del taller es otra.
@@ -1010,11 +1011,26 @@ export function MantenimientoForm({
   const { data: vehiculoData } = useVehiculo(isEdit ? undefined : vehiculoId)
   const kmVehiculo = vehiculoData?.data.kilometraje ?? null
 
+  // El técnico se guarda por id contra el catálogo. Si el técnico se eliminó,
+  // el mantenimiento queda sin técnico y hay que elegir otro al editarlo.
+  const { data: tecnicosData } = useTecnicos()
+  const tecnicoOptions = useMemo(
+    () => (tecnicosData?.data ?? []).map((t) => ({ value: String(t.id), label: t.nombre })),
+    [tecnicosData]
+  )
+
   const form = useForm<MantForm>({
     initialValues: initMant(initial, prefillRequerimientoIds, kmVehiculo),
     validate: {
       fecha:             (v) => !v ? 'Requerido' : null,
       tipo:              (v) => !v ? 'Requerido' : null,
+      tecnico_id:        (v) => !v ? 'Requerido' : null,
+      km_actual:         (v) => tieneKilometraje && (v === '' || v === null) ? 'Requerido' : null,
+      costo:             (v) => v === '' || v === null ? 'Requerido' : null,
+      observaciones:     (v) =>
+        !v.trim() ? 'Requerido' :
+        v.length > 255 ? 'Máximo 255 caracteres' :
+        !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
       requerimiento_ids: (v) => v.length === 0 ? 'Selecciona al menos un requerimiento' : null,
       piezas: {
         lote_id:  (v: string) => !v ? 'Selecciona la refacción' : null,
@@ -1070,10 +1086,10 @@ export function MantenimientoForm({
       {
         fecha:             vals.fecha,
         tipo:              vals.tipo.trim()          || null,
-        tecnico:           vals.tecnico.trim()       || null,
+        tecnico_id:        Number(vals.tecnico_id),
         costo:             vals.costo !== '' ? Number(vals.costo) : 0,
         km_actual:         vals.km_actual !== '' ? Number(vals.km_actual) : 0,
-        observaciones:     vals.observaciones.trim() || null,
+        observaciones:     vals.observaciones.trim(),
         requerimiento_ids: vals.requerimiento_ids.map(Number),
       },
       vals.piezas.map(p => ({
@@ -1111,12 +1127,21 @@ export function MantenimientoForm({
             />
           </Grid.Col>
           <Grid.Col span={6}>
-            <TextInput label="Técnico" placeholder="Nombre del técnico" {...form.getInputProps('tecnico')} />
+            <Select
+              label="Técnico" required
+              placeholder="Selecciona un técnico"
+              data={tecnicoOptions}
+              searchable
+              nothingFoundMessage="Registra técnicos en Catálogos"
+              {...form.getInputProps('tecnico_id')}
+              onChange={(v) => form.setFieldValue('tecnico_id', v ?? '')}
+            />
           </Grid.Col>
           {tieneKilometraje && (
             <Grid.Col span={3}>
               <NumberInput
-                label="Kilometraje" placeholder="0" min={0}
+                label="Kilometraje" placeholder="0" min={0} required
+                allowDecimal={false} allowNegative={false}
                 description={!isEdit && kmVehiculo != null
                   ? `Actual: ${kmVehiculo.toLocaleString('es-MX')} km`
                   : undefined}
@@ -1126,12 +1151,16 @@ export function MantenimientoForm({
           )}
           <Grid.Col span={tieneKilometraje ? 3 : 6}>
             <NumberInput
-              label="Costo ($)" placeholder="0.00" min={0} decimalScale={2} prefix="$"
+              label="Costo de mano de obra" placeholder="0.00" min={0} decimalScale={2} prefix="$" required
               {...form.getInputProps('costo')}
             />
           </Grid.Col>
           <Grid.Col span={12}>
-            <Textarea label="Observaciones" autosize minRows={2} {...form.getInputProps('observaciones')} />
+            <Textarea
+              label="Observaciones" autosize minRows={2} required maxLength={255}
+              {...form.getInputProps('observaciones')}
+              onChange={(e) => form.setFieldValue('observaciones', limpiarTextoLibre(e.currentTarget.value, 255))}
+            />
           </Grid.Col>
           <Grid.Col span={12}>
             <MultiSelect

@@ -7,6 +7,8 @@ export interface Mantenimiento {
   vehiculo_id:      number
   fecha:            string | null
   tipo:             string | null
+  tecnico_id:       number | null
+  // Nombre resuelto del catálogo. Queda en null si el técnico se eliminó.
   tecnico:          string | null
   costo:            number
   km_actual:        number
@@ -19,7 +21,7 @@ export interface MantenimientoCreate {
   vehiculo_id:        number
   fecha:              string
   tipo?:              string | null
-  tecnico?:           string | null
+  tecnico_id?:        number | null
   costo?:             number
   km_actual?:         number
   observaciones?:     string | null
@@ -29,14 +31,20 @@ export interface MantenimientoCreate {
 export interface MantenimientoUpdate {
   fecha?:             string
   tipo?:              string | null
-  tecnico?:           string | null
+  tecnico_id?:        number | null
   costo?:             number
   km_actual?:         number
   observaciones?:     string | null
   requerimiento_ids?: number[]
 }
 
-const COLS = 'id, vehiculo_id, fecha, tipo, tecnico, costo, km_actual, observaciones'
+// El nombre del técnico sale del catálogo por join, no de la columna vieja: si
+// se eliminó del catálogo, tecnico_id quedó en NULL y aquí se ve vacío.
+const SELECT_MANT = `
+  SELECT m.id, m.vehiculo_id, m.fecha, m.tipo, m.tecnico_id, t.nombre AS tecnico,
+         m.costo, m.km_actual, m.observaciones
+  FROM mantenimiento m
+  LEFT JOIN tecnicos t ON t.id = m.tecnico_id`
 
 async function attachReqIds(
   pool: sql.ConnectionPool,
@@ -86,7 +94,7 @@ export async function findByVehiculo(vehiculoId: number): Promise<Mantenimiento[
   const pool = await getPool()
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
-    .query(`SELECT ${COLS} FROM mantenimiento WHERE vehiculo_id=@vid ORDER BY fecha DESC`)
+    .query(`${SELECT_MANT} WHERE m.vehiculo_id=@vid ORDER BY m.fecha DESC`)
   const withReqs = await attachReqIds(pool, r.recordset)
   return attachPiezasTotal(pool, withReqs)
 }
@@ -95,7 +103,7 @@ export async function findById(id: number): Promise<Mantenimiento | null> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, id)
-    .query(`SELECT ${COLS} FROM mantenimiento WHERE id=@id`)
+    .query(`${SELECT_MANT} WHERE m.id=@id`)
   if (!r.recordset[0]) return null
   const [withReqs] = await attachReqIds(pool, [r.recordset[0]])
   const [row] = await attachPiezasTotal(pool, [withReqs])
@@ -111,14 +119,14 @@ export async function create(data: MantenimientoCreate): Promise<Mantenimiento> 
       .input('vid',           sql.Int,               data.vehiculo_id)
       .input('fecha',         sql.Date,              data.fecha)
       .input('tipo',          sql.NVarChar(80),      data.tipo          ?? null)
-      .input('tecnico',       sql.NVarChar(120),     data.tecnico       ?? null)
+      .input('tecnicoId',     sql.Int,               data.tecnico_id    ?? null)
       .input('costo',         sql.Decimal(18, 2),    data.costo         ?? 0)
       .input('kmActual',      sql.Int,               data.km_actual     ?? 0)
       .input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null)
       .query(`
-        INSERT INTO mantenimiento (vehiculo_id, fecha, tipo, tecnico, costo, km_actual, observaciones)
+        INSERT INTO mantenimiento (vehiculo_id, fecha, tipo, tecnico_id, costo, km_actual, observaciones)
         OUTPUT INSERTED.*
-        VALUES (@vid, @fecha, @tipo, @tecnico, @costo, @kmActual, @observaciones)
+        VALUES (@vid, @fecha, @tipo, @tecnicoId, @costo, @kmActual, @observaciones)
       `)
     const mant = r.recordset[0]
     for (const rid of data.requerimiento_ids ?? []) {
@@ -129,7 +137,9 @@ export async function create(data: MantenimientoCreate): Promise<Mantenimiento> 
     }
     await syncUnicaStatuses(tx, data.requerimiento_ids ?? [])
     await tx.commit()
-    return { ...mant, requerimiento_ids: data.requerimiento_ids ?? [], piezas_total: 0 }
+    // Se relee para traer el nombre del técnico resuelto por el join.
+    return (await findById(mant.id))
+      ?? { ...mant, tecnico: null, requerimiento_ids: data.requerimiento_ids ?? [], piezas_total: 0 }
   } catch (err) {
     await tx.rollback()
     throw err
@@ -145,7 +155,7 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
     const req = tx.request().input('id', sql.Int, id)
     if (data.fecha         !== undefined) { req.input('fecha',         sql.Date,              data.fecha);               sets.push('fecha=@fecha')                 }
     if ('tipo'         in data)           { req.input('tipo',          sql.NVarChar(80),      data.tipo          ?? null); sets.push('tipo=@tipo')                   }
-    if ('tecnico'      in data)           { req.input('tecnico',       sql.NVarChar(120),     data.tecnico       ?? null); sets.push('tecnico=@tecnico')             }
+    if ('tecnico_id'   in data)           { req.input('tecnicoId',     sql.Int,               data.tecnico_id    ?? null); sets.push('tecnico_id=@tecnicoId')        }
     if (data.costo         !== undefined) { req.input('costo',         sql.Decimal(18, 2),    data.costo);               sets.push('costo=@costo')                 }
     if (data.km_actual     !== undefined) { req.input('kmActual',      sql.Int,               data.km_actual);           sets.push('km_actual=@kmActual')           }
     if ('observaciones' in data)          { req.input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null); sets.push('observaciones=@observaciones') }

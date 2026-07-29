@@ -248,7 +248,7 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
                   <Text fw={700} size="lg">{formatMXN(piezasTotal)}</Text>
                 </div>
                 <div>
-                  <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Costo mantenimiento</Text>
+                  <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Costo mano de obra</Text>
                   <Text fw={700} size="lg">{formatMXN(costoMantenimiento)}</Text>
                 </div>
                 <div>

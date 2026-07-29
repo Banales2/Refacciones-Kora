@@ -100,10 +100,11 @@ export async function findAllMantenimientosConVehiculo(): Promise<MantenimientoC
   const pool = await getPool()
   const r = await pool.request().query(`
     SELECT m.id, m.vehiculo_id, CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
-           v.tipo AS vehiculo_tipo, m.tipo, m.tecnico,
+           v.tipo AS vehiculo_tipo, m.tipo, t.nombre AS tecnico,
            m.fecha, m.costo, COALESCE(pt.piezas_total, 0) AS piezas_total
     FROM mantenimiento m
     JOIN vehiculos v ON v.id = m.vehiculo_id
+    LEFT JOIN tecnicos t ON t.id = m.tecnico_id
     JOIN modelos mo ON mo.id = v.modelo_id
     LEFT JOIN (
       SELECT mantenimiento_id, SUM(cantidad * costo_unitario) AS piezas_total

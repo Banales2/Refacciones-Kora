@@ -8,10 +8,10 @@ import * as service from '../services/agendaMantenimientoService'
 const Schema = z.object({
   fecha_inicio:      z.string().date().optional(),
   fecha_fin:         z.string().date().optional(),
-  tipo:              z.string().max(80).trim().nullable().optional(),
-  tecnico:           z.string().max(120).trim().nullable().optional(),
+  tipo:              z.enum(['Preventivo', 'Correctivo']).optional(),
+  tecnico_id:        z.coerce.number().int().positive('Técnico requerido').optional(),
   observaciones:     z.string().trim().nullable().optional(),
-  requerimiento_ids: z.array(z.number().int().positive()).optional(),
+  requerimiento_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un requerimiento').optional(),
 })
 
 export async function agendaMantenimientoUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {

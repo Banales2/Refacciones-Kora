@@ -3,15 +3,17 @@ import { z } from 'zod'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { TEXTO_LIBRE } from '../schemas/common'
 import * as service from '../services/mantenimientoService'
 
 const Schema = z.object({
   fecha:             z.string().date().optional(),
   tipo:              z.enum(['Preventivo', 'Correctivo']).optional(),
-  tecnico:           z.string().max(120).trim().nullable().optional(),
+  tecnico_id:        z.coerce.number().int().positive('Técnico requerido').optional(),
   costo:             z.coerce.number().min(0).optional(),
   km_actual:         z.coerce.number().int().min(0).optional(),
-  observaciones:     z.string().trim().nullable().optional(),
+  observaciones:     z.string().trim().min(1, 'Observaciones requeridas').max(255, 'Máximo 255 caracteres')
+                       .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos').optional(),
   requerimiento_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un requerimiento').optional(),
 })
 
