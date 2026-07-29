@@ -29,7 +29,9 @@ import type {
   TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload,
 } from '../hooks/useVehiculos'
 import { VehiculoForm } from '../components/VehiculoForm'
-import { TEXTO_SIMPLE, limpiarTextoSimple } from '../lib/validaciones'
+import {
+  TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre,
+} from '../lib/validaciones'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -238,7 +240,18 @@ function PlantillaForm({
       activo:          initial?.activo ?? true,
     },
     validate: {
-      nombre: (v) => !v.trim() ? 'Requerido' : v.length > 120 ? 'Máximo 120 caracteres' : null,
+      nombre: (v) =>
+        !v.trim() ? 'Requerido' :
+        v.length > 40 ? 'Máximo 40 caracteres' :
+        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
+      descripcion: (v) =>
+        !v || !v.trim() ? 'Requerido' :
+        v.length > 255 ? 'Máximo 255 caracteres' :
+        !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
+      categoria: (v) =>
+        !v || !v.trim() ? 'Requerido' :
+        v.length > 30 ? 'Máximo 30 caracteres' :
+        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
       intervalo_km: (v, vals) =>
         (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
       intervalo_meses: (v, vals) =>
@@ -271,8 +284,8 @@ function PlantillaForm({
   function handleSubmit(vals: typeof form.values) {
     onSubmit({
       nombre:          vals.nombre.trim(),
-      descripcion:     vals.descripcion?.trim() || null,
-      categoria:       vals.categoria?.trim()   || null,
+      descripcion:     vals.descripcion.trim(),
+      categoria:       vals.categoria.trim(),
       trigger_mode:    vals.trigger_mode,
       tipo:            vals.tipo,
       intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km    : null,
@@ -286,21 +299,24 @@ function PlantillaForm({
       <Stack gap="sm">
         <TextInput
           label="Nombre" placeholder="Ej. Cambio de filtro de aceite"
-          required {...form.getInputProps('nombre')}
+          required maxLength={40}
+          {...form.getInputProps('nombre')}
+          onChange={(e) => form.setFieldValue('nombre', limpiarTextoSimple(e.currentTarget.value, 40))}
         />
         <Textarea
           label="Descripción" placeholder="Instrucciones o detalles adicionales"
-          autosize minRows={2} {...form.getInputProps('descripcion')}
+          required autosize minRows={2} maxLength={255}
+          {...form.getInputProps('descripcion')}
+          onChange={(e) => form.setFieldValue('descripcion', limpiarTextoLibre(e.currentTarget.value, 255))}
         />
         <Select
-          label="Categoría"
+          label="Categoría" required
           placeholder="Selecciona o escribe para crear una categoría"
           data={categoriaOptions}
           searchable
-          clearable
-          onSearchChange={setCategoriaSearch}
+          onSearchChange={(v) => setCategoriaSearch(limpiarTextoSimple(v, 30))}
           nothingFoundMessage="Escribe para crear una nueva categoría"
-          maxLength={80}
+          maxLength={30}
           {...form.getInputProps('categoria')}
           onChange={(v) => form.setFieldValue('categoria', v ?? '')}
         />
@@ -328,6 +344,7 @@ function PlantillaForm({
           <NumberInput
             label="Intervalo de kilometraje" required min={1}
             suffix=" km" thousandSeparator=","
+            allowDecimal={false} allowNegative={false}
             {...form.getInputProps('intervalo_km')}
           />
         )}
@@ -335,6 +352,7 @@ function PlantillaForm({
           <NumberInput
             label="Intervalo en meses" required min={1}
             suffix=" meses"
+            allowDecimal={false} allowNegative={false}
             {...form.getInputProps('intervalo_meses')}
           />
         )}

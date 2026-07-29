@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { TEXTO_LIBRE } from './common'
 
 export const RefaccionCreateSchema = z.object({
   numero_serie: z
@@ -10,7 +11,8 @@ export const RefaccionCreateSchema = z.object({
     .string()
     .trim()
     .min(3, 'Mínimo 3 caracteres')
-    .max(255, 'Máximo 255 caracteres'),
+    .max(255, 'Máximo 255 caracteres')
+    .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos'),
   // Obligatorio: el tipo es la única clasificación de la pieza. No es nullable,
   // así que el update tampoco puede dejar sin tipo una pieza que ya lo tiene.
   tipo_pieza_id: z.coerce

@@ -13,14 +13,15 @@ import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
 import { IconPencil, IconTrash, IconPlus, IconFileTypePdf } from '@tabler/icons-react'
 import {
-  useRefacciones, useCreateRefaccion, useUpdateRefaccion, useDeleteRefaccion, fetchTodasLasPiezas,
+  useRefacciones, useTodasLasPiezas, useCreateRefaccion, useUpdateRefaccion, useDeleteRefaccion,
+  fetchTodasLasPiezas,
 } from '../hooks/useRefacciones'
 import type { Pieza, SearchBy } from '../hooks/useRefacciones'
 import LotesDrawer from '../components/LotesDrawer'
 import { exportPiezasReporteToPdf } from '../lib/exportPiezasReporte'
 import { agruparPorTipo, SIN_TIPO } from '../lib/piezasGrupos'
 import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
-import { limpiarTextoSimple } from '../lib/validaciones'
+import { TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre } from '../lib/validaciones'
 
 function stockColor(qty: number) {
   if (qty === 0) return 'red'
@@ -61,7 +62,8 @@ function PiezaForm({
         !/^[A-Z0-9-]+$/.test(v) ? 'Solo mayúsculas, números y guiones' : null,
       descripcion: (v) =>
         v.trim().length < 3 ? 'Mínimo 3 caracteres' :
-        v.length > 255 ? 'Máximo 255 caracteres' : null,
+        v.length > 255 ? 'Máximo 255 caracteres' :
+        !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
       tipo_pieza_id: (v) => !v ? 'Requerido' : null,
     },
   })
@@ -121,6 +123,7 @@ function PiezaForm({
           required
           maxLength={255}
           {...form.getInputProps('descripcion')}
+          onChange={(e) => form.setFieldValue('descripcion', limpiarTextoLibre(e.currentTarget.value, 255))}
         />
         <Select
           label="Tipo de pieza"
@@ -268,7 +271,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
   const searching = debouncedSearch.length > 0
   const { data, isLoading, isError } = useRefacciones(page, debouncedSearch, searchBy, undefined, searching)
   const { data: allData, isLoading: allLoading, isError: allError } =
-    useRefacciones(1, '', 'all', 100, !searching)
+    useTodasLasPiezas(!searching)
 
   const createMut = useCreateRefaccion()
   const updateMut = useUpdateRefaccion()

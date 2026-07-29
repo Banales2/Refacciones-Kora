@@ -30,11 +30,19 @@ import {
   useUpdatePermisoCirculacion, useDeletePermisoCirculacion,
   useAssignVehiculosPermiso, useUnassignVehiculoPermiso,
 } from '../hooks/usePermisosCirculacion'
+import {
+  useTecnicos, useCreateTecnico, useUpdateTecnico, useDeleteTecnico,
+} from '../hooks/useTecnicos'
 import { AsignarVehiculosDrawer } from '../components/AsignarVehiculosDrawer'
+import {
+  TEXTO_SIMPLE, TEXTO_LIBRE, CONTACTO,
+  limpiarTextoSimple, limpiarTextoLibre, limpiarContacto,
+} from '../lib/validaciones'
 import type { Sucursal, SucursalPayload } from '../hooks/useSucursales'
 import type { Ruta, RutaPayload } from '../hooks/useRutas'
 import type { Gasolinera, GasolineraPayload } from '../hooks/useGasolineras'
 import type { Conductor, ConductorPayload } from '../hooks/useConductores'
+import type { Tecnico, TecnicoPayload } from '../hooks/useTecnicos'
 import type { Seguro, SeguroPayload } from '../hooks/useSeguros'
 import type { PermisoCirculacion, PermisoCirculacionPayload } from '../hooks/usePermisosCirculacion'
 import type { VehiculoRow } from '../hooks/useVehiculos'
@@ -515,6 +523,170 @@ function ConductoresPanel() {
   )
 }
 
+// ── Panel de técnicos ─────────────────────────────────────────────────────────
+
+// El técnico lleva nombre, ubicación y contacto, así que no puede reusar
+// SitioForm (que solo maneja nombre + ubicación).
+function TecnicoForm({
+  initial, isPending, error, onSubmit, onCancel,
+}: {
+  initial?: TecnicoPayload
+  isPending: boolean
+  error: string | null
+  onSubmit: (payload: TecnicoPayload) => void
+  onCancel: () => void
+}) {
+  const form = useForm({
+    initialValues: {
+      nombre:    initial?.nombre    ?? '',
+      ubicacion: initial?.ubicacion ?? '',
+      contacto:  initial?.contacto  ?? '',
+    },
+    validate: {
+      nombre: (v) =>
+        v.trim().length < 2 ? 'Mínimo 2 caracteres' :
+        v.length > 40 ? 'Máximo 40 caracteres' :
+        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
+      ubicacion: (v) =>
+        !v.trim() ? 'Requerido' :
+        v.length > 100 ? 'Máximo 100 caracteres' :
+        !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
+      contacto: (v) =>
+        !v.trim() ? null :
+        v.length > 40 ? 'Máximo 40 caracteres' :
+        !CONTACTO.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
+    },
+  })
+
+  return (
+    <form onSubmit={form.onSubmit((v) => onSubmit({
+      nombre:    v.nombre.trim(),
+      ubicacion: v.ubicacion.trim(),
+      contacto:  v.contacto.trim() || null,
+    }))}>
+      <Stack gap="sm">
+        <TextInput
+          label="Nombre del técnico" placeholder="Nombre y apellido" required
+          maxLength={40}
+          {...form.getInputProps('nombre')}
+          onChange={(e) => form.setFieldValue('nombre', limpiarTextoSimple(e.currentTarget.value, 40))}
+        />
+        <TextInput
+          label="Ubicación" placeholder="Taller o zona donde atiende" required
+          maxLength={100}
+          {...form.getInputProps('ubicacion')}
+          onChange={(e) => form.setFieldValue('ubicacion', limpiarTextoLibre(e.currentTarget.value, 100))}
+        />
+        <TextInput
+          label="Contacto" placeholder="Teléfono o correo"
+          maxLength={40}
+          {...form.getInputProps('contacto')}
+          onChange={(e) => form.setFieldValue('contacto', limpiarContacto(e.currentTarget.value, 40))}
+        />
+        {error && <Alert color="red" title="Error">{error}</Alert>}
+        <Group justify="flex-end" mt="xs">
+          <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
+          <Button type="submit" loading={isPending}>Guardar</Button>
+        </Group>
+      </Stack>
+    </form>
+  )
+}
+
+function TecnicosPanel() {
+  const [formOpen, setFormOpen]   = useState(false)
+  const [editing, setEditing]     = useState<Tecnico | null>(null)
+  const [deleting, setDeleting]   = useState<Tecnico | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const { data, isLoading, isError } = useTecnicos()
+  const createMut = useCreateTecnico()
+  const updateMut = useUpdateTecnico()
+  const deleteMut = useDeleteTecnico()
+  const items = data?.data ?? []
+  const isPending = createMut.isPending || updateMut.isPending
+
+  function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
+  function openEdit(t: Tecnico) { setEditing(t); setFormError(null); setFormOpen(true) }
+
+  function handleSubmit(payload: TecnicoPayload) {
+    setFormError(null)
+    const opts = {
+      onSuccess: () => setFormOpen(false),
+      onError:   (e: Error) => setFormError(e.message),
+    }
+    if (editing) updateMut.mutate({ id: editing.id, payload }, opts)
+    else         createMut.mutate(payload, opts)
+  }
+
+  return (
+    <>
+      <Stack gap="md">
+        <Group justify="space-between">
+          <Text size="sm" c="dimmed">{items.length} técnico{items.length !== 1 ? 's' : ''}</Text>
+          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo técnico</Button>
+        </Group>
+
+        {isLoading ? <Center py="xl"><Loader /></Center>
+        : isError   ? <Alert color="red" title="Error">No se pudieron obtener los técnicos.</Alert>
+        : items.length === 0 ? <Center py="xl"><Text c="dimmed">No hay técnicos registrados.</Text></Center>
+        : (
+          <Table.ScrollContainer minWidth={500}>
+            <Table striped highlightOnHover withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Nombre</Table.Th>
+                  <Table.Th>Ubicación</Table.Th>
+                  <Table.Th>Contacto</Table.Th>
+                  <Table.Th style={{ width: 80 }} />
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {items.map((t) => (
+                  <Table.Tr key={t.id}>
+                    <Table.Td fw={500}>{t.nombre}</Table.Td>
+                    <Table.Td c="dimmed">{t.ubicacion}</Table.Td>
+                    <Table.Td c="dimmed">{t.contacto ?? '—'}</Table.Td>
+                    <Table.Td>
+                      <Group gap={4} justify="flex-end" wrap="nowrap">
+                        <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(t)}><IconPencil size={14} /></ActionIcon></Tooltip>
+                        <Tooltip label="Eliminar"><ActionIcon variant="subtle" color="red"  size="sm" onClick={() => setDeleting(t)}><IconTrash  size={14} /></ActionIcon></Tooltip>
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+      </Stack>
+
+      <Modal opened={formOpen} onClose={() => setFormOpen(false)}
+        title={editing ? `Editar — ${editing.nombre}` : 'Nuevo técnico'} centered size="sm">
+        <TecnicoForm
+          initial={editing ?? undefined}
+          isPending={isPending} error={formError}
+          onSubmit={handleSubmit} onCancel={() => setFormOpen(false)}
+        />
+      </Modal>
+
+      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar técnico" centered size="sm">
+        <Stack gap="md">
+          <Text>¿Eliminar <strong>{deleting?.nombre}</strong>?</Text>
+          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
+            <Button color="red" loading={deleteMut.isPending}
+              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
+              Eliminar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </>
+  )
+}
+
 // ── Panel de seguros ──────────────────────────────────────────────────────────
 
 // El seguro tiene póliza, compañía y fecha de expiración, así que necesita su
@@ -896,7 +1068,7 @@ export default function SitiosYRutas({
     <Stack gap="md">
       <div>
         <Text size="xl" fw={600}>Catálogos</Text>
-        <Text size="sm" c="dimmed">Proveedores, sucursales, traslados, gasolineras, conductores, seguros y permisos</Text>
+        <Text size="sm" c="dimmed">Proveedores, sucursales, traslados, gasolineras, conductores, técnicos, seguros y permisos</Text>
       </div>
 
       <Tabs value={activeTab ?? 'proveedores'} onChange={onTabChange} keepMounted={false}>
@@ -906,6 +1078,7 @@ export default function SitiosYRutas({
           <Tabs.Tab value="rutas">Traslados</Tabs.Tab>
           <Tabs.Tab value="gasolineras">Gasolineras</Tabs.Tab>
           <Tabs.Tab value="conductores">Conductores</Tabs.Tab>
+          <Tabs.Tab value="tecnicos">Técnicos</Tabs.Tab>
           <Tabs.Tab value="seguros">Seguros</Tabs.Tab>
           <Tabs.Tab value="permisos">Permisos</Tabs.Tab>
         </Tabs.List>
@@ -928,6 +1101,10 @@ export default function SitiosYRutas({
 
         <Tabs.Panel value="conductores" pt="md">
           <ConductoresPanel />
+        </Tabs.Panel>
+
+        <Tabs.Panel value="tecnicos" pt="md">
+          <TecnicosPanel />
         </Tabs.Panel>
 
         <Tabs.Panel value="seguros" pt="md">

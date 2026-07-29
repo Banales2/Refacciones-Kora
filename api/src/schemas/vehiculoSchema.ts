@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { CODIGO } from './common'
 
 export const TIPOS_VEHICULO = ['camion', 'tractocamion', 'caja_trailer', 'utilitario', 'montacargas'] as const
 export type TipoVehiculo = typeof TIPOS_VEHICULO[number]
@@ -14,8 +15,19 @@ export const VehiculoQuerySchema = z.object({
 export const VehiculoCreateSchema = z.object({
   tipo:        z.enum(TIPOS_VEHICULO),
   modelo_id:   z.coerce.number().int().min(1, 'Requerido'),
-  serie:       z.string().min(1, 'Requerido').max(80).trim(),
-  placas:      z.string().max(20).trim().nullable().optional(),
+  serie: z
+    .string()
+    .trim()
+    .min(1, 'Requerido')
+    .max(20, 'Máximo 20 caracteres')
+    .regex(CODIGO, 'Solo mayúsculas, números y guiones'),
+  placas: z
+    .string()
+    .trim()
+    .max(10, 'Máximo 10 caracteres')
+    .refine((v) => v === '' || CODIGO.test(v), 'Solo mayúsculas, números y guiones')
+    .nullable()
+    .optional(),
   // camion + tractocamion + utilitario + montacargas
   combustible: z.string().max(30).trim().optional(),
   // camion + tractocamion + utilitario
@@ -31,15 +43,33 @@ export const VehiculoCreateSchema = z.object({
   // caja_trailer
   pies:         z.coerce.number().int().positive().optional(),
   // general
-  fecha_compra: z.string().date().nullable().optional(),
+  fecha_compra: z.string({ error: 'Fecha de compra requerida' }).date(),
   seguro_id:    z.coerce.number().int().positive().nullable().optional(),
   permiso_id:   z.coerce.number().int().positive().nullable().optional(),
 })
+  // Los montacargas no llevan placas; el resto de los tipos sí.
+  .superRefine((data, ctx) => {
+    if (data.tipo !== 'montacargas' && !data.placas?.trim()) {
+      ctx.addIssue({ code: 'custom', message: 'Placas requeridas', path: ['placas'] })
+    }
+  })
 
 export const VehiculoUpdateSchema = z.object({
   modelo_id:    z.coerce.number().int().min(1).optional(),
-  serie:        z.string().min(1).max(80).trim().optional(),
-  placas:       z.string().max(20).trim().nullable().optional(),
+  serie: z
+    .string()
+    .trim()
+    .min(1, 'Requerido')
+    .max(20, 'Máximo 20 caracteres')
+    .regex(CODIGO, 'Solo mayúsculas, números y guiones')
+    .optional(),
+  placas: z
+    .string()
+    .trim()
+    .max(10, 'Máximo 10 caracteres')
+    .refine((v) => v === '' || CODIGO.test(v), 'Solo mayúsculas, números y guiones')
+    .nullable()
+    .optional(),
   combustible:  z.string().max(30).trim().optional(),
   kilometraje:  z.coerce.number().int().min(0).optional(),
   status:       z.string().max(30).trim().optional(),

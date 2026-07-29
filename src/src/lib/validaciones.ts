@@ -4,8 +4,35 @@
 // pudiera usarse para colar links o marcado. Espeja TEXTO_SIMPLE del backend.
 export const TEXTO_SIMPLE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 -]+$/
 
+// Allowlist para texto libre (descripciones). Más amplia porque necesita
+// puntuación para leerse bien, pero sigue dejando fuera lo que sirve para
+// inyectar marcado o scripts. Espeja TEXTO_LIBRE del backend.
+export const TEXTO_LIBRE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 \r\n.,;:()¿?¡!"'%#°+&/-]+$/
+
+// Allowlist para datos de contacto: además de lo del texto simple, deja pasar
+// lo que aparece en un teléfono o un correo. Espeja CONTACTO del backend.
+export const CONTACTO = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 .,@+()-]+$/
+
+export function limpiarContacto(valor: string, max: number): string {
+  return valor.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 .,@+()-]/g, '').slice(0, max)
+}
+
+// Allowlist para códigos e identificadores (series, placas, folios): solo
+// mayúsculas, números y guiones. Espeja CODIGO del backend.
+export const CODIGO = /^[A-Z0-9-]+$/
+
+// Pasa a mayúsculas, quita lo que no sea código y recorta al máximo permitido.
+export function limpiarCodigo(valor: string, max: number): string {
+  return valor.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, max)
+}
+
 // Quita lo que la allowlist no acepta y recorta al máximo permitido. Se usa en
 // onChange para que ni pegando texto entren símbolos.
 export function limpiarTextoSimple(valor: string, max: number): string {
   return valor.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 -]/g, '').slice(0, max)
+}
+
+// Igual que limpiarTextoSimple pero para descripciones: conserva la puntuación.
+export function limpiarTextoLibre(valor: string, max: number): string {
+  return valor.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 \r\n.,;:()¿?¡!"'%#°+&/-]/g, '').slice(0, max)
 }

@@ -46,10 +46,35 @@ export function useRefacciones(
   })
 }
 
-// Se pide bajo demanda (al exportar el PDF) para traer el inventario completo
-// sin importar la búsqueda o página activa en pantalla.
-export function fetchTodasLasPiezas() {
-  return api.get<ListResponse>('/refacciones?page=1&pageSize=100')
+// Tope de la API por petición (RefaccionQuerySchema.pageSize).
+const MAX_PAGE_SIZE = 100
+
+// Catálogo completo, sin importar la búsqueda o página activa en pantalla. Como
+// la API no entrega más de 100 por petición, se recorren las páginas hasta
+// juntar el total: pedir solo la primera dejaba fuera las piezas del 101 en
+// adelante en los selectores y en el PDF.
+export async function fetchTodasLasPiezas(): Promise<ListResponse> {
+  const primera = await api.get<ListResponse>(`/refacciones?page=1&pageSize=${MAX_PAGE_SIZE}`)
+  const total = primera.pagination.total
+  const paginas = Math.ceil(total / MAX_PAGE_SIZE)
+
+  const data = [...primera.data]
+  for (let page = 2; page <= paginas; page++) {
+    const siguiente = await api.get<ListResponse>(`/refacciones?page=${page}&pageSize=${MAX_PAGE_SIZE}`)
+    data.push(...siguiente.data)
+  }
+
+  return { data, pagination: { page: 1, pageSize: data.length, total } }
+}
+
+// Misma carga completa, pero cacheada por react-query para las pantallas que
+// necesitan el catálogo entero (selectores de pieza por tipo).
+export function useTodasLasPiezas(enabled = true) {
+  return useQuery({
+    queryKey: ['refacciones', 'todas'],
+    queryFn: fetchTodasLasPiezas,
+    enabled,
+  })
 }
 
 export function useCreateRefaccion() {

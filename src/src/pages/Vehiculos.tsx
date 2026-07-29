@@ -23,6 +23,9 @@ import { useSucursales } from '../hooks/useSucursales'
 import type { Sucursal } from '../hooks/useSucursales'
 import { exportVehiculosReporteToPdf } from '../lib/exportVehiculosReporte'
 import {
+  TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre,
+} from '../lib/validaciones'
+import {
   useMantenimientos, useCreateMantenimiento, useUpdateMantenimiento, useDeleteMantenimiento,
 } from '../hooks/useMantenimientos'
 import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimientos'
@@ -40,7 +43,7 @@ import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 import { usePiezasVehiculo, useSetPiezaVehiculo, useRemovePiezaVehiculo } from '../hooks/usePiezasVehiculo'
 import { useAddTiposPiezaVehiculo, useRemoveTipoPiezaVehiculo } from '../hooks/useTiposPiezaVehiculo'
 import { useTiposPieza } from '../hooks/useTiposPieza'
-import { useRefacciones } from '../hooks/useRefacciones'
+import { useTodasLasPiezas } from '../hooks/useRefacciones'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
@@ -159,8 +162,18 @@ export function RequerimientoForm({
       desde:           'ahora' as 'ahora' | 'ultimo',
     },
     validate: {
-      nombre: (v) => !v.trim() ? 'Requerido' : v.length > 120 ? 'Máximo 120 caracteres' : null,
-      categoria: (v) => !v || !v.trim() ? 'Requerido' : null,
+      nombre: (v) =>
+        !v.trim() ? 'Requerido' :
+        v.length > 40 ? 'Máximo 40 caracteres' :
+        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
+      descripcion: (v) =>
+        !v || !v.trim() ? 'Requerido' :
+        v.length > 255 ? 'Máximo 255 caracteres' :
+        !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
+      categoria: (v) =>
+        !v || !v.trim() ? 'Requerido' :
+        v.length > 30 ? 'Máximo 30 caracteres' :
+        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
       fecha_reporte: (v) => !v ? 'Requerido' : null,
       intervalo_km: (v, vals) =>
         (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
@@ -224,7 +237,7 @@ export function RequerimientoForm({
 
     onSubmit({
       nombre:          vals.nombre.trim(),
-      descripcion:     vals.descripcion?.trim()  || null,
+      descripcion:     vals.descripcion.trim(),
       categoria:       vals.categoria?.trim()    || null,
       trigger_mode:    vals.trigger_mode,
       tipo:            vals.tipo,
@@ -241,16 +254,26 @@ export function RequerimientoForm({
   return (
     <form onSubmit={form.onSubmit(handleSubmit)}>
       <Stack gap="sm">
-        <TextInput label="Nombre" placeholder="Ej. Cambio de filtro de aceite" required {...form.getInputProps('nombre')} />
-        <Textarea label="Descripción" autosize minRows={2} {...form.getInputProps('descripcion')} />
+        <TextInput
+          label="Nombre" placeholder="Ej. Cambio de filtro de aceite" required
+          maxLength={40}
+          {...form.getInputProps('nombre')}
+          onChange={(e) => form.setFieldValue('nombre', limpiarTextoSimple(e.currentTarget.value, 40))}
+        />
+        <Textarea
+          label="Descripción" required autosize minRows={2}
+          maxLength={255}
+          {...form.getInputProps('descripcion')}
+          onChange={(e) => form.setFieldValue('descripcion', limpiarTextoLibre(e.currentTarget.value, 255))}
+        />
         <Select
           label="Categoría" required
           placeholder="Selecciona o escribe para crear una categoría"
           data={categoriaOptions}
           searchable
-          onSearchChange={setCategoriaSearch}
+          onSearchChange={(v) => setCategoriaSearch(limpiarTextoSimple(v, 30))}
           nothingFoundMessage="Escribe para crear una nueva categoría"
-          maxLength={80}
+          maxLength={30}
           {...form.getInputProps('categoria')}
           onChange={(v) => form.setFieldValue('categoria', v ?? '')}
         />
@@ -287,12 +310,18 @@ export function RequerimientoForm({
           {...form.getInputProps('trigger_mode')}
         />
         {(mode === 'km' || mode === 'ambos') && (
-          <NumberInput label="Intervalo de kilometraje" required min={1} suffix=" km" thousandSeparator="," {...form.getInputProps('intervalo_km')} />
+          <NumberInput
+            label="Intervalo de kilometraje" required min={1}
+            suffix=" km" thousandSeparator=","
+            allowDecimal={false} allowNegative={false}
+            {...form.getInputProps('intervalo_km')}
+          />
         )}
         {(mode === 'meses' || mode === 'ambos') && (
           <Group align="flex-end" gap="sm" grow>
             <NumberInput
               label={form.values.tipo === 'unica' ? 'Caduca en' : 'Intervalo'} required min={1}
+              allowDecimal={false} allowNegative={false}
               {...form.getInputProps('intervalo_tiempo')}
             />
             <Select
@@ -1490,7 +1519,7 @@ function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
 // uno: dos unidades del mismo modelo pueden usar filtros de aire distintos.
 function PiezasVehiculoSection({ vehiculoId }: { vehiculoId: number }) {
   const { data, isLoading } = usePiezasVehiculo(vehiculoId)
-  const { data: piezasData } = useRefacciones(1, '', 'all', 100)
+  const { data: piezasData } = useTodasLasPiezas()
   const { data: tiposData } = useTiposPieza()
   const setMut       = useSetPiezaVehiculo()
   const removeMut    = useRemovePiezaVehiculo()

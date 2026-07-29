@@ -4,11 +4,30 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import * as service from '../services/requerimentosService'
+import { TEXTO_SIMPLE, TEXTO_LIBRE } from '../schemas/common'
 
 const Schema = z.object({
-  nombre:          z.string().min(1).max(120).trim().optional(),
-  descripcion:     z.string().max(5000).trim().nullable().optional(),
-  categoria:       z.string().max(80).trim().nullable().optional(),
+  nombre: z
+    .string()
+    .trim()
+    .min(1, 'Requerido')
+    .max(40, 'Máximo 40 caracteres')
+    .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones')
+    .optional(),
+  descripcion: z
+    .string()
+    .trim()
+    .min(1, 'Requerido')
+    .max(255, 'Máximo 255 caracteres')
+    .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos')
+    .optional(),
+  categoria: z
+    .string()
+    .trim()
+    .max(30, 'Máximo 30 caracteres')
+    .refine((v) => v === '' || TEXTO_SIMPLE.test(v), 'Solo letras, números, espacios y guiones')
+    .nullable()
+    .optional(),
   trigger_mode:    z.enum(['km', 'meses', 'ambos']).optional(),
   tipo:            z.enum(['recurrente', 'unica']).optional(),
   intervalo_km:    z.coerce.number().int().positive().nullable().optional(),

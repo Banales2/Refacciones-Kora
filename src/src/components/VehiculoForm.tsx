@@ -14,6 +14,7 @@ import { useSucursales } from '../hooks/useSucursales'
 import { useRutas } from '../hooks/useRutas'
 import { useSeguros } from '../hooks/useSeguros'
 import { usePermisosCirculacion } from '../hooks/usePermisosCirculacion'
+import { CODIGO, limpiarCodigo } from '../lib/validaciones'
 
 const TIPO_META: Record<TipoVehiculo, { label: string; color: string }> = {
   camion:       { label: 'Unidad de reparto', color: 'blue'   },
@@ -87,8 +88,9 @@ function fromDateLocal(d: Date | string | null): string {
   return `${year}-${month}-${day}`
 }
 
-function needsField(tipo: TipoVehiculo | '', check: 'combustible' | 'status' | 'km' | 'sucursal' | 'ruta' | 'tonelaje' | 'pies' | 'ubicacion') {
+function needsField(tipo: TipoVehiculo | '', check: 'combustible' | 'status' | 'km' | 'sucursal' | 'ruta' | 'tonelaje' | 'pies' | 'ubicacion' | 'placas') {
   const t = tipo
+  if (check === 'placas')      return t !== '' && t !== 'montacargas'
   if (check === 'combustible') return t === 'camion' || t === 'tractocamion' || t === 'utilitario' || t === 'montacargas'
   if (check === 'status')      return t === 'camion' || t === 'tractocamion' || t === 'caja_trailer' || t === 'utilitario' || t === 'montacargas'
   if (check === 'km')          return t === 'camion' || t === 'tractocamion' || t === 'utilitario'
@@ -132,14 +134,25 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
     validate: {
       tipo:        (v) => !isEdit && !v ? 'Requerido' : null,
       modelo_id:   (v) => !v ? 'Requerido' : null,
-      serie:       (v) => !v.trim() ? 'Requerido' : null,
+      serie: (v) =>
+        !v.trim() ? 'Requerido' :
+        v.length > 20 ? 'Máximo 20 caracteres' :
+        !CODIGO.test(v.trim()) ? 'Solo mayúsculas, números y guiones' : null,
+      placas: (v, vals) =>
+        needsField(vals.tipo, 'placas') && !v.trim() ? 'Requerido' :
+        !v.trim() ? null :
+        v.length > 10 ? 'Máximo 10 caracteres' :
+        !CODIGO.test(v.trim()) ? 'Solo mayúsculas, números y guiones' : null,
+      fecha_compra: (v) => !v ? 'Requerido' : null,
       combustible: (v, vals) => needsField(vals.tipo, 'combustible') && !v ? 'Requerido' : null,
       status:      (v, vals) => needsField(vals.tipo, 'status')      && !v ? 'Requerido' : null,
       sucursal_id: (v, vals) => needsField(vals.tipo, 'sucursal')    && !v ? 'Requerido' : null,
       ruta_id:     (v, vals) => needsField(vals.tipo, 'ruta')        && !v ? 'Requerido' : null,
       tonelaje:    (v, vals) => needsField(vals.tipo, 'tonelaje')    && (v === '' || v === null) ? 'Requerido' : null,
       pies:        (v, vals) => needsField(vals.tipo, 'pies')        && (v === '' || v === null) ? 'Requerido' : null,
-      kilometraje: (v, vals) => needsField(vals.tipo, 'km')          && (v === '' || v === null) ? 'Requerido' : null,
+      kilometraje: (v, vals) =>
+        needsField(vals.tipo, 'km') && (v === '' || v === null) ? 'Requerido' :
+        v !== '' && v !== null && !Number.isInteger(Number(v)) ? 'Solo números enteros' : null,
     },
   })
 
@@ -278,11 +291,23 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
         {/* Campos comunes */}
         <Grid>
           <Grid.Col span={tipo === 'montacargas' ? 12 : 6}>
-            <TextInput label="No. de serie" placeholder="Serie" required {...form.getInputProps('serie')} />
+            <TextInput
+              label="No. de serie" placeholder="Serie" required
+              maxLength={20}
+              styles={{ input: { textTransform: 'uppercase' } }}
+              {...form.getInputProps('serie')}
+              onChange={(e) => form.setFieldValue('serie', limpiarCodigo(e.currentTarget.value, 20))}
+            />
           </Grid.Col>
           {tipo !== 'montacargas' && (
             <Grid.Col span={6}>
-              <TextInput label="Placas" placeholder="Ej. ABC-123-A" {...form.getInputProps('placas')} />
+              <TextInput
+                label="Placas" placeholder="Ej. ABC-123-A" required
+                maxLength={10}
+                styles={{ input: { textTransform: 'uppercase' } }}
+                {...form.getInputProps('placas')}
+                onChange={(e) => form.setFieldValue('placas', limpiarCodigo(e.currentTarget.value, 10))}
+              />
             </Grid.Col>
           )}
         </Grid>
@@ -291,10 +316,11 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
           label="Fecha de compra"
           placeholder="dd/mm/aaaa"
           valueFormat="DD/MM/YYYY"
-          clearable
+          required
           maxDate={new Date()}
           value={toDateLocal(form.values.fecha_compra)}
           onChange={(d) => form.setFieldValue('fecha_compra', fromDateLocal(d as Date | null))}
+          error={form.errors.fecha_compra}
         />
 
         <Select
@@ -329,7 +355,11 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
               </Grid.Col>
               <Grid.Col span={6}>
-                <NumberInput label="Kilometraje" placeholder="0" min={0} required {...form.getInputProps('kilometraje')} />
+                <NumberInput
+                  label="Kilometraje" placeholder="0" min={0} required
+                  allowDecimal={false} allowNegative={false} clampBehavior="strict"
+                  {...form.getInputProps('kilometraje')}
+                />
               </Grid.Col>
               <Grid.Col span={6}>
                 <Select label="Sucursal" data={sucursalesOpts} placeholder="Sucursal" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('sucursal_id')} />
@@ -356,7 +386,11 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
               </Grid.Col>
               <Grid.Col span={6}>
-                <NumberInput label="Kilometraje" placeholder="0" min={0} required {...form.getInputProps('kilometraje')} />
+                <NumberInput
+                  label="Kilometraje" placeholder="0" min={0} required
+                  allowDecimal={false} allowNegative={false} clampBehavior="strict"
+                  {...form.getInputProps('kilometraje')}
+                />
               </Grid.Col>
               <Grid.Col span={6}>
                 <Select label="Traslado" data={rutasOpts} placeholder="Traslado asignado" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
@@ -419,7 +453,11 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
               </Grid.Col>
               <Grid.Col span={6}>
-                <NumberInput label="Kilometraje" placeholder="0" min={0} required {...form.getInputProps('kilometraje')} />
+                <NumberInput
+                  label="Kilometraje" placeholder="0" min={0} required
+                  allowDecimal={false} allowNegative={false} clampBehavior="strict"
+                  {...form.getInputProps('kilometraje')}
+                />
               </Grid.Col>
               <Grid.Col span={6}>
                 <TextInput label="Ubicación" placeholder="Ubicación actual (opcional)" {...form.getInputProps('ubicacion')} />
