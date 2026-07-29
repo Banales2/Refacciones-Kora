@@ -1,4 +1,5 @@
 import { HttpRequest } from '@azure/functions'
+import { consumir } from './rateLimit'
 
 export interface ClientPrincipal {
   identityProvider: string
@@ -26,8 +27,18 @@ export function getClientPrincipal(req: HttpRequest): ClientPrincipal | null {
   }
 }
 
+// Todos los endpoints pasan por requireRole, así que el límite se aplica aquí
+// una sola vez en lugar de repetirlo en cada función. Se cuenta por usuario
+// cuando hay sesión (para que varias personas en la misma oficina, que salen
+// por la misma IP, no compartan cuota) y por IP cuando no la hay.
+function limitarPeticion(req: HttpRequest, principal: ClientPrincipal | null): void {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  consumir(principal ? `u:${principal.userId}` : `ip:${ip ?? 'desconocida'}`, req.method)
+}
+
 export function requireRole(req: HttpRequest, ...roles: string[]): ClientPrincipal {
   const principal = getClientPrincipal(req)
+  limitarPeticion(req, principal)
   if (!principal) {
     throw new AuthError('No autenticado', 401)
   }

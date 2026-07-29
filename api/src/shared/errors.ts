@@ -1,6 +1,7 @@
 import { HttpResponseInit, InvocationContext } from '@azure/functions'
 import { ZodError } from 'zod'
 import { AuthError } from './auth'
+import { RateLimitError } from './rateLimit'
 
 export class AppError extends Error {
   constructor(
@@ -32,6 +33,14 @@ export class ConflictError extends AppError {
 
 export function handleError(err: unknown, context: InvocationContext): HttpResponseInit {
   if (err instanceof AuthError) return { status: err.status, jsonBody: { error: err.message } }
+  // 429 lleva Retry-After para que el cliente sepa cuánto esperar.
+  if (err instanceof RateLimitError) {
+    return {
+      status: err.status,
+      headers: { 'Retry-After': String(err.retryAfter) },
+      jsonBody: { error: err.message, code: err.code },
+    }
+  }
   if (err instanceof AppError) return { status: err.status, jsonBody: { error: err.message, code: err.code } }
   if (err instanceof ZodError) return { status: 400, jsonBody: { error: 'Datos inválidos', details: err.flatten().fieldErrors } }
   context.error('Error no manejado:', err)
