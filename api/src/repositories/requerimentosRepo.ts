@@ -164,8 +164,11 @@ export async function syncUnicaStatuses(
   exec: sql.ConnectionPool | sql.Transaction, ids?: number[]
 ): Promise<void> {
   if (ids && ids.length === 0) return
-  const filter = ids ? `AND re.id IN (${ids.join(',')})` : ''
-  await exec.request().query(`
+  const req = exec.request()
+  const filter = ids
+    ? `AND re.id IN (${ids.map((id, i) => { req.input(`r${i}`, sql.Int, id); return `@r${i}` }).join(',')})`
+    : ''
+  await req.query(`
     UPDATE re
     SET re.status = CASE
                        WHEN latest.fecha <= CAST(GETDATE() AS DATE) THEN 'completado'

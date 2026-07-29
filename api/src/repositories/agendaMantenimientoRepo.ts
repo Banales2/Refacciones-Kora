@@ -50,9 +50,13 @@ async function attachReqIds<T extends { id: number }>(
   pool: sql.ConnectionPool, rows: T[]
 ): Promise<(T & { requerimiento_ids: number[] })[]> {
   if (rows.length === 0) return []
-  const ids = rows.map(r => r.id).join(',')
-  const lr = await pool.request().query(
-    `SELECT agenda_id, requerimiento_id FROM agenda_requerimientos WHERE agenda_id IN (${ids})`
+  const req = pool.request()
+  const params = rows.map((r, i) => {
+    req.input(`a${i}`, sql.Int, r.id)
+    return `@a${i}`
+  })
+  const lr = await req.query(
+    `SELECT agenda_id, requerimiento_id FROM agenda_requerimientos WHERE agenda_id IN (${params.join(',')})`
   )
   const map = new Map<number, number[]>()
   for (const { agenda_id, requerimiento_id } of lr.recordset) {

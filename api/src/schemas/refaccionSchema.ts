@@ -4,9 +4,13 @@ export const RefaccionCreateSchema = z.object({
   numero_serie: z
     .string()
     .min(1, 'Número de serie requerido')
-    .max(80, 'Número de serie demasiado largo')
+    .max(20, 'Máximo 20 caracteres')
     .regex(/^[A-Z0-9-]+$/, 'Solo mayúsculas, números y guiones'),
-  descripcion: z.string().min(3).max(300),
+  descripcion: z
+    .string()
+    .trim()
+    .min(3, 'Mínimo 3 caracteres')
+    .max(255, 'Máximo 255 caracteres'),
   // Obligatorio: el tipo es la única clasificación de la pieza. No es nullable,
   // así que el update tampoco puede dejar sin tipo una pieza que ya lo tiene.
   tipo_pieza_id: z.coerce

@@ -26,7 +26,7 @@ export interface LotePayload {
   fecha_compra: string
   costo_unitario: number
   cantidad_inicial: number
-  num_factura: string | null
+  num_factura: string
 }
 
 export function useLotes(piezaId: number | null) {

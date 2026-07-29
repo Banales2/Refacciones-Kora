@@ -20,6 +20,7 @@ import LotesDrawer from '../components/LotesDrawer'
 import { exportPiezasReporteToPdf } from '../lib/exportPiezasReporte'
 import { agruparPorTipo, SIN_TIPO } from '../lib/piezasGrupos'
 import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
+import { limpiarTextoSimple } from '../lib/validaciones'
 
 function stockColor(qty: number) {
   if (qty === 0) return 'red'
@@ -56,11 +57,11 @@ function PiezaForm({
     validate: {
       numero_serie: (v) =>
         !v.trim() ? 'Requerido' :
-        v.length > 80 ? 'Máximo 80 caracteres' :
+        v.length > 20 ? 'Máximo 20 caracteres' :
         !/^[A-Z0-9-]+$/.test(v) ? 'Solo mayúsculas, números y guiones' : null,
       descripcion: (v) =>
         v.trim().length < 3 ? 'Mínimo 3 caracteres' :
-        v.length > 300 ? 'Máximo 300 caracteres' : null,
+        v.length > 255 ? 'Máximo 255 caracteres' : null,
       tipo_pieza_id: (v) => !v ? 'Requerido' : null,
     },
   })
@@ -102,10 +103,15 @@ function PiezaForm({
           label="Número de serie"
           placeholder="EJ-001"
           required
+          maxLength={20}
           {...form.getInputProps('numero_serie')}
           styles={{ input: { textTransform: 'uppercase' } }}
           onChange={(e) =>
-            form.setFieldValue('numero_serie', e.currentTarget.value.toUpperCase())
+            // Allowlist: solo mayúsculas, números y guiones
+            form.setFieldValue(
+              'numero_serie',
+              e.currentTarget.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20),
+            )
           }
         />
         <Textarea
@@ -113,6 +119,7 @@ function PiezaForm({
           placeholder="Descripción de la refacción"
           rows={3}
           required
+          maxLength={255}
           {...form.getInputProps('descripcion')}
         />
         <Select
@@ -123,7 +130,8 @@ function PiezaForm({
           searchable
           required
           searchValue={tipoSearch}
-          onSearchChange={setTipoSearch}
+          // Allowlist: solo letras, números, espacios y guiones (máx. 40)
+          onSearchChange={(v) => setTipoSearch(limpiarTextoSimple(v, 40))}
           nothingFoundMessage="Escribe para crear un tipo nuevo"
           value={form.values.tipo_pieza_id || null}
           onChange={handleTipoChange}

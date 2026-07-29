@@ -1,7 +1,15 @@
 import { z } from 'zod'
 
 export const TipoPiezaCreateSchema = z.object({
-  nombre: z.string().min(2, 'Nombre requerido').max(80, 'Máximo 80 caracteres'),
+  nombre: z
+    .string()
+    .trim()
+    .min(2, 'Nombre requerido')
+    .max(40, 'Máximo 40 caracteres')
+    .regex(
+      /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 -]+$/,
+      'Solo letras, números, espacios y guiones',
+    ),
 })
 
 export const TipoPiezaUpdateSchema = TipoPiezaCreateSchema.partial()

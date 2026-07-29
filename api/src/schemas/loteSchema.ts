@@ -14,17 +14,44 @@ const fechaCompra = z
 export const LoteCreateSchema = z.object({
   proveedor_id: z.coerce.number().int().min(1, 'Proveedor requerido'),
   fecha_compra: fechaCompra,
-  costo_unitario: z.coerce.number().positive('Debe ser mayor a 0'),
-  cantidad_inicial: z.coerce.number().int().min(1, 'Mínimo 1 unidad'),
-  num_factura: z.string().max(100).nullable().optional(),
+  costo_unitario: z.coerce
+    .number()
+    .positive('Debe ser mayor a 0')
+    .max(200000, 'No puede ser mayor a 200,000'),
+  cantidad_inicial: z.coerce
+    .number()
+    .int()
+    .min(1, 'Mínimo 1 unidad')
+    .max(999, 'Máximo 999 unidades'),
+  num_factura: z
+    .string()
+    .trim()
+    .min(1, 'Núm. factura requerido')
+    .max(30, 'Máximo 30 caracteres')
+    .regex(/^[A-Za-z0-9-]+$/, 'Solo letras, números y guiones'),
 })
 
 export const LoteUpdateSchema = z.object({
   proveedor_id: z.coerce.number().int().min(1).optional(),
   fecha_compra: fechaCompra.optional(),
-  costo_unitario: z.coerce.number().positive().optional(),
-  cantidad_inicial: z.coerce.number().int().min(1).optional(),
-  num_factura: z.string().max(100).nullable().optional(),
+  costo_unitario: z.coerce
+    .number()
+    .positive('Debe ser mayor a 0')
+    .max(200000, 'No puede ser mayor a 200,000')
+    .optional(),
+  cantidad_inicial: z.coerce
+    .number()
+    .int()
+    .min(1, 'Mínimo 1 unidad')
+    .max(999, 'Máximo 999 unidades')
+    .optional(),
+  num_factura: z
+    .string()
+    .trim()
+    .min(1, 'Núm. factura requerido')
+    .max(30, 'Máximo 30 caracteres')
+    .regex(/^[A-Za-z0-9-]+$/, 'Solo letras, números y guiones')
+    .optional(),
 })
 
 export type LoteCreate = z.infer<typeof LoteCreateSchema>

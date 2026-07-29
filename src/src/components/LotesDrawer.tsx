@@ -84,11 +84,23 @@ function LoteForm({
         if (v > hoy) return 'No puede ser una fecha futura'
         return null
       },
-      costo_unitario: (v) => (v === '' || Number(v) <= 0 ? 'Debe ser mayor a 0' : null),
-      cantidad_inicial: (v) =>
-        v === '' || !Number.isInteger(Number(v)) || Number(v) < 1
-          ? 'Mínimo 1 unidad entera'
-          : null,
+      costo_unitario: (v) => {
+        if (v === '' || Number(v) <= 0) return 'Debe ser mayor a 0'
+        if (Number(v) > 200000) return 'No puede ser mayor a $200,000'
+        return null
+      },
+      cantidad_inicial: (v) => {
+        if (v === '' || !Number.isInteger(Number(v)) || Number(v) < 1)
+          return 'Mínimo 1 unidad entera'
+        if (Number(v) > 999) return 'Máximo 999 unidades'
+        return null
+      },
+      num_factura: (v) => {
+        if (!v.trim()) return 'Núm. factura requerido'
+        if (v.trim().length > 30) return 'Máximo 30 caracteres'
+        if (!/^[A-Za-z0-9-]+$/.test(v.trim())) return 'Solo letras, números y guiones'
+        return null
+      },
     },
   })
 
@@ -114,6 +126,8 @@ function LoteForm({
           label="Costo unitario"
           placeholder="0.00"
           min={0.01}
+          max={200000}
+          clampBehavior="strict"
           decimalScale={2}
           prefix="$"
           required
@@ -123,14 +137,22 @@ function LoteForm({
           label="Cantidad inicial"
           placeholder="0"
           min={1}
+          max={999}
+          clampBehavior="strict"
           allowDecimal={false}
           required
           {...form.getInputProps('cantidad_inicial')}
         />
         <TextInput
           label="Núm. factura"
-          placeholder="Opcional"
+          placeholder="Ej. A-12345"
+          maxLength={30}
+          required
           {...form.getInputProps('num_factura')}
+          onChange={(e) =>
+            // Allowlist: solo letras, números y guiones
+            form.setFieldValue('num_factura', e.currentTarget.value.replace(/[^A-Za-z0-9-]/g, ''))
+          }
         />
         {error && (
           <Alert color="red" title="Error">{error}</Alert>
@@ -171,7 +193,7 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
       fecha_compra: values.fecha_compra,
       costo_unitario: Number(values.costo_unitario),
       cantidad_inicial: Number(values.cantidad_inicial),
-      num_factura: values.num_factura.trim() || null,
+      num_factura: values.num_factura.trim(),
     }
   }
 

@@ -190,12 +190,16 @@ export interface MantenimientoLink {
 export async function findMantenimientoLinks(requerimientoIds: number[]): Promise<MantenimientoLink[]> {
   if (requerimientoIds.length === 0) return []
   const pool = await getPool()
-  const ids = requerimientoIds.join(',')
-  const r = await pool.request().query(`
+  const req = pool.request()
+  const params = requerimientoIds.map((id, i) => {
+    req.input(`r${i}`, sql.Int, id)
+    return `@r${i}`
+  })
+  const r = await req.query(`
     SELECT mr.requerimiento_id, m.fecha, m.km_actual
     FROM mantenimiento_requerimientos mr
     JOIN mantenimiento m ON m.id = mr.mantenimiento_id
-    WHERE mr.requerimiento_id IN (${ids})
+    WHERE mr.requerimiento_id IN (${params.join(',')})
       AND m.fecha <= CAST(GETDATE() AS DATE)
     ORDER BY m.fecha DESC
   `)

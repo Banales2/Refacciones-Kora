@@ -43,9 +43,13 @@ async function attachReqIds(
   rows: Omit<Mantenimiento, 'requerimiento_ids' | 'piezas_total'>[],
 ): Promise<Omit<Mantenimiento, 'piezas_total'>[]> {
   if (rows.length === 0) return []
-  const ids = rows.map(r => r.id).join(',')
-  const lr = await pool.request().query(
-    `SELECT mantenimiento_id, requerimiento_id FROM mantenimiento_requerimientos WHERE mantenimiento_id IN (${ids})`
+  const req = pool.request()
+  const params = rows.map((r, i) => {
+    req.input(`m${i}`, sql.Int, r.id)
+    return `@m${i}`
+  })
+  const lr = await req.query(
+    `SELECT mantenimiento_id, requerimiento_id FROM mantenimiento_requerimientos WHERE mantenimiento_id IN (${params.join(',')})`
   )
   const map = new Map<number, number[]>()
   for (const { mantenimiento_id, requerimiento_id } of lr.recordset) {
@@ -60,11 +64,15 @@ async function attachPiezasTotal(
   rows: Omit<Mantenimiento, 'piezas_total'>[],
 ): Promise<Mantenimiento[]> {
   if (rows.length === 0) return []
-  const ids = rows.map(r => r.id).join(',')
-  const pr = await pool.request().query(`
+  const req = pool.request()
+  const params = rows.map((r, i) => {
+    req.input(`m${i}`, sql.Int, r.id)
+    return `@m${i}`
+  })
+  const pr = await req.query(`
     SELECT mantenimiento_id, SUM(cantidad * costo_unitario) AS piezas_total
     FROM detalle_mtto_pieza
-    WHERE mantenimiento_id IN (${ids})
+    WHERE mantenimiento_id IN (${params.join(',')})
     GROUP BY mantenimiento_id
   `)
   const map = new Map<number, number>()

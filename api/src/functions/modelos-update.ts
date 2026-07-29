@@ -5,10 +5,23 @@ import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import * as service from '../services/modelosService'
 import { TIPOS_VEHICULO } from '../schemas/vehiculoSchema'
+import { TEXTO_SIMPLE } from '../schemas/common'
 
 const Schema = z.object({
-  marca:            z.string().min(1).max(80).trim().optional(),
-  nombre:           z.string().min(1).max(120).trim().optional(),
+  marca: z
+    .string()
+    .trim()
+    .min(1, 'Requerido')
+    .max(40, 'Máximo 40 caracteres')
+    .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones')
+    .optional(),
+  nombre: z
+    .string()
+    .trim()
+    .min(1, 'Requerido')
+    .max(40, 'Máximo 40 caracteres')
+    .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones')
+    .optional(),
   anio:             z.coerce.number().int().min(1950).max(2100).nullable().optional(),
   tipos_permitidos: z.array(z.enum(TIPOS_VEHICULO)).optional(),
 })

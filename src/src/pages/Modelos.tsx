@@ -29,6 +29,7 @@ import type {
   TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload,
 } from '../hooks/useVehiculos'
 import { VehiculoForm } from '../components/VehiculoForm'
+import { TEXTO_SIMPLE, limpiarTextoSimple } from '../lib/validaciones'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -111,8 +112,14 @@ function ModeloForm({
       tipos_permitidos: (initial?.tipos_permitidos ?? []) as TipoVehiculo[],
     },
     validate: {
-      marca:  (v) => !v.trim() ? 'Requerido' : v.length > 80  ? 'Máximo 80 caracteres'  : null,
-      nombre: (v) => !v.trim() ? 'Requerido' : v.length > 120 ? 'Máximo 120 caracteres' : null,
+      marca: (v) =>
+        !v.trim() ? 'Requerido' :
+        v.length > 40 ? 'Máximo 40 caracteres' :
+        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
+      nombre: (v) =>
+        !v.trim() ? 'Requerido' :
+        v.length > 40 ? 'Máximo 40 caracteres' :
+        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
       anio: (v) => {
         if (v === '' || v === null) return 'Requerido'
         const n = Number(v)
@@ -143,18 +150,26 @@ function ModeloForm({
       <Stack gap="sm">
         <Autocomplete
           label="Marca" placeholder="Ej. Kenworth" required
+          maxLength={40}
           data={marcasOpts}
           {...form.getInputProps('marca')}
+          onChange={(v) => form.setFieldValue('marca', limpiarTextoSimple(v, 40))}
         />
         <Group grow align="flex-start">
           <Autocomplete
             label="Nombre de modelo" placeholder="Ej. T680" required
+            maxLength={40}
             data={nombresOpts}
             {...form.getInputProps('nombre')}
+            onChange={(v) => form.setFieldValue('nombre', limpiarTextoSimple(v, 40))}
           />
           <NumberInput
             label="Año" placeholder="Ej. 2024" required
-            min={1950} max={AÑO_MAX} allowDecimal={false}
+            min={1950} max={AÑO_MAX} allowDecimal={false} clampBehavior="strict"
+            // Flechas sostenidas: arrancan tras 300 ms y aceleran hasta 20 ms
+            // por paso, para recorrer décadas sin soltar el botón.
+            stepHoldDelay={300}
+            stepHoldInterval={(count) => Math.max(120 - count * 8, 20)}
             {...form.getInputProps('anio')}
           />
         </Group>
@@ -565,7 +580,8 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
           value={seleccion}
           onChange={handleChange}
           searchValue={busqueda}
-          onSearchChange={setBusqueda}
+          // Allowlist: solo letras, números, espacios y guiones (máx. 40)
+          onSearchChange={(v) => setBusqueda(limpiarTextoSimple(v, 40))}
           nothingFoundMessage="Escribe para crear un tipo nuevo"
         />
         <Button
