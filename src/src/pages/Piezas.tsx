@@ -1,6 +1,6 @@
 // Página Piezas: catálogo e inventario de refacciones. Sin búsqueda muestra
-// todas las piezas agrupadas por categoría (acordeón); al buscar cambia a una
-// tabla paginada. Permite CRUD de piezas (con creación de categorías nuevas
+// todas las piezas agrupadas por tipo (acordeón); al buscar cambia a una
+// tabla paginada. Permite CRUD de piezas (con creación de tipos nuevos
 // desde el formulario), generar el reporte PDF del inventario y abrir el
 // drawer de lotes de compra de cada pieza.
 import { useState, useMemo } from 'react'
@@ -18,7 +18,8 @@ import {
 import type { Pieza, SearchBy } from '../hooks/useRefacciones'
 import LotesDrawer from '../components/LotesDrawer'
 import { exportPiezasReporteToPdf } from '../lib/exportPiezasReporte'
-import { CATEGORIAS } from '../lib/piezasCategorias'
+import { agruparPorTipo, SIN_TIPO } from '../lib/piezasGrupos'
+import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
 
 function stockColor(qty: number) {
   if (qty === 0) return 'red'
@@ -27,25 +28,31 @@ function stockColor(qty: number) {
 }
 
 
-type FormValues = { numero_serie: string; descripcion: string; categoria: string }
+// El tipo indica qué necesidad de un modelo cubre la refacción ("filtro de
+// aire") y es obligatorio: sin él la refacción no se puede clasificar ni
+// asignar a un vehículo. Se maneja como string porque es el valor del Select;
+// '' solo aparece en las piezas anteriores al catálogo de tipos, que al
+// editarse quedan obligadas a elegir uno.
+type FormValues = { numero_serie: string; descripcion: string; tipo_pieza_id: string }
+
+// Valor centinela del selector de tipo: al elegirlo se crea el tipo escrito.
+const CREAR_TIPO = '__crear__'
 
 function PiezaForm({
   initial,
-  categoriasDisponibles,
   isPending,
   error,
   onSubmit,
   onCancel,
 }: {
   initial?: FormValues
-  categoriasDisponibles: string[]
   isPending: boolean
   error: string | null
   onSubmit: (v: FormValues) => void
   onCancel: () => void
 }) {
   const form = useForm<FormValues>({
-    initialValues: initial ?? { numero_serie: '', descripcion: '', categoria: '' },
+    initialValues: initial ?? { numero_serie: '', descripcion: '', tipo_pieza_id: '' },
     validate: {
       numero_serie: (v) =>
         !v.trim() ? 'Requerido' :
@@ -54,23 +61,39 @@ function PiezaForm({
       descripcion: (v) =>
         v.trim().length < 3 ? 'Mínimo 3 caracteres' :
         v.length > 300 ? 'Máximo 300 caracteres' : null,
-      categoria: (v) =>
-        !v.trim() ? 'Requerido' :
-        v.length > 60 ? 'Máximo 60 caracteres' : null,
+      tipo_pieza_id: (v) => !v ? 'Requerido' : null,
     },
   })
 
-  const [categoriaSearch, setCategoriaSearch] = useState('')
+  const [tipoSearch, setTipoSearch] = useState('')
 
-  const categoriaOptions = useMemo(() => {
-    const opts = categoriasDisponibles.map((c) => ({ value: c, label: c }))
-    const nueva = categoriaSearch.trim()
-    const yaExiste = categoriasDisponibles.some((c) => c.toLowerCase() === nueva.toLowerCase())
-    if (nueva && !yaExiste) {
-      opts.unshift({ value: nueva, label: `+ Crear categoría "${nueva}"` })
+  const { data: tiposData } = useTiposPieza()
+  const crearTipoMut = useCreateTipoPieza()
+
+  const tipoOptions = useMemo(() => {
+    const tipos = tiposData?.data ?? []
+    const opts = tipos.map((t) => ({ value: String(t.id), label: t.nombre }))
+    const nuevo = tipoSearch.trim()
+    const yaExiste = tipos.some((t) => t.nombre.toLowerCase() === nuevo.toLowerCase())
+    if (nuevo && !yaExiste) {
+      opts.unshift({ value: CREAR_TIPO, label: `+ Crear tipo "${nuevo}"` })
     }
     return opts
-  }, [categoriasDisponibles, categoriaSearch])
+  }, [tiposData, tipoSearch])
+
+  // El centinela nunca se guarda: se crea el tipo y se deja seleccionado el id
+  // real que devuelve el backend.
+  function handleTipoChange(value: string | null) {
+    if (value !== CREAR_TIPO) { form.setFieldValue('tipo_pieza_id', value ?? ''); return }
+    const nombre = tipoSearch.trim()
+    if (!nombre) return
+    crearTipoMut.mutate(nombre, {
+      onSuccess: ({ data: tipo }) => {
+        form.setFieldValue('tipo_pieza_id', String(tipo.id))
+        setTipoSearch('')
+      },
+    })
+  }
 
   return (
     <form onSubmit={form.onSubmit(onSubmit)}>
@@ -93,15 +116,18 @@ function PiezaForm({
           {...form.getInputProps('descripcion')}
         />
         <Select
-          label="Categoría"
-          placeholder="Selecciona o escribe para crear una categoría"
-          data={categoriaOptions}
+          label="Tipo de pieza"
+          description="Qué necesidad del modelo cubre. Determina a qué vehículos puede asignarse la refacción."
+          placeholder="Selecciona o escribe para crear un tipo"
+          data={tipoOptions}
           searchable
-          onSearchChange={setCategoriaSearch}
-          nothingFoundMessage="Escribe para crear una nueva categoría"
           required
-          maxLength={60}
-          {...form.getInputProps('categoria')}
+          searchValue={tipoSearch}
+          onSearchChange={setTipoSearch}
+          nothingFoundMessage="Escribe para crear un tipo nuevo"
+          value={form.values.tipo_pieza_id || null}
+          onChange={handleTipoChange}
+          error={crearTipoMut.error ? (crearTipoMut.error as Error).message : form.errors.tipo_pieza_id}
         />
         {error && (
           <Alert color="red" title="Error">
@@ -136,6 +162,7 @@ function PiezasTable({
           <Table.Tr>
             <Table.Th>Número de serie</Table.Th>
             <Table.Th>Descripción</Table.Th>
+            <Table.Th>Tipo</Table.Th>
             <Table.Th style={{ textAlign: 'center' }}>En stock</Table.Th>
             <Table.Th style={{ width: 80 }} />
           </Table.Tr>
@@ -149,6 +176,11 @@ function PiezasTable({
             >
               <Table.Td fw={500}>{pieza.numero_serie}</Table.Td>
               <Table.Td c="dimmed">{pieza.descripcion}</Table.Td>
+              <Table.Td>
+                {pieza.tipo_pieza
+                  ? <Badge variant="light" color="blue" size="sm">{pieza.tipo_pieza}</Badge>
+                  : <Text component="span" c="dimmed" size="sm">—</Text>}
+              </Table.Td>
               <Table.Td style={{ textAlign: 'center' }}>
                 <Badge color={stockColor(pieza.cantidad_total)} variant="light" size="sm">
                   {pieza.cantidad_total}
@@ -180,28 +212,17 @@ function PiezasAgrupadas({
   onEdit:   (p: Pieza) => void
   onDelete: (p: Pieza) => void
 }) {
-  const conocidas = CATEGORIAS
-    .map((cat) => ({ categoria: cat, items: piezas.filter((p) => p.categoria === cat) }))
-    .filter(({ items }) => items.length > 0)
+  const porTipo = agruparPorTipo(piezas)
 
-  // Categorías creadas por el usuario (no están en la lista fija): cada una
-  // forma su propio grupo, ordenadas alfabéticamente al final.
-  const extraCategorias = Array.from(
-    new Set(piezas.filter((p) => !CATEGORIAS.includes(p.categoria)).map((p) => p.categoria))
-  ).sort((a, b) => a.localeCompare(b, 'es-MX'))
-  const extras = extraCategorias.map((cat) => ({ categoria: cat, items: piezas.filter((p) => p.categoria === cat) }))
-
-  const porCategoria = [...conocidas, ...extras]
-
-  const defaultOpen = porCategoria.map(({ categoria }) => categoria)
+  const defaultOpen = porTipo.map(({ tipo }) => tipo)
 
   return (
     <Accordion multiple defaultValue={defaultOpen} variant="separated">
-      {porCategoria.map(({ categoria, items }) => (
-        <Accordion.Item key={categoria} value={categoria}>
+      {porTipo.map(({ tipo, items }) => (
+        <Accordion.Item key={tipo} value={tipo}>
           <Accordion.Control>
             <Group justify="space-between" pr="md" wrap="nowrap">
-              <Text fw={600}>{categoria}</Text>
+              <Text fw={600} c={tipo === SIN_TIPO ? 'dimmed' : undefined}>{tipo}</Text>
               <Badge variant="light" color="gray">{items.length}</Badge>
             </Group>
           </Accordion.Control>
@@ -247,22 +268,21 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
 
   const totalPages = Math.ceil((data?.pagination?.total ?? 0) / (data?.pagination?.pageSize ?? 20))
 
-  const categoriasDisponibles = useMemo(() => {
-    const set = new Set(CATEGORIAS)
-    for (const p of allData?.data ?? data?.data ?? []) set.add(p.categoria)
-    if (editPieza) set.add(editPieza.categoria)
-    return Array.from(set)
-  }, [allData, data, editPieza])
+  // El formulario maneja el tipo como string; la API espera el id. La
+  // validación garantiza que no llegue vacío.
+  function toPayload({ tipo_pieza_id, ...rest }: FormValues) {
+    return { ...rest, tipo_pieza_id: Number(tipo_pieza_id) }
+  }
 
   function handleCreate(values: FormValues) {
-    createMut.mutate(values, {
+    createMut.mutate(toPayload(values), {
       onSuccess: () => setCreateOpen(false),
     })
   }
 
   function handleUpdate(values: FormValues) {
     if (!editPieza) return
-    updateMut.mutate({ id: editPieza.id, ...values }, {
+    updateMut.mutate({ id: editPieza.id, ...toPayload(values) }, {
       onSuccess: () => setEditPieza(null),
     })
   }
@@ -404,7 +424,6 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
         centered
       >
         <PiezaForm
-          categoriasDisponibles={categoriasDisponibles}
           isPending={createMut.isPending}
           error={createMut.error ? (createMut.error as Error).message : null}
           onSubmit={handleCreate}
@@ -422,11 +441,10 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
         {editPieza && (
           <PiezaForm
             initial={{
-              numero_serie: editPieza.numero_serie,
-              descripcion:  editPieza.descripcion,
-              categoria:    editPieza.categoria,
+              numero_serie:  editPieza.numero_serie,
+              descripcion:   editPieza.descripcion,
+              tipo_pieza_id: editPieza.tipo_pieza_id != null ? String(editPieza.tipo_pieza_id) : '',
             }}
-            categoriasDisponibles={categoriasDisponibles}
             isPending={updateMut.isPending}
             error={updateMut.error ? (updateMut.error as Error).message : null}
             onSubmit={handleUpdate}

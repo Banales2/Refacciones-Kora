@@ -8,8 +8,20 @@ export interface Pieza {
   id: number
   numero_serie: string
   descripcion: string
-  categoria: string
+  // Única clasificación de la pieza: qué tipo cubre ("filtro de aire").
+  // Obligatorio al crear; null solo en las piezas anteriores al catálogo de
+  // tipos. Solo las tipificadas pueden asignarse a un vehículo
+  // (usePiezasVehiculo).
+  tipo_pieza_id: number | null
+  tipo_pieza: string | null
   cantidad_total: number
+}
+
+type PiezaBody = {
+  numero_serie?:  string
+  descripcion?:   string
+  // No admite null: el tipo es obligatorio y no se puede quitar una vez puesto.
+  tipo_pieza_id?: number
 }
 
 interface ListResponse {
@@ -43,7 +55,7 @@ export function fetchTodasLasPiezas() {
 export function useCreateRefaccion() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { numero_serie: string; descripcion: string; categoria: string }) =>
+    mutationFn: (body: PiezaBody & { numero_serie: string; descripcion: string; tipo_pieza_id: number }) =>
       api.post<{ data: Pieza }>('/refacciones', body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['refacciones'] }),
   })
@@ -52,7 +64,7 @@ export function useCreateRefaccion() {
 export function useUpdateRefaccion() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: number; numero_serie?: string; descripcion?: string; categoria?: string }) =>
+    mutationFn: ({ id, ...body }: PiezaBody & { id: number }) =>
       api.put<{ data: Pieza }>(`/refacciones/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['refacciones'] }),
   })

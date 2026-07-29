@@ -32,13 +32,17 @@ export async function findAll(params: {
 
   const result = await req.query(`
     SELECT
-      p.id, p.numero_serie, p.descripcion, p.categoria,
+      p.id, p.numero_serie, p.descripcion,
+      p.tipo_pieza_id, t.nombre AS tipo_pieza,
       COALESCE(SUM(l.cantidad_disponible), 0) AS cantidad_total
     FROM piezas p
+    LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id
     LEFT JOIN lotes_pieza l ON l.pieza_id = p.id
     ${mainWhere}
-    GROUP BY p.id, p.numero_serie, p.descripcion, p.categoria
-    ORDER BY p.categoria, p.numero_serie
+    GROUP BY p.id, p.numero_serie, p.descripcion, p.tipo_pieza_id, t.nombre
+    -- Las piezas sin tipo al final: el CASE evita que los NULL se ordenen
+    -- primero, como hace SQL Server por defecto.
+    ORDER BY CASE WHEN t.nombre IS NULL THEN 1 ELSE 0 END, t.nombre, p.numero_serie
     OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
 
     SELECT COUNT(*) AS total FROM piezas
@@ -47,12 +51,18 @@ export async function findAll(params: {
   return { data: result.recordsets[0], total: result.recordsets[1][0].total }
 }
 
+// tipo_pieza viene del catálogo, no de la tabla: se lee siempre con el join.
+const SELECT_PIEZA = `
+  SELECT p.id, p.numero_serie, p.descripcion, p.tipo_pieza_id, t.nombre AS tipo_pieza
+  FROM piezas p
+  LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id`
+
 export async function findById(id: number): Promise<Pieza | null> {
   const pool = await getPool()
   const result = await pool
     .request()
     .input('id', sql.Int, id)
-    .query('SELECT id, numero_serie, descripcion, categoria FROM piezas WHERE id = @id')
+    .query(`${SELECT_PIEZA} WHERE p.id = @id`)
   return result.recordset[0] ?? null
 }
 
@@ -61,7 +71,7 @@ export async function findByNumeroSerie(numeroSerie: string): Promise<Pieza | nu
   const result = await pool
     .request()
     .input('ns', sql.NVarChar(80), numeroSerie)
-    .query('SELECT id, numero_serie, descripcion, categoria FROM piezas WHERE numero_serie = @ns')
+    .query(`${SELECT_PIEZA} WHERE p.numero_serie = @ns`)
   return result.recordset[0] ?? null
 }
 
@@ -89,13 +99,14 @@ export async function create(data: RefaccionCreate): Promise<Pieza> {
     .request()
     .input('ns', sql.NVarChar(80), data.numero_serie)
     .input('desc', sql.NVarChar(300), data.descripcion)
-    .input('categoria', sql.NVarChar(60), data.categoria)
+    .input('tipoPiezaId', sql.Int, data.tipo_pieza_id)
     .query(`
-      INSERT INTO piezas (numero_serie, descripcion, categoria)
-      OUTPUT INSERTED.id, INSERTED.numero_serie, INSERTED.descripcion, INSERTED.categoria
-      VALUES (@ns, @desc, @categoria)
+      INSERT INTO piezas (numero_serie, descripcion, tipo_pieza_id)
+      OUTPUT INSERTED.id
+      VALUES (@ns, @desc, @tipoPiezaId)
     `)
-  return result.recordset[0]
+  // Relee para resolver el nombre del tipo, que OUTPUT no puede traer del join.
+  return (await findById(result.recordset[0].id))!
 }
 
 export async function update(id: number, data: RefaccionUpdate): Promise<Pieza | null> {
@@ -105,16 +116,17 @@ export async function update(id: number, data: RefaccionUpdate): Promise<Pieza |
 
   if (data.numero_serie !== undefined) { req.input('ns', sql.NVarChar(80), data.numero_serie); sets.push('numero_serie = @ns') }
   if (data.descripcion !== undefined) { req.input('desc', sql.NVarChar(300), data.descripcion); sets.push('descripcion = @desc') }
-  if (data.categoria !== undefined) { req.input('categoria', sql.NVarChar(60), data.categoria); sets.push('categoria = @categoria') }
+  if (data.tipo_pieza_id !== undefined) { req.input('tipoPiezaId', sql.Int, data.tipo_pieza_id); sets.push('tipo_pieza_id = @tipoPiezaId') }
 
   if (sets.length === 0) return findById(id)
 
   const result = await req.query(`
     UPDATE piezas SET ${sets.join(', ')}
-    OUTPUT INSERTED.id, INSERTED.numero_serie, INSERTED.descripcion, INSERTED.categoria
+    OUTPUT INSERTED.id
     WHERE id = @id
   `)
-  return result.recordset[0] ?? null
+  if (result.recordset.length === 0) return null
+  return findById(id)
 }
 
 export async function remove(id: number): Promise<boolean> {

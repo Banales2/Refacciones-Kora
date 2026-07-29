@@ -19,10 +19,10 @@ import {
 } from '../hooks/usePlantilla'
 import { useRequerimientoCategorias } from '../hooks/useRequerimientos'
 import { useVehiculos, useCreateVehiculo } from '../hooks/useVehiculos'
-import { useRefacciones } from '../hooks/useRefacciones'
 import {
-  usePiezasModelo, useAddPiezasModelo, useRemovePiezaModelo,
-} from '../hooks/usePiezasModelo'
+  useTiposPiezaModelo, useAddTiposPiezaModelo, useRemoveTipoPiezaModelo,
+} from '../hooks/useTiposPiezaModelo'
+import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
 import type { Modelo, ModeloPayload } from '../hooks/useModelos'
 import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode, TipoPlantilla } from '../hooks/usePlantilla'
 import type {
@@ -494,84 +494,116 @@ function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tip
   )
 }
 
-// ── Sección de piezas del modelo (relación n-n informativa) ───────────────────
+// ── Sección de tipos de pieza del modelo (relación n-n informativa) ───────────
 
-function PiezasModeloSection({ modeloId }: { modeloId: number }) {
+// Valor centinela del selector: al elegirlo se crea el tipo que el usuario
+// escribió, en vez de asignar uno existente.
+const CREAR_TIPO = '__crear__'
+
+function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
   const [seleccion, setSeleccion] = useState<string[]>([])
-  const { data, isLoading } = usePiezasModelo(modeloId)
-  const { data: piezasData } = useRefacciones(1, '', 'all', 100)
-  const addMut = useAddPiezasModelo()
-  const removeMut = useRemovePiezaModelo()
+  const [busqueda, setBusqueda]   = useState('')
+  const { data, isLoading }       = useTiposPiezaModelo(modeloId)
+  const { data: tiposData }       = useTiposPieza()
+  const addMut    = useAddTiposPiezaModelo()
+  const removeMut = useRemoveTipoPiezaModelo()
+  const crearMut  = useCreateTipoPieza()
 
-  const asignadas = data?.data ?? []
-  const asignadasIds = new Set(asignadas.map((p) => p.id))
-  const opciones = (piezasData?.data ?? [])
-    .filter((p) => !asignadasIds.has(p.id))
-    .map((p) => ({ value: String(p.id), label: `${p.numero_serie} · ${p.descripcion}` }))
+  const asignados = data?.data ?? []
+
+  const opciones = useMemo(() => {
+    const todos = tiposData?.data ?? []
+    const yaAsignados = new Set((data?.data ?? []).map((t) => t.id))
+    const opts = todos
+      .filter((t) => !yaAsignados.has(t.id))
+      .map((t) => ({ value: String(t.id), label: t.nombre }))
+
+    const nuevo = busqueda.trim()
+    const yaExiste = todos.some((t) => t.nombre.toLowerCase() === nuevo.toLowerCase())
+    if (nuevo && !yaExiste) {
+      opts.unshift({ value: CREAR_TIPO, label: `+ Crear tipo "${nuevo}"` })
+    }
+    return opts
+  }, [tiposData, data, busqueda])
+
+  // Crear se resuelve al instante: el centinela no puede quedarse en la
+  // selección porque no es un id que el backend pueda recibir.
+  function handleChange(values: string[]) {
+    if (!values.includes(CREAR_TIPO)) { setSeleccion(values); return }
+    const nombre = busqueda.trim()
+    if (!nombre) return
+    crearMut.mutate(nombre, {
+      onSuccess: ({ data: tipo }) => {
+        setSeleccion([...values.filter((v) => v !== CREAR_TIPO), String(tipo.id)])
+        setBusqueda('')
+      },
+    })
+  }
 
   function handleAgregar() {
     if (seleccion.length === 0) return
-    addMut.mutate({ modeloId, piezaIds: seleccion.map(Number) }, { onSuccess: () => setSeleccion([]) })
+    addMut.mutate({ modeloId, tipoIds: seleccion.map(Number) }, { onSuccess: () => setSeleccion([]) })
   }
 
   return (
     <>
       <Divider
-        label={<Text size="sm" fw={500}>Piezas específicas del modelo ({asignadas.length})</Text>}
+        label={<Text size="sm" fw={500}>Tipos de pieza del modelo ({asignados.length})</Text>}
         labelPosition="left"
       />
       <Text size="xs" c="dimmed">
-        Piezas que necesita este modelo (filtro, batería, aceite exclusivo…). Es informativo: no afecta el inventario.
+        Qué necesita este modelo, sin decir cuál: un filtro de aire, una batería… La refacción concreta
+        que usa cada unidad se captura en el vehículo. Es informativo: no afecta el inventario.
       </Text>
 
       <Group align="flex-end" gap="sm" wrap="nowrap">
         <MultiSelect
           flex={1}
           searchable clearable
-          placeholder="Selecciona una o más piezas"
+          placeholder="Selecciona o escribe para crear un tipo"
           data={opciones}
           value={seleccion}
-          onChange={setSeleccion}
-          nothingFoundMessage="Sin piezas disponibles"
+          onChange={handleChange}
+          searchValue={busqueda}
+          onSearchChange={setBusqueda}
+          nothingFoundMessage="Escribe para crear un tipo nuevo"
         />
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={handleAgregar}
-          loading={addMut.isPending}
+          loading={addMut.isPending || crearMut.isPending}
           disabled={seleccion.length === 0}
         >
           Agregar
         </Button>
       </Group>
-      {addMut.error && <Alert color="red">{(addMut.error as Error).message}</Alert>}
+      {crearMut.error && <Alert color="red">{(crearMut.error as Error).message}</Alert>}
+      {addMut.error   && <Alert color="red">{(addMut.error   as Error).message}</Alert>}
+      {removeMut.error && <Alert color="red">{(removeMut.error as Error).message}</Alert>}
 
       {isLoading ? (
         <Center py="md"><Loader size="sm" /></Center>
-      ) : asignadas.length === 0 ? (
-        <Text c="dimmed" size="sm" py="sm">Este modelo no tiene piezas registradas.</Text>
+      ) : asignados.length === 0 ? (
+        <Text c="dimmed" size="sm" py="sm">Este modelo no tiene tipos de pieza registrados.</Text>
       ) : (
-        <Table.ScrollContainer minWidth={480}>
+        <Table.ScrollContainer minWidth={360}>
           <Table striped highlightOnHover withTableBorder>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Categoría</Table.Th>
-                <Table.Th>No. de serie</Table.Th>
-                <Table.Th>Descripción</Table.Th>
+                <Table.Th>Tipo de pieza</Table.Th>
                 <Table.Th style={{ width: 48 }} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {asignadas.map((p) => (
-                <Table.Tr key={p.id}>
-                  <Table.Td><Badge variant="light" color="gray" size="sm">{p.categoria}</Badge></Table.Td>
-                  <Table.Td fw={500}>{p.numero_serie}</Table.Td>
-                  <Table.Td>{p.descripcion}</Table.Td>
+              {asignados.map((t) => (
+                <Table.Tr key={t.id}>
+                  <Table.Td fw={500}>{t.nombre}</Table.Td>
                   <Table.Td>
-                    <Tooltip label="Quitar del modelo">
+                    <Tooltip label="Quitar del modelo (borra la refacción que sus vehículos tenían elegida para este tipo)">
                       <ActionIcon
                         variant="subtle" color="red" size="sm"
-                        loading={removeMut.isPending && removeMut.variables?.piezaId === p.id}
-                        onClick={() => removeMut.mutate({ modeloId, piezaId: p.id })}
+                        loading={removeMut.isPending && removeMut.variables?.tipoId === t.id}
+                        onClick={() => removeMut.mutate({ modeloId, tipoId: t.id })}
                       >
                         <IconTrash size={14} />
                       </ActionIcon>
@@ -675,7 +707,7 @@ function ModeloDetalle({
       <PlantillaSection modeloId={modelo.id} tiposPermitidos={modelo.tipos_permitidos ?? []} />
 
       {/* Piezas específicas del modelo */}
-      <PiezasModeloSection modeloId={modelo.id} />
+      <TiposPiezaModeloSection modeloId={modelo.id} />
 
       {/* Vehículos asignados */}
       <Divider

@@ -7,7 +7,12 @@ export const RefaccionCreateSchema = z.object({
     .max(80, 'Número de serie demasiado largo')
     .regex(/^[A-Z0-9-]+$/, 'Solo mayúsculas, números y guiones'),
   descripcion: z.string().min(3).max(300),
-  categoria: z.string().min(1, 'Categoría requerida').max(60),
+  // Obligatorio: el tipo es la única clasificación de la pieza. No es nullable,
+  // así que el update tampoco puede dejar sin tipo una pieza que ya lo tiene.
+  tipo_pieza_id: z.coerce
+    .number({ error: 'Tipo de pieza requerido' })
+    .int({ error: 'Tipo de pieza inválido' })
+    .positive({ error: 'Tipo de pieza requerido' }),
 })
 
 export const RefaccionUpdateSchema = RefaccionCreateSchema.partial()

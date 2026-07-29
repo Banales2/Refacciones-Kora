@@ -1,4 +1,5 @@
 import * as repo from '../repositories/refaccionesRepo'
+import * as piezasVehiculoRepo from '../repositories/piezasVehiculoRepo'
 import { Pieza, PiezaConCantidad, LoteConProveedor } from '../types/domain'
 import { RefaccionCreate, RefaccionUpdate, SearchBy } from '../schemas/refaccionSchema'
 import { NotFoundError, ConflictError } from '../shared/errors'
@@ -42,10 +43,21 @@ export async function update(id: number, data: RefaccionUpdate): Promise<Pieza> 
   }
   const item = await repo.update(id, data)
   if (!item) throw new NotFoundError('Refacción')
+
+  if (data.tipo_pieza_id !== undefined) {
+    await piezasVehiculoRepo.removeAsignacionesFueraDeTipo(id)
+  }
+
   return item
 }
 
 export async function remove(id: number): Promise<void> {
+  const vehiculos = await piezasVehiculoRepo.countVehiculosConPieza(id)
+  if (vehiculos > 0) {
+    throw new ConflictError(
+      `Esta refacción está asignada a ${vehiculos} vehículo(s) y no puede eliminarse`
+    )
+  }
   const deleted = await repo.remove(id)
   if (!deleted) throw new NotFoundError('Refacción')
 }

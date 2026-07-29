@@ -37,7 +37,10 @@ import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
-import { usePiezasModelo } from '../hooks/usePiezasModelo'
+import { usePiezasVehiculo, useSetPiezaVehiculo, useRemovePiezaVehiculo } from '../hooks/usePiezasVehiculo'
+import { useAddTiposPiezaVehiculo, useRemoveTipoPiezaVehiculo } from '../hooks/useTiposPiezaVehiculo'
+import { useTiposPieza } from '../hooks/useTiposPieza'
+import { useRefacciones } from '../hooks/useRefacciones'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
@@ -1481,45 +1484,177 @@ function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-// Piezas específicas del modelo del vehículo. Solo lectura: se gestionan desde
-// el modelo, aquí únicamente se consultan.
-function PiezasModeloVehiculo({ modeloId }: { modeloId: number }) {
-  const { data, isLoading } = usePiezasModelo(modeloId)
-  const piezas = data?.data ?? []
+// Refacción que usa este vehículo para cada tipo de pieza que necesita. Los
+// tipos salen del modelo (se gestionan allá), más los que se agreguen aquí para
+// esta unidad sola. Lo que se decide en ambos casos es cuál refacción cubre cada
+// uno: dos unidades del mismo modelo pueden usar filtros de aire distintos.
+function PiezasVehiculoSection({ vehiculoId }: { vehiculoId: number }) {
+  const { data, isLoading } = usePiezasVehiculo(vehiculoId)
+  const { data: piezasData } = useRefacciones(1, '', 'all', 100)
+  const { data: tiposData } = useTiposPieza()
+  const setMut       = useSetPiezaVehiculo()
+  const removeMut    = useRemovePiezaVehiculo()
+  const addTipoMut   = useAddTiposPiezaVehiculo()
+  const quitaTipoMut = useRemoveTipoPiezaVehiculo()
+
+  const [nuevoTipo, setNuevoTipo] = useState<string | null>(null)
+
+  const filas  = data?.data ?? []
+  const piezas = piezasData?.data ?? []
+
+  // Solo se ofrecen refacciones marcadas con ese tipo en el catálogo: el backend
+  // rechaza cualquier otra.
+  function opcionesDeTipo(tipoId: number) {
+    return piezas
+      .filter((p) => p.tipo_pieza_id === tipoId)
+      .map((p) => ({ value: String(p.id), label: `${p.numero_serie} · ${p.descripcion}` }))
+  }
+
+  // Los tipos que el vehículo ya necesita no se vuelven a ofrecer, vengan del
+  // modelo o de la propia unidad.
+  const tipoOptions = useMemo(() => {
+    const yaEstan = new Set(filas.map((f) => f.tipo_pieza_id))
+    return (tiposData?.data ?? [])
+      .filter((t) => !yaEstan.has(t.id))
+      .map((t) => ({ value: String(t.id), label: t.nombre }))
+  }, [tiposData, filas])
+
+  function handleChange(tipoId: number, value: string | null) {
+    if (value) setMut.mutate({ vehiculoId, tipoId, piezaId: Number(value) })
+    else       removeMut.mutate({ vehiculoId, tipoId })
+  }
+
+  function handleAgregarTipo() {
+    if (!nuevoTipo) return
+    addTipoMut.mutate(
+      { vehiculoId, tipoIds: [Number(nuevoTipo)] },
+      { onSuccess: () => setNuevoTipo(null) }
+    )
+  }
+
+  const sinCapturar = filas.filter((f) => f.pieza_id == null).length
+
   return (
     <>
       <Divider
-        label={<Text size="sm" fw={500}>Piezas del modelo ({piezas.length})</Text>}
+        label={<Text size="sm" fw={500}>Piezas de este vehículo ({filas.length})</Text>}
         labelPosition="left"
       />
       <Text size="xs" c="dimmed">
-        Piezas que requiere este modelo. Se gestionan desde el modelo; aquí solo se consultan.
+        Qué refacción usa esta unidad para cada tipo que necesita. Los tipos del modelo se gestionan
+        desde el modelo; aquí puedes agregar los que solo requiera esta unidad. Es informativo: no
+        afecta el inventario.
       </Text>
+      {setMut.error       && <Alert color="red">{(setMut.error as Error).message}</Alert>}
+      {removeMut.error    && <Alert color="red">{(removeMut.error as Error).message}</Alert>}
+      {addTipoMut.error   && <Alert color="red">{(addTipoMut.error as Error).message}</Alert>}
+      {quitaTipoMut.error && <Alert color="red">{(quitaTipoMut.error as Error).message}</Alert>}
+
+      <Group gap="xs" align="flex-end">
+        <Select
+          size="xs"
+          style={{ flex: 1 }}
+          searchable
+          placeholder="Agrega un tipo que solo necesita este vehículo"
+          data={tipoOptions}
+          value={nuevoTipo}
+          onChange={setNuevoTipo}
+          disabled={addTipoMut.isPending}
+          nothingFoundMessage="No hay más tipos en el catálogo"
+        />
+        <Button
+          size="xs"
+          variant="light"
+          leftSection={<IconPlus size={14} />}
+          disabled={!nuevoTipo}
+          loading={addTipoMut.isPending}
+          onClick={handleAgregarTipo}
+        >
+          Agregar
+        </Button>
+      </Group>
+
       {isLoading ? (
         <Center py="md"><Loader size="sm" /></Center>
-      ) : piezas.length === 0 ? (
-        <Text c="dimmed" size="sm" py="sm">Este modelo no tiene piezas registradas.</Text>
+      ) : filas.length === 0 ? (
+        <Text c="dimmed" size="sm" py="sm">
+          Este vehículo no necesita ningún tipo de pieza todavía: su modelo no tiene tipos registrados
+          y no le has agregado ninguno propio.
+        </Text>
       ) : (
-        <Table.ScrollContainer minWidth={480}>
-          <Table striped withTableBorder>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Categoría</Table.Th>
-                <Table.Th>No. de serie</Table.Th>
-                <Table.Th>Descripción</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {piezas.map((p) => (
-                <Table.Tr key={p.id}>
-                  <Table.Td><Badge variant="light" color="gray" size="sm">{p.categoria}</Badge></Table.Td>
-                  <Table.Td fw={500}>{p.numero_serie}</Table.Td>
-                  <Table.Td>{p.descripcion}</Table.Td>
+        <>
+          {sinCapturar > 0 && (
+            <Text size="xs" c="dimmed">
+              {sinCapturar} tipo(s) sin refacción asignada.
+            </Text>
+          )}
+          <Table.ScrollContainer minWidth={520}>
+            <Table striped withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th style={{ width: '35%' }}>Tipo de pieza</Table.Th>
+                  <Table.Th>Refacción que usa</Table.Th>
+                  <Table.Th style={{ width: 40 }} />
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+              </Table.Thead>
+              <Table.Tbody>
+                {filas.map((f) => {
+                  const opciones = opcionesDeTipo(f.tipo_pieza_id)
+                  const propio   = f.origen === 'vehiculo'
+                  const pendiente =
+                    (setMut.isPending    && setMut.variables?.tipoId    === f.tipo_pieza_id) ||
+                    (removeMut.isPending && removeMut.variables?.tipoId === f.tipo_pieza_id)
+                  return (
+                    <Table.Tr key={f.tipo_pieza_id}>
+                      <Table.Td>
+                        <Group gap={6} wrap="nowrap">
+                          <Text size="sm" fw={500}>{f.tipo_nombre}</Text>
+                          {propio && (
+                            <Badge size="xs" variant="light" color="teal">Solo este vehículo</Badge>
+                          )}
+                        </Group>
+                      </Table.Td>
+                      <Table.Td>
+                        <Select
+                          size="xs"
+                          searchable clearable
+                          disabled={pendiente}
+                          placeholder={
+                            opciones.length
+                              ? 'Selecciona la refacción'
+                              : 'Sin refacciones de este tipo en el catálogo'
+                          }
+                          data={opciones}
+                          value={f.pieza_id != null ? String(f.pieza_id) : null}
+                          onChange={(v) => handleChange(f.tipo_pieza_id, v)}
+                          nothingFoundMessage="Marca refacciones con este tipo desde el catálogo"
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        {/* Los tipos del modelo se quitan desde el modelo: hacerlo
+                            aquí afectaría a toda la flota de ese modelo. */}
+                        {propio && (
+                          <ActionIcon
+                            variant="subtle"
+                            color="red"
+                            aria-label={`Quitar ${f.tipo_nombre} de este vehículo`}
+                            loading={
+                              quitaTipoMut.isPending &&
+                              quitaTipoMut.variables?.tipoId === f.tipo_pieza_id
+                            }
+                            onClick={() => quitaTipoMut.mutate({ vehiculoId, tipoId: f.tipo_pieza_id })}
+                          >
+                            <IconTrash size={14} />
+                          </ActionIcon>
+                        )}
+                      </Table.Td>
+                    </Table.Tr>
+                  )
+                })}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </>
       )}
     </>
   )
@@ -1729,8 +1864,8 @@ function VehiculoDetalle({
         </Group>
       </Paper>
 
-      {/* Piezas del modelo (solo lectura) */}
-      <PiezasModeloVehiculo modeloId={vehiculo.modelo_id} />
+      {/* Refacción que usa esta unidad por cada tipo que pide su modelo */}
+      <PiezasVehiculoSection vehiculoId={vehiculo.id} />
 
       {/* Requerimientos exclusivos */}
       <RequerimientosSection
