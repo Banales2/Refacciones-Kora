@@ -7,6 +7,7 @@ export interface RecargaConGasolinera {
   vehiculo_id:   number
   gasolinera_id: number
   conductor_id:  number
+  vale_id:       number | null
   fecha:         string
   litros:        number
   costo:         number
@@ -14,16 +15,21 @@ export interface RecargaConGasolinera {
   gasolinera:    string
   ubicacion:     string
   conductor:     string
+  vale_fecha:    string | null
 }
 
+// El vale entra con LEFT JOIN: las recargas registradas antes de que el vale
+// fuera obligatorio no tienen ninguno y deben seguir apareciendo en el listado.
 const SELECT_RECARGA = `
-  SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.fecha, r.litros, r.costo,
-         r.kilometraje,
+  SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.vale_id, r.fecha,
+         r.litros, r.costo, r.kilometraje,
          g.nombre AS gasolinera, g.ubicacion,
-         c.nombre AS conductor
+         c.nombre AS conductor,
+         CONVERT(char(10), vg.fecha, 23) AS vale_fecha
   FROM recargas_combustible r
-  JOIN gasolineras g  ON g.id = r.gasolinera_id
-  JOIN conductores c  ON c.id = r.conductor_id
+  JOIN gasolineras g       ON g.id = r.gasolinera_id
+  JOIN conductores c       ON c.id = r.conductor_id
+  LEFT JOIN vales_gasolina vg ON vg.id = r.vale_id
 `
 
 export async function findByVehiculo(vehiculoId: number): Promise<RecargaConGasolinera[]> {
@@ -48,14 +54,15 @@ export async function create(vehiculoId: number, data: RecargaCreate): Promise<R
     .input('vehiculo_id',   sql.Int, vehiculoId)
     .input('gasolinera_id', sql.Int, data.gasolinera_id)
     .input('conductor_id',  sql.Int, data.conductor_id)
+    .input('vale_id',       sql.Int, data.vale_id)
     .input('fecha',         sql.Date, data.fecha)
     .input('litros',        sql.Decimal(10, 2), data.litros)
     .input('costo',         sql.Decimal(18, 2), data.costo)
     .input('kilometraje',   sql.Int, data.kilometraje)
     .query(`
-      INSERT INTO recargas_combustible (vehiculo_id, gasolinera_id, conductor_id, fecha, litros, costo, kilometraje)
+      INSERT INTO recargas_combustible (vehiculo_id, gasolinera_id, conductor_id, vale_id, fecha, litros, costo, kilometraje)
       OUTPUT INSERTED.id
-      VALUES (@vehiculo_id, @gasolinera_id, @conductor_id, @fecha, @litros, @costo, @kilometraje)
+      VALUES (@vehiculo_id, @gasolinera_id, @conductor_id, @vale_id, @fecha, @litros, @costo, @kilometraje)
     `)
   return findById(r.recordset[0].id) as Promise<RecargaConGasolinera>
 }
@@ -72,6 +79,10 @@ export async function update(id: number, data: RecargaUpdate): Promise<RecargaCo
   if (data.conductor_id !== undefined) {
     req.input('conductor_id', sql.Int, data.conductor_id)
     sets.push('conductor_id = @conductor_id')
+  }
+  if (data.vale_id !== undefined) {
+    req.input('vale_id', sql.Int, data.vale_id)
+    sets.push('vale_id = @vale_id')
   }
   if (data.fecha !== undefined) {
     req.input('fecha', sql.Date, data.fecha)
@@ -102,6 +113,29 @@ export async function remove(id: number): Promise<boolean> {
     .input('id', sql.Int, id)
     .query('DELETE FROM recargas_combustible OUTPUT DELETED.id WHERE id = @id')
   return r.recordset.length > 0
+}
+
+// ¿El vale ya se usó en otra recarga? exceptId excluye la propia al editar.
+// Duplica lo que garantiza el índice único UQ_recargas_vale, pero permite
+// responder con un mensaje claro en vez de un error del motor.
+export async function valeUsado(valeId: number, exceptId?: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('vale_id', sql.Int, valeId)
+    .input('except',  sql.Int, exceptId ?? null)
+    .query(`SELECT TOP 1 id FROM recargas_combustible
+            WHERE vale_id = @vale_id AND (@except IS NULL OR id <> @except)`)
+  return r.recordset.length > 0
+}
+
+// Vehículo al que pertenece un vale, o null si el vale no existe. Sirve para
+// rechazar un vale emitido para otra unidad.
+export async function valeVehiculo(id: number): Promise<number | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query('SELECT vehiculo_id FROM vales_gasolina WHERE id = @id')
+  return r.recordset[0]?.vehiculo_id ?? null
 }
 
 export async function vehiculoExists(id: number): Promise<boolean> {

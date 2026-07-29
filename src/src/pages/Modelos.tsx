@@ -18,7 +18,7 @@ import {
   usePlantillaModelo, useCreatePlantilla, useUpdatePlantilla, useDeletePlantilla,
 } from '../hooks/usePlantilla'
 import { useRequerimientoCategorias } from '../hooks/useRequerimientos'
-import { useVehiculos, useCreateVehiculo } from '../hooks/useVehiculos'
+import { useVehiculos, useCreateVehiculo, useDeleteVehiculo, vehiculoLabel } from '../hooks/useVehiculos'
 import {
   useTiposPiezaModelo, useAddTiposPiezaModelo, useRemoveTipoPiezaModelo,
 } from '../hooks/useTiposPiezaModelo'
@@ -266,9 +266,14 @@ function PlantillaForm({
   const { data: categoriasData } = useRequerimientoCategorias()
   const [categoriaSearch, setCategoriaSearch] = useState('')
 
+  // Se saca de `initial` antes del useMemo: dentro, el compilador de React
+  // infiere el objeto completo como dependencia y no coincide con la lista
+  // manual (que solo mira la categoría), lo que le impide optimizar el hook.
+  const categoriaInicial = initial?.categoria
+
   const categoriaOptions = useMemo(() => {
     const existentes = new Set(categoriasData?.data ?? [])
-    if (initial?.categoria) existentes.add(initial.categoria)
+    if (categoriaInicial) existentes.add(categoriaInicial)
 
     const opts = [...existentes].sort((a, b) => a.localeCompare(b, 'es-MX'))
       .map((c) => ({ value: c, label: c }))
@@ -279,7 +284,7 @@ function PlantillaForm({
       opts.unshift({ value: nueva, label: `+ Crear categoría "${nueva}"` })
     }
     return opts
-  }, [categoriasData, initial?.categoria, categoriaSearch])
+  }, [categoriasData, categoriaInicial, categoriaSearch])
 
   function handleSubmit(vals: typeof form.values) {
     onSubmit({
@@ -656,11 +661,12 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
 // ── Vista de detalle ──────────────────────────────────────────────────────────
 
 function ModeloDetalle({
-  modelo, onBack, onEdit, onNavigateVehiculo,
+  modelo, onBack, onEdit, onDelete, onNavigateVehiculo,
 }: {
   modelo: Modelo
   onBack: () => void
   onEdit: (m: Modelo) => void
+  onDelete: (m: Modelo) => void
   onNavigateVehiculo?: (v: VehiculoRow) => void
 }) {
   const { data, isLoading, isError } = useVehiculos(1, '', undefined, modelo.id)
@@ -669,6 +675,11 @@ function ModeloDetalle({
   const [vehiculoFormOpen, setVehiculoFormOpen] = useState(false)
   const [vehiculoError, setVehiculoError] = useState<string | null>(null)
   const createVehiculoMut = useCreateVehiculo()
+
+  // Baja de un vehículo del modelo. Al borrarse se invalida la query de
+  // vehículos, así que la tabla de aquí se refresca sola.
+  const [deletingVehiculo, setDeletingVehiculo] = useState<VehiculoRow | null>(null)
+  const deleteVehiculoMut = useDeleteVehiculo()
 
   function openCreateVehiculo() {
     setVehiculoError(null)
@@ -729,11 +740,19 @@ function ModeloDetalle({
               </Grid.Col>
             </Grid>
           </Stack>
-          <Tooltip label="Editar modelo">
-            <ActionIcon variant="light" color="blue" size="lg" onClick={() => onEdit(modelo)}>
-              <IconPencil size={16} />
-            </ActionIcon>
-          </Tooltip>
+          <Group gap="xs" wrap="nowrap">
+            <Tooltip label="Editar modelo">
+              <ActionIcon variant="light" color="blue" size="lg" onClick={() => onEdit(modelo)}>
+                <IconPencil size={16} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Eliminar modelo">
+              <ActionIcon variant="light" color="red" size="lg"
+                aria-label="Eliminar modelo" onClick={() => onDelete(modelo)}>
+                <IconTrash size={16} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
         </Group>
       </Paper>
 
@@ -776,6 +795,7 @@ function ModeloDetalle({
                 <Table.Th>Placas</Table.Th>
                 <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>Kilometraje</Table.Th>
+                <Table.Th style={{ width: 40 }} />
                 {onNavigateVehiculo && <Table.Th style={{ width: 32 }} />}
               </Table.Tr>
             </Table.Thead>
@@ -802,6 +822,19 @@ function ModeloDetalle({
                       {v.kilometraje !== null
                         ? `${v.kilometraje.toLocaleString('es-MX')} km`
                         : <Text component="span" c="dimmed" size="sm">—</Text>}
+                    </Table.Td>
+                    <Table.Td>
+                      <Tooltip label="Eliminar vehículo">
+                        <ActionIcon
+                          variant="subtle" color="red" size="sm"
+                          aria-label="Eliminar vehículo"
+                          // El renglón navega al vehículo: sin esto, borrar
+                          // abriría también su ficha.
+                          onClick={(e) => { e.stopPropagation(); setDeletingVehiculo(v) }}
+                        >
+                          <IconTrash size={14} />
+                        </ActionIcon>
+                      </Tooltip>
                     </Table.Td>
                     {onNavigateVehiculo && (
                       <Table.Td>
@@ -830,6 +863,51 @@ function ModeloDetalle({
           onSubmit={handleCreateVehiculo}
           onCancel={() => setVehiculoFormOpen(false)}
         />
+      </Modal>
+
+      <Modal
+        opened={deletingVehiculo !== null}
+        onClose={() => setDeletingVehiculo(null)}
+        title="Eliminar vehículo"
+        centered
+        size="sm"
+      >
+        <Stack gap="md">
+          <Text>
+            ¿Eliminar{' '}
+            <strong>{deletingVehiculo ? vehiculoLabel(deletingVehiculo) : ''}</strong>?
+            Esta acción no se puede deshacer.
+          </Text>
+          <Text size="sm" c="dimmed">
+            Sus requerimientos exclusivos se eliminan automáticamente. No podrá
+            eliminarse si tiene mantenimientos, recargas o vales registrados.
+          </Text>
+          {deleteVehiculoMut.error && (
+            <Alert color="red" title="Error">
+              {(deleteVehiculoMut.error as Error).message}
+            </Alert>
+          )}
+          <Group justify="flex-end">
+            <Button
+              variant="default"
+              onClick={() => setDeletingVehiculo(null)}
+              disabled={deleteVehiculoMut.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              color="red"
+              loading={deleteVehiculoMut.isPending}
+              onClick={() =>
+                deleteVehiculoMut.mutate(deletingVehiculo!.id, {
+                  onSuccess: () => setDeletingVehiculo(null),
+                })
+              }
+            >
+              Eliminar
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
     </Stack>
   )
@@ -894,6 +972,7 @@ export default function Modelos({
           modelo={selected}
           onBack={() => onOpenIdChange?.(null)}
           onEdit={(m) => openEdit(m)}
+          onDelete={(m) => setDeleting(m)}
           onNavigateVehiculo={onNavigateVehiculo}
         />
         <Modal
@@ -906,6 +985,29 @@ export default function Modelos({
             isPending={updateMut.isPending} error={formError}
             onSubmit={handleSubmit} onCancel={() => setFormOpen(false)}
           />
+        </Modal>
+
+        {/* El modal de baja se repite aquí porque el detalle sale por este
+            return y no alcanza el de la lista. Al borrarlo ya no hay ficha
+            que mostrar, así que se cierra el detalle. */}
+        <Modal
+          opened={deleting !== null} onClose={() => setDeleting(null)}
+          title="Eliminar modelo" centered size="sm"
+        >
+          <Stack gap="md">
+            <Text>¿Eliminar <strong>{deleting?.marca} {deleting?.nombre}</strong>? Esta acción no se puede deshacer.</Text>
+            <Text size="sm" c="dimmed">No podrá eliminarse si tiene vehículos asignados.</Text>
+            {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
+              <Button color="red" loading={deleteMut.isPending}
+                onClick={() => deleteMut.mutate(deleting!.id, {
+                  onSuccess: () => { setDeleting(null); onOpenIdChange?.(null) },
+                })}>
+                Eliminar
+              </Button>
+            </Group>
+          </Stack>
         </Modal>
       </>
     )

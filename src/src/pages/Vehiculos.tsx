@@ -192,9 +192,14 @@ export function RequerimientoForm({
   const { data: categoriasData } = useRequerimientoCategorias()
   const [categoriaSearch, setCategoriaSearch] = useState('')
 
+  // Se saca de `initial` antes del useMemo: dentro, el compilador de React
+  // infiere el objeto completo como dependencia y no coincide con la lista
+  // manual (que solo mira la categoría), lo que le impide optimizar el hook.
+  const categoriaInicial = initial?.categoria
+
   const categoriaOptions = useMemo(() => {
     const existentes = new Set(categoriasData?.data ?? [])
-    if (initial?.categoria) existentes.add(initial.categoria)
+    if (categoriaInicial) existentes.add(categoriaInicial)
 
     const opts = [...existentes].sort((a, b) => a.localeCompare(b, 'es-MX'))
       .map((c) => ({ value: c, label: c }))
@@ -205,7 +210,7 @@ export function RequerimientoForm({
       opts.unshift({ value: nueva, label: `+ Crear categoría "${nueva}"` })
     }
     return opts
-  }, [categoriasData, initial?.categoria, categoriaSearch])
+  }, [categoriasData, categoriaInicial, categoriaSearch])
 
   // Baseline preview
   const baselineKm   = desde === 'ahora' ? (vehiculo?.kilometraje ?? null)  : (lastMant?.km_actual  ?? null)
@@ -213,8 +218,8 @@ export function RequerimientoForm({
     : lastMant?.fecha?.split('T')[0] ?? vehiculo?.fecha_compra?.split('T')[0] ?? null
 
   function handleSubmit(vals: typeof form.values) {
-    let fecha_inicio: string | null = null
-    let km_inicio: number | null    = null
+    let fecha_inicio: string | null
+    let km_inicio: number | null
 
     if (!isEdit) {
       // Siempre se guarda un baseline como registro, aunque después no se use.
@@ -282,9 +287,9 @@ export function RequerimientoForm({
           label="Fecha de reporte" required
           description="Cuándo se encontró/reportó el requerimiento"
           placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
-          maxDate={new Date()}
-          value={toDateLocal(form.values.fecha_reporte)}
-          onChange={(d) => form.setFieldValue('fecha_reporte', fromDateLocal(d as Date | null))}
+          maxDate={hoyIso()}
+          value={form.values.fecha_reporte || null}
+          onChange={(d) => form.setFieldValue('fecha_reporte', d ?? '')}
           error={form.errors.fecha_reporte as string}
         />
         <Select
@@ -934,17 +939,11 @@ function RequerimientosSection({ vehiculo, mantenimientos, overdueIds = new Set<
 
 // ── Sección mantenimientos ────────────────────────────────────────────────────
 
-function toDateLocal(iso: string): Date | null {
-  return iso ? new Date(`${iso}T12:00:00`) : null
-}
-// Acepta Date o string porque Mantine DateInput puede entregar cualquiera de los dos en runtime
-function fromDateLocal(d: Date | string | null): string {
-  if (!d) return ''
-  const nd = d instanceof Date ? d : new Date(d)
-  if (isNaN(nd.getTime())) return ''
-  // Mantine entrega medianoche UTC; +12h lleva a mediodía UTC para leer la fecha correcta en cualquier zona horaria
-  const safe = new Date(nd.getTime() + 12 * 60 * 60 * 1000)
-  return `${safe.getUTCFullYear()}-${String(safe.getUTCMonth() + 1).padStart(2, '0')}-${String(safe.getUTCDate()).padStart(2, '0')}`
+// Fecha local de hoy en "YYYY-MM-DD" (construirla con métodos UTC recorrería
+// el día en zonas horarias detrás de UTC).
+function hoyIso(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 type MantForm = {
@@ -1109,9 +1108,9 @@ export function MantenimientoForm({
             <DateInput
               label="Fecha" required
               placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
-              clearable maxDate={new Date()}
-              value={toDateLocal(form.values.fecha)}
-              onChange={(d) => form.setFieldValue('fecha', fromDateLocal(d as Date | null))}
+              clearable maxDate={hoyIso()}
+              value={form.values.fecha || null}
+              onChange={(d) => form.setFieldValue('fecha', d ?? '')}
               error={form.errors.fecha as string}
             />
           </Grid.Col>
@@ -1719,7 +1718,7 @@ function PiezasVehiculoSection({ vehiculoId }: { vehiculoId: number }) {
 }
 
 function VehiculoDetalle({
-  vehiculo, onBack, backLabel, onEdit, onVehiculoUpdate,
+  vehiculo, onBack, backLabel, onEdit, onDelete, onVehiculoUpdate,
 }: {
   vehiculo: VehiculoRow
   onBack: () => void
@@ -1727,6 +1726,7 @@ function VehiculoDetalle({
   // regreso vuelve ahí; si no, regresa a la lista de vehículos.
   backLabel?: string
   onEdit: (v: VehiculoRow) => void
+  onDelete: (v: VehiculoRow) => void
   onVehiculoUpdate: (v: VehiculoRow) => void
 }) {
   const ti = tipoInfo(vehiculo.tipo)
@@ -1914,11 +1914,19 @@ function VehiculoDetalle({
               )}
             </Grid>
           </Stack>
-          <Tooltip label="Editar vehículo">
-            <ActionIcon variant="light" color="blue" size="lg" onClick={() => onEdit(vehiculo)}>
-              <IconPencil size={16} />
-            </ActionIcon>
-          </Tooltip>
+          <Group gap="xs" wrap="nowrap">
+            <Tooltip label="Editar vehículo">
+              <ActionIcon variant="light" color="blue" size="lg" onClick={() => onEdit(vehiculo)}>
+                <IconPencil size={16} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Eliminar vehículo">
+              <ActionIcon variant="light" color="red" size="lg"
+                aria-label="Eliminar vehículo" onClick={() => onDelete(vehiculo)}>
+                <IconTrash size={16} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
         </Group>
       </Paper>
 
@@ -2201,6 +2209,11 @@ export default function Vehiculos({
     }
   }, [pendingVehiculoData])
 
+  // Se borró el vehículo con el que se entró desde otra sección. Sin esto, el
+  // guard de abajo volvería a mostrar el loader esperando una ficha que ya no
+  // existe. Se marca desde el manejador de la baja, no durante el render.
+  const [pendingBorrado, setPendingBorrado] = useState(false)
+
   const [formOpen,   setFormOpen]   = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [editing,    setEditing]    = useState<VehiculoRow | null>(null)
@@ -2302,7 +2315,15 @@ export default function Vehiculos({
   function handleDelete() {
     if (!deleting) return
     deleteMut.mutate(deleting.id, {
-      onSuccess: () => { setDeleteOpen(false); if (selected?.id === deleting.id) setSelected(null) },
+      onSuccess: () => {
+        setDeleteOpen(false)
+        // Si se borró el vehículo que estaba abierto ya no hay ficha que
+        // mostrar: se sale por la misma vía que el botón de regreso.
+        if (selected?.id === deleting.id) {
+          setPendingBorrado(true)
+          handleDetailBack()
+        }
+      },
       onError:   (e: Error) => alert(e.message),
     })
   }
@@ -2310,7 +2331,7 @@ export default function Vehiculos({
   const isPending = createMut.isPending || updateMut.isPending
 
   // ── Esperando el vehículo referenciado desde otra pantalla ──
-  if (pendingId !== undefined && !selected) {
+  if (pendingId !== undefined && !selected && !pendingBorrado) {
     return <Center py="xl"><Loader /></Center>
   }
 
@@ -2323,6 +2344,7 @@ export default function Vehiculos({
           onBack={handleDetailBack}
           backLabel={externalEntry ? backLabel : undefined}
           onEdit={(v) => openEdit(v)}
+          onDelete={(v) => { setDeleting(v); setDeleteOpen(true) }}
           onVehiculoUpdate={(v) => setSelected(v)}
         />
         <Modal
@@ -2335,6 +2357,24 @@ export default function Vehiculos({
             isPending={updateMut.isPending} error={formError}
             onSubmit={handleFormSubmit} onCancel={() => setFormOpen(false)}
           />
+        </Modal>
+
+        {/* El modal de baja se repite aquí porque la vista de detalle sale por
+            este return y no llega al de la lista. Al confirmar, handleDelete
+            limpia `selected` y la pantalla regresa sola al listado. */}
+        <Modal opened={deleteOpen} onClose={() => setDeleteOpen(false)}
+          title="Eliminar vehículo" centered size="sm">
+          <Stack gap="md">
+            <Text>¿Eliminar <strong>{deleting ? vehiculoLabel(deleting) : ''}</strong>? Esta acción no se puede deshacer.</Text>
+            <Text size="sm" c="dimmed">
+              Sus requerimientos exclusivos se eliminan automáticamente. No podrá
+              eliminarse si tiene mantenimientos, recargas o vales registrados.
+            </Text>
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setDeleteOpen(false)} disabled={deleteMut.isPending}>Cancelar</Button>
+              <Button color="red" onClick={handleDelete} loading={deleteMut.isPending}>Eliminar</Button>
+            </Group>
+          </Stack>
         </Modal>
       </>
     )

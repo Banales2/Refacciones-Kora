@@ -143,12 +143,26 @@ export async function existsPlacas(placas: string, exceptId?: number): Promise<b
   return r.recordset.length > 0
 }
 
-export async function countDependencies(id: number): Promise<number> {
+export interface DependenciasVehiculo {
+  mantenimientos: number
+  recargas:       number
+  vales:          number
+}
+
+// Registros históricos que impiden dar de baja el vehículo. Se cuentan por
+// separado para poder decir en el mensaje qué es lo que lo está reteniendo,
+// en vez de un "tiene N registros vinculados" que no orienta a nadie.
+export async function countDependencies(id: number): Promise<DependenciasVehiculo> {
   const pool = await getPool()
   const result = await pool.request()
     .input('id', sql.Int, id)
-    .query('SELECT COUNT(*) AS total FROM mantenimiento WHERE vehiculo_id = @id')
-  return result.recordset[0].total
+    .query(`
+      SELECT
+        (SELECT COUNT(*) FROM mantenimiento          WHERE vehiculo_id = @id) AS mantenimientos,
+        (SELECT COUNT(*) FROM recargas_combustible   WHERE vehiculo_id = @id) AS recargas,
+        (SELECT COUNT(*) FROM vales_gasolina         WHERE vehiculo_id = @id) AS vales
+    `)
+  return result.recordset[0]
 }
 
 // ── Write ─────────────────────────────────────────────────────────────────────

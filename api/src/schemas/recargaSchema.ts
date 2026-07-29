@@ -14,6 +14,9 @@ const fecha = z
 export const RecargaCreateSchema = z.object({
   gasolinera_id: z.coerce.number().int().min(1, 'Gasolinera requerida'),
   conductor_id:  z.coerce.number().int().min(1, 'Conductor requerido'),
+  // Obligatorio al registrar. Las recargas anteriores a esta función se
+  // quedaron sin vale y por eso la columna sigue siendo NULL-able en la tabla.
+  vale_id: z.coerce.number().int().min(1, 'Vale requerido'),
   fecha,
   litros: z.coerce.number().positive('Debe ser mayor a 0'),
   costo:  z.coerce.number().min(0, 'No puede ser negativo'),
@@ -23,6 +26,7 @@ export const RecargaCreateSchema = z.object({
 export const RecargaUpdateSchema = z.object({
   gasolinera_id: z.coerce.number().int().min(1).optional(),
   conductor_id:  z.coerce.number().int().min(1).optional(),
+  vale_id:       z.coerce.number().int().min(1, 'Vale requerido').optional(),
   fecha:  fecha.optional(),
   litros: z.coerce.number().positive('Debe ser mayor a 0').optional(),
   costo:  z.coerce.number().min(0, 'No puede ser negativo').optional(),

@@ -8,6 +8,8 @@ export interface Recarga {
   vehiculo_id:   number
   gasolinera_id: number
   conductor_id:  number
+  // Null solo en las recargas anteriores a que el vale fuera obligatorio.
+  vale_id:       number | null
   fecha:         string
   litros:        number
   costo:         number
@@ -15,11 +17,13 @@ export interface Recarga {
   gasolinera:    string
   ubicacion:     string
   conductor:     string
+  vale_fecha:    string | null
 }
 
 export interface RecargaPayload {
   gasolinera_id: number
   conductor_id:  number
+  vale_id:       number
   fecha:         string
   litros:        number
   costo:         number

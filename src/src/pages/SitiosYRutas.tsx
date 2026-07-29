@@ -687,6 +687,18 @@ function TecnicosPanel() {
   )
 }
 
+// Ventana para resaltar documentos vencidos o por vencer: hoy y el corte a 30
+// días, ambos en "YYYY-MM-DD". Las dos fechas salen del mismo instante para que
+// no puedan quedar desfasadas entre sí. La usan seguros y permisos.
+function ventanaVencimiento(): { hoy: string; limite: string } {
+  const ahora = new Date()
+  const iso = (d: Date) => d.toISOString().slice(0, 10)
+  return {
+    hoy:    iso(ahora),
+    limite: iso(new Date(ahora.getTime() + 30 * 86_400_000)),
+  }
+}
+
 // ── Panel de seguros ──────────────────────────────────────────────────────────
 
 // El seguro tiene póliza, compañía y fecha de expiración, así que necesita su
@@ -752,9 +764,7 @@ function SegurosPanel({
   // El drawer abierto se deriva del id que Layout conserva.
   const asignando = items.find((s) => s.id === openId) ?? null
 
-  const hoy = new Date().toISOString().slice(0, 10)
-  // Umbral de "por expirar": vence dentro de los próximos 30 días.
-  const limite = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+  const { hoy, limite } = ventanaVencimiento()
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
   function openEdit(s: Seguro) { setEditing(s); setFormError(null); setFormOpen(true) }
@@ -930,9 +940,7 @@ function PermisosPanel({
   // El drawer abierto se deriva del id que Layout conserva.
   const asignando = items.find((p) => p.id === openId) ?? null
 
-  const hoy = new Date().toISOString().slice(0, 10)
-  // Umbral de "por expirar": vence dentro de los próximos 30 días.
-  const limite = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+  const { hoy, limite } = ventanaVencimiento()
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
   function openEdit(p: PermisoCirculacion) { setEditing(p); setFormError(null); setFormOpen(true) }

@@ -25,9 +25,10 @@ import Vehiculos from '../pages/Vehiculos'
 import Modelos from '../pages/Modelos'
 import SitiosYRutas from '../pages/SitiosYRutas'
 import Calendario from '../pages/Calendario'
+import ValesGasolina from '../pages/ValesGasolina'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 
-type Section = 'dashboard' | 'piezas' | 'modelos' | 'vehiculos' | 'sitios' | 'calendario'
+type Section = 'dashboard' | 'piezas' | 'modelos' | 'vehiculos' | 'sitios' | 'calendario' | 'vales'
 
 const SECTION_LABELS: Record<Section, string> = {
   dashboard:  'Dashboard',
@@ -36,6 +37,7 @@ const SECTION_LABELS: Record<Section, string> = {
   vehiculos:  'Vehículos',
   sitios:     'Catálogos',
   calendario: 'Calendario',
+  vales:      'Vales de gasolina',
 }
 
 const NAV_ITEMS: { section: Section; label: string; description: string }[] = [
@@ -43,6 +45,7 @@ const NAV_ITEMS: { section: Section; label: string; description: string }[] = [
   { section: 'modelos',    label: 'Modelos',     description: 'Marcas y modelos de la flota'                },
   { section: 'vehiculos',  label: 'Vehículos',   description: 'Unidades de reparto y tractocamiones'        },
   { section: 'calendario', label: 'Calendario',  description: 'Fechas de mantenimiento'                     },
+  { section: 'vales',      label: 'Vales de gasolina', description: 'Vales entregados a los choferes'       },
   { section: 'sitios',     label: 'Catálogos',   description: 'Proveedores, sucursales, traslados y más'    },
 ]
 
@@ -253,6 +256,7 @@ export default function Layout() {
           />
         )}
         {section === 'calendario' && <Calendario onNavigateVehiculo={navigateToVehiculoId} />}
+        {section === 'vales'      && <ValesGasolina />}
       </AppShell.Main>
     </AppShell>
   )

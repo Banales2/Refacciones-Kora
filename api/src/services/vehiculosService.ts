@@ -97,8 +97,16 @@ export async function update(id: number, data: VehiculoUpdate) {
 
 export async function remove(id: number) {
   const deps = await repo.countDependencies(id)
-  if (deps > 0)
-    throw new ConflictError(`Este vehículo tiene ${deps} registro(s) vinculado(s) y no puede eliminarse`)
+  const bloqueos: string[] = []
+  if (deps.mantenimientos > 0) bloqueos.push(`${deps.mantenimientos} mantenimiento(s)`)
+  if (deps.recargas       > 0) bloqueos.push(`${deps.recargas} recarga(s) de combustible`)
+  if (deps.vales          > 0) bloqueos.push(`${deps.vales} vale(s) de gasolina`)
+  if (bloqueos.length) {
+    throw new ConflictError(
+      `Este vehículo tiene ${bloqueos.join(', ')} y no puede eliminarse. ` +
+      'Elimina primero esos registros.'
+    )
+  }
   const current = await repo.findById(id)
   if (!current) throw new NotFoundError('Vehículo')
   await repo.remove(id)

@@ -19,6 +19,7 @@ import {
 import type { Recarga, RecargaPayload } from '../hooks/useRecargas'
 import { useGasolineras } from '../hooks/useGasolineras'
 import { useConductores } from '../hooks/useConductores'
+import { useValesGasolina } from '../hooks/useValesGasolina'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -143,6 +144,7 @@ function agrupar(items: Recarga[]): GrupoAnio[] {
 type RecargaFormValues = {
   gasolinera_id: string
   conductor_id:  string
+  vale_id:       string
   fecha:         string
   litros:        number | string
   costo:         number | string
@@ -150,8 +152,11 @@ type RecargaFormValues = {
 }
 
 function RecargaForm({
-  initial, isPending, error, onSubmit, onCancel,
+  vehiculoId, valesUsados, initial, isPending, error, onSubmit, onCancel,
 }: {
+  vehiculoId: number
+  // Vales ya consumidos por otras recargas; cada vale sirve una sola vez.
+  valesUsados: Set<number>
   initial?: RecargaFormValues
   isPending: boolean
   error: string | null
@@ -161,6 +166,7 @@ function RecargaForm({
   const hoy = todayIso()
   const { data: gasData } = useGasolineras()
   const { data: conData } = useConductores()
+  const { data: valesData } = useValesGasolina()
 
   const gasolineras = (gasData?.data ?? []).map((g) => ({
     value: String(g.id),
@@ -170,14 +176,25 @@ function RecargaForm({
     value: String(c.id),
     label: c.nombre,
   }))
+  // Solo los vales emitidos para este vehículo y que sigan libres: la API
+  // rechaza los de otra unidad y los ya usados, así que no tiene caso
+  // ofrecerlos. Al editar se conserva el vale de la propia recarga.
+  const vales = (valesData?.data ?? [])
+    .filter((v) => v.vehiculo_id === vehiculoId)
+    .filter((v) => !valesUsados.has(v.id) || String(v.id) === initial?.vale_id)
+    .map((v) => ({
+      value: String(v.id),
+      label: `Vale #${v.id} — ${formatFecha(v.fecha)} — ${v.conductor}`,
+    }))
 
   const form = useForm<RecargaFormValues>({
     initialValues: initial ?? {
-      gasolinera_id: '', conductor_id: '', fecha: hoy, litros: '', costo: '', kilometraje: '',
+      gasolinera_id: '', conductor_id: '', vale_id: '', fecha: hoy, litros: '', costo: '', kilometraje: '',
     },
     validate: {
       gasolinera_id: (v) => (!v ? 'Gasolinera requerida' : null),
       conductor_id:  (v) => (!v ? 'Conductor requerido' : null),
+      vale_id:       (v) => (!v ? 'Vale requerido' : null),
       fecha: (v) => {
         if (!v) return 'Fecha requerida'
         if (v > hoy) return 'No puede ser una fecha futura'
@@ -200,6 +217,7 @@ function RecargaForm({
       onSubmit={form.onSubmit((v) => onSubmit({
         gasolinera_id: parseInt(v.gasolinera_id, 10),
         conductor_id:  parseInt(v.conductor_id, 10),
+        vale_id:       parseInt(v.vale_id, 10),
         fecha:  v.fecha,
         litros: Number(v.litros),
         costo:  Number(v.costo),
@@ -231,6 +249,19 @@ function RecargaForm({
         {conductores.length === 0 && (
           <Text size="xs" c="dimmed">
             Da de alta los conductores en Catálogos → Conductores.
+          </Text>
+        )}
+        <Select
+          label="Vale de gasolina"
+          placeholder={vales.length ? 'Selecciona el vale usado' : 'No hay vales para este vehículo'}
+          data={vales}
+          searchable
+          required
+          {...form.getInputProps('vale_id')}
+        />
+        {vales.length === 0 && (
+          <Text size="xs" c="dimmed">
+            No hay vales libres de este vehículo. Registra uno en Vales de gasolina.
           </Text>
         )}
         <TextInput
@@ -287,6 +318,7 @@ function RecargasTabla({
           <Table.Th>Fecha</Table.Th>
           <Table.Th>Gasolinera</Table.Th>
           <Table.Th>Conductor</Table.Th>
+          <Table.Th>Vale</Table.Th>
           <Table.Th style={{ textAlign: 'right' }}>Kilometraje</Table.Th>
           <Table.Th style={{ textAlign: 'right' }}>Litros</Table.Th>
           <Table.Th style={{ textAlign: 'right' }}>Costo</Table.Th>
@@ -308,6 +340,18 @@ function RecargasTabla({
                 <Text size="xs" c="dimmed">{r.ubicacion}</Text>
               </Table.Td>
               <Table.Td><Text size="sm">{r.conductor}</Text></Table.Td>
+              <Table.Td>
+                {r.vale_id != null ? (
+                  <>
+                    <Text size="sm">Vale #{r.vale_id}</Text>
+                    {r.vale_fecha && (
+                      <Text size="xs" c="dimmed">{formatDiaMes(r.vale_fecha)}</Text>
+                    )}
+                  </>
+                ) : (
+                  <Text size="sm" c="dimmed">—</Text>
+                )}
+              </Table.Td>
               <Table.Td style={{ textAlign: 'right' }}>
                 {r.kilometraje != null ? formatKm(r.kilometraje) : '—'}
               </Table.Td>
@@ -373,6 +417,13 @@ export default function RecargasSection({ vehiculoId }: { vehiculoId: number }) 
   const items = useMemo(() => data?.data ?? [], [data])
   const anios = useMemo(() => agrupar(items), [items])
   const rendimientos = useMemo(() => calcularRendimientos(items), [items])
+  // Un vale solo puede gastarse en una recarga, y solo en las de su propio
+  // vehículo, así que las recargas de este vehículo bastan para saber cuáles
+  // ya están ocupados.
+  const valesUsados = useMemo(
+    () => new Set(items.map((r) => r.vale_id).filter((id): id is number => id != null)),
+    [items]
+  )
 
   // Al entrar se abre el año y el mes más recientes, que es lo que se quiere
   // ver de primera. `anios` (y sus meses) vienen ordenados descendente.
@@ -472,9 +523,12 @@ export default function RecargasSection({ vehiculoId }: { vehiculoId: number }) 
         centered size="md"
       >
         <RecargaForm
+          vehiculoId={vehiculoId}
+          valesUsados={valesUsados}
           initial={editing ? {
             gasolinera_id: String(editing.gasolinera_id),
             conductor_id:  String(editing.conductor_id),
+            vale_id:       editing.vale_id != null ? String(editing.vale_id) : '',
             fecha:  editing.fecha.split('T')[0],
             litros: Number(editing.litros),
             costo:  Number(editing.costo),

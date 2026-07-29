@@ -69,23 +69,11 @@ function init(v?: VehiculoRow): FormVals {
   }
 }
 
-function toDateLocal(iso: string): Date | null {
-  if (!iso) return null
-  // T12:00:00 evita que el offset de zona horaria cambie el día
-  return new Date(`${iso}T12:00:00`)
-}
-
-// Acepta Date o string porque Mantine DateInput puede entregar cualquiera de los dos en runtime
-function fromDateLocal(d: Date | string | null): string {
-  if (!d) return ''
-  const nd = d instanceof Date ? d : new Date(d)
-  if (isNaN(nd.getTime())) return ''
-  // +12h sobre medianoche UTC evita el desfase de zona horaria al leer con métodos UTC
-  const safe = new Date(nd.getTime() + 12 * 60 * 60 * 1000)
-  const year  = safe.getUTCFullYear()
-  const month = String(safe.getUTCMonth() + 1).padStart(2, '0')
-  const day   = String(safe.getUTCDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+// Fecha local de hoy en "YYYY-MM-DD" (construirla con métodos UTC recorrería
+// el día en zonas horarias detrás de UTC).
+function hoyIso(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function needsField(tipo: TipoVehiculo | '', check: 'combustible' | 'status' | 'km' | 'sucursal' | 'ruta' | 'tonelaje' | 'pies' | 'ubicacion' | 'placas') {
@@ -254,11 +242,37 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
 
   const tipoMeta = tipo ? TIPO_META[tipo] : null
 
+  // Al crear, el formulario arranca solo con el modelo: es lo que decide qué
+  // tipos de vehículo se pueden elegir después, así que pedirlo primero evita
+  // presentar de golpe campos que todavía no aplican. Al editar (o si el modelo
+  // viene fijado desde su ficha) ya hay modelo y se muestra todo.
+  const mostrarResto = isEdit || !!form.values.modelo_id
+
   return (
     <form onSubmit={form.onSubmit(handleSubmit)}>
       <Stack gap="sm">
         {error && <Alert color="red" title="Error">{error}</Alert>}
 
+        <Select
+          label="Marca / Modelo"
+          placeholder="Selecciona un modelo"
+          data={modelosOpts}
+          searchable={lockedModeloId == null}
+          disabled={lockedModeloId != null}
+          description={lockedModeloId != null ? 'Fijado por el modelo desde el que se está creando.' : undefined}
+          required
+          nothingFoundMessage="Sin resultados"
+          {...form.getInputProps('modelo_id')}
+        />
+
+        {!mostrarResto && (
+          <Text size="sm" c="dimmed">
+            Elige el modelo para capturar el resto de los datos.
+          </Text>
+        )}
+
+        {mostrarResto && (
+        <>
         {/* Tipo */}
         {isEdit ? (
           <Group gap="xs" align="center">
@@ -275,18 +289,6 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
             {...form.getInputProps('tipo')}
           />
         )}
-
-        <Select
-          label="Marca / Modelo"
-          placeholder="Selecciona un modelo"
-          data={modelosOpts}
-          searchable={lockedModeloId == null}
-          disabled={lockedModeloId != null}
-          description={lockedModeloId != null ? 'Fijado por el modelo desde el que se está creando.' : undefined}
-          required
-          nothingFoundMessage="Sin resultados"
-          {...form.getInputProps('modelo_id')}
-        />
 
         {/* Campos comunes */}
         <Grid>
@@ -317,9 +319,13 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
           placeholder="dd/mm/aaaa"
           valueFormat="DD/MM/YYYY"
           required
-          maxDate={new Date()}
-          value={toDateLocal(form.values.fecha_compra)}
-          onChange={(d) => form.setFieldValue('fecha_compra', fromDateLocal(d as Date | null))}
+          maxDate={hoyIso()}
+          // Mantine 9 trabaja con fechas en texto "YYYY-MM-DD". Pasarle un Date
+          // aquí colgaba el navegador: DateInput sincroniza su estado interno en
+          // un efecto que depende de `value`, y un objeto nuevo en cada render
+          // reactivaba el efecto sin parar.
+          value={form.values.fecha_compra || null}
+          onChange={(d) => form.setFieldValue('fecha_compra', d ?? '')}
           error={form.errors.fecha_compra}
         />
 
@@ -464,6 +470,9 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               </Grid.Col>
             </Grid>
           </>
+        )}
+
+        </>
         )}
 
         <Group justify="flex-end" mt="xs">

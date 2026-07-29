@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
   Stack, Text, Card, Group, Badge, Center, Loader, ActionIcon, Modal, SimpleGrid, ThemeIcon, Grid, Divider,
-  Button, Select, MultiSelect, Alert, TextInput, Textarea, Tooltip,
+  Button, Select, MultiSelect, Alert, Textarea, Tooltip,
 } from '@mantine/core'
 import { Calendar, DateInput } from '@mantine/dates'
 import { useForm } from '@mantine/form'
@@ -87,18 +87,6 @@ interface VehiculoOptionData {
   ubicacion: string
   vencidos:  number
   porVencer: number
-}
-
-function toDateLocal(iso: string): Date | null {
-  return iso ? new Date(`${iso}T12:00:00`) : null
-}
-// Acepta Date o string porque Mantine DateInput puede entregar cualquiera de los dos en runtime
-function fromDateLocal(d: Date | string | null): string {
-  if (!d) return ''
-  const nd = d instanceof Date ? d : new Date(d)
-  if (isNaN(nd.getTime())) return ''
-  const safe = new Date(nd.getTime() + 12 * 60 * 60 * 1000)
-  return `${safe.getUTCFullYear()}-${String(safe.getUTCMonth() + 1).padStart(2, '0')}-${String(safe.getUTCDate()).padStart(2, '0')}`
 }
 
 // Expande cada agenda pendiente en el set de días que abarca (inicio..fin) para marcarlos en el calendario.
@@ -224,17 +212,17 @@ function AgendaForm({
           <Grid.Col span={6}>
             <DateInput
               label="Inicio" required placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
-              value={toDateLocal(form.values.fecha_inicio)}
-              onChange={(d) => form.setFieldValue('fecha_inicio', fromDateLocal(d as Date | null))}
+              value={form.values.fecha_inicio || null}
+              onChange={(d) => form.setFieldValue('fecha_inicio', d ?? '')}
               error={form.errors.fecha_inicio as string}
             />
           </Grid.Col>
           <Grid.Col span={6}>
             <DateInput
               label="Fin" required placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
-              minDate={toDateLocal(form.values.fecha_inicio) ?? undefined}
-              value={toDateLocal(form.values.fecha_fin)}
-              onChange={(d) => form.setFieldValue('fecha_fin', fromDateLocal(d as Date | null))}
+              minDate={form.values.fecha_inicio || undefined}
+              value={form.values.fecha_fin || null}
+              onChange={(d) => form.setFieldValue('fecha_fin', d ?? '')}
               error={form.errors.fecha_fin as string}
             />
           </Grid.Col>
