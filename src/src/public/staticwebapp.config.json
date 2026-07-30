@@ -1,16 +1,4 @@
 {
-  "auth": {
-    "rolesSource": "/api/getRoles",
-    "identityProviders": {
-      "azureActiveDirectory": {
-        "registration": {
-          "openIdIssuer": "https://login.microsoftonline.com/18237cd0-f4f5-47b9-8a04-3499245dfd4a/v2.0",
-          "clientIdSettingName": "AZURE_CLIENT_ID",
-          "clientSecretSettingName": "AZURE_CLIENT_SECRET"
-        }
-      }
-    }
-  },
   "routes": [
     {
       "route": "/login",
