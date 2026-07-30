@@ -15,11 +15,13 @@
   "routes": [
     {
       "route": "/login",
-      "rewrite": "/.auth/login/aad"
+      "redirect": "/.auth/login/aad",
+      "statusCode": 302
     },
     {
       "route": "/logout",
-      "rewrite": "/.auth/logout"
+      "redirect": "/.auth/logout",
+      "statusCode": 302
     },
     {
       "route": "/api/admin/*",
@@ -38,7 +40,7 @@
   },
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/api/*", "/assets/*", "*.{png,jpg,svg,ico}"]
+    "exclude": ["/api/*", "/.auth/*", "/assets/*", "*.{png,jpg,svg,ico}"]
   },
   "globalHeaders": {
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
