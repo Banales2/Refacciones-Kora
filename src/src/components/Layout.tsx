@@ -48,7 +48,7 @@ const NAV_ITEMS: { section: Section; label: string; description: string }[] = [
   { section: 'vehiculos',  label: 'Vehículos',   description: 'Unidades de reparto y tractocamiones'        },
   { section: 'calendario', label: 'Calendario',  description: 'Fechas de mantenimiento'                     },
   { section: 'vales',      label: 'Vales de gasolina', description: 'Vales entregados a los choferes'       },
-  { section: 'sitios',     label: 'Catálogos',   description: 'Proveedores, sucursales, traslados y más'    },
+  { section: 'sitios',     label: 'Catálogos',   description: 'Proveedores, sucursales, translados y más'    },
 ]
 
 

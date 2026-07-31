@@ -399,7 +399,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 />
               </Grid.Col>
               <Grid.Col span={6}>
-                <Select label="Traslado" data={rutasOpts} placeholder="Traslado asignado" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
+                <Select label="Translado" data={rutasOpts} placeholder="Translado asignado" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
               </Grid.Col>
               <Grid.Col span={12}>
                 <TextInput label="Tenencia" placeholder="Folio de tenencia (opcional)" {...form.getInputProps('tenencia')} />
@@ -420,7 +420,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
               </Grid.Col>
               <Grid.Col span={12}>
-                <Select label="Traslado" data={rutasOpts} placeholder="Traslado asignado" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
+                <Select label="Translado" data={rutasOpts} placeholder="Translado asignado" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
               </Grid.Col>
             </Grid>
           </>

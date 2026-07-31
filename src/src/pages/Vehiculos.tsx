@@ -1877,7 +1877,7 @@ function VehiculoDetalle({
                 <>
                   {vehiculo.ruta && (
                     <Grid.Col span={{ base: 6, sm: 3 }}>
-                      <InfoItem label="Traslado" value={vehiculo.ruta} />
+                      <InfoItem label="Translado" value={vehiculo.ruta} />
                     </Grid.Col>
                   )}
                   {vehiculo.tonelaje !== null && (
@@ -2123,11 +2123,11 @@ function VehiculosAgrupados({
   return (
     <Accordion key={sucursales.map(s => s.id).join(',')} multiple defaultValue={defaultOpen} variant="separated">
       <Accordion.Item value="rutas">
-        <Accordion.Control><GroupHeader label="Traslados" count={rutas.length} /></Accordion.Control>
+        <Accordion.Control><GroupHeader label="Translados" count={rutas.length} /></Accordion.Control>
         <Accordion.Panel>
           <VehiculosTable
             items={rutas} showTipo
-            extraColumn={{ header: 'Traslado', render: v => v.ruta }}
+            extraColumn={{ header: 'Translado', render: v => v.ruta }}
             onSelect={onSelect} onEdit={onEdit} onDelete={onDelete} km={km}
           />
         </Accordion.Panel>
@@ -2388,7 +2388,7 @@ export default function Vehiculos({
       <Group justify="space-between" align="flex-end">
         <div>
           <Text size="xl" fw={600}>Vehículos</Text>
-          <Text size="sm" c="dimmed">Por traslado, sucursal y vehículos utilitarios</Text>
+          <Text size="sm" c="dimmed">Por translado, sucursal y vehículos utilitarios</Text>
         </div>
         <Group gap="sm">
           {totalVehiculos != null && (
