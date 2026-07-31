@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { DetalleMttoPiezaCreateSchema } from '../schemas/detalleMttoPiezaSchema'
 import * as service from '../services/detalleMttoPiezaService'
 
@@ -12,7 +13,14 @@ export async function detalleMttoCreate(req: HttpRequest, ctx: InvocationContext
     if (isNaN(mantenimientoId)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const body = DetalleMttoPiezaCreateSchema.parse(await req.json())
     const created = await service.create(mantenimientoId, body)
-    await audit({ user, accion: 'CREAR', tabla: 'detalle_mtto_pieza', registroId: created.id, ipAddress: getClientIp(req) })
+    await audit({
+      user,
+      accion: 'CREAR',
+      tabla: 'detalle_mtto_pieza',
+      registroId: created.id,
+      despues: await capturar('detalle_mtto_pieza', created.id),
+      ipAddress: getClientIp(req),
+    })
     return { status: 201, jsonBody: { data: created } }
   } catch (err) { return handleError(err, ctx) }
 }

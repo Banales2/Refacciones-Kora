@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { ProveedorCreateSchema } from '../schemas/proveedorSchema'
 import * as service from '../services/proveedoresService'
 
@@ -14,8 +15,12 @@ export async function proveedoresCreate(
     const data = ProveedorCreateSchema.parse(await request.json())
     const created = await service.create(data)
     await audit({
-      user, accion: 'CREAR', tabla: 'proveedores',
-      registroId: created.id, detalles: { nombre: created.nombre },
+      user,
+      accion: 'CREAR',
+      tabla: 'proveedores',
+      registroId: created.id,
+      despues: await capturar('proveedores', created.id),
+      detalles: { nombre: created.nombre },
       ipAddress: getClientIp(request),
     })
     return { status: 201, jsonBody: { data: created } }

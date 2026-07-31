@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import * as service from '../services/requerimentosService'
 import { TEXTO_SIMPLE, TEXTO_LIBRE } from '../schemas/common'
 
@@ -44,7 +45,14 @@ export async function requerimientosCreate(req: HttpRequest, ctx: InvocationCont
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     const body = Schema.parse(await req.json())
     const created = await service.create(vehiculoId, body)
-    await audit({ user, accion: 'CREAR', tabla: 'requerimientos_exclusivos', registroId: created.id, ipAddress: getClientIp(req) })
+    await audit({
+      user,
+      accion: 'CREAR',
+      tabla: 'requerimientos_exclusivos',
+      registroId: created.id,
+      despues: await capturar('requerimientos_exclusivos', created.id),
+      ipAddress: getClientIp(req),
+    })
     return { status: 201, jsonBody: { data: created } }
   } catch (err) { return handleError(err, ctx) }
 }

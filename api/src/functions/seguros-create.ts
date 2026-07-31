@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { SeguroCreateSchema } from '../schemas/seguroSchema'
 import * as service from '../services/segurosService'
 
@@ -14,8 +15,12 @@ export async function segurosCreate(
     const data = SeguroCreateSchema.parse(await request.json())
     const created = await service.create(data)
     await audit({
-      user, accion: 'CREAR', tabla: 'seguros',
-      registroId: created.id, detalles: { poliza: created.poliza },
+      user,
+      accion: 'CREAR',
+      tabla: 'seguros',
+      registroId: created.id,
+      despues: await capturar('seguros', created.id),
+      detalles: { poliza: created.poliza },
       ipAddress: getClientIp(request),
     })
     return { status: 201, jsonBody: { data: created } }

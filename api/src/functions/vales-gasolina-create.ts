@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { ValeGasolinaCreateSchema } from '../schemas/valeGasolinaSchema'
 import * as service from '../services/valesGasolinaService'
 
@@ -15,8 +16,11 @@ export async function valesGasolinaCreate(
     // Quien crea el vale es siempre el usuario de la sesión.
     const created = await service.create(data, user.userDetails)
     await audit({
-      user, accion: 'CREAR', tabla: 'vales_gasolina',
+      user,
+      accion: 'CREAR',
+      tabla: 'vales_gasolina',
       registroId: created.id,
+      despues: await capturar('vales_gasolina', created.id),
       detalles: { conductor: created.conductor, vehiculo: created.serie, fecha: created.fecha },
       ipAddress: getClientIp(request),
     })

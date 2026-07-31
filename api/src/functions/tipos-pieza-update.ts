@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { TipoPiezaUpdateSchema } from '../schemas/tipoPiezaSchema'
 import * as service from '../services/tiposPiezaService'
 
@@ -15,11 +16,17 @@ export async function tiposPiezaUpdate(
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 
     const data = TipoPiezaUpdateSchema.parse(await request.json())
+    const antes = await capturar('tipos_pieza', id)
     const updated = await service.update(id, data)
 
     await audit({
-      user, accion: 'EDITAR', tabla: 'tipos_pieza',
-      registroId: id, detalles: { nombre: updated.nombre },
+      user,
+      accion: 'EDITAR',
+      tabla: 'tipos_pieza',
+      registroId: id,
+      antes,
+      despues: await capturar('tipos_pieza', id),
+      detalles: { nombre: updated.nombre },
       ipAddress: getClientIp(request),
     })
 

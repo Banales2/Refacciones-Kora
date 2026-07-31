@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import * as service from '../services/agendaMantenimientoService'
 
 const Schema = z.object({
@@ -21,7 +22,14 @@ export async function agendaMantenimientoCreate(req: HttpRequest, ctx: Invocatio
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     const body = Schema.parse(await req.json())
     const created = await service.create(vehiculoId, body)
-    await audit({ user, accion: 'CREAR', tabla: 'agendas_mantenimiento', registroId: created.id, ipAddress: getClientIp(req) })
+    await audit({
+      user,
+      accion: 'CREAR',
+      tabla: 'agendas_mantenimiento',
+      registroId: created.id,
+      despues: await capturar('agendas_mantenimiento', created.id),
+      ipAddress: getClientIp(req),
+    })
     return { status: 201, jsonBody: { data: created } }
   } catch (err) { return handleError(err, ctx) }
 }

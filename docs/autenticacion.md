@@ -178,6 +178,55 @@ Consecuencia a tener en cuenta: con un tenant concreto, sólo entran cuentas que
 existan en ese directorio. Una cuenta Microsoft personal necesita estar
 invitada como guest.
 
+### Segundo factor
+
+El MFA no está en el código y no debe estarlo: el login lo resuelve Entra antes
+de que la aplicación vea nada. SWA emite su cookie de sesión en cuanto Entra
+responde, así que una pantalla de código propia en React se saltaría llamando a
+`/api/*` directamente.
+
+Se exige mediante **security defaults**, que es lo que hay sin licencia de
+Entra ID P1. Estado y conmutador en Entra ID → Overview → Properties → *Manage
+security defaults*. Los tenants creados después de octubre de 2019 lo traen
+encendido de fábrica, así que conviene mirarlo antes de suponer que está
+apagado.
+
+Lo que activa ese único interruptor, y aplica a **todo el directorio**, no sólo
+a esta aplicación:
+
+- Registro obligatorio de Microsoft Authenticator, con 14 días de plazo. **Sólo
+  esa app**: security defaults no admite SMS ni llamada.
+- MFA en cada inicio de sesión para los administradores.
+- MFA para el portal de Azure, Azure PowerShell y Azure CLI.
+- **Bloqueo de la autenticación heredada**: POP, IMAP, SMTP AUTH y clientes de
+  Office antiguos. Esto es lo que da sorpresas, porque rompe cosas que no
+  relacionas con haber tocado la autenticación —un script que envía correo, un
+  escáner de red— y el fallo aparece en otro sitio.
+
+Dos limitaciones que vienen de no tener P1:
+
+- **No se puede excluir a nadie.** No existe cuenta de emergencia. Si pierdes
+  el dispositivo con el Authenticator, la única salida es un ticket de soporte
+  de Microsoft demostrando la propiedad del tenant, y eso tarda días. Registrar
+  el método en dos dispositivos es barato comparado con eso.
+- No se puede limitar el MFA a esta aplicación.
+
+Security defaults y el acceso condicional son mutuamente excluyentes: con
+cualquier política de acceso condicional activa, el guardado falla. Con P1 la
+alternativa sería una política de acceso condicional apuntando al registro de
+aplicación del `ENTRA_CLIENT_ID`, creada primero en modo *Report-only*, con una
+cuenta de rescate excluida.
+
+Al probarlo, otra vez el punto 4 de más arriba: si no cierras sesión, sigues con
+la cookie anterior y parece que el MFA no se aplica.
+
+Si algún día hace falta que la aplicación lo verifique por su cuenta —para no
+depender de que nadie afloje la configuración en Azure—, `getRoles` recibe los
+claims y puede devolver `roles: []` cuando el login no llevó segundo factor.
+Antes de escribir ese `if`, comprobar que el claim `amr` llega de verdad: SWA no
+reenvía todos los claims del `id_token`. Rechazar por un claim que nunca aparece
+deja a todo el mundo sin rol, con el mismo síntoma indistinguible de siempre.
+
 ## Depurar sin logs
 
 El `catch` de `getRoles` devuelve `roles: []` ante cualquier fallo, así que

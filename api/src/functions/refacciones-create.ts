@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { RefaccionCreateSchema } from '../schemas/refaccionSchema'
 import * as service from '../services/refaccionesService'
 
@@ -20,6 +21,7 @@ export async function refaccionesCreate(
       accion: 'CREAR',
       tabla: 'piezas',
       registroId: created.id,
+      despues: await capturar('piezas', created.id),
       detalles: { numero_serie: created.numero_serie },
       ipAddress: getClientIp(request),
     })

@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { LoteUpdateSchema } from '../schemas/loteSchema'
 import * as service from '../services/lotesService'
 
@@ -15,11 +16,17 @@ export async function loteUpdate(
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 
     const body = LoteUpdateSchema.parse(await request.json())
+    const antes = await capturar('lotes_pieza', id)
     const updated = await service.updateLote(id, body)
 
     await audit({
-      user, accion: 'EDITAR', tabla: 'lotes_pieza',
-      registroId: id, ipAddress: getClientIp(request),
+      user,
+      accion: 'EDITAR',
+      tabla: 'lotes_pieza',
+      registroId: id,
+      antes,
+      despues: await capturar('lotes_pieza', id),
+      ipAddress: getClientIp(request),
     })
 
     return { status: 200, jsonBody: { data: updated } }

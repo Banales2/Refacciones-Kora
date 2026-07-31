@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { ProveedorUpdateSchema } from '../schemas/proveedorSchema'
 import * as service from '../services/proveedoresService'
 
@@ -14,10 +15,16 @@ export async function proveedoresUpdate(
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const data = ProveedorUpdateSchema.parse(await request.json())
+    const antes = await capturar('proveedores', id)
     const updated = await service.update(id, data)
     await audit({
-      user, accion: 'EDITAR', tabla: 'proveedores',
-      registroId: id, ipAddress: getClientIp(request),
+      user,
+      accion: 'EDITAR',
+      tabla: 'proveedores',
+      registroId: id,
+      antes,
+      despues: await capturar('proveedores', id),
+      ipAddress: getClientIp(request),
     })
     return { status: 200, jsonBody: { data: updated } }
   } catch (err) {

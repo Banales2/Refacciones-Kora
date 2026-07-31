@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { GasolineraUpdateSchema } from '../schemas/gasolineraSchema'
 import * as service from '../services/gasolinerasService'
 
@@ -15,11 +16,17 @@ export async function gasolinerasUpdate(
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 
     const data = GasolineraUpdateSchema.parse(await request.json())
+    const antes = await capturar('gasolineras', id)
     const updated = await service.update(id, data)
 
     await audit({
-      user, accion: 'EDITAR', tabla: 'gasolineras',
-      registroId: id, ipAddress: getClientIp(request),
+      user,
+      accion: 'EDITAR',
+      tabla: 'gasolineras',
+      registroId: id,
+      antes,
+      despues: await capturar('gasolineras', id),
+      ipAddress: getClientIp(request),
     })
 
     return { status: 200, jsonBody: { data: updated } }

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import * as service from '../services/plantillaService'
 import { TEXTO_SIMPLE, TEXTO_LIBRE } from '../schemas/common'
 
@@ -39,7 +40,14 @@ export async function plantillaCreate(req: HttpRequest, ctx: InvocationContext):
     if (isNaN(modeloId)) return { status: 400, jsonBody: { error: 'ID de modelo inválido' } }
     const body = Schema.parse(await req.json())
     const created = await service.create(modeloId, body)
-    await audit({ user, accion: 'CREAR', tabla: 'plantilla_requerimientos_modelo', registroId: created.id, ipAddress: getClientIp(req) })
+    await audit({
+      user,
+      accion: 'CREAR',
+      tabla: 'plantilla_requerimientos_modelo',
+      registroId: created.id,
+      despues: await capturar('plantilla_requerimientos_modelo', created.id),
+      ipAddress: getClientIp(req),
+    })
     return { status: 201, jsonBody: { data: created } }
   } catch (err) { return handleError(err, ctx) }
 }

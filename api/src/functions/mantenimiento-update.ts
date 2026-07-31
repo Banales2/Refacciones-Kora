@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { TEXTO_LIBRE } from '../schemas/common'
 import * as service from '../services/mantenimientoService'
 
@@ -23,8 +24,17 @@ export async function mantenimientoUpdate(req: HttpRequest, ctx: InvocationConte
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const body = Schema.parse(await req.json())
+    const antes = await capturar('mantenimiento', id)
     const updated = await service.update(id, body)
-    await audit({ user, accion: 'EDITAR', tabla: 'mantenimiento', registroId: id, ipAddress: getClientIp(req) })
+    await audit({
+      user,
+      accion: 'EDITAR',
+      tabla: 'mantenimiento',
+      registroId: id,
+      antes,
+      despues: await capturar('mantenimiento', id),
+      ipAddress: getClientIp(req),
+    })
     return { status: 200, jsonBody: { data: updated } }
   } catch (err) { return handleError(err, ctx) }
 }

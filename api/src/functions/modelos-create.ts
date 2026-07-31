@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import * as service from '../services/modelosService'
 import { TIPOS_VEHICULO } from '../schemas/vehiculoSchema'
 import { TEXTO_SIMPLE } from '../schemas/common'
@@ -29,7 +30,14 @@ export async function modelosCreate(req: HttpRequest, ctx: InvocationContext): P
     const user = requireRole(req, 'admin', 'editor')
     const { marca, nombre, anio, tipos_permitidos } = Schema.parse(await req.json())
     const created = await service.create(marca, nombre, anio ?? null, tipos_permitidos)
-    await audit({ user, accion: 'CREAR', tabla: 'modelos', registroId: created.id, ipAddress: getClientIp(req) })
+    await audit({
+      user,
+      accion: 'CREAR',
+      tabla: 'modelos',
+      registroId: created.id,
+      despues: await capturar('modelos', created.id),
+      ipAddress: getClientIp(req),
+    })
     return { status: 201, jsonBody: { data: created } }
   } catch (err) { return handleError(err, ctx) }
 }

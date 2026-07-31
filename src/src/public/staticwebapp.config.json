@@ -31,6 +31,10 @@
       "allowedRoles": ["admin"]
     },
     {
+      "route": "/api/registros-cambios*",
+      "allowedRoles": ["admin"]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": ["admin", "editor", "lector"]
     }

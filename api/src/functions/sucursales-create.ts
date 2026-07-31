@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import * as service from '../services/sucursalesService'
 
 const Schema = z.object({
@@ -15,7 +16,14 @@ export async function sucursalesCreate(req: HttpRequest, ctx: InvocationContext)
     const user = requireRole(req, 'admin', 'editor')
     const { nombre, ubicacion } = Schema.parse(await req.json())
     const created = await service.create(nombre, ubicacion)
-    await audit({ user, accion: 'CREAR', tabla: 'sucursales', registroId: created.id, ipAddress: getClientIp(req) })
+    await audit({
+      user,
+      accion: 'CREAR',
+      tabla: 'sucursales',
+      registroId: created.id,
+      despues: await capturar('sucursales', created.id),
+      ipAddress: getClientIp(req),
+    })
     return { status: 201, jsonBody: { data: created } }
   } catch (err) { return handleError(err, ctx) }
 }

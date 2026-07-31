@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { TEXTO_LIBRE } from '../schemas/common'
 import * as service from '../services/agendaMantenimientoService'
 
@@ -24,7 +25,15 @@ export async function agendaMantenimientoCompletar(req: HttpRequest, ctx: Invoca
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const body = Schema.parse(await req.json())
     const mantenimiento = await service.completar(id, body)
-    await audit({ user, accion: 'CREAR', tabla: 'mantenimiento', registroId: mantenimiento.id, detalles: { agenda_id: id }, ipAddress: getClientIp(req) })
+    await audit({
+      user,
+      accion: 'CREAR',
+      tabla: 'mantenimiento',
+      registroId: mantenimiento.id,
+      despues: await capturar('mantenimiento', mantenimiento.id),
+      detalles: { agenda_id: id },
+      ipAddress: getClientIp(req),
+    })
     return { status: 201, jsonBody: { data: mantenimiento } }
   } catch (err) { return handleError(err, ctx) }
 }

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import * as service from '../services/requerimentosService'
 import { TEXTO_SIMPLE, TEXTO_LIBRE } from '../schemas/common'
 
@@ -45,8 +46,17 @@ export async function requerimientosUpdate(req: HttpRequest, ctx: InvocationCont
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const body = Schema.parse(await req.json())
+    const antes = await capturar('requerimientos_exclusivos', id)
     const updated = await service.update(id, body)
-    await audit({ user, accion: 'EDITAR', tabla: 'requerimientos_exclusivos', registroId: id, ipAddress: getClientIp(req) })
+    await audit({
+      user,
+      accion: 'EDITAR',
+      tabla: 'requerimientos_exclusivos',
+      registroId: id,
+      antes,
+      despues: await capturar('requerimientos_exclusivos', id),
+      ipAddress: getClientIp(req),
+    })
     return { status: 200, jsonBody: { data: updated } }
   } catch (err) { return handleError(err, ctx) }
 }

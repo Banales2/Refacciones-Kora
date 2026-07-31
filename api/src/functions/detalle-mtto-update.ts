@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { DetalleMttoPiezaUpdateSchema } from '../schemas/detalleMttoPiezaSchema'
 import * as service from '../services/detalleMttoPiezaService'
 
@@ -11,8 +12,17 @@ export async function detalleMttoUpdate(req: HttpRequest, ctx: InvocationContext
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const body = DetalleMttoPiezaUpdateSchema.parse(await req.json())
+    const antes = await capturar('detalle_mtto_pieza', id)
     const updated = await service.update(id, body)
-    await audit({ user, accion: 'EDITAR', tabla: 'detalle_mtto_pieza', registroId: id, ipAddress: getClientIp(req) })
+    await audit({
+      user,
+      accion: 'EDITAR',
+      tabla: 'detalle_mtto_pieza',
+      registroId: id,
+      antes,
+      despues: await capturar('detalle_mtto_pieza', id),
+      ipAddress: getClientIp(req),
+    })
     return { status: 200, jsonBody: { data: updated } }
   } catch (err) { return handleError(err, ctx) }
 }

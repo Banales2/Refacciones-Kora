@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { RecargaUpdateSchema } from '../schemas/recargaSchema'
 import * as service from '../services/recargasService'
 
@@ -15,11 +16,17 @@ export async function recargaUpdate(
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 
     const data = RecargaUpdateSchema.parse(await request.json())
+    const antes = await capturar('recargas_combustible', id)
     const updated = await service.update(id, data)
 
     await audit({
-      user, accion: 'EDITAR', tabla: 'recargas_combustible',
-      registroId: id, ipAddress: getClientIp(request),
+      user,
+      accion: 'EDITAR',
+      tabla: 'recargas_combustible',
+      registroId: id,
+      antes,
+      despues: await capturar('recargas_combustible', id),
+      ipAddress: getClientIp(request),
     })
 
     return { status: 200, jsonBody: { data: updated } }

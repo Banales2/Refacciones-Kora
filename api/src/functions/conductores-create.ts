@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { ConductorCreateSchema } from '../schemas/conductorSchema'
 import * as service from '../services/conductoresService'
 
@@ -14,8 +15,12 @@ export async function conductoresCreate(
     const data = ConductorCreateSchema.parse(await request.json())
     const created = await service.create(data)
     await audit({
-      user, accion: 'CREAR', tabla: 'conductores',
-      registroId: created.id, detalles: { nombre: created.nombre },
+      user,
+      accion: 'CREAR',
+      tabla: 'conductores',
+      registroId: created.id,
+      despues: await capturar('conductores', created.id),
+      detalles: { nombre: created.nombre },
       ipAddress: getClientIp(request),
     })
     return { status: 201, jsonBody: { data: created } }

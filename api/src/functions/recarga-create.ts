@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { RecargaCreateSchema } from '../schemas/recargaSchema'
 import * as service from '../services/recargasService'
 
@@ -18,8 +19,12 @@ export async function recargaCreate(
     const created = await service.create(vehiculoId, data)
 
     await audit({
-      user, accion: 'CREAR', tabla: 'recargas_combustible',
-      registroId: created.id, detalles: { vehiculo_id: vehiculoId, litros: created.litros, costo: created.costo },
+      user,
+      accion: 'CREAR',
+      tabla: 'recargas_combustible',
+      registroId: created.id,
+      despues: await capturar('recargas_combustible', created.id),
+      detalles: { vehiculo_id: vehiculoId, litros: created.litros, costo: created.costo },
       ipAddress: getClientIp(request),
     })
 

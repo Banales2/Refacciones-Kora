@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import * as service from '../services/conductoresService'
 
 export async function conductoresDelete(
@@ -13,11 +14,16 @@ export async function conductoresDelete(
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 
+    const antes = await capturar('conductores', id)
     await service.remove(id)
 
     await audit({
-      user, accion: 'ELIMINAR', tabla: 'conductores',
-      registroId: id, ipAddress: getClientIp(request),
+      user,
+      accion: 'ELIMINAR',
+      tabla: 'conductores',
+      registroId: id,
+      antes,
+      ipAddress: getClientIp(request),
     })
 
     return { status: 204 }

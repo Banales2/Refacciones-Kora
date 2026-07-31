@@ -26,9 +26,10 @@ import Modelos from '../pages/Modelos'
 import SitiosYRutas from '../pages/SitiosYRutas'
 import Calendario from '../pages/Calendario'
 import ValesGasolina from '../pages/ValesGasolina'
+import RegistrosCambios from '../pages/RegistrosCambios'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 
-type Section = 'dashboard' | 'piezas' | 'modelos' | 'vehiculos' | 'sitios' | 'calendario' | 'vales'
+type Section = 'dashboard' | 'piezas' | 'modelos' | 'vehiculos' | 'sitios' | 'calendario' | 'vales' | 'registros'
 
 const SECTION_LABELS: Record<Section, string> = {
   dashboard:  'Dashboard',
@@ -38,6 +39,7 @@ const SECTION_LABELS: Record<Section, string> = {
   sitios:     'Catálogos',
   calendario: 'Calendario',
   vales:      'Vales de gasolina',
+  registros:  'Registros de cambios',
 }
 
 const NAV_ITEMS: { section: Section; label: string; description: string }[] = [
@@ -74,6 +76,7 @@ export default function Layout() {
   const [modeloDetalleId, setModeloDetalleId] = useState<number | null>(null)
 
   const rol = user?.userRoles.find((r) => !['anonymous', 'authenticated'].includes(r))
+  const esAdmin = user?.userRoles.includes('admin') ?? false
 
   function navigate(s: Section) {
     if (s !== 'vehiculos') {
@@ -217,6 +220,23 @@ export default function Layout() {
               style={{ borderRadius: 6 }}
             />
           ))}
+
+          {/* La bitácora enseña la actividad de todo el mundo, con su correo.
+              Ocultarla no es la protección real —esa la da el allowedRoles de
+              staticwebapp.config.json, que devuelve 403 a quien no sea admin—,
+              pero evita ofrecer una pantalla que acabaría en un error. */}
+          {esAdmin && (
+            <>
+              <Divider my="xs" label="Administración" labelPosition="left" />
+              <NavLink
+                label="Registros de cambios"
+                description="Quién creó, modificó o eliminó qué"
+                active={section === 'registros'}
+                onClick={() => navigate('registros')}
+                style={{ borderRadius: 6 }}
+              />
+            </>
+          )}
         </Stack>
       </AppShell.Navbar>
 
@@ -257,6 +277,7 @@ export default function Layout() {
         )}
         {section === 'calendario' && <Calendario onNavigateVehiculo={navigateToVehiculoId} />}
         {section === 'vales'      && <ValesGasolina />}
+        {section === 'registros' && esAdmin && <RegistrosCambios />}
       </AppShell.Main>
     </AppShell>
   )

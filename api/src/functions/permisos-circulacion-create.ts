@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { capturar } from '../shared/snapshot'
 import { PermisoCirculacionCreateSchema } from '../schemas/permisoCirculacionSchema'
 import * as service from '../services/permisosCirculacionService'
 
@@ -14,8 +15,12 @@ export async function permisosCirculacionCreate(
     const data = PermisoCirculacionCreateSchema.parse(await request.json())
     const created = await service.create(data)
     await audit({
-      user, accion: 'CREAR', tabla: 'permisos_circulacion',
-      registroId: created.id, detalles: { zona_circulacion: created.zona_circulacion },
+      user,
+      accion: 'CREAR',
+      tabla: 'permisos_circulacion',
+      registroId: created.id,
+      despues: await capturar('permisos_circulacion', created.id),
+      detalles: { zona_circulacion: created.zona_circulacion },
       ipAddress: getClientIp(request),
     })
     return { status: 201, jsonBody: { data: created } }
