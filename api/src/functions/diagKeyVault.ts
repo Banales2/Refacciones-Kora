@@ -25,6 +25,54 @@ function describir(err: unknown): string {
   return limpiar(partes.join(' | ') || String(err))
 }
 
+// Nunca devolvemos el token: sólo si vino, y con qué error si no.
+async function probarEndpointsMsi(): Promise<unknown> {
+  const recurso = 'https://vault.azure.net'
+  const intentos: Array<{ nombre: string; url?: string; cabeceras: Record<string, string> }> = [
+    {
+      nombre: '2019-08-01 (IDENTITY_ENDPOINT + X-IDENTITY-HEADER)',
+      url: process.env.IDENTITY_ENDPOINT,
+      cabeceras: { 'X-IDENTITY-HEADER': process.env.IDENTITY_HEADER ?? '' },
+    },
+    {
+      nombre: '2017-09-01 (MSI_ENDPOINT + Secret)',
+      url: process.env.MSI_ENDPOINT,
+      cabeceras: { Secret: process.env.MSI_SECRET ?? '' },
+    },
+  ]
+
+  const resultados: Record<string, unknown> = {}
+
+  for (const intento of intentos) {
+    if (!intento.url) {
+      resultados[intento.nombre] = 'variable no definida'
+      continue
+    }
+    const version = intento.nombre.startsWith('2019') ? '2019-08-01' : '2017-09-01'
+    const url = `${intento.url}?resource=${encodeURIComponent(recurso)}&api-version=${version}`
+    try {
+      const res = await fetch(url, { headers: intento.cabeceras })
+      const texto = await res.text()
+      let tieneToken = false
+      try {
+        tieneToken = !!JSON.parse(texto).access_token
+      } catch {
+        /* la respuesta no era JSON */
+      }
+      resultados[intento.nombre] = {
+        status: res.status,
+        token: tieneToken,
+        // Si hubo token no enseñamos el cuerpo; si no, el error es lo útil.
+        cuerpo: tieneToken ? '(token recibido, omitido)' : limpiar(texto).slice(0, 400),
+      }
+    } catch (err) {
+      resultados[intento.nombre] = 'ERROR: ' + describir(err)
+    }
+  }
+
+  return resultados
+}
+
 export async function diagKeyVault(
   request: HttpRequest,
   context: InvocationContext
@@ -38,8 +86,14 @@ export async function diagKeyVault(
     IDENTITY_ENDPOINT: !!process.env.IDENTITY_ENDPOINT,
     IDENTITY_HEADER: !!process.env.IDENTITY_HEADER,
     MSI_ENDPOINT: !!process.env.MSI_ENDPOINT,
+    MSI_SECRET: !!process.env.MSI_SECRET,
     AZURE_CLIENT_ID: !!process.env.AZURE_CLIENT_ID,
   }
+
+  // El SDK falló al leer 'expires_on', señal de que el endpoint devolvió algo
+  // que no era un token. Lo llamamos a mano con las dos versiones del
+  // protocolo para ver el error que da Azure en crudo.
+  pasos.msi = await probarEndpointsMsi()
 
   const configurada = process.env.SQL_CONNECTION_STRING
   if (!configurada) {
