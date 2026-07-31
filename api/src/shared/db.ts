@@ -6,6 +6,13 @@ import { SecretClient } from '@azure/keyvault-secrets'
 // de autenticación; lo que consume la API llega como texto literal. Si nos
 // dan una referencia en vez de una cadena, la resolvemos aquí con la identidad
 // administrada.
+//
+// Ojo: hoy esto NO funciona en las funciones gestionadas de Static Web Apps.
+// El endpoint de identidad existe, pero el runtime no entrega al proceso ni
+// IDENTITY_HEADER ni MSI_SECRET, así que no hay forma de pedirle un token y
+// DefaultAzureCredential falla. Comprobado el 30/07/2026. La variable debe
+// llevar la cadena literal; este camino queda listo para el día que la API
+// viva en una Function App propia, donde la identidad sí es utilizable.
 const REFERENCIA_KEY_VAULT = /^@Microsoft\.KeyVault\(SecretUri=(.+?)\)$/
 
 let cadenaResuelta: string | null = null
