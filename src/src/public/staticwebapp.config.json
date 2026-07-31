@@ -23,6 +23,10 @@
       "statusCode": 302
     },
     {
+      "route": "/api/getRoles",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/api/admin/*",
       "allowedRoles": ["admin"]
     },
