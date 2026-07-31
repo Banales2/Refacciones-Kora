@@ -27,6 +27,10 @@
       "allowedRoles": ["anonymous", "authenticated"]
     },
     {
+      "route": "/api/diag-keyvault",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/api/admin/*",
       "allowedRoles": ["admin"]
     },
