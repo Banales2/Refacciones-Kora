@@ -13,6 +13,10 @@ export const CONTACTO = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 .,@+()-]+$/
 // 6 caracteres, que es lo que cabe en la columna.
 export const ANIO_MODELO = /^\d{4}(-[1-9])?$/
 
+// Allowlist para números telefónicos: dígitos y los separadores con los que se
+// suelen capturar. Sin letras.
+export const TELEFONO = /^[0-9 ()+-]+$/
+
 // Allowlist para códigos e identificadores (series, placas, folios): solo
 // mayúsculas, números y guiones. Sin espacios ni puntuación.
 export const CODIGO = /^[A-Z0-9-]+$/

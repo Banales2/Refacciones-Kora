@@ -5,6 +5,16 @@ import { CODIGO, TEXTO_SIMPLE } from './common'
 // null, no una cadena vacía (que además no pasaría las allowlists).
 const vacioANull = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? null : v)
 
+// Base desde donde opera el conductor. Etiqueta corta, no un domicilio.
+const ubicacion = z.preprocess(
+  vacioANull,
+  z.string().trim()
+    .max(20, 'Máximo 20 caracteres')
+    .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones')
+    .nullable()
+    .optional()
+)
+
 // Número de licencia: código alfanumérico, por eso pasa por la allowlist de
 // códigos (mayúsculas, números y guiones).
 const licenciaNumero = z.preprocess(
@@ -28,12 +38,14 @@ const licenciaVigencia = z.preprocess(
 
 export const ConductorCreateSchema = z.object({
   nombre: z.string().trim().min(1, 'Nombre requerido').max(100, 'Máximo 100 caracteres'),
+  ubicacion,
   licencia_estatal_numero:   licenciaNumero,
   licencia_estatal_vigencia: licenciaVigencia,
 })
 
 export const ConductorUpdateSchema = z.object({
   nombre: z.string().trim().min(1).max(100, 'Máximo 100 caracteres').optional(),
+  ubicacion,
   licencia_estatal_numero:   licenciaNumero,
   licencia_estatal_vigencia: licenciaVigencia,
 })

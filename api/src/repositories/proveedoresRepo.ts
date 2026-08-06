@@ -5,12 +5,17 @@ export interface Proveedor {
   id:       number
   nombre:   string
   contacto: string | null
+  // Número telefónico tal como se captura, con o sin separadores.
+  telefono: string | null
 }
+
+const COLS = 'id, nombre, contacto, telefono'
+const OUT  = COLS.split(', ').map((c) => `INSERTED.${c}`).join(', ')
 
 export async function findAll(): Promise<Proveedor[]> {
   const pool = await getPool()
   const result = await pool.request()
-    .query('SELECT id, nombre, contacto FROM proveedores ORDER BY nombre')
+    .query(`SELECT ${COLS} FROM proveedores ORDER BY nombre`)
   return result.recordset
 }
 
@@ -18,28 +23,30 @@ export async function findById(id: number): Promise<Proveedor | null> {
   const pool = await getPool()
   const result = await pool.request()
     .input('id', sql.Int, id)
-    .query('SELECT id, nombre, contacto FROM proveedores WHERE id = @id')
+    .query(`SELECT ${COLS} FROM proveedores WHERE id = @id`)
   return result.recordset[0] ?? null
 }
 
-export async function create(nombre: string, contacto: string | null): Promise<Proveedor> {
+export async function create(nombre: string, contacto: string | null, telefono: string | null): Promise<Proveedor> {
   const pool = await getPool()
   const result = await pool.request()
     .input('nombre',   sql.NVarChar(100), nombre)
     .input('contacto', sql.NVarChar(100), contacto ?? null)
-    .query('INSERT INTO proveedores (nombre, contacto) OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.contacto VALUES (@nombre, @contacto)')
+    .input('telefono', sql.VarChar(12),   telefono ?? null)
+    .query(`INSERT INTO proveedores (nombre, contacto, telefono) OUTPUT ${OUT} VALUES (@nombre, @contacto, @telefono)`)
   return result.recordset[0]
 }
 
-export async function update(id: number, nombre?: string, contacto?: string | null): Promise<Proveedor | null> {
+export async function update(id: number, nombre?: string, contacto?: string | null, telefono?: string | null): Promise<Proveedor | null> {
   const pool = await getPool()
   const sets: string[] = []
   const req = pool.request().input('id', sql.Int, id)
   if (nombre   !== undefined) { req.input('nombre',   sql.NVarChar(100), nombre);        sets.push('nombre=@nombre') }
   if (contacto !== undefined) { req.input('contacto', sql.NVarChar(100), contacto ?? null); sets.push('contacto=@contacto') }
+  if (telefono !== undefined) { req.input('telefono', sql.VarChar(12),   telefono ?? null); sets.push('telefono=@telefono') }
   if (!sets.length) return findById(id)
   const result = await req.query(
-    `UPDATE proveedores SET ${sets.join(',')} OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.contacto WHERE id=@id`
+    `UPDATE proveedores SET ${sets.join(',')} OUTPUT ${OUT} WHERE id=@id`
   )
   return result.recordset[0] ?? null
 }

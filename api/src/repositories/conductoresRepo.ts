@@ -2,8 +2,10 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 
 export interface Conductor {
-  id:     number
-  nombre: string
+  id:        number
+  nombre:    string
+  // Base desde donde opera. Etiqueta corta, no un domicilio.
+  ubicacion: string | null
   // Licencia estatal. Los dos campos son texto porque el número trae letras y
   // la vigencia tampoco siempre se captura como fecha. Null mientras no se
   // capturen. Cuando entre el segundo tipo de licencia se agregan aquí sus
@@ -16,11 +18,12 @@ export interface Conductor {
 // undefined = no tocar, null = limpiar.
 export interface ConductorInput {
   nombre?:                    string
+  ubicacion?:                 string | null
   licencia_estatal_numero?:   string | null
   licencia_estatal_vigencia?: string | null
 }
 
-const COLS = 'id, nombre, licencia_estatal_numero, licencia_estatal_vigencia'
+const COLS = 'id, nombre, ubicacion, licencia_estatal_numero, licencia_estatal_vigencia'
 const OUT  = COLS.split(', ').map((c) => `INSERTED.${c}`).join(', ')
 
 export async function findAll(): Promise<Conductor[]> {
@@ -41,13 +44,14 @@ export async function findById(id: number): Promise<Conductor | null> {
 export async function create(data: ConductorInput & { nombre: string }): Promise<Conductor> {
   const pool = await getPool()
   const r = await pool.request()
-    .input('nombre',   sql.NVarChar(100), data.nombre)
-    .input('licNum',   sql.VarChar(30),   data.licencia_estatal_numero   ?? null)
-    .input('licVig',   sql.VarChar(30),   data.licencia_estatal_vigencia ?? null)
+    .input('nombre',    sql.NVarChar(100), data.nombre)
+    .input('ubicacion', sql.VarChar(20),   data.ubicacion                 ?? null)
+    .input('licNum',    sql.VarChar(30),   data.licencia_estatal_numero   ?? null)
+    .input('licVig',    sql.VarChar(30),   data.licencia_estatal_vigencia ?? null)
     .query(`
-      INSERT INTO conductores (nombre, licencia_estatal_numero, licencia_estatal_vigencia)
+      INSERT INTO conductores (nombre, ubicacion, licencia_estatal_numero, licencia_estatal_vigencia)
       OUTPUT ${OUT}
-      VALUES (@nombre, @licNum, @licVig)`)
+      VALUES (@nombre, @ubicacion, @licNum, @licVig)`)
   return r.recordset[0]
 }
 
@@ -58,6 +62,9 @@ export async function update(id: number, data: ConductorInput): Promise<Conducto
 
   if (data.nombre !== undefined) {
     req.input('nombre', sql.NVarChar(100), data.nombre); sets.push('nombre=@nombre')
+  }
+  if (data.ubicacion !== undefined) {
+    req.input('ubicacion', sql.VarChar(20), data.ubicacion); sets.push('ubicacion=@ubicacion')
   }
   if (data.licencia_estatal_numero !== undefined) {
     req.input('licNum', sql.VarChar(30), data.licencia_estatal_numero)

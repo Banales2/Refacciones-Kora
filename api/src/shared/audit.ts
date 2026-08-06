@@ -50,7 +50,7 @@ const LEGIBLE_DE: Record<string, string> = {
 // vistazo. El orden importa: se muestran así.
 const ENTIDADES: Record<string, { etiqueta: string; campos: string[] }> = {
   agendas_mantenimiento:           { etiqueta: 'Agenda de mantenimiento', campos: ['tipo', 'vehiculo_serie', 'vehiculo_placas', 'fecha_inicio'] },
-  conductores:                     { etiqueta: 'Conductor',               campos: ['nombre', 'licencia_estatal_numero'] },
+  conductores:                     { etiqueta: 'Conductor',               campos: ['nombre', 'ubicacion', 'licencia_estatal_numero'] },
   detalle_mtto_pieza:              { etiqueta: 'Pieza de mantenimiento',  campos: ['pieza', 'pieza_serie', 'cantidad', 'vehiculo_serie'] },
   gasolineras:                     { etiqueta: 'Gasolinera',              campos: ['nombre', 'ubicacion'] },
   lotes_pieza:                     { etiqueta: 'Lote de refacción',       campos: ['pieza', 'pieza_serie', 'proveedor', 'num_factura'] },

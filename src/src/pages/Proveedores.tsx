@@ -11,6 +11,7 @@ import {
   useProveedores, useCreateProveedor, useUpdateProveedor, useDeleteProveedor,
 } from '../hooks/useProveedores'
 import type { Proveedor, ProveedorPayload } from '../hooks/useProveedores'
+import { TELEFONO, limpiarTelefono } from '../lib/validaciones'
 
 function ProveedorForm({
   initial,
@@ -29,16 +30,21 @@ function ProveedorForm({
     initialValues: {
       nombre:   initial?.nombre   ?? '',
       contacto: initial?.contacto ?? '',
+      telefono: initial?.telefono ?? '',
     },
     validate: {
       nombre: (v) =>
         v.trim().length < 2 ? 'Mínimo 2 caracteres' :
         v.length > 100      ? 'Máximo 100 caracteres' : null,
+      telefono: (v) =>
+        v && !TELEFONO.test(v.trim()) ? 'Solo números, espacios, paréntesis, + y guiones' : null,
     },
   })
 
   return (
-    <form onSubmit={form.onSubmit((v) => onSubmit({ nombre: v.nombre, contacto: v.contacto || null }))}>
+    <form onSubmit={form.onSubmit((v) => onSubmit({
+      nombre: v.nombre, contacto: v.contacto || null, telefono: v.telefono.trim() || null,
+    }))}>
       <Stack gap="sm">
         <TextInput
           label="Nombre del proveedor"
@@ -50,6 +56,14 @@ function ProveedorForm({
           label="Contacto"
           placeholder="Nombre de la persona de contacto"
           {...form.getInputProps('contacto')}
+        />
+        <TextInput
+          label="No. Teléfono"
+          placeholder="Ej. 81 1234 5678"
+          maxLength={12}
+          inputMode="tel"
+          {...form.getInputProps('telefono')}
+          onChange={(e) => form.setFieldValue('telefono', limpiarTelefono(e.currentTarget.value, 12))}
         />
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Group justify="flex-end" mt="xs">
@@ -109,12 +123,13 @@ export default function Proveedores() {
             <Text c="dimmed">No hay proveedores registrados.</Text>
           </Center>
         ) : (
-          <Table.ScrollContainer minWidth={400}>
+          <Table.ScrollContainer minWidth={560}>
             <Table striped highlightOnHover withTableBorder>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Nombre</Table.Th>
                   <Table.Th>Contacto</Table.Th>
+                  <Table.Th style={{ width: 140 }}>No. Teléfono</Table.Th>
                   <Table.Th style={{ width: 80 }} />
                 </Table.Tr>
               </Table.Thead>
@@ -124,6 +139,9 @@ export default function Proveedores() {
                     <Table.Td fw={500}>{p.nombre}</Table.Td>
                     <Table.Td c={p.contacto ? undefined : 'dimmed'}>
                       {p.contacto ?? '—'}
+                    </Table.Td>
+                    <Table.Td c={p.telefono ? undefined : 'dimmed'}>
+                      {p.telefono ?? '—'}
                     </Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">

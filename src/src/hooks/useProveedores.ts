@@ -6,6 +6,8 @@ export interface Proveedor {
   id:       number
   nombre:   string
   contacto: string | null
+  // Número telefónico tal como se captura, con o sin separadores.
+  telefono: string | null
 }
 
 export function useProveedores() {
@@ -19,6 +21,7 @@ export function useProveedores() {
 export interface ProveedorPayload {
   nombre:    string
   contacto?: string | null
+  telefono?: string | null
 }
 
 export function useCreateProveedor() {

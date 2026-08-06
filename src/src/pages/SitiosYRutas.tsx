@@ -408,7 +408,8 @@ function ConductorForm({
 }) {
   const form = useForm({
     initialValues: {
-      nombre:                    initial?.nombre ?? '',
+      nombre:                    initial?.nombre    ?? '',
+      ubicacion:                 initial?.ubicacion ?? '',
       licencia_estatal_numero:   initial?.licencia_estatal_numero   ?? '',
       licencia_estatal_vigencia: initial?.licencia_estatal_vigencia ?? '',
     },
@@ -416,6 +417,8 @@ function ConductorForm({
       nombre: (v) =>
         !v.trim() ? 'Nombre requerido' :
         v.length > 100 ? 'Máximo 100 caracteres' : null,
+      ubicacion: (v) =>
+        v && !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
       licencia_estatal_numero: (v) =>
         v && !CODIGO.test(v.trim()) ? 'Solo mayúsculas, números y guiones' : null,
       licencia_estatal_vigencia: (v) =>
@@ -426,7 +429,8 @@ function ConductorForm({
   return (
     <form onSubmit={form.onSubmit((v) => onSubmit({
       nombre:                    v.nombre.trim(),
-      // Vacío se manda como null: en la BD la licencia no capturada es null.
+      // Vacío se manda como null: en la BD lo no capturado es null.
+      ubicacion:                 v.ubicacion.trim()                 || null,
       licencia_estatal_numero:   v.licencia_estatal_numero.trim()   || null,
       licencia_estatal_vigencia: v.licencia_estatal_vigencia.trim() || null,
     }))}>
@@ -437,6 +441,13 @@ function ConductorForm({
           required
           maxLength={100}
           {...form.getInputProps('nombre')}
+        />
+        <TextInput
+          label="Ubicación"
+          placeholder="Ej. Monterrey"
+          maxLength={20}
+          {...form.getInputProps('ubicacion')}
+          onChange={(e) => form.setFieldValue('ubicacion', limpiarTextoSimple(e.currentTarget.value, 20))}
         />
         <Divider label="Licencia estatal" labelPosition="left" mt={4} />
         <Group grow align="flex-start">
@@ -503,11 +514,12 @@ function ConductoresPanel() {
         : isError   ? <Alert color="red" title="Error">No se pudieron obtener los conductores.</Alert>
         : items.length === 0 ? <Center py="xl"><Text c="dimmed">No hay conductores registrados.</Text></Center>
         : (
-          <Table.ScrollContainer minWidth={520}>
+          <Table.ScrollContainer minWidth={640}>
             <Table striped highlightOnHover withTableBorder>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Nombre</Table.Th>
+                  <Table.Th>Ubicación</Table.Th>
                   <Table.Th>Licencia estatal</Table.Th>
                   <Table.Th style={{ width: 120 }}>Vigencia</Table.Th>
                   <Table.Th style={{ width: 80 }} />
@@ -517,7 +529,8 @@ function ConductoresPanel() {
                 {items.map((c) => (
                   <Table.Tr key={c.id}>
                     <Table.Td fw={500}>{c.nombre}</Table.Td>
-                    <Table.Td>{c.licencia_estatal_numero ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
+                    <Table.Td>{c.ubicacion ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
+                    <Table.Td>{c.licencia_estatal_numero ??<Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
                     <Table.Td>{c.licencia_estatal_vigencia ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">

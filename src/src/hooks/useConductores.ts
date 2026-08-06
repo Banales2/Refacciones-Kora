@@ -4,8 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 export interface Conductor {
-  id:     number
-  nombre: string
+  id:        number
+  nombre:    string
+  // Base desde donde opera. Etiqueta corta, no un domicilio.
+  ubicacion: string | null
   // Licencia estatal: número y vigencia, ambos texto. Null mientras no se
   // capturen. El segundo tipo de licencia se sumará con el mismo par de campos.
   licencia_estatal_numero:   string | null
@@ -14,6 +16,7 @@ export interface Conductor {
 
 export interface ConductorPayload {
   nombre:                    string
+  ubicacion:                 string | null
   licencia_estatal_numero:   string | null
   licencia_estatal_vigencia: string | null
 }

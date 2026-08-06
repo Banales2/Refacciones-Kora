@@ -27,6 +27,14 @@ export function limpiarAnioModelo(valor: string): string {
   return valor.replace(/[^0-9-]/g, '').slice(0, 6)
 }
 
+// Allowlist para números telefónicos: dígitos y los separadores con los que se
+// suelen capturar. Sin letras. Espeja TELEFONO del backend.
+export const TELEFONO = /^[0-9 ()+-]+$/
+
+export function limpiarTelefono(valor: string, max: number): string {
+  return valor.replace(/[^0-9 ()+-]/g, '').slice(0, max)
+}
+
 // Allowlist para códigos e identificadores (series, placas, folios): solo
 // mayúsculas, números y guiones. Espeja CODIGO del backend.
 export const CODIGO = /^[A-Z0-9-]+$/
