@@ -8,10 +8,14 @@ export interface Conductor {
   ubicacion: string | null
   // Licencia estatal. Los dos campos son texto porque el número trae letras y
   // la vigencia tampoco siempre se captura como fecha. Null mientras no se
-  // capturen. Cuando entre el segundo tipo de licencia se agregan aquí sus
-  // columnas con el mismo par número/vigencia.
+  // capturen.
   licencia_estatal_numero:   string | null
   licencia_estatal_vigencia: string | null
+  // Licencia federal (SCT). Mismo par número/vigencia más el número de
+  // expediente, que es el folio con el que la trae la dependencia.
+  licencia_federal_numero:     string | null
+  licencia_federal_expediente: string | null
+  licencia_federal_vigencia:   string | null
 }
 
 // Campos que el alta/edición puede mandar. Los de licencia son opcionales:
@@ -21,9 +25,16 @@ export interface ConductorInput {
   ubicacion?:                 string | null
   licencia_estatal_numero?:   string | null
   licencia_estatal_vigencia?: string | null
+  licencia_federal_numero?:     string | null
+  licencia_federal_expediente?: string | null
+  licencia_federal_vigencia?:   string | null
 }
 
-const COLS = 'id, nombre, ubicacion, licencia_estatal_numero, licencia_estatal_vigencia'
+const COLS = [
+  'id', 'nombre', 'ubicacion',
+  'licencia_estatal_numero', 'licencia_estatal_vigencia',
+  'licencia_federal_numero', 'licencia_federal_expediente', 'licencia_federal_vigencia',
+].join(', ')
 const OUT  = COLS.split(', ').map((c) => `INSERTED.${c}`).join(', ')
 
 export async function findAll(): Promise<Conductor[]> {
@@ -48,10 +59,16 @@ export async function create(data: ConductorInput & { nombre: string }): Promise
     .input('ubicacion', sql.VarChar(20),   data.ubicacion                 ?? null)
     .input('licNum',    sql.VarChar(30),   data.licencia_estatal_numero   ?? null)
     .input('licVig',    sql.VarChar(30),   data.licencia_estatal_vigencia ?? null)
+    .input('fedNum',    sql.VarChar(30),   data.licencia_federal_numero     ?? null)
+    .input('fedExp',    sql.VarChar(30),   data.licencia_federal_expediente ?? null)
+    .input('fedVig',    sql.VarChar(30),   data.licencia_federal_vigencia   ?? null)
     .query(`
-      INSERT INTO conductores (nombre, ubicacion, licencia_estatal_numero, licencia_estatal_vigencia)
+      INSERT INTO conductores (
+        nombre, ubicacion,
+        licencia_estatal_numero, licencia_estatal_vigencia,
+        licencia_federal_numero, licencia_federal_expediente, licencia_federal_vigencia)
       OUTPUT ${OUT}
-      VALUES (@nombre, @ubicacion, @licNum, @licVig)`)
+      VALUES (@nombre, @ubicacion, @licNum, @licVig, @fedNum, @fedExp, @fedVig)`)
   return r.recordset[0]
 }
 
@@ -73,6 +90,18 @@ export async function update(id: number, data: ConductorInput): Promise<Conducto
   if (data.licencia_estatal_vigencia !== undefined) {
     req.input('licVig', sql.VarChar(30), data.licencia_estatal_vigencia)
     sets.push('licencia_estatal_vigencia=@licVig')
+  }
+  if (data.licencia_federal_numero !== undefined) {
+    req.input('fedNum', sql.VarChar(30), data.licencia_federal_numero)
+    sets.push('licencia_federal_numero=@fedNum')
+  }
+  if (data.licencia_federal_expediente !== undefined) {
+    req.input('fedExp', sql.VarChar(30), data.licencia_federal_expediente)
+    sets.push('licencia_federal_expediente=@fedExp')
+  }
+  if (data.licencia_federal_vigencia !== undefined) {
+    req.input('fedVig', sql.VarChar(30), data.licencia_federal_vigencia)
+    sets.push('licencia_federal_vigencia=@fedVig')
   }
   if (sets.length === 0) return findById(id)
 

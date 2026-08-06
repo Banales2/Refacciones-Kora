@@ -9,9 +9,13 @@ export interface Conductor {
   // Base desde donde opera. Etiqueta corta, no un domicilio.
   ubicacion: string | null
   // Licencia estatal: número y vigencia, ambos texto. Null mientras no se
-  // capturen. El segundo tipo de licencia se sumará con el mismo par de campos.
+  // capturen.
   licencia_estatal_numero:   string | null
   licencia_estatal_vigencia: string | null
+  // Licencia federal: mismo par más el número de expediente.
+  licencia_federal_numero:     string | null
+  licencia_federal_expediente: string | null
+  licencia_federal_vigencia:   string | null
 }
 
 export interface ConductorPayload {
@@ -19,6 +23,9 @@ export interface ConductorPayload {
   ubicacion:                 string | null
   licencia_estatal_numero:   string | null
   licencia_estatal_vigencia: string | null
+  licencia_federal_numero:     string | null
+  licencia_federal_expediente: string | null
+  licencia_federal_vigencia:   string | null
 }
 
 export function useConductores() {

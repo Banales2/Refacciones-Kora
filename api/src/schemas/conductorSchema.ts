@@ -36,11 +36,18 @@ const licenciaVigencia = z.preprocess(
     .optional()
 )
 
+// Número de expediente de la licencia federal: folio de la dependencia, mismo
+// trato que el número de licencia.
+const licenciaExpediente = licenciaNumero
+
 export const ConductorCreateSchema = z.object({
   nombre: z.string().trim().min(1, 'Nombre requerido').max(100, 'Máximo 100 caracteres'),
   ubicacion,
   licencia_estatal_numero:   licenciaNumero,
   licencia_estatal_vigencia: licenciaVigencia,
+  licencia_federal_numero:     licenciaNumero,
+  licencia_federal_expediente: licenciaExpediente,
+  licencia_federal_vigencia:   licenciaVigencia,
 })
 
 export const ConductorUpdateSchema = z.object({
@@ -48,6 +55,9 @@ export const ConductorUpdateSchema = z.object({
   ubicacion,
   licencia_estatal_numero:   licenciaNumero,
   licencia_estatal_vigencia: licenciaVigencia,
+  licencia_federal_numero:     licenciaNumero,
+  licencia_federal_expediente: licenciaExpediente,
+  licencia_federal_vigencia:   licenciaVigencia,
 })
 
 export type ConductorCreate = z.infer<typeof ConductorCreateSchema>

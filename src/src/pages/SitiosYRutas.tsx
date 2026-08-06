@@ -395,6 +395,11 @@ function GasolinerasPanel() {
 
 // ── Panel de conductores ──────────────────────────────────────────────────────
 
+// Celda vacía: la tabla de conductores tiene varias columnas opcionales.
+function SinDato() {
+  return <Text component="span" c="dimmed" size="sm">—</Text>
+}
+
 // El conductor tiene nombre y licencia, así que no puede reusar SitioForm (que
 // exige una ubicación).
 function ConductorForm({
@@ -412,6 +417,9 @@ function ConductorForm({
       ubicacion:                 initial?.ubicacion ?? '',
       licencia_estatal_numero:   initial?.licencia_estatal_numero   ?? '',
       licencia_estatal_vigencia: initial?.licencia_estatal_vigencia ?? '',
+      licencia_federal_numero:     initial?.licencia_federal_numero     ?? '',
+      licencia_federal_expediente: initial?.licencia_federal_expediente ?? '',
+      licencia_federal_vigencia:   initial?.licencia_federal_vigencia   ?? '',
     },
     validate: {
       nombre: (v) =>
@@ -423,6 +431,12 @@ function ConductorForm({
         v && !CODIGO.test(v.trim()) ? 'Solo mayúsculas, números y guiones' : null,
       licencia_estatal_vigencia: (v) =>
         v && !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
+      licencia_federal_numero: (v) =>
+        v && !CODIGO.test(v.trim()) ? 'Solo mayúsculas, números y guiones' : null,
+      licencia_federal_expediente: (v) =>
+        v && !CODIGO.test(v.trim()) ? 'Solo mayúsculas, números y guiones' : null,
+      licencia_federal_vigencia: (v) =>
+        v && !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
     },
   })
 
@@ -433,6 +447,9 @@ function ConductorForm({
       ubicacion:                 v.ubicacion.trim()                 || null,
       licencia_estatal_numero:   v.licencia_estatal_numero.trim()   || null,
       licencia_estatal_vigencia: v.licencia_estatal_vigencia.trim() || null,
+      licencia_federal_numero:     v.licencia_federal_numero.trim()     || null,
+      licencia_federal_expediente: v.licencia_federal_expediente.trim() || null,
+      licencia_federal_vigencia:   v.licencia_federal_vigencia.trim()   || null,
     }))}>
       <Stack gap="sm">
         <TextInput
@@ -464,6 +481,30 @@ function ConductorForm({
             maxLength={30}
             {...form.getInputProps('licencia_estatal_vigencia')}
             onChange={(e) => form.setFieldValue('licencia_estatal_vigencia', limpiarTextoSimple(e.currentTarget.value, 30))}
+          />
+        </Group>
+        <Divider label="Licencia federal" labelPosition="left" mt={4} />
+        <Group grow align="flex-start">
+          <TextInput
+            label="Número de licencia"
+            placeholder="Ej. ABC1234567"
+            maxLength={30}
+            {...form.getInputProps('licencia_federal_numero')}
+            onChange={(e) => form.setFieldValue('licencia_federal_numero', limpiarCodigo(e.currentTarget.value, 30))}
+          />
+          <TextInput
+            label="Número de expediente"
+            placeholder="Ej. EXP-12345"
+            maxLength={30}
+            {...form.getInputProps('licencia_federal_expediente')}
+            onChange={(e) => form.setFieldValue('licencia_federal_expediente', limpiarCodigo(e.currentTarget.value, 30))}
+          />
+          <TextInput
+            label="Vigencia"
+            placeholder="Ej. 2028 o 3 AÑOS"
+            maxLength={30}
+            {...form.getInputProps('licencia_federal_vigencia')}
+            onChange={(e) => form.setFieldValue('licencia_federal_vigencia', limpiarTextoSimple(e.currentTarget.value, 30))}
           />
         </Group>
         {error && <Alert color="red" title="Error">{error}</Alert>}
@@ -514,7 +555,7 @@ function ConductoresPanel() {
         : isError   ? <Alert color="red" title="Error">No se pudieron obtener los conductores.</Alert>
         : items.length === 0 ? <Center py="xl"><Text c="dimmed">No hay conductores registrados.</Text></Center>
         : (
-          <Table.ScrollContainer minWidth={640}>
+          <Table.ScrollContainer minWidth={1040}>
             <Table striped highlightOnHover withTableBorder>
               <Table.Thead>
                 <Table.Tr>
@@ -522,6 +563,9 @@ function ConductoresPanel() {
                   <Table.Th>Ubicación</Table.Th>
                   <Table.Th>Licencia estatal</Table.Th>
                   <Table.Th style={{ width: 120 }}>Vigencia</Table.Th>
+                  <Table.Th>Licencia federal</Table.Th>
+                  <Table.Th style={{ width: 120 }}>Vigencia</Table.Th>
+                  <Table.Th>Expediente</Table.Th>
                   <Table.Th style={{ width: 80 }} />
                 </Table.Tr>
               </Table.Thead>
@@ -529,9 +573,12 @@ function ConductoresPanel() {
                 {items.map((c) => (
                   <Table.Tr key={c.id}>
                     <Table.Td fw={500}>{c.nombre}</Table.Td>
-                    <Table.Td>{c.ubicacion ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
-                    <Table.Td>{c.licencia_estatal_numero ??<Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
-                    <Table.Td>{c.licencia_estatal_vigencia ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
+                    <Table.Td>{c.ubicacion ?? <SinDato />}</Table.Td>
+                    <Table.Td>{c.licencia_estatal_numero ?? <SinDato />}</Table.Td>
+                    <Table.Td>{c.licencia_estatal_vigencia ?? <SinDato />}</Table.Td>
+                    <Table.Td>{c.licencia_federal_numero ?? <SinDato />}</Table.Td>
+                    <Table.Td>{c.licencia_federal_vigencia ?? <SinDato />}</Table.Td>
+                    <Table.Td>{c.licencia_federal_expediente ?? <SinDato />}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
                         <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(c)}><IconPencil size={14} /></ActionIcon></Tooltip>
