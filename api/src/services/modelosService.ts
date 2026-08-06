@@ -5,7 +5,7 @@ export function getAll() {
   return repo.findAll()
 }
 
-export async function create(marca: string, nombre: string, anio: number | null, tiposPermitidos?: string[]) {
+export async function create(marca: string, nombre: string, anio: string | null, tiposPermitidos?: string[]) {
   const m = marca.trim(), n = nombre.trim()
   if (await repo.existsDuplicate(m, n, anio)) {
     throw new ConflictError('Ya existe un modelo con esa marca, nombre y año')
@@ -13,7 +13,7 @@ export async function create(marca: string, nombre: string, anio: number | null,
   return repo.create(m, n, anio, tiposPermitidos)
 }
 
-export async function update(id: number, marca?: string, nombre?: string, anio?: number | null, tiposPermitidos?: string[]) {
+export async function update(id: number, marca?: string, nombre?: string, anio?: string | null, tiposPermitidos?: string[]) {
   const actual = await repo.findById(id)
   if (!actual) throw new NotFoundError('Modelo')
 

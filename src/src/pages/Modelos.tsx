@@ -30,7 +30,8 @@ import type {
 } from '../hooks/useVehiculos'
 import { VehiculoForm } from '../components/VehiculoForm'
 import {
-  TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre,
+  TEXTO_SIMPLE, TEXTO_LIBRE, ANIO_MODELO,
+  limpiarTextoSimple, limpiarTextoLibre, limpiarAnioModelo,
 } from '../lib/validaciones'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -110,7 +111,7 @@ function ModeloForm({
     initialValues: {
       marca:            initial?.marca ?? '',
       nombre:           initial?.nombre ?? '',
-      anio:             (initial?.anio ?? '') as number | '',
+      anio:             initial?.anio ?? '',
       tipos_permitidos: (initial?.tipos_permitidos ?? []) as TipoVehiculo[],
     },
     validate: {
@@ -123,9 +124,11 @@ function ModeloForm({
         v.length > 40 ? 'Máximo 40 caracteres' :
         !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
       anio: (v) => {
-        if (v === '' || v === null) return 'Requerido'
-        const n = Number(v)
-        if (!Number.isInteger(n) || n < 1950 || n > AÑO_MAX) return `Entre 1950 y ${AÑO_MAX}`
+        const s = v.trim()
+        if (!s) return 'Requerido'
+        if (!ANIO_MODELO.test(s)) return 'Usa AAAA o AAAA-versión (ej. 2024 o 2024-1)'
+        const n = Number(s.slice(0, 4))
+        if (n < 1950 || n > AÑO_MAX) return `El año debe estar entre 1950 y ${AÑO_MAX}`
         return null
       },
     },
@@ -147,7 +150,7 @@ function ModeloForm({
 
   return (
     <form onSubmit={form.onSubmit((v) => onSubmit({
-      marca: v.marca, nombre: v.nombre, anio: Number(v.anio), tipos_permitidos: v.tipos_permitidos,
+      marca: v.marca, nombre: v.nombre, anio: v.anio.trim(), tipos_permitidos: v.tipos_permitidos,
     }))}>
       <Stack gap="sm">
         <Autocomplete
@@ -165,14 +168,13 @@ function ModeloForm({
             {...form.getInputProps('nombre')}
             onChange={(v) => form.setFieldValue('nombre', limpiarTextoSimple(v, 40))}
           />
-          <NumberInput
-            label="Año" placeholder="Ej. 2024" required
-            min={1950} max={AÑO_MAX} allowDecimal={false} clampBehavior="strict"
-            // Flechas sostenidas: arrancan tras 300 ms y aceleran hasta 20 ms
-            // por paso, para recorrer décadas sin soltar el botón.
-            stepHoldDelay={300}
-            stepHoldInterval={(count) => Math.max(120 - count * 8, 20)}
+          <TextInput
+            label="Año" placeholder="Ej. 2024 o 2024-1" required
+            description="Agrega -1, -2… si el mismo año tuvo versiones con piezas distintas"
+            maxLength={6}
+            inputMode="numeric"
             {...form.getInputProps('anio')}
+            onChange={(e) => form.setFieldValue('anio', limpiarAnioModelo(e.currentTarget.value))}
           />
         </Group>
         <MultiSelect

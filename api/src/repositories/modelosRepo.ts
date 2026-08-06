@@ -5,9 +5,11 @@ export interface Modelo {
   id:               number
   marca:            string
   nombre:           string
-  // Año del modelo. Permite distinguir dos modelos de igual marca/nombre pero
-  // año distinto. Null en modelos antiguos que no lo capturaron.
-  anio:             number | null
+  // Año-versión del modelo ("2018" o "2018-1"). Permite distinguir dos modelos
+  // de igual marca/nombre pero año distinto, y también dos versiones del mismo
+  // año que salieron con piezas distintas. Null en modelos antiguos que no lo
+  // capturaron.
+  anio:             string | null
   // Tipos de vehículo que este modelo puede generar. Vacío = sin restricción
   // (se permiten todos). Evita, p. ej., crear un montacargas (sin kilometraje)
   // a partir de un modelo cuya plantilla tiene requerimientos por kilometraje.
@@ -62,24 +64,24 @@ export async function findTiposPermitidos(id: number): Promise<string[]> {
   return r.recordset[0] ? parseTipos(r.recordset[0].tipos_permitidos) : []
 }
 
-export async function create(marca: string, nombre: string, anio: number | null, tiposPermitidos?: string[]): Promise<Modelo> {
+export async function create(marca: string, nombre: string, anio: string | null, tiposPermitidos?: string[]): Promise<Modelo> {
   const pool = await getPool()
   const r = await pool.request()
     .input('marca',  sql.NVarChar(80),  marca)
     .input('nombre', sql.NVarChar(120), nombre)
-    .input('anio',   sql.Int,           anio)
+    .input('anio',   sql.VarChar(6),    anio)
     .input('tipos',  sql.NVarChar(200), serializeTipos(tiposPermitidos))
     .query(`INSERT INTO modelos (marca, nombre, anio, tipos_permitidos) OUTPUT INSERTED.* VALUES (@marca, @nombre, @anio, @tipos)`)
   return mapRow(r.recordset[0])
 }
 
-export async function update(id: number, marca?: string, nombre?: string, anio?: number | null, tiposPermitidos?: string[]): Promise<Modelo | null> {
+export async function update(id: number, marca?: string, nombre?: string, anio?: string | null, tiposPermitidos?: string[]): Promise<Modelo | null> {
   const pool = await getPool()
   const sets: string[] = ['updated_at=SYSDATETIME()']
   const req = pool.request().input('id', sql.Int, id)
   if (marca  !== undefined) { req.input('marca',  sql.NVarChar(80),  marca);  sets.push('marca=@marca')   }
   if (nombre !== undefined) { req.input('nombre', sql.NVarChar(120), nombre); sets.push('nombre=@nombre') }
-  if (anio   !== undefined) { req.input('anio',   sql.Int,           anio);   sets.push('anio=@anio')     }
+  if (anio   !== undefined) { req.input('anio',   sql.VarChar(6),    anio);   sets.push('anio=@anio')     }
   if (tiposPermitidos !== undefined) { req.input('tipos', sql.NVarChar(200), serializeTipos(tiposPermitidos)); sets.push('tipos_permitidos=@tipos') }
   const r = await req.query(
     `UPDATE modelos SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`
@@ -91,13 +93,13 @@ export async function update(id: number, marca?: string, nombre?: string, anio?:
 // insensible a mayúsculas por la colación por defecto de SQL Server). exceptId
 // excluye el propio registro al editar.
 export async function existsDuplicate(
-  marca: string, nombre: string, anio: number | null, exceptId?: number
+  marca: string, nombre: string, anio: string | null, exceptId?: number
 ): Promise<boolean> {
   const pool = await getPool()
   const r = await pool.request()
     .input('marca',  sql.NVarChar(80),  marca)
     .input('nombre', sql.NVarChar(120), nombre)
-    .input('anio',   sql.Int,           anio)
+    .input('anio',   sql.VarChar(6),    anio)
     .input('except', sql.Int,           exceptId ?? null)
     .query(`
       SELECT TOP 1 id FROM modelos

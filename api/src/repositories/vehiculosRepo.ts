@@ -29,7 +29,7 @@ export interface VehiculoRow {
   permiso_id:        number | null
   permiso_zona:      string | null
   permiso_expiracion: string | null
-  modelo_anio:       number | null
+  modelo_anio:       string | null
 }
 
 // ── Shared SQL fragments ──────────────────────────────────────────────────────

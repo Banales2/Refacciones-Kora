@@ -1815,7 +1815,7 @@ function VehiculoDetalle({
                 <InfoItem label="Marca / Modelo" value={`${vehiculo.marca} ${vehiculo.modelo}`} />
               </Grid.Col>
               <Grid.Col span={{ base: 6, sm: 3 }}>
-                <InfoItem label="Año del modelo" value={vehiculo.modelo_anio != null ? String(vehiculo.modelo_anio) : null} />
+                <InfoItem label="Año del modelo" value={vehiculo.modelo_anio} />
               </Grid.Col>
               <Grid.Col span={{ base: 6, sm: 3 }}>
                 <InfoItem label="Serie" value={vehiculo.serie} />

@@ -17,6 +17,16 @@ export function limpiarContacto(valor: string, max: number): string {
   return valor.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 .,@+()-]/g, '').slice(0, max)
 }
 
+// Año-versión de un modelo: "2018" o, cuando en un mismo año salieron dos
+// unidades del mismo modelo con piezas distintas, "2018-1" / "2018-2".
+// Espeja ANIO_MODELO del backend.
+export const ANIO_MODELO = /^\d{4}(-[1-9])?$/
+
+// Deja solo dígitos y un guion, y recorta a los 6 caracteres de la columna.
+export function limpiarAnioModelo(valor: string): string {
+  return valor.replace(/[^0-9-]/g, '').slice(0, 6)
+}
+
 // Allowlist para códigos e identificadores (series, placas, folios): solo
 // mayúsculas, números y guiones. Espeja CODIGO del backend.
 export const CODIGO = /^[A-Z0-9-]+$/

@@ -6,7 +6,7 @@ import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import * as service from '../services/modelosService'
 import { TIPOS_VEHICULO } from '../schemas/vehiculoSchema'
-import { TEXTO_SIMPLE } from '../schemas/common'
+import { TEXTO_SIMPLE, ANIO_MODELO } from '../schemas/common'
 
 const Schema = z.object({
   marca: z
@@ -21,7 +21,16 @@ const Schema = z.object({
     .min(1, 'Requerido')
     .max(40, 'Máximo 40 caracteres')
     .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones'),
-  anio:             z.coerce.number().int().min(1950).max(2100).nullable().optional(),
+  anio: z
+    .string()
+    .trim()
+    .regex(ANIO_MODELO, 'Usa AAAA o AAAA-versión (ej. 2024 o 2024-1)')
+    .refine((v) => {
+      const y = Number(v.slice(0, 4))
+      return y >= 1950 && y <= 2100
+    }, 'El año debe estar entre 1950 y 2100')
+    .nullable()
+    .optional(),
   tipos_permitidos: z.array(z.enum(TIPOS_VEHICULO)).optional(),
 })
 
