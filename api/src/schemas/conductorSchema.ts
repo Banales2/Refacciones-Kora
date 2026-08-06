@@ -1,11 +1,41 @@
 import { z } from 'zod'
+import { CODIGO, TEXTO_SIMPLE } from './common'
+
+// El formulario manda "" cuando el campo se deja en blanco; en la BD eso es un
+// null, no una cadena vacía (que además no pasaría las allowlists).
+const vacioANull = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? null : v)
+
+// Número de licencia: código alfanumérico, por eso pasa por la allowlist de
+// códigos (mayúsculas, números y guiones).
+const licenciaNumero = z.preprocess(
+  vacioANull,
+  z.string().trim()
+    .max(30, 'Máximo 30 caracteres')
+    .regex(CODIGO, 'Solo mayúsculas, números y guiones')
+    .nullable()
+    .optional()
+)
+
+// Vigencia: se captura como texto porque no siempre viene como fecha.
+const licenciaVigencia = z.preprocess(
+  vacioANull,
+  z.string().trim()
+    .max(30, 'Máximo 30 caracteres')
+    .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones')
+    .nullable()
+    .optional()
+)
 
 export const ConductorCreateSchema = z.object({
-  nombre: z.string().trim().min(1, 'Nombre requerido').max(120),
+  nombre: z.string().trim().min(1, 'Nombre requerido').max(100, 'Máximo 100 caracteres'),
+  licencia_estatal_numero:   licenciaNumero,
+  licencia_estatal_vigencia: licenciaVigencia,
 })
 
 export const ConductorUpdateSchema = z.object({
-  nombre: z.string().trim().min(1).max(120).optional(),
+  nombre: z.string().trim().min(1).max(100, 'Máximo 100 caracteres').optional(),
+  licencia_estatal_numero:   licenciaNumero,
+  licencia_estatal_vigencia: licenciaVigencia,
 })
 
 export type ConductorCreate = z.infer<typeof ConductorCreateSchema>

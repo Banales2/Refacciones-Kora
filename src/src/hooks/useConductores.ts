@@ -6,10 +6,16 @@ import { api } from '../lib/api'
 export interface Conductor {
   id:     number
   nombre: string
+  // Licencia estatal: número y vigencia, ambos texto. Null mientras no se
+  // capturen. El segundo tipo de licencia se sumará con el mismo par de campos.
+  licencia_estatal_numero:   string | null
+  licencia_estatal_vigencia: string | null
 }
 
 export interface ConductorPayload {
-  nombre: string
+  nombre:                    string
+  licencia_estatal_numero:   string | null
+  licencia_estatal_vigencia: string | null
 }
 
 export function useConductores() {

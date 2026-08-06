@@ -5,7 +5,7 @@ import { useState } from 'react'
 import {
   Stack, Group, Text, TextInput, Table, Tabs,
   Loader, Center, Alert, Button, ActionIcon,
-  Modal, Tooltip,
+  Modal, Tooltip, Divider,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
@@ -35,8 +35,8 @@ import {
 } from '../hooks/useTecnicos'
 import { AsignarVehiculosDrawer } from '../components/AsignarVehiculosDrawer'
 import {
-  TEXTO_SIMPLE, TEXTO_LIBRE, CONTACTO,
-  limpiarTextoSimple, limpiarTextoLibre, limpiarContacto,
+  TEXTO_SIMPLE, TEXTO_LIBRE, CONTACTO, CODIGO,
+  limpiarTextoSimple, limpiarTextoLibre, limpiarContacto, limpiarCodigo,
 } from '../lib/validaciones'
 import type { Sucursal, SucursalPayload } from '../hooks/useSucursales'
 import type { Ruta, RutaPayload } from '../hooks/useRutas'
@@ -395,8 +395,8 @@ function GasolinerasPanel() {
 
 // ── Panel de conductores ──────────────────────────────────────────────────────
 
-// El conductor solo tiene nombre, así que no puede reusar SitioForm (que exige
-// también una ubicación).
+// El conductor tiene nombre y licencia, así que no puede reusar SitioForm (que
+// exige una ubicación).
 function ConductorForm({
   initial, isPending, error, onSubmit, onCancel,
 }: {
@@ -406,22 +406,55 @@ function ConductorForm({
   onSubmit: (payload: ConductorPayload) => void
   onCancel: () => void
 }) {
-  const form = useForm<ConductorPayload>({
-    initialValues: initial ?? { nombre: '' },
+  const form = useForm({
+    initialValues: {
+      nombre:                    initial?.nombre ?? '',
+      licencia_estatal_numero:   initial?.licencia_estatal_numero   ?? '',
+      licencia_estatal_vigencia: initial?.licencia_estatal_vigencia ?? '',
+    },
     validate: {
-      nombre: (v) => (!v.trim() ? 'Nombre requerido' : null),
+      nombre: (v) =>
+        !v.trim() ? 'Nombre requerido' :
+        v.length > 100 ? 'Máximo 100 caracteres' : null,
+      licencia_estatal_numero: (v) =>
+        v && !CODIGO.test(v.trim()) ? 'Solo mayúsculas, números y guiones' : null,
+      licencia_estatal_vigencia: (v) =>
+        v && !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
     },
   })
 
   return (
-    <form onSubmit={form.onSubmit((v) => onSubmit({ nombre: v.nombre.trim() }))}>
+    <form onSubmit={form.onSubmit((v) => onSubmit({
+      nombre:                    v.nombre.trim(),
+      // Vacío se manda como null: en la BD la licencia no capturada es null.
+      licencia_estatal_numero:   v.licencia_estatal_numero.trim()   || null,
+      licencia_estatal_vigencia: v.licencia_estatal_vigencia.trim() || null,
+    }))}>
       <Stack gap="sm">
         <TextInput
           label="Nombre del conductor"
           placeholder="Nombre y apellido"
           required
+          maxLength={100}
           {...form.getInputProps('nombre')}
         />
+        <Divider label="Licencia estatal" labelPosition="left" mt={4} />
+        <Group grow align="flex-start">
+          <TextInput
+            label="Número de licencia"
+            placeholder="Ej. ABC1234567"
+            maxLength={30}
+            {...form.getInputProps('licencia_estatal_numero')}
+            onChange={(e) => form.setFieldValue('licencia_estatal_numero', limpiarCodigo(e.currentTarget.value, 30))}
+          />
+          <TextInput
+            label="Vigencia"
+            placeholder="Ej. 2028 o 3 AÑOS"
+            maxLength={30}
+            {...form.getInputProps('licencia_estatal_vigencia')}
+            onChange={(e) => form.setFieldValue('licencia_estatal_vigencia', limpiarTextoSimple(e.currentTarget.value, 30))}
+          />
+        </Group>
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
@@ -470,11 +503,13 @@ function ConductoresPanel() {
         : isError   ? <Alert color="red" title="Error">No se pudieron obtener los conductores.</Alert>
         : items.length === 0 ? <Center py="xl"><Text c="dimmed">No hay conductores registrados.</Text></Center>
         : (
-          <Table.ScrollContainer minWidth={300}>
+          <Table.ScrollContainer minWidth={520}>
             <Table striped highlightOnHover withTableBorder>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Nombre</Table.Th>
+                  <Table.Th>Licencia estatal</Table.Th>
+                  <Table.Th style={{ width: 120 }}>Vigencia</Table.Th>
                   <Table.Th style={{ width: 80 }} />
                 </Table.Tr>
               </Table.Thead>
@@ -482,6 +517,8 @@ function ConductoresPanel() {
                 {items.map((c) => (
                   <Table.Tr key={c.id}>
                     <Table.Td fw={500}>{c.nombre}</Table.Td>
+                    <Table.Td>{c.licencia_estatal_numero ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
+                    <Table.Td>{c.licencia_estatal_vigencia ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
                         <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(c)}><IconPencil size={14} /></ActionIcon></Tooltip>
@@ -497,9 +534,9 @@ function ConductoresPanel() {
       </Stack>
 
       <Modal opened={formOpen} onClose={() => setFormOpen(false)}
-        title={editing ? `Editar — ${editing.nombre}` : 'Nuevo conductor'} centered size="sm">
+        title={editing ? `Editar — ${editing.nombre}` : 'Nuevo conductor'} centered size="md">
         <ConductorForm
-          initial={editing ? { nombre: editing.nombre } : undefined}
+          initial={editing ?? undefined}
           isPending={isPending} error={formError}
           onSubmit={handleSubmit} onCancel={() => setFormOpen(false)}
         />
