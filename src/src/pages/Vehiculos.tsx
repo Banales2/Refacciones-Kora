@@ -1989,12 +1989,13 @@ function VehiculosTable({
   }
   const sorted = [...items].sort(compareVehiculos)
   return (
-    <Table.ScrollContainer minWidth={showTipo ? 750 : 650}>
+    <Table.ScrollContainer minWidth={showTipo ? 830 : 730}>
       <Table striped highlightOnHover withTableBorder>
         <Table.Thead>
           <Table.Tr>
             {showTipo && <Table.Th>Tipo</Table.Th>}
             <Table.Th>Marca / Modelo</Table.Th>
+            <Table.Th style={{ width: 90 }}>Año</Table.Th>
             <Table.Th>Serie</Table.Th>
             <Table.Th>Placas</Table.Th>
             {extraColumn && <Table.Th>{extraColumn.header}</Table.Th>}
@@ -2023,6 +2024,8 @@ function VehiculosTable({
                     )}
                   </Group>
                 </Table.Td>
+                {/* El año trae la versión pegada cuando el modelo la tiene ("2018-1"). */}
+                <Table.Td>{v.modelo_anio ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
                 <Table.Td>{v.serie}</Table.Td>
                 <Table.Td>{v.placas ?? (v.tipo === 'montacargas' ? '' : <Text component="span" c="dimmed" size="sm">—</Text>)}</Table.Td>
                 {extraColumn && (

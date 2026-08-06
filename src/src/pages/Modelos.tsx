@@ -169,8 +169,7 @@ function ModeloForm({
             onChange={(v) => form.setFieldValue('nombre', limpiarTextoSimple(v, 40))}
           />
           <TextInput
-            label="Año" placeholder="Ej. 2024 o 2024-1" required
-            description="Agrega -1, -2… si el mismo año tuvo versiones con piezas distintas"
+            label="Año" placeholder="Ej. 2024" required
             maxLength={6}
             inputMode="numeric"
             {...form.getInputProps('anio')}
