@@ -83,12 +83,26 @@ export interface PermisoPorVencer {
   dias_restantes:   number
 }
 
-export interface DocumentosPorVencer {
-  seguros:  SeguroPorVencer[]
-  permisos: PermisoPorVencer[]
+export interface LicenciaPorVencer {
+  conductor_id:     number
+  conductor:        string
+  tipo:             'estatal' | 'federal'
+  numero:           string | null
+  // Vigencia tal como se capturó en el catálogo…
+  vigencia:         string
+  // …y la misma ya interpretada como fecha.
+  fecha_expiracion: string
+  dias_restantes:   number
 }
 
-// Seguros y permisos de circulación ya vencidos o próximos a vencer (30 días).
+export interface DocumentosPorVencer {
+  seguros:   SeguroPorVencer[]
+  permisos:  PermisoPorVencer[]
+  licencias: LicenciaPorVencer[]
+}
+
+// Seguros y permisos de circulación ya vencidos o próximos a vencer (30 días),
+// más las licencias de conductor con vigencia dentro de 2 meses.
 export function useDocumentosPorVencer() {
   return useQuery({
     queryKey: ['dashboard', 'documentos-por-vencer'],

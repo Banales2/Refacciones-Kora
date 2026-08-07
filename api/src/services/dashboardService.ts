@@ -3,6 +3,7 @@ import { RequerimientoFleet } from '../repositories/dashboardRepo'
 import * as requerimentosRepo from '../repositories/requerimentosRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import { getPool } from '../shared/db'
+import { parseVigencia, DIAS_ALERTA_LICENCIA } from '../shared/vigenciaLicencia'
 
 const MX_TZ = 'America/Mexico_City'
 
@@ -266,14 +267,27 @@ export async function getRequerimientosPorVencer(): Promise<RequerimientoVencido
     .map(r => ({ id: r.id, nombre: r.nombre, categoria: r.categoria, vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre }))
 }
 
-// ─── Seguros / permisos por vencer ──────────────────────────────────────────
+// ─── Seguros / permisos / licencias por vencer ──────────────────────────────
 // Ventana de alerta: se avisa de los documentos que ya vencieron o que vencen
 // dentro de este número de días.
 const DIAS_ALERTA_DOCUMENTOS = 30
 
+export interface LicenciaPorVencer {
+  conductor_id:     number
+  conductor:        string
+  tipo:             'estatal' | 'federal'
+  numero:           string | null
+  // Texto tal como se capturó, para mostrarlo igual que en el catálogo.
+  vigencia:         string
+  // La misma vigencia ya interpretada como fecha (YYYY-MM-DD).
+  fecha_expiracion: string
+  dias_restantes:   number
+}
+
 export interface DocumentosPorVencer {
-  seguros:  (repo.SeguroPorVencer  & { dias_restantes: number })[]
-  permisos: (repo.PermisoPorVencer & { dias_restantes: number })[]
+  seguros:   (repo.SeguroPorVencer  & { dias_restantes: number })[]
+  permisos:  (repo.PermisoPorVencer & { dias_restantes: number })[]
+  licencias: LicenciaPorVencer[]
 }
 
 export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
@@ -282,13 +296,39 @@ export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
   const hoyDate = new Date(`${hoy}T12:00:00`)
   const dias = (fecha: string) => diffDias(hoyDate, new Date(`${fecha}T12:00:00`))
 
-  const [seguros, permisos] = await Promise.all([
+  const [seguros, permisos, conductores] = await Promise.all([
     repo.findSegurosPorVencer(limite),
     repo.findPermisosPorVencer(limite),
+    repo.findConductoresConVigencia(),
   ])
+
+  // Las licencias no se pueden filtrar en SQL (vigencia es varchar): se
+  // interpreta el texto aquí y se descarta lo que no sea una fecha legible.
+  const licencias: LicenciaPorVencer[] = []
+  for (const c of conductores) {
+    const candidatos = [
+      { tipo: 'estatal' as const, numero: c.licencia_estatal_numero, vigencia: c.licencia_estatal_vigencia },
+      { tipo: 'federal' as const, numero: c.licencia_federal_numero, vigencia: c.licencia_federal_vigencia },
+    ]
+    for (const lic of candidatos) {
+      if (!lic.vigencia) continue
+      const fecha = parseVigencia(lic.vigencia)
+      if (!fecha) continue
+      const restantes = dias(fecha)
+      if (restantes > DIAS_ALERTA_LICENCIA) continue
+      licencias.push({
+        conductor_id: c.id, conductor: c.nombre,
+        tipo: lic.tipo, numero: lic.numero,
+        vigencia: lic.vigencia, fecha_expiracion: fecha, dias_restantes: restantes,
+      })
+    }
+  }
+  licencias.sort((a, b) => a.dias_restantes - b.dias_restantes)
+
   return {
     seguros:  seguros.map((s)  => ({ ...s,  dias_restantes: dias(s.fecha_expiracion) })),
     permisos: permisos.map((p) => ({ ...p, dias_restantes: dias(p.fecha_expiracion) })),
+    licencias,
   }
 }
 

@@ -51,6 +51,31 @@ export async function findPermisosPorVencer(limite: string): Promise<PermisoPorV
   return r.recordset
 }
 
+// Vigencias de licencia capturadas. Se filtran y comparan en el servicio, no
+// en SQL, porque la columna es varchar (el formato de la vigencia varía) y una
+// comparación de fechas aquí descartaría filas válidas.
+export interface LicenciaConductor {
+  id:                          number
+  nombre:                      string
+  licencia_estatal_numero:     string | null
+  licencia_estatal_vigencia:   string | null
+  licencia_federal_numero:     string | null
+  licencia_federal_vigencia:   string | null
+}
+
+export async function findConductoresConVigencia(): Promise<LicenciaConductor[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT id, nombre,
+           licencia_estatal_numero, licencia_estatal_vigencia,
+           licencia_federal_numero, licencia_federal_vigencia
+    FROM conductores
+    WHERE licencia_estatal_vigencia IS NOT NULL
+       OR licencia_federal_vigencia IS NOT NULL
+    ORDER BY nombre`)
+  return r.recordset
+}
+
 export interface MantenimientoMes {
   id:               number
   vehiculo_id:      number

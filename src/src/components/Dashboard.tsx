@@ -5,10 +5,10 @@
 import { Fragment, useMemo, useState } from 'react'
 import {
   SimpleGrid, Card, Text, Group, ThemeIcon, Stack, Loader, Center, Table, Divider, Badge, ActionIcon, Collapse,
-  Button, SegmentedControl,
+  Button, SegmentedControl, Alert,
 } from '@mantine/core'
 import { BarChart, LineChart } from '@mantine/charts'
-import { IconChevronRight, IconFileSpreadsheet, IconFileTypePdf } from '@tabler/icons-react'
+import { IconChevronRight, IconFileSpreadsheet, IconFileTypePdf, IconAlertTriangle } from '@tabler/icons-react'
 import {
   useResumenMes, useRequerimientosVencidos, useRequerimientosPorVencer, useRequerimientosHistorial,
   useDocumentosPorVencer,
@@ -35,11 +35,13 @@ function formatFecha(iso: string) {
   })
 }
 
-// Etiqueta y color del estado de vencimiento de un seguro/permiso.
-function estadoVencimiento(dias: number): { label: string; color: string } {
+// Etiqueta y color del estado de vencimiento de un documento. Lo ya vencido va
+// en rojo; lo que está por vencer, en el color de aviso que use cada documento
+// (las licencias de conductor se marcan en amarillo).
+function estadoVencimiento(dias: number, colorAviso = 'orange'): { label: string; color: string } {
   if (dias < 0)   return { label: `Vencido hace ${Math.abs(dias)} día${Math.abs(dias) !== 1 ? 's' : ''}`, color: 'red' }
   if (dias === 0) return { label: 'Vence hoy', color: 'red' }
-  return { label: `Vence en ${dias} día${dias !== 1 ? 's' : ''}`, color: 'orange' }
+  return { label: `Vence en ${dias} día${dias !== 1 ? 's' : ''}`, color: colorAviso }
 }
 
 // ─── Tarjeta de KPI ───────────────────────────────────────────────────────────
@@ -195,21 +197,32 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
   const vencidos = vencidosData?.data ?? []
   const porVencer = porVencerData?.data ?? []
 
-  // Seguros + permisos por vencer, unificados y ordenados por urgencia.
+  // Seguros + permisos + licencias de conductor por vencer, unificados y
+  // ordenados por urgencia. `vehiculos` es null en las licencias: no aplican a
+  // una unidad sino a la persona.
   const documentosPorVencer = useMemo(() => {
     const doc = documentosData?.data
     const seguros = (doc?.seguros ?? []).map((s) => ({
-      key: `s-${s.id}`, tipo: 'Seguro' as const,
+      key: `s-${s.id}`, tipo: 'Seguro' as const, colorTipo: 'blue', colorAviso: 'orange',
       etiqueta: `${s.poliza} — ${s.compania}`,
-      fecha_expiracion: s.fecha_expiracion, dias_restantes: s.dias_restantes, vehiculos: s.vehiculos,
+      fecha_expiracion: s.fecha_expiracion, dias_restantes: s.dias_restantes, vehiculos: s.vehiculos as number | null,
     }))
     const permisos = (doc?.permisos ?? []).map((p) => ({
-      key: `p-${p.id}`, tipo: 'Permiso' as const,
+      key: `p-${p.id}`, tipo: 'Permiso' as const, colorTipo: 'grape', colorAviso: 'orange',
       etiqueta: p.zona_circulacion,
-      fecha_expiracion: p.fecha_expiracion, dias_restantes: p.dias_restantes, vehiculos: p.vehiculos,
+      fecha_expiracion: p.fecha_expiracion, dias_restantes: p.dias_restantes, vehiculos: p.vehiculos as number | null,
     }))
-    return [...seguros, ...permisos].sort((a, b) => a.dias_restantes - b.dias_restantes)
+    const licencias = (doc?.licencias ?? []).map((l) => ({
+      key: `l-${l.conductor_id}-${l.tipo}`,
+      tipo: l.tipo === 'estatal' ? ('Licencia estatal' as const) : ('Licencia federal' as const),
+      colorTipo: 'teal', colorAviso: 'yellow',
+      etiqueta: l.numero ? `${l.conductor} — ${l.numero}` : l.conductor,
+      fecha_expiracion: l.fecha_expiracion, dias_restantes: l.dias_restantes, vehiculos: null,
+    }))
+    return [...seguros, ...permisos, ...licencias].sort((a, b) => a.dias_restantes - b.dias_restantes)
   }, [documentosData])
+
+  const licenciasPorVencer = documentosData?.data.licencias ?? []
   const historial = (historialData?.data ?? []).map(h => ({ ...h, fechaLabel: formatFechaCorta(h.fecha) }))
 
   const vehiculosChartData = (resumen?.data.mantenimientos.por_vehiculo ?? []).map(v => ({
@@ -287,6 +300,28 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
         </Group>
       </Group>
 
+      {/* Aviso arriba de todo: una licencia vencida deja al conductor sin poder
+          salir, así que no basta con verla en la tabla de más abajo. */}
+      {licenciasPorVencer.length > 0 && (() => {
+        const vencidas = licenciasPorVencer.filter((l) => l.dias_restantes < 0)
+        const hayVencidas = vencidas.length > 0
+        const n = hayVencidas ? vencidas.length : licenciasPorVencer.length
+        return (
+          <Alert
+            color={hayVencidas ? 'red' : 'yellow'}
+            icon={<IconAlertTriangle size={16} />}
+            title={hayVencidas ? 'Licencias vencidas' : 'Licencias por vencer'}
+          >
+            {n} licencia{n !== 1 ? 's' : ''} de conductor {hayVencidas
+              ? (n !== 1 ? 'ya vencieron' : 'ya venció')
+              : (n !== 1 ? 'vencen' : 'vence') + ' en menos de 2 meses'}
+            {hayVencidas && licenciasPorVencer.length > vencidas.length &&
+              ` y ${licenciasPorVencer.length - vencidas.length} más vencen en menos de 2 meses`}
+            . Revísalas en Catálogos → Conductores.
+          </Alert>
+        )
+      })()}
+
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3, xl: 5 }} spacing="md">
         <StatCard
           label="Mantenimientos del mes"
@@ -322,16 +357,17 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
         />
       </SimpleGrid>
 
-      {/* ── Seguros y permisos por vencer ── */}
+      {/* ── Seguros, permisos y licencias por vencer ── */}
       <Card withBorder padding="lg" radius="md">
-        <Text fw={600} mb={2}>Seguros y permisos por vencer</Text>
+        <Text fw={600} mb={2}>Documentos por vencer</Text>
         <Text size="xs" c="dimmed" mb="md">
-          Documentos ya vencidos o próximos a vencer (dentro de 30 días). Gestiónalos en Catálogos → Seguros / Permisos.
+          Seguros y permisos ya vencidos o próximos a vencer (dentro de 30 días) y licencias de conductor
+          con vigencia dentro de 2 meses. Gestiónalos en Catálogos → Seguros / Permisos / Conductores.
         </Text>
         {loadingDocumentos ? (
           <Center py="xl"><Loader size="sm" /></Center>
         ) : documentosPorVencer.length === 0 ? (
-          <Center py="xl"><Text c="dimmed" size="sm">Ningún seguro o permiso por vencer. Todo en regla.</Text></Center>
+          <Center py="xl"><Text c="dimmed" size="sm">Ningún documento por vencer. Todo en regla.</Text></Center>
         ) : (
           <Table.ScrollContainer minWidth={560}>
             <Table striped withTableBorder>
@@ -346,16 +382,18 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
               </Table.Thead>
               <Table.Tbody>
                 {documentosPorVencer.map((d) => {
-                  const est = estadoVencimiento(d.dias_restantes)
+                  const est = estadoVencimiento(d.dias_restantes, d.colorAviso)
                   return (
                     <Table.Tr key={d.key}>
                       <Table.Td>
-                        <Badge variant="light" color={d.tipo === 'Seguro' ? 'blue' : 'grape'} size="sm">{d.tipo}</Badge>
+                        <Badge variant="light" color={d.colorTipo} size="sm">{d.tipo}</Badge>
                       </Table.Td>
                       <Table.Td fw={500}>{d.etiqueta}</Table.Td>
                       <Table.Td>{formatFecha(d.fecha_expiracion)}</Table.Td>
                       <Table.Td><Badge variant="light" color={est.color} size="sm">{est.label}</Badge></Table.Td>
-                      <Table.Td style={{ textAlign: 'center' }}>{d.vehiculos}</Table.Td>
+                      <Table.Td style={{ textAlign: 'center' }}>
+                        {d.vehiculos ?? <Text component="span" c="dimmed" size="sm">—</Text>}
+                      </Table.Td>
                     </Table.Tr>
                   )
                 })}

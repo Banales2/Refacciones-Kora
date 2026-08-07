@@ -5,10 +5,10 @@ import { useState } from 'react'
 import {
   Stack, Group, Text, TextInput, Table, Tabs,
   Loader, Center, Alert, Button, ActionIcon,
-  Modal, Tooltip, Divider,
+  Modal, Tooltip, Divider, Badge,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
-import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
+import { IconPencil, IconTrash, IconPlus, IconAlertTriangle } from '@tabler/icons-react'
 import {
   useSucursales, useCreateSucursal, useUpdateSucursal, useDeleteSucursal,
 } from '../hooks/useSucursales'
@@ -38,6 +38,7 @@ import {
   TEXTO_SIMPLE, TEXTO_LIBRE, CONTACTO, CODIGO,
   limpiarTextoSimple, limpiarTextoLibre, limpiarContacto, limpiarCodigo,
 } from '../lib/validaciones'
+import { estadoVigencia } from '../lib/vigenciaLicencia'
 import type { Sucursal, SucursalPayload } from '../hooks/useSucursales'
 import type { Ruta, RutaPayload } from '../hooks/useRutas'
 import type { Gasolinera, GasolineraPayload } from '../hooks/useGasolineras'
@@ -400,6 +401,22 @@ function SinDato() {
   return <Text component="span" c="dimmed" size="sm">—</Text>
 }
 
+// Vigencia de una licencia. Cuando el texto capturado se puede leer como fecha
+// y está dentro de la ventana de aviso, se marca: amarillo si está por vencer,
+// rojo si ya venció. Si no es una fecha legible se muestra tal cual.
+function CeldaVigencia({ valor }: { valor: string | null }) {
+  if (!valor) return <SinDato />
+  const est = estadoVigencia(valor)
+  if (!est) return <>{valor}</>
+  return (
+    <Tooltip label={est.label}>
+      <Badge variant="light" color={est.color} size="sm" leftSection={<IconAlertTriangle size={11} />}>
+        {valor}
+      </Badge>
+    </Tooltip>
+  )
+}
+
 // El conductor tiene nombre y licencia, así que no puede reusar SitioForm (que
 // exige una ubicación).
 function ConductorForm({
@@ -477,7 +494,8 @@ function ConductorForm({
           />
           <TextInput
             label="Vigencia"
-            placeholder="Ej. 2028 o 3 AÑOS"
+            placeholder="Ej. 2028-05-14"
+            description="Con fecha completa se avisa del vencimiento"
             maxLength={30}
             {...form.getInputProps('licencia_estatal_vigencia')}
             onChange={(e) => form.setFieldValue('licencia_estatal_vigencia', limpiarTextoSimple(e.currentTarget.value, 30))}
@@ -501,7 +519,8 @@ function ConductorForm({
           />
           <TextInput
             label="Vigencia"
-            placeholder="Ej. 2028 o 3 AÑOS"
+            placeholder="Ej. 2028-05-14"
+            description="Con fecha completa se avisa del vencimiento"
             maxLength={30}
             {...form.getInputProps('licencia_federal_vigencia')}
             onChange={(e) => form.setFieldValue('licencia_federal_vigencia', limpiarTextoSimple(e.currentTarget.value, 30))}
@@ -530,6 +549,16 @@ function ConductoresPanel() {
   const items = data?.data ?? []
   const isPending = createMut.isPending || updateMut.isPending
 
+  // Licencias (estatal y federal) que ya vencieron o vencen dentro de 2 meses,
+  // para el aviso de arriba de la tabla.
+  const alertas = items.flatMap((c) =>
+    [c.licencia_estatal_vigencia, c.licencia_federal_vigencia]
+      .map((v) => estadoVigencia(v))
+      .filter((e): e is NonNullable<typeof e> => e !== null)
+  )
+  const vencidas = alertas.filter((e) => e.dias < 0).length
+  const porVencer = alertas.length - vencidas
+
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
   function openEdit(c: Conductor) { setEditing(c); setFormError(null); setFormOpen(true) }
 
@@ -550,6 +579,19 @@ function ConductoresPanel() {
           <Text size="sm" c="dimmed">{items.length} conductor{items.length !== 1 ? 'es' : ''}</Text>
           <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo conductor</Button>
         </Group>
+
+        {alertas.length > 0 && (
+          <Alert
+            color={vencidas > 0 ? 'red' : 'yellow'}
+            icon={<IconAlertTriangle size={16} />}
+            title={vencidas > 0 ? 'Licencias vencidas' : 'Licencias por vencer'}
+          >
+            {vencidas > 0 && <>{vencidas} licencia{vencidas !== 1 ? 's' : ''} {vencidas !== 1 ? 'vencidas' : 'vencida'}</>}
+            {vencidas > 0 && porVencer > 0 && ' y '}
+            {porVencer > 0 && <>{porVencer} por vencer en menos de 2 meses</>}
+            . Están marcadas en la columna de vigencia.
+          </Alert>
+        )}
 
         {isLoading ? <Center py="xl"><Loader /></Center>
         : isError   ? <Alert color="red" title="Error">No se pudieron obtener los conductores.</Alert>
@@ -575,9 +617,9 @@ function ConductoresPanel() {
                     <Table.Td fw={500}>{c.nombre}</Table.Td>
                     <Table.Td>{c.ubicacion ?? <SinDato />}</Table.Td>
                     <Table.Td>{c.licencia_estatal_numero ?? <SinDato />}</Table.Td>
-                    <Table.Td>{c.licencia_estatal_vigencia ?? <SinDato />}</Table.Td>
+                    <Table.Td><CeldaVigencia valor={c.licencia_estatal_vigencia} /></Table.Td>
                     <Table.Td>{c.licencia_federal_numero ?? <SinDato />}</Table.Td>
-                    <Table.Td>{c.licencia_federal_vigencia ?? <SinDato />}</Table.Td>
+                    <Table.Td><CeldaVigencia valor={c.licencia_federal_vigencia} /></Table.Td>
                     <Table.Td>{c.licencia_federal_expediente ?? <SinDato />}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
