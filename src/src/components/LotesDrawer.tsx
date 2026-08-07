@@ -96,7 +96,7 @@ function LoteForm({
         return null
       },
       num_factura: (v) => {
-        if (!v.trim()) return 'Núm. factura requerido'
+        if (!v.trim()) return 'No. factura requerido'
         if (v.trim().length > 30) return 'Máximo 30 caracteres'
         if (!/^[A-Za-z0-9-]+$/.test(v.trim())) return 'Solo letras, números y guiones'
         return null
@@ -144,7 +144,7 @@ function LoteForm({
           {...form.getInputProps('cantidad_inicial')}
         />
         <TextInput
-          label="Núm. factura"
+          label="No. factura"
           placeholder="Ej. A-12345"
           maxLength={30}
           required

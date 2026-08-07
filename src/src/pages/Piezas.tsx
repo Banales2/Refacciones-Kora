@@ -102,7 +102,7 @@ function PiezaForm({
     <form onSubmit={form.onSubmit(onSubmit)}>
       <Stack gap="sm">
         <TextInput
-          label="Número de serie"
+          label="No. serie"
           placeholder="EJ-001"
           required
           maxLength={20}
@@ -171,7 +171,7 @@ function PiezasTable({
       <Table striped highlightOnHover withTableBorder>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Número de serie</Table.Th>
+            <Table.Th>No. serie</Table.Th>
             <Table.Th>Descripción</Table.Th>
             <Table.Th>Tipo</Table.Th>
             <Table.Th style={{ textAlign: 'center' }}>En stock</Table.Th>
@@ -354,7 +354,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
           <Select
             data={[
               { value: 'all', label: 'Todo' },
-              { value: 'numero_serie', label: 'Núm. serie' },
+              { value: 'numero_serie', label: 'No. serie' },
               { value: 'descripcion', label: 'Descripción' },
             ]}
             value={searchBy}

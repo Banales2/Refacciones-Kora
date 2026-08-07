@@ -57,7 +57,7 @@ export async function exportPiezasReporteToPdf(piezas: Pieza[]) {
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['Número de serie', 'Descripción', 'En stock']],
+      head: [['No. serie', 'Descripción', 'En stock']],
       body: [...items]
         .sort((a, b) => a.numero_serie.localeCompare(b.numero_serie, 'es-MX'))
         .map((p) => [p.numero_serie, p.descripcion, String(p.cantidad_total)]),

@@ -502,7 +502,7 @@ function ConductorForm({
         <Divider label="Licencia estatal" labelPosition="left" mt={4} />
         <Group grow align="flex-start">
           <TextInput
-            label="Número de licencia"
+            label="No. licencia"
             placeholder="Ej. ABC1234567"
             maxLength={30}
             {...form.getInputProps('licencia_estatal_numero')}
@@ -524,14 +524,14 @@ function ConductorForm({
         <Divider label="Licencia federal" labelPosition="left" mt={4} />
         <Group grow align="flex-start">
           <TextInput
-            label="Número de licencia"
+            label="No. licencia"
             placeholder="Ej. ABC1234567"
             maxLength={30}
             {...form.getInputProps('licencia_federal_numero')}
             onChange={(e) => form.setFieldValue('licencia_federal_numero', limpiarCodigo(e.currentTarget.value, 30))}
           />
           <TextInput
-            label="Número de expediente"
+            label="No. expediente"
             placeholder="Ej. EXP-12345"
             maxLength={30}
             {...form.getInputProps('licencia_federal_expediente')}
@@ -889,7 +889,7 @@ function SeguroForm({
       fecha_expiracion: v.fecha_expiracion,
     }))}>
       <Stack gap="sm">
-        <TextInput label="Número de póliza" placeholder="Ej. POL-123456" required {...form.getInputProps('poliza')} />
+        <TextInput label="No. póliza" placeholder="Ej. POL-123456" required {...form.getInputProps('poliza')} />
         <TextInput label="Compañía"         placeholder="Ej. GNP Seguros"  required {...form.getInputProps('compania')} />
         <TextInput label="Fecha de expiración" type="date" required {...form.getInputProps('fecha_expiracion')} />
         {error && <Alert color="red" title="Error">{error}</Alert>}
