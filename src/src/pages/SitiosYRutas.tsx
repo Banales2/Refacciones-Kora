@@ -7,6 +7,7 @@ import {
   Loader, Center, Alert, Button, ActionIcon,
   Modal, Tooltip, Divider, Badge,
 } from '@mantine/core'
+import { DateInput } from '@mantine/dates'
 import { useForm } from '@mantine/form'
 import { IconPencil, IconTrash, IconPlus, IconAlertTriangle } from '@tabler/icons-react'
 import {
@@ -38,7 +39,7 @@ import {
   TEXTO_SIMPLE, TEXTO_LIBRE, CONTACTO, CODIGO,
   limpiarTextoSimple, limpiarTextoLibre, limpiarContacto, limpiarCodigo,
 } from '../lib/validaciones'
-import { estadoVigencia } from '../lib/vigenciaLicencia'
+import { estadoVigencia, parseVigencia } from '../lib/vigenciaLicencia'
 import type { Sucursal, SucursalPayload } from '../hooks/useSucursales'
 import type { Ruta, RutaPayload } from '../hooks/useRutas'
 import type { Gasolinera, GasolineraPayload } from '../hooks/useGasolineras'
@@ -406,12 +407,18 @@ function SinDato() {
 // rojo si ya venció. Si no es una fecha legible se muestra tal cual.
 function CeldaVigencia({ valor }: { valor: string | null }) {
   if (!valor) return <SinDato />
+  // Se muestra en dd/mm/aaaa igual que el calendario del formulario; lo que no
+  // sea una fecha (datos viejos en texto libre) se deja tal cual.
+  const fecha = parseVigencia(valor)
+  const texto = fecha
+    ? new Date(`${fecha}T12:00:00`).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : valor
   const est = estadoVigencia(valor)
-  if (!est) return <>{valor}</>
+  if (!est) return <>{texto}</>
   return (
     <Tooltip label={est.label}>
       <Badge variant="light" color={est.color} size="sm" leftSection={<IconAlertTriangle size={11} />}>
-        {valor}
+        {texto}
       </Badge>
     </Tooltip>
   )
@@ -428,15 +435,24 @@ function ConductorForm({
   onSubmit: (payload: ConductorPayload) => void
   onCancel: () => void
 }) {
+  // Las vigencias se eligen del calendario y se guardan como texto "YYYY-MM-DD"
+  // (la columna sigue siendo varchar). Lo capturado antes en texto libre
+  // ("3 AÑOS") no cabe en el calendario: se deja el campo vacío y se avisa
+  // debajo para que se vuelva a elegir en vez de perderlo sin decir nada.
+  const estatalPrevia = initial?.licencia_estatal_vigencia ?? null
+  const federalPrevia = initial?.licencia_federal_vigencia ?? null
+  const estatalNoFecha = !!estatalPrevia && !parseVigencia(estatalPrevia)
+  const federalNoFecha = !!federalPrevia && !parseVigencia(federalPrevia)
+
   const form = useForm({
     initialValues: {
       nombre:                    initial?.nombre    ?? '',
       ubicacion:                 initial?.ubicacion ?? '',
       licencia_estatal_numero:   initial?.licencia_estatal_numero   ?? '',
-      licencia_estatal_vigencia: initial?.licencia_estatal_vigencia ?? '',
+      licencia_estatal_vigencia: parseVigencia(estatalPrevia) ?? '',
       licencia_federal_numero:     initial?.licencia_federal_numero     ?? '',
       licencia_federal_expediente: initial?.licencia_federal_expediente ?? '',
-      licencia_federal_vigencia:   initial?.licencia_federal_vigencia   ?? '',
+      licencia_federal_vigencia:   parseVigencia(federalPrevia) ?? '',
     },
     validate: {
       nombre: (v) =>
@@ -447,13 +463,13 @@ function ConductorForm({
       licencia_estatal_numero: (v) =>
         v && !CODIGO.test(v.trim()) ? 'Solo mayúsculas, números y guiones' : null,
       licencia_estatal_vigencia: (v) =>
-        v && !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
+        v && !parseVigencia(v) ? 'Fecha inválida' : null,
       licencia_federal_numero: (v) =>
         v && !CODIGO.test(v.trim()) ? 'Solo mayúsculas, números y guiones' : null,
       licencia_federal_expediente: (v) =>
         v && !CODIGO.test(v.trim()) ? 'Solo mayúsculas, números y guiones' : null,
       licencia_federal_vigencia: (v) =>
-        v && !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
+        v && !parseVigencia(v) ? 'Fecha inválida' : null,
     },
   })
 
@@ -492,13 +508,17 @@ function ConductorForm({
             {...form.getInputProps('licencia_estatal_numero')}
             onChange={(e) => form.setFieldValue('licencia_estatal_numero', limpiarCodigo(e.currentTarget.value, 30))}
           />
-          <TextInput
+          <DateInput
             label="Vigencia"
-            placeholder="Ej. 2028-05-14"
-            description="Con fecha completa se avisa del vencimiento"
-            maxLength={30}
-            {...form.getInputProps('licencia_estatal_vigencia')}
-            onChange={(e) => form.setFieldValue('licencia_estatal_vigencia', limpiarTextoSimple(e.currentTarget.value, 30))}
+            placeholder="dd/mm/aaaa"
+            valueFormat="DD/MM/YYYY"
+            clearable
+            // Mantine 9 maneja la fecha como texto "YYYY-MM-DD", que es justo lo
+            // que se guarda en la columna.
+            value={form.values.licencia_estatal_vigencia || null}
+            onChange={(d) => form.setFieldValue('licencia_estatal_vigencia', d ?? '')}
+            error={form.errors.licencia_estatal_vigencia as string}
+            description={estatalNoFecha ? `Antes decía "${estatalPrevia}"; elige la fecha` : undefined}
           />
         </Group>
         <Divider label="Licencia federal" labelPosition="left" mt={4} />
@@ -517,13 +537,15 @@ function ConductorForm({
             {...form.getInputProps('licencia_federal_expediente')}
             onChange={(e) => form.setFieldValue('licencia_federal_expediente', limpiarCodigo(e.currentTarget.value, 30))}
           />
-          <TextInput
+          <DateInput
             label="Vigencia"
-            placeholder="Ej. 2028-05-14"
-            description="Con fecha completa se avisa del vencimiento"
-            maxLength={30}
-            {...form.getInputProps('licencia_federal_vigencia')}
-            onChange={(e) => form.setFieldValue('licencia_federal_vigencia', limpiarTextoSimple(e.currentTarget.value, 30))}
+            placeholder="dd/mm/aaaa"
+            valueFormat="DD/MM/YYYY"
+            clearable
+            value={form.values.licencia_federal_vigencia || null}
+            onChange={(d) => form.setFieldValue('licencia_federal_vigencia', d ?? '')}
+            error={form.errors.licencia_federal_vigencia as string}
+            description={federalNoFecha ? `Antes decía "${federalPrevia}"; elige la fecha` : undefined}
           />
         </Group>
         {error && <Alert color="red" title="Error">{error}</Alert>}
