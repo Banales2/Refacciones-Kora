@@ -23,8 +23,10 @@ import {
   useAgendasCalendario, useCreateAgenda, useCancelarAgenda, useCompletarAgenda,
   type AgendaConVehiculo,
 } from '../hooks/useAgendasMantenimiento'
-import { useRequerimientos, useCreateRequerimiento } from '../hooks/useRequerimientos'
+import { useCreateRequerimiento } from '../hooks/useRequerimientos'
 import type { RequerimientoPayload } from '../hooks/useRequerimientos'
+import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
+import type { OrigenPendiente } from '../hooks/usePendientes'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import { MantenimientoForm, RequerimientoForm } from './Vehiculos'
@@ -153,7 +155,7 @@ type AgendaFormVals = {
   tipo:              string
   tecnico_id:        string
   observaciones:     string
-  requerimiento_ids: string[]
+  pendiente_ids:     string[]
 }
 
 function AgendaForm({
@@ -166,16 +168,27 @@ function AgendaForm({
   onCancel:  () => void
 }) {
   const vehiculoId = vehiculo.id
-  const { data: reqData } = useRequerimientos(vehiculoId)
   const { data: mantData } = useMantenimientos(vehiculoId)
   const lastMant = mantData?.data?.[0] ?? null
   const createReqMut = useCreateRequerimiento(vehiculoId)
   const [nuevoReqOpen, setNuevoReqOpen]   = useState(false)
   const [nuevoReqError, setNuevoReqError] = useState<string | null>(null)
 
-  const reqOptions = (reqData?.data ?? [])
-    .filter(r => r.status === 'activo')
-    .map(r => ({ value: String(r.id), label: r.nombre }))
+  // Una agenda puede atender pendientes de los dos tipos a la vez, así que el
+  // selector viene de la lista combinada y los agrupa por origen.
+  const { data: pendientesData } = usePendientes(vehiculoId)
+  const pendienteGroups = useMemo(() => {
+    const items = pendientesData?.data ?? []
+    return (['preventivo', 'incidencia'] as OrigenPendiente[])
+      .map(origen => ({
+        group: ORIGEN_LABEL[origen],
+        items: items
+          .filter(p => p.origen === origen)
+          .map(p => ({ value: String(p.id), label: p.nombre })),
+      }))
+      .filter(g => g.items.length > 0)
+  }, [pendientesData])
+  const hayPendientes = pendienteGroups.length > 0
 
   // El técnico se elige del catálogo y se guarda por id.
   const { data: tecnicosData } = useTecnicos()
@@ -183,12 +196,12 @@ function AgendaForm({
     .map(t => ({ value: String(t.id), label: t.nombre }))
 
   const form = useForm<AgendaFormVals>({
-    initialValues: { fecha_inicio: '', fecha_fin: '', tipo: '', tecnico_id: '', observaciones: '', requerimiento_ids: [] },
+    initialValues: { fecha_inicio: '', fecha_fin: '', tipo: '', tecnico_id: '', observaciones: '', pendiente_ids: [] },
     validate: {
       fecha_inicio: (v) => !v ? 'Requerido' : null,
       fecha_fin:    (v, vals) => !v ? 'Requerido' : v < vals.fecha_inicio ? 'No puede ser antes del inicio' : null,
       tipo:         (v) => !v ? 'Requerido' : null,
-      requerimiento_ids: (v) => v.length === 0 ? 'Selecciona al menos un requerimiento' : null,
+      pendiente_ids: (v) => v.length === 0 ? 'Selecciona al menos un requerimiento o incidencia' : null,
       tecnico_id:   (v) => !v ? 'Requerido' : null,
     },
   })
@@ -197,7 +210,7 @@ function AgendaForm({
     setNuevoReqError(null)
     createReqMut.mutate(payload, {
       onSuccess: (res) => {
-        form.setFieldValue('requerimiento_ids', [...form.values.requerimiento_ids, String(res.data.id)])
+        form.setFieldValue('pendiente_ids', [...form.values.pendiente_ids, String(res.data.id)])
         setNuevoReqOpen(false)
       },
       onError: (e: Error) => setNuevoReqError(e.message),
@@ -248,19 +261,20 @@ function AgendaForm({
         />
         <div>
           <MultiSelect
-            label="Requerimiento(s) que se busca resolver"
+            label="Qué se busca resolver"
+            description="Requerimientos preventivos e incidencias de esta unidad"
             required
-            placeholder={reqOptions.length ? 'Selecciona los requerimientos…' : 'Sin requerimientos activos'}
-            data={reqOptions}
+            placeholder={hayPendientes ? 'Selecciona los pendientes…' : 'Esta unidad no tiene nada pendiente'}
+            data={pendienteGroups}
             searchable
             clearable
-            {...form.getInputProps('requerimiento_ids')}
+            {...form.getInputProps('pendiente_ids')}
           />
           <Button
             variant="subtle" size="xs" mt={4} leftSection={<IconPlus size={14} />}
             onClick={() => setNuevoReqOpen(true)}
           >
-            Crear nuevo requerimiento
+            Crear nuevo requerimiento preventivo
           </Button>
         </div>
         <Textarea label="Notas" autosize minRows={2} placeholder="Detalles del mantenimiento planeado (opcional)" {...form.getInputProps('observaciones')} />
@@ -377,7 +391,7 @@ export default function Calendario({
       tipo:              vals.tipo,
       tecnico_id:        Number(vals.tecnico_id),
       observaciones:     vals.observaciones.trim() || null,
-      requerimiento_ids: vals.requerimiento_ids.map(Number),
+      pendiente_ids:     vals.pendiente_ids.map(Number),
     }, { onSuccess: cerrarAgendar })
   }
 
@@ -838,7 +852,7 @@ export default function Calendario({
             <MantenimientoForm
               vehiculoId={completarAgenda.vehiculo_id}
               tipoVehiculo={completarAgenda.vehiculo_tipo as TipoVehiculo}
-              prefillRequerimientoIds={completarAgenda.requerimiento_ids}
+              prefillPendienteIds={completarAgenda.pendiente_ids}
               isPending={completarMut.isPending || piezasMut.isPending}
               error={completarMut.error ? (completarMut.error as Error).message : null}
               onSubmit={handleCompletarSubmit}

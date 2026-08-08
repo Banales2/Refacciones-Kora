@@ -19,7 +19,7 @@ export interface AgendaMantenimiento {
   observaciones:     string | null
   status:            AgendaStatus
   mantenimiento_id:  number | null
-  requerimiento_ids: number[]
+  pendiente_ids: number[]
   created_at:        string
   updated_at:        string
 }
@@ -35,7 +35,7 @@ export interface AgendaMantenimientoPayload {
   tipo?:              string | null
   tecnico_id?:        number | null
   observaciones?:     string | null
-  requerimiento_ids?: number[]
+  pendiente_ids?: number[]
 }
 
 export function useAgendasMantenimiento(vehiculoId: number) {

@@ -1,25 +1,33 @@
+// Mantenimiento preventivo de un vehículo: vence por kilometraje, por tiempo o
+// por ambos, y se vuelve a vencer cada ciclo. Es uno de los dos hijos de
+// `pendientes` (ver pendientesRepo): comparte su id con el padre, que guarda
+// nombre, descripción, categoría, status y vehículo.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import * as pendientes from './pendientesRepo'
+import { PENDIENTE_COLS, type StatusPendiente } from './pendientesRepo'
 
-export type TriggerMode  = 'km' | 'meses' | 'ambos'
-export type StatusReq    = 'activo' | 'completado' | 'pausado' | 'cancelado'
+export type TriggerMode = 'km' | 'meses' | 'ambos'
+export type StatusReq   = StatusPendiente
 
+// Plano: el consumidor no distingue qué campo vino del padre y cuál del hijo.
 export interface RequerimientoExclusivo {
   id:                  number
+  vehiculo_id:         number
+  origen:              'preventivo'
   nombre:              string
   descripcion:         string | null
   categoria:           string | null
-  intervalo_km:        number | null
-  intervalo_meses:     number | null
-  trigger_mode:        TriggerMode
   status:              StatusReq
   created_at:          string
   updated_at:          string
-  vehiculo_id:         number
-  plantilla_origen_id: number | null
+  trigger_mode:        TriggerMode
+  intervalo_km:        number | null
+  intervalo_meses:     number | null
   fecha_inicio:        string | null
   km_inicio:           number | null
   fecha_reporte:       string | null
+  plantilla_origen_id: number | null
 }
 
 export interface RequerimientoCreate {
@@ -27,119 +35,127 @@ export interface RequerimientoCreate {
   nombre:               string
   descripcion?:         string | null
   categoria?:           string | null
+  status?:              StatusReq
   trigger_mode:         TriggerMode
   intervalo_km?:        number | null
   intervalo_meses?:     number | null
-  status?:              StatusReq
-  plantilla_origen_id?: number | null
   fecha_inicio?:        string | null
   km_inicio?:           number | null
   fecha_reporte?:       string | null
+  plantilla_origen_id?: number | null
 }
 
 export interface RequerimientoUpdate {
   nombre?:          string
   descripcion?:     string | null
   categoria?:       string | null
+  status?:          StatusReq
   trigger_mode?:    TriggerMode
   intervalo_km?:    number | null
   intervalo_meses?: number | null
-  status?:          StatusReq
   fecha_inicio?:    string | null
   km_inicio?:       number | null
   fecha_reporte?:   string | null
 }
 
-const COLS = `id, nombre, descripcion, categoria, intervalo_km, intervalo_meses,
-  trigger_mode, status, created_at, updated_at, vehiculo_id, plantilla_origen_id,
-  fecha_inicio, km_inicio, fecha_reporte`
+const SELECT_REQ = `
+  SELECT ${PENDIENTE_COLS},
+         r.trigger_mode, r.intervalo_km, r.intervalo_meses,
+         r.fecha_inicio, r.km_inicio, r.fecha_reporte, r.plantilla_origen_id
+  FROM pendientes p
+  JOIN requerimientos_exclusivos r ON r.id = p.id`
 
 export async function findByVehiculo(vehiculoId: number): Promise<RequerimientoExclusivo[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
-    .query(`SELECT ${COLS} FROM requerimientos_exclusivos WHERE vehiculo_id=@vid ORDER BY nombre`)
+    .query(`${SELECT_REQ} WHERE p.vehiculo_id=@vid ORDER BY p.nombre`)
   return r.recordset
-}
-
-// Categorías ya usadas en cualquier requerimiento de la flota: alimentan el
-// selector del formulario para que una categoría creada una vez quede
-// disponible después en todos los vehículos.
-export async function findCategorias(): Promise<string[]> {
-  const pool = await getPool()
-  const r = await pool.request().query(`
-    SELECT categoria FROM (
-      SELECT DISTINCT categoria FROM requerimientos_exclusivos
-      WHERE categoria IS NOT NULL AND LTRIM(RTRIM(categoria)) <> ''
-      UNION
-      SELECT DISTINCT categoria FROM plantilla_requerimientos_modelo
-      WHERE categoria IS NOT NULL AND LTRIM(RTRIM(categoria)) <> ''
-    ) AS c
-    ORDER BY categoria
-  `)
-  return r.recordset.map((row: { categoria: string }) => row.categoria)
 }
 
 export async function findById(id: number): Promise<RequerimientoExclusivo | null> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, id)
-    .query(`SELECT ${COLS} FROM requerimientos_exclusivos WHERE id=@id`)
+    .query(`${SELECT_REQ} WHERE p.id=@id`)
   return r.recordset[0] ?? null
 }
+
+// Se reexporta para no obligar a los servicios a conocer la tabla padre.
+export const findCategorias = pendientes.findCategorias
 
 export async function create(data: RequerimientoCreate): Promise<RequerimientoExclusivo> {
   const pool = await getPool()
-  const r = await pool.request()
-    .input('vid',           sql.Int,              data.vehiculo_id)
-    .input('nombre',        sql.NVarChar(120),    data.nombre)
-    .input('descripcion',   sql.NVarChar(sql.MAX), data.descripcion      ?? null)
-    .input('categoria',     sql.NVarChar(80),     data.categoria         ?? null)
-    .input('triggerMode',   sql.NVarChar(20),     data.trigger_mode)
-    .input('intervaloKm',   sql.Int,              data.intervalo_km      ?? null)
-    .input('intervaloMes',  sql.Int,              data.intervalo_meses   ?? null)
-    .input('status',        sql.NVarChar(20),     data.status            ?? 'activo')
-    .input('origenId',      sql.Int,              data.plantilla_origen_id ?? null)
-    .input('fechaInicio',   sql.Date,             data.fecha_inicio        ?? null)
-    .input('kmInicio',      sql.Int,              data.km_inicio           ?? null)
-    .input('fechaReporte',  sql.Date,             data.fecha_reporte       ?? null)
-    .query(`
-      INSERT INTO requerimientos_exclusivos
-        (vehiculo_id, nombre, descripcion, categoria, trigger_mode,
-         intervalo_km, intervalo_meses, status, plantilla_origen_id, fecha_inicio, km_inicio, fecha_reporte)
-      OUTPUT INSERTED.*
-      VALUES (@vid, @nombre, @descripcion, @categoria, @triggerMode,
-              @intervaloKm, @intervaloMes, @status, @origenId, @fechaInicio, @kmInicio, @fechaReporte)
-    `)
-  return r.recordset[0]
+  const tx = pool.transaction()
+  await tx.begin()
+  let id: number
+  try {
+    id = await pendientes.insert(tx, {
+      vehiculo_id: data.vehiculo_id,
+      origen:      'preventivo',
+      nombre:      data.nombre,
+      descripcion: data.descripcion,
+      categoria:   data.categoria,
+      status:      data.status,
+    })
+    await tx.request()
+      .input('id',           sql.Int,          id)
+      .input('triggerMode',  sql.NVarChar(20), data.trigger_mode)
+      .input('intervaloKm',  sql.Int,          data.intervalo_km        ?? null)
+      .input('intervaloMes', sql.Int,          data.intervalo_meses     ?? null)
+      .input('fechaInicio',  sql.Date,         data.fecha_inicio        ?? null)
+      .input('kmInicio',     sql.Int,          data.km_inicio           ?? null)
+      .input('fechaReporte', sql.Date,         data.fecha_reporte       ?? null)
+      .input('origenId',     sql.Int,          data.plantilla_origen_id ?? null)
+      .query(`
+        INSERT INTO requerimientos_exclusivos
+          (id, trigger_mode, intervalo_km, intervalo_meses,
+           fecha_inicio, km_inicio, fecha_reporte, plantilla_origen_id)
+        VALUES (@id, @triggerMode, @intervaloKm, @intervaloMes,
+                @fechaInicio, @kmInicio, @fechaReporte, @origenId)
+      `)
+    await tx.commit()
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+  return (await findById(id))!
 }
 
 export async function update(id: number, data: RequerimientoUpdate): Promise<RequerimientoExclusivo | null> {
+  const existe = await findById(id)
+  if (!existe) return null
+
   const pool = await getPool()
-  const sets: string[] = ['updated_at=SYSDATETIME()']
-  const req = pool.request().input('id', sql.Int, id)
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    await pendientes.applyUpdate(tx, id, {
+      ...('nombre'      in data ? { nombre:      data.nombre }      : {}),
+      ...('descripcion' in data ? { descripcion: data.descripcion } : {}),
+      ...('categoria'   in data ? { categoria:   data.categoria }   : {}),
+      ...('status'      in data ? { status:      data.status }      : {}),
+    })
 
-  if (data.nombre       !== undefined) { req.input('nombre',      sql.NVarChar(120),     data.nombre);          sets.push('nombre=@nombre')              }
-  if ('descripcion' in data)           { req.input('descripcion', sql.NVarChar(sql.MAX), data.descripcion ?? null); sets.push('descripcion=@descripcion') }
-  if ('categoria'   in data)           { req.input('categoria',   sql.NVarChar(80),      data.categoria   ?? null); sets.push('categoria=@categoria')     }
-  if (data.trigger_mode !== undefined) { req.input('triggerMode', sql.NVarChar(20),      data.trigger_mode);     sets.push('trigger_mode=@triggerMode')   }
-  if ('intervalo_km'   in data)        { req.input('intervaloKm', sql.Int,               data.intervalo_km    ?? null); sets.push('intervalo_km=@intervaloKm') }
-  if ('intervalo_meses' in data)       { req.input('intervaloMes',sql.Int,               data.intervalo_meses ?? null); sets.push('intervalo_meses=@intervaloMes') }
-  if (data.status        !== undefined) { req.input('status',      sql.NVarChar(20), data.status);             sets.push('status=@status')                   }
-  if ('fecha_inicio' in data)           { req.input('fechaInicio', sql.Date,         data.fecha_inicio ?? null); sets.push('fecha_inicio=@fechaInicio')         }
-  if ('km_inicio'    in data)           { req.input('kmInicio',    sql.Int,          data.km_inicio    ?? null); sets.push('km_inicio=@kmInicio')               }
-  if ('fecha_reporte' in data)          { req.input('fechaReporte', sql.Date,        data.fecha_reporte ?? null); sets.push('fecha_reporte=@fechaReporte')       }
+    const sets: string[] = []
+    const req = tx.request().input('id', sql.Int, id)
+    if (data.trigger_mode !== undefined) { req.input('triggerMode',  sql.NVarChar(20), data.trigger_mode);            sets.push('trigger_mode=@triggerMode')       }
+    if ('intervalo_km'    in data)       { req.input('intervaloKm',  sql.Int,  data.intervalo_km    ?? null);         sets.push('intervalo_km=@intervaloKm')       }
+    if ('intervalo_meses' in data)       { req.input('intervaloMes', sql.Int,  data.intervalo_meses ?? null);         sets.push('intervalo_meses=@intervaloMes')   }
+    if ('fecha_inicio'    in data)       { req.input('fechaInicio',  sql.Date, data.fecha_inicio    ?? null);         sets.push('fecha_inicio=@fechaInicio')       }
+    if ('km_inicio'       in data)       { req.input('kmInicio',     sql.Int,  data.km_inicio       ?? null);         sets.push('km_inicio=@kmInicio')             }
+    if ('fecha_reporte'   in data)       { req.input('fechaReporte', sql.Date, data.fecha_reporte   ?? null);         sets.push('fecha_reporte=@fechaReporte')     }
+    if (sets.length) {
+      await req.query(`UPDATE requerimientos_exclusivos SET ${sets.join(',')} WHERE id=@id`)
+    }
 
-  const r = await req.query(
-    `UPDATE requerimientos_exclusivos SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`
-  )
-  return r.recordset[0] ?? null
+    await tx.commit()
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+  return findById(id)
 }
 
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM requerimientos_exclusivos OUTPUT DELETED.id WHERE id=@id')
-  return r.recordset.length > 0
-}
+// Borra el padre; el hijo se va por ON DELETE CASCADE.
+export const remove = pendientes.remove

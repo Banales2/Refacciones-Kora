@@ -15,7 +15,8 @@ export interface AgendaMantenimiento {
   observaciones:    string | null
   status:           AgendaStatus
   mantenimiento_id: number | null
-  requerimiento_ids: number[]
+  // Preventivos e incidencias que esta agenda va a atender.
+  pendiente_ids:    number[]
   created_at:       string
   updated_at:       string
 }
@@ -32,7 +33,7 @@ export interface AgendaMantenimientoCreate {
   tipo?:              string | null
   tecnico_id?:        number | null
   observaciones?:     string | null
-  requerimiento_ids?: number[]
+  pendiente_ids?: number[]
 }
 
 export interface AgendaMantenimientoUpdate {
@@ -42,7 +43,7 @@ export interface AgendaMantenimientoUpdate {
   tecnico_id?:        number | null
   observaciones?:     string | null
   status?:            AgendaStatus
-  requerimiento_ids?: number[]
+  pendiente_ids?: number[]
 }
 
 // El nombre del técnico sale del catálogo por join, no de la columna vieja: si
@@ -54,9 +55,9 @@ const SELECT_AGENDA = `
   FROM agendas_mantenimiento a
   LEFT JOIN tecnicos t ON t.id = a.tecnico_id`
 
-async function attachReqIds<T extends { id: number }>(
+async function attachPendienteIds<T extends { id: number }>(
   pool: sql.ConnectionPool, rows: T[]
-): Promise<(T & { requerimiento_ids: number[] })[]> {
+): Promise<(T & { pendiente_ids: number[] })[]> {
   if (rows.length === 0) return []
   const req = pool.request()
   const params = rows.map((r, i) => {
@@ -64,14 +65,14 @@ async function attachReqIds<T extends { id: number }>(
     return `@a${i}`
   })
   const lr = await req.query(
-    `SELECT agenda_id, requerimiento_id FROM agenda_requerimientos WHERE agenda_id IN (${params.join(',')})`
+    `SELECT agenda_id, pendiente_id FROM agenda_pendientes WHERE agenda_id IN (${params.join(',')})`
   )
   const map = new Map<number, number[]>()
-  for (const { agenda_id, requerimiento_id } of lr.recordset) {
+  for (const { agenda_id, pendiente_id } of lr.recordset) {
     if (!map.has(agenda_id)) map.set(agenda_id, [])
-    map.get(agenda_id)!.push(requerimiento_id)
+    map.get(agenda_id)!.push(pendiente_id)
   }
-  return rows.map(r => ({ ...r, requerimiento_ids: map.get(r.id) ?? [] }))
+  return rows.map(r => ({ ...r, pendiente_ids: map.get(r.id) ?? [] }))
 }
 
 export async function findByVehiculo(vehiculoId: number): Promise<AgendaMantenimiento[]> {
@@ -79,7 +80,7 @@ export async function findByVehiculo(vehiculoId: number): Promise<AgendaMantenim
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
     .query(`${SELECT_AGENDA} WHERE a.vehiculo_id=@vid ORDER BY a.fecha_inicio DESC`)
-  return attachReqIds(pool, r.recordset)
+  return attachPendienteIds(pool, r.recordset)
 }
 
 export async function findById(id: number): Promise<AgendaMantenimiento | null> {
@@ -88,7 +89,7 @@ export async function findById(id: number): Promise<AgendaMantenimiento | null> 
     .input('id', sql.Int, id)
     .query(`${SELECT_AGENDA} WHERE a.id=@id`)
   if (!r.recordset[0]) return null
-  const [row] = await attachReqIds(pool, [r.recordset[0]])
+  const [row] = await attachPendienteIds(pool, [r.recordset[0]])
   return row
 }
 
@@ -106,7 +107,7 @@ export async function findAllConVehiculo(): Promise<AgendaConVehiculo[]> {
     JOIN modelos mo   ON mo.id = v.modelo_id
     ORDER BY a.fecha_inicio DESC
   `)
-  return attachReqIds(pool, r.recordset)
+  return attachPendienteIds(pool, r.recordset)
 }
 
 export async function create(data: AgendaMantenimientoCreate): Promise<AgendaMantenimiento> {
@@ -127,16 +128,16 @@ export async function create(data: AgendaMantenimientoCreate): Promise<AgendaMan
         VALUES (@vid, @fechaInicio, @fechaFin, @tipo, @tecnicoId, @observaciones)
       `)
     const agenda = r.recordset[0]
-    if (data.requerimiento_ids?.length) {
-      const values = data.requerimiento_ids.map((_, i) => `(@aid, @rid${i})`).join(',')
+    if (data.pendiente_ids?.length) {
+      const values = data.pendiente_ids.map((_, i) => `(@aid, @pid${i})`).join(',')
       const linkReq = tx.request().input('aid', sql.Int, agenda.id)
-      data.requerimiento_ids.forEach((rid, i) => linkReq.input(`rid${i}`, sql.Int, rid))
-      await linkReq.query(`INSERT INTO agenda_requerimientos (agenda_id, requerimiento_id) VALUES ${values}`)
+      data.pendiente_ids.forEach((pid, i) => linkReq.input(`pid${i}`, sql.Int, pid))
+      await linkReq.query(`INSERT INTO agenda_pendientes (agenda_id, pendiente_id) VALUES ${values}`)
     }
     await tx.commit()
     // Se relee para traer el nombre del técnico resuelto por el join.
     return (await findById(agenda.id))
-      ?? { ...agenda, tecnico: null, requerimiento_ids: data.requerimiento_ids ?? [] }
+      ?? { ...agenda, tecnico: null, pendiente_ids: data.pendiente_ids ?? [] }
   } catch (err) {
     await tx.rollback()
     throw err
@@ -160,14 +161,16 @@ export async function update(id: number, data: AgendaMantenimientoUpdate): Promi
 
     await req.query(`UPDATE agendas_mantenimiento SET ${sets.join(',')} WHERE id=@id`)
 
-    if (data.requerimiento_ids !== undefined) {
+    if (data.pendiente_ids !== undefined) {
+      // La agenda no guarda snapshot (solo dice qué se piensa atender), así que
+      // aquí sí se puede rehacer la lista completa sin perder información.
       await tx.request().input('id', sql.Int, id)
-        .query('DELETE FROM agenda_requerimientos WHERE agenda_id=@id')
-      if (data.requerimiento_ids.length) {
-        const values = data.requerimiento_ids.map((_, i) => `(@aid, @rid${i})`).join(',')
+        .query('DELETE FROM agenda_pendientes WHERE agenda_id=@id')
+      if (data.pendiente_ids.length) {
+        const values = data.pendiente_ids.map((_, i) => `(@aid, @pid${i})`).join(',')
         const linkReq = tx.request().input('aid', sql.Int, id)
-        data.requerimiento_ids.forEach((rid, i) => linkReq.input(`rid${i}`, sql.Int, rid))
-        await linkReq.query(`INSERT INTO agenda_requerimientos (agenda_id, requerimiento_id) VALUES ${values}`)
+        data.pendiente_ids.forEach((pid, i) => linkReq.input(`pid${i}`, sql.Int, pid))
+        await linkReq.query(`INSERT INTO agenda_pendientes (agenda_id, pendiente_id) VALUES ${values}`)
       }
     }
 
@@ -193,8 +196,20 @@ export async function marcarCompletada(id: number, mantenimientoId: number): Pro
 
 export async function remove(id: number): Promise<boolean> {
   const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM agendas_mantenimiento OUTPUT DELETED.id WHERE id=@id')
-  return r.recordset.length > 0
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    // El vínculo con los pendientes es NO ACTION: hay que soltarlo antes o el FK
+    // aborta el DELETE. Se borra el vínculo, no el pendiente en sí.
+    await tx.request().input('id', sql.Int, id)
+      .query('DELETE FROM agenda_pendientes WHERE agenda_id=@id')
+    const r = await tx.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM agendas_mantenimiento OUTPUT DELETED.id WHERE id=@id')
+    await tx.commit()
+    return r.recordset.length > 0
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
 }

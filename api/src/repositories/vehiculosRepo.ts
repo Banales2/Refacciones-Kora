@@ -326,8 +326,21 @@ export async function remove(id: number): Promise<void> {
     const tipo: TipoVehiculo = tipoRes.recordset[0]?.tipo
     if (!tipo) { await tx.rollback(); return }
 
+    // Preventivos e incidencias del vehículo: se sueltan sus vínculos con
+    // mantenimientos y agendas (FK NO ACTION) y se borran los padres; las tablas
+    // hijas se van solas por ON DELETE CASCADE.
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE mp FROM mantenimiento_pendientes mp
+      JOIN pendientes p ON p.id = mp.pendiente_id
+      WHERE p.vehiculo_id = @id
+    `)
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE ap FROM agenda_pendientes ap
+      JOIN pendientes p ON p.id = ap.pendiente_id
+      WHERE p.vehiculo_id = @id
+    `)
     await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM requerimientos_exclusivos WHERE vehiculo_id=@id')
+      .query('DELETE FROM pendientes WHERE vehiculo_id=@id')
     const sub = tx.request().input('id', sql.Int, id)
     const table = tipo === 'camion' ? 'camiones' : tipo === 'tractocamion' ? 'tractocamiones'
                 : tipo === 'caja_trailer' ? 'cajas_trailer' : tipo === 'montacargas' ? 'montacargas'

@@ -96,28 +96,50 @@ export async function update(id: number, data: PlantillaUpdate): Promise<Plantil
   return r.recordset[0] ?? null
 }
 
+// Copia todas las plantillas activas de un modelo a un vehículo recién dado de
+// alta. Como cada plantilla produce un requerimiento distinto, hay que saber qué
+// pendiente nuevo corresponde a qué plantilla, y un INSERT ... SELECT no puede
+// devolver columnas del origen en su OUTPUT: solo ve las de INSERTED. MERGE sí
+// puede (`OUTPUT ... src.plantilla_id`), y por eso está aquí con un `ON 1 = 0`
+// que nunca empata y convierte cada fila del origen en un INSERT.
 export async function copyModelToVehicle(vehiculoId: number, modeloId: number): Promise<void> {
   const pool = await getPool()
   await pool.request()
     .input('vehiculoId', sql.Int, vehiculoId)
     .input('modeloId',   sql.Int, modeloId)
     .query(`
+      DECLARE @mapa TABLE (pendiente_id INT, plantilla_id INT);
+
+      MERGE INTO pendientes AS tgt
+      USING (
+        SELECT p.id AS plantilla_id, p.nombre, p.descripcion, p.categoria
+        FROM plantilla_requerimientos_modelo p
+        WHERE p.modelo_id = @modeloId
+          AND p.activo = 1
+          AND NOT EXISTS (
+            SELECT 1
+            FROM requerimientos_exclusivos re
+            JOIN pendientes pe ON pe.id = re.id
+            WHERE pe.vehiculo_id = @vehiculoId AND re.plantilla_origen_id = p.id
+          )
+      ) AS src
+      ON 1 = 0
+      WHEN NOT MATCHED BY TARGET THEN
+        INSERT (vehiculo_id, origen, nombre, descripcion, categoria, status)
+        VALUES (@vehiculoId, 'preventivo', src.nombre, src.descripcion, src.categoria, 'activo')
+      OUTPUT INSERTED.id, src.plantilla_id INTO @mapa (pendiente_id, plantilla_id);
+
       INSERT INTO requerimientos_exclusivos
-        (vehiculo_id, nombre, descripcion, categoria, trigger_mode,
-         intervalo_km, intervalo_meses, status, plantilla_origen_id)
-      SELECT
-        @vehiculoId, p.nombre, p.descripcion, p.categoria, p.trigger_mode,
-        p.intervalo_km, p.intervalo_meses, 'activo', p.id
-      FROM plantilla_requerimientos_modelo p
-      WHERE p.modelo_id = @modeloId
-        AND p.activo = 1
-        AND NOT EXISTS (
-          SELECT 1 FROM requerimientos_exclusivos re
-          WHERE re.vehiculo_id = @vehiculoId AND re.plantilla_origen_id = p.id
-        )
+        (id, trigger_mode, intervalo_km, intervalo_meses, plantilla_origen_id)
+      SELECT m.pendiente_id, p.trigger_mode, p.intervalo_km, p.intervalo_meses, p.id
+      FROM @mapa m
+      JOIN plantilla_requerimientos_modelo p ON p.id = m.plantilla_id;
     `)
 }
 
+// Copia UNA plantilla nueva a todos los vehículos del modelo. Aquí no hace falta
+// MERGE: como el origen es una sola plantilla, todos los hijos comparten los
+// mismos intervalos, así que basta con recoger los ids que salgan del INSERT.
 export async function copyToVehicles(plantilla: PlantillaRequerimiento): Promise<void> {
   if (!plantilla.activo) return
   const pool = await getPool()
@@ -131,18 +153,24 @@ export async function copyToVehicles(plantilla: PlantillaRequerimiento): Promise
     .input('plantillaId',   sql.Int,               plantilla.id)
     .input('modeloId',      sql.Int,               plantilla.modelo_id)
     .query(`
-      INSERT INTO requerimientos_exclusivos
-        (vehiculo_id, nombre, descripcion, categoria, trigger_mode,
-         intervalo_km, intervalo_meses, status, plantilla_origen_id)
-      SELECT
-        v.id, @nombre, @descripcion, @categoria, @triggerMode,
-        @intervaloKm, @intervaloMes, 'activo', @plantillaId
+      DECLARE @nuevos TABLE (id INT);
+
+      INSERT INTO pendientes (vehiculo_id, origen, nombre, descripcion, categoria, status)
+      OUTPUT INSERTED.id INTO @nuevos (id)
+      SELECT v.id, 'preventivo', @nombre, @descripcion, @categoria, 'activo'
       FROM vehiculos v
       WHERE v.modelo_id = @modeloId
         AND NOT EXISTS (
-          SELECT 1 FROM requerimientos_exclusivos re
-          WHERE re.vehiculo_id = v.id AND re.plantilla_origen_id = @plantillaId
-        )
+          SELECT 1
+          FROM requerimientos_exclusivos re
+          JOIN pendientes pe ON pe.id = re.id
+          WHERE pe.vehiculo_id = v.id AND re.plantilla_origen_id = @plantillaId
+        );
+
+      INSERT INTO requerimientos_exclusivos
+        (id, trigger_mode, intervalo_km, intervalo_meses, plantilla_origen_id)
+      SELECT n.id, @triggerMode, @intervaloKm, @intervaloMes, @plantillaId
+      FROM @nuevos n;
     `)
 }
 
@@ -157,12 +185,17 @@ export async function syncLinked(plantilla: PlantillaRequerimiento): Promise<voi
     .input('intervaloMes',  sql.Int,               plantilla.intervalo_meses ?? null)
     .input('plantillaId',   sql.Int,               plantilla.id)
     .query(`
+      UPDATE p SET
+        p.nombre = @nombre, p.descripcion = @descripcion, p.categoria = @categoria,
+        p.updated_at = SYSDATETIME()
+      FROM pendientes p
+      JOIN requerimientos_exclusivos r ON r.id = p.id
+      WHERE r.plantilla_origen_id = @plantillaId;
+
       UPDATE requerimientos_exclusivos SET
-        nombre=@nombre, descripcion=@descripcion, categoria=@categoria,
-        trigger_mode=@triggerMode,
-        intervalo_km=@intervaloKm, intervalo_meses=@intervaloMes,
-        updated_at=SYSDATETIME()
-      WHERE plantilla_origen_id=@plantillaId
+        trigger_mode = @triggerMode,
+        intervalo_km = @intervaloKm, intervalo_meses = @intervaloMes
+      WHERE plantilla_origen_id = @plantillaId;
     `)
 }
 
@@ -176,17 +209,21 @@ export async function remove(id: number): Promise<boolean> {
     // o el FK aborta el DELETE (500). Se borra solo el vínculo, no el
     // mantenimiento/agenda en sí.
     await tx.request().input('id', sql.Int, id).query(`
-      DELETE ar FROM agenda_requerimientos ar
-      JOIN requerimientos_exclusivos re ON re.id = ar.requerimiento_id
+      DELETE ap FROM agenda_pendientes ap
+      JOIN requerimientos_exclusivos re ON re.id = ap.pendiente_id
       WHERE re.plantilla_origen_id = @id
     `)
     await tx.request().input('id', sql.Int, id).query(`
-      DELETE mr FROM mantenimiento_requerimientos mr
-      JOIN requerimientos_exclusivos re ON re.id = mr.requerimiento_id
+      DELETE mp FROM mantenimiento_pendientes mp
+      JOIN requerimientos_exclusivos re ON re.id = mp.pendiente_id
       WHERE re.plantilla_origen_id = @id
     `)
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM requerimientos_exclusivos WHERE plantilla_origen_id=@id')
+    // Se borra el padre; el hijo se va con él por ON DELETE CASCADE.
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE p FROM pendientes p
+      JOIN requerimientos_exclusivos re ON re.id = p.id
+      WHERE re.plantilla_origen_id = @id
+    `)
     const r = await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM plantilla_requerimientos_modelo OUTPUT DELETED.id WHERE id=@id')
     await tx.commit()

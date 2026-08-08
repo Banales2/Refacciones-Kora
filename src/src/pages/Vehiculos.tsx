@@ -36,6 +36,14 @@ import {
 } from '../hooks/useRequerimientos'
 import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
 import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, StatusReq } from '../hooks/useRequerimientos'
+import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
+import type { OrigenPendiente } from '../hooks/usePendientes'
+import {
+  useIncidenciasVehiculo, useCreateIncidencia, useUpdateIncidencia, useDeleteIncidencia,
+} from '../hooks/useIncidencias'
+import type { Incidencia, IncidenciaPayload } from '../hooks/useIncidencias'
+import IncidenciaForm from '../components/IncidenciaForm'
+import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
 import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
@@ -114,10 +122,10 @@ function todayIso() {
 
 // Un mantenimiento programado a futuro todavía no cuenta como referencia/cumplimiento:
 // solo se toma en cuenta una vez que su fecha llega a hoy (o ya pasó).
-function linkedMantenimiento(requerimientoId: number, mantenimientos: Mantenimiento[]): Mantenimiento | undefined {
+function linkedMantenimiento(pendienteId: number, mantenimientos: Mantenimiento[]): Mantenimiento | undefined {
   const hoy = todayIso()
   return mantenimientos.find(
-    m => m.requerimiento_ids.includes(requerimientoId) && m.fecha && m.fecha.split('T')[0] <= hoy
+    m => m.pendiente_ids.includes(pendienteId) && m.fecha && m.fecha.split('T')[0] <= hoy
   )
 }
 
@@ -757,6 +765,171 @@ function RequerimientosSection({ vehiculo, mantenimientos, overdueIds = new Set<
   )
 }
 
+// ── Sección de incidencias ────────────────────────────────────────────────────
+
+function IncidenciasSection({ vehiculoId }: { vehiculoId: number }) {
+  const { data, isLoading } = useIncidenciasVehiculo(vehiculoId)
+  const createMut = useCreateIncidencia(vehiculoId)
+  const updateMut = useUpdateIncidencia(vehiculoId)
+  const deleteMut = useDeleteIncidencia(vehiculoId)
+
+  const [formOpen, setFormOpen]   = useState(false)
+  const [editing, setEditing]     = useState<Incidencia | null>(null)
+  const [deleting, setDeleting]   = useState<Incidencia | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const items = data?.data ?? []
+  // Lo que sigue sin atender primero, y dentro de eso lo más grave arriba.
+  const orden = { grave: 0, moderada: 1, superficial: 2 }
+  const ordenados = [...items].sort((a, b) => {
+    const abiertaA = a.status === 'activo' ? 0 : 1
+    const abiertaB = b.status === 'activo' ? 0 : 1
+    if (abiertaA !== abiertaB) return abiertaA - abiertaB
+    if (orden[a.severidad] !== orden[b.severidad]) return orden[a.severidad] - orden[b.severidad]
+    return b.fecha.localeCompare(a.fecha)
+  })
+  const abiertas = items.filter(i => i.status === 'activo').length
+
+  function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
+  function openEdit(item: Incidencia) { setEditing(item); setFormError(null); setFormOpen(true) }
+
+  function handleSubmit(payload: IncidenciaPayload) {
+    setFormError(null)
+    const onError = (e: unknown) => setFormError((e as Error).message)
+    if (editing) {
+      updateMut.mutate({ id: editing.id, payload }, { onSuccess: () => setFormOpen(false), onError })
+    } else {
+      createMut.mutate(payload, { onSuccess: () => setFormOpen(false), onError })
+    }
+  }
+
+  return (
+    <>
+      <Divider
+        label={
+          <Group gap="xs">
+            <Text size="sm" fw={500}>Incidencias ({abiertas} sin atender)</Text>
+            <Tooltip label="Reportar incidencia">
+              <ActionIcon variant="light" color="blue" size="xs" onClick={openCreate}>
+                <IconPlus size={12} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        }
+        labelPosition="left"
+      />
+
+      {isLoading ? (
+        <Center py="md"><Loader size="sm" /></Center>
+      ) : items.length === 0 ? (
+        <Center py="md">
+          <Stack align="center" gap="xs">
+            <Text c="dimmed" size="sm">No hay incidencias reportadas para este vehículo.</Text>
+            <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={openCreate}>
+              Reportar incidencia
+            </Button>
+          </Stack>
+        </Center>
+      ) : (
+        <Table.ScrollContainer minWidth={700}>
+          <Table striped highlightOnHover withTableBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Incidencia</Table.Th>
+                <Table.Th>Categoría</Table.Th>
+                <Table.Th>Severidad</Table.Th>
+                <Table.Th>Reportada</Table.Th>
+                <Table.Th>Ubicación</Table.Th>
+                <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
+                <Table.Th style={{ width: 80 }} />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {ordenados.map((i) => {
+                const sev  = SEVERIDAD_META[i.severidad]
+                const st   = STATUS_INCIDENCIA_META[i.status]
+                const urge = i.status === 'activo' && i.severidad === 'grave'
+                return (
+                  <Table.Tr
+                    key={i.id}
+                    style={{ backgroundColor: urge ? 'var(--mantine-color-red-0)' : undefined }}
+                  >
+                    <Table.Td fw={500}>
+                      <Group gap={6} wrap="nowrap">
+                        {urge && <IconAlertTriangle size={14} color="var(--mantine-color-red-6)" />}
+                        <span style={urge ? { color: 'var(--mantine-color-red-7)' } : undefined}>{i.nombre}</span>
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>{i.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
+                    <Table.Td><Badge variant="light" color={sev.color} size="sm">{sev.label}</Badge></Table.Td>
+                    <Table.Td>
+                      <Text size="sm">
+                        {fmtShort(i.fecha)}{i.hora ? `, ${i.hora.slice(0, 5)}` : ''}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>{i.ubicacion ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
+                    <Table.Td style={{ textAlign: 'center' }}>
+                      <Badge variant="light" color={st.color} size="sm">{st.label}</Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap={4} justify="flex-end">
+                        <Tooltip label="Editar">
+                          <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(i)}>
+                            <IconPencil size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label="Eliminar">
+                          <ActionIcon variant="subtle" color="red" size="sm" onClick={() => setDeleting(i)}>
+                            <IconTrash size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                )
+              })}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      )}
+
+      <Modal
+        opened={formOpen} onClose={() => setFormOpen(false)}
+        title={editing ? 'Editar incidencia' : 'Reportar incidencia'}
+        centered size="md"
+      >
+        <IncidenciaForm
+          initial={editing ?? undefined}
+          isPending={createMut.isPending || updateMut.isPending}
+          error={formError}
+          onSubmit={handleSubmit}
+          onCancel={() => setFormOpen(false)}
+        />
+      </Modal>
+
+      <Modal
+        opened={deleting !== null} onClose={() => setDeleting(null)}
+        title="Eliminar incidencia" centered size="sm"
+      >
+        <Stack gap="md">
+          <Text>¿Eliminar <strong>{deleting?.nombre}</strong>? Esta acción no se puede deshacer.</Text>
+          <Text size="sm" c="dimmed">
+            Si solo quieres que deje de alertar sin perder el registro, edítala y ponla como cancelada.
+          </Text>
+          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
+            <Button color="red" loading={deleteMut.isPending}
+              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
+              Eliminar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </>
+  )
+}
+
 // ── Sección mantenimientos ────────────────────────────────────────────────────
 
 // Fecha local de hoy en "YYYY-MM-DD" (construirla con métodos UTC recorrería
@@ -773,7 +946,7 @@ type MantForm = {
   costo:             number | string
   km_actual:         number | string
   observaciones:     string
-  requerimiento_ids: string[]
+  pendiente_ids:     string[]
   // Piezas usadas, capturadas al registrar. Puede quedar vacío: hay
   // mantenimientos que no consumen refacciones.
   piezas:            PiezaLinea[]
@@ -785,7 +958,7 @@ type PiezaLinea = {
   costo_unitario: number | string
 }
 
-function initMant(m?: Mantenimiento, prefillRequerimientoIds?: number[], kmVehiculo?: number | null): MantForm {
+function initMant(m?: Mantenimiento, prefillPendienteIds?: number[], kmVehiculo?: number | null): MantForm {
   return {
     fecha:             m?.fecha?.split('T')[0] ?? '',
     tipo:              m?.tipo          ?? '',
@@ -795,29 +968,68 @@ function initMant(m?: Mantenimiento, prefillRequerimientoIds?: number[], kmVehic
     // lectura real del taller es otra.
     km_actual:         m?.km_actual     ?? kmVehiculo ?? '',
     observaciones:     m?.observaciones ?? '',
-    requerimiento_ids: m?.requerimiento_ids?.map(String) ?? prefillRequerimientoIds?.map(String) ?? [],
+    pendiente_ids:     m?.pendiente_ids?.map(String) ?? prefillPendienteIds?.map(String) ?? [],
     piezas:            [],
   }
 }
 
 export function MantenimientoForm({
-  vehiculoId, tipoVehiculo, initial, prefillRequerimientoIds, isPending, error, onSubmit, onCancel,
+  vehiculoId, tipoVehiculo, initial, prefillPendienteIds, isPending, error, onSubmit, onCancel,
 }: {
   vehiculoId:               number
   tipoVehiculo?:            TipoVehiculo
   initial?:                 Mantenimiento
-  prefillRequerimientoIds?: number[]
+  prefillPendienteIds?:     number[]
   isPending:                boolean
   error:                    string | null
   onSubmit:                 (p: MantenimientoPayload, piezas: DetalleMttoPayload[]) => void
   onCancel:                 () => void
 }) {
   const tieneKilometraje = tipoVehiculo !== 'montacargas' && tipoVehiculo !== 'caja_trailer'
-  const { data: reqData } = useRequerimientos(vehiculoId)
-  const linkedIds = new Set(initial?.requerimiento_ids ?? prefillRequerimientoIds ?? [])
-  const reqOptions = (reqData?.data ?? [])
-    .filter(r => r.status === 'activo' || linkedIds.has(r.id))
-    .map(r => ({ value: String(r.id), label: r.status !== 'activo' ? `${r.nombre} (completado)` : r.nombre }))
+
+  // Un mantenimiento atiende pendientes de los dos tipos, así que el selector se
+  // alimenta de la lista combinada y los agrupa por origen. Los ya vinculados se
+  // consultan aparte: el endpoint de pendientes solo devuelve los activos, y al
+  // editar hay que seguir mostrando los que este mantenimiento ya cerró.
+  const { data: pendientesData } = usePendientes(vehiculoId)
+  const { data: reqData }        = useRequerimientos(vehiculoId)
+  const { data: incData }        = useIncidenciasVehiculo(vehiculoId)
+
+  const linkedIds = useMemo(
+    () => new Set(initial?.pendiente_ids ?? prefillPendienteIds ?? []),
+    [initial, prefillPendienteIds]
+  )
+
+  const pendienteGroups = useMemo(() => {
+    const porId = new Map<number, { id: number; nombre: string; origen: OrigenPendiente; activo: boolean }>()
+    for (const p of pendientesData?.data ?? []) {
+      porId.set(p.id, { id: p.id, nombre: p.nombre, origen: p.origen, activo: true })
+    }
+    // Los ya vinculados aunque no estén activos, para no perderlos al editar.
+    for (const r of reqData?.data ?? []) {
+      if (linkedIds.has(r.id) && !porId.has(r.id)) {
+        porId.set(r.id, { id: r.id, nombre: r.nombre, origen: 'preventivo', activo: false })
+      }
+    }
+    for (const i of incData?.data ?? []) {
+      if (linkedIds.has(i.id) && !porId.has(i.id)) {
+        porId.set(i.id, { id: i.id, nombre: i.nombre, origen: 'incidencia', activo: false })
+      }
+    }
+
+    const items = [...porId.values()]
+    return (['preventivo', 'incidencia'] as OrigenPendiente[])
+      .map(origen => ({
+        group: ORIGEN_LABEL[origen],
+        items: items
+          .filter(p => p.origen === origen)
+          .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-MX'))
+          .map(p => ({ value: String(p.id), label: p.activo ? p.nombre : `${p.nombre} (cerrado)` })),
+      }))
+      .filter(g => g.items.length > 0)
+  }, [pendientesData, reqData, incData, linkedIds])
+
+  const hayPendientes = pendienteGroups.some(g => g.items.length > 0)
 
   // Las piezas solo se capturan al registrar. Al editar se gestionan desde el
   // detalle del mantenimiento, que ya permite agregarlas, cambiarlas y quitarlas
@@ -839,7 +1051,7 @@ export function MantenimientoForm({
   )
 
   const form = useForm<MantForm>({
-    initialValues: initMant(initial, prefillRequerimientoIds, kmVehiculo),
+    initialValues: initMant(initial, prefillPendienteIds, kmVehiculo),
     validate: {
       fecha:             (v) => !v ? 'Requerido' : null,
       tipo:              (v) => !v ? 'Requerido' : null,
@@ -850,7 +1062,7 @@ export function MantenimientoForm({
         !v.trim() ? 'Requerido' :
         v.length > 255 ? 'Máximo 255 caracteres' :
         !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
-      requerimiento_ids: (v) => v.length === 0 ? 'Selecciona al menos un requerimiento' : null,
+      pendiente_ids:     (v) => v.length === 0 ? 'Selecciona al menos un requerimiento o incidencia' : null,
       piezas: {
         lote_id:  (v: string) => !v ? 'Selecciona la refacción' : null,
         cantidad: (v: number | string, vals: MantForm, path: string) => {
@@ -909,7 +1121,7 @@ export function MantenimientoForm({
         costo:             vals.costo !== '' ? Number(vals.costo) : 0,
         km_actual:         vals.km_actual !== '' ? Number(vals.km_actual) : 0,
         observaciones:     vals.observaciones.trim(),
-        requerimiento_ids: vals.requerimiento_ids.map(Number),
+        pendiente_ids:     vals.pendiente_ids.map(Number),
       },
       vals.piezas.map(p => ({
         lote_id:        Number(p.lote_id),
@@ -983,13 +1195,14 @@ export function MantenimientoForm({
           </Grid.Col>
           <Grid.Col span={12}>
             <MultiSelect
-              label="Requerimientos preventivos que cumple este mantenimiento"
+              label="Qué atiende este mantenimiento"
+              description="Requerimientos preventivos e incidencias que quedan cubiertos"
               required
-              placeholder={reqOptions.length ? 'Selecciona los requerimientos…' : 'Sin requerimientos preventivos activos'}
-              data={reqOptions}
+              placeholder={hayPendientes ? 'Selecciona los pendientes…' : 'Esta unidad no tiene nada pendiente'}
+              data={pendienteGroups}
               searchable
               clearable
-              {...form.getInputProps('requerimiento_ids')}
+              {...form.getInputProps('pendiente_ids')}
             />
           </Grid.Col>
         </Grid>
@@ -1760,6 +1973,9 @@ function VehiculoDetalle({
         overdueIds={overdueIds}
         warnIds={warnIds}
       />
+
+      {/* Incidencias reportadas */}
+      <IncidenciasSection vehiculoId={vehiculo.id} />
 
       {/* Mantenimientos */}
       <MantenimientosSection vehiculoId={vehiculo.id} tipoVehiculo={vehiculo.tipo} />

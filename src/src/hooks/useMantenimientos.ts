@@ -15,7 +15,7 @@ export interface Mantenimiento {
   costo:            number
   km_actual:        number
   observaciones:    string | null
-  requerimiento_ids: number[]
+  pendiente_ids: number[]
   piezas_total:     number
 }
 
@@ -26,7 +26,7 @@ export interface MantenimientoPayload {
   costo?:             number
   km_actual?:         number
   observaciones?:     string | null
-  requerimiento_ids:  number[]
+  pendiente_ids:  number[]
 }
 
 export function useMantenimientos(vehiculoId: number) {

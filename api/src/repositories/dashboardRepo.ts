@@ -187,46 +187,76 @@ export interface RequerimientoFleet {
 export async function findRequerimientosActivosFleet(): Promise<RequerimientoFleet[]> {
   const pool = await getPool()
   const r = await pool.request().query(`
-    SELECT r.id, r.nombre, r.categoria, r.trigger_mode, r.intervalo_km, r.intervalo_meses,
-           r.fecha_inicio, r.km_inicio, r.vehiculo_id,
+    SELECT p.id, p.nombre, p.categoria, r.trigger_mode, r.intervalo_km, r.intervalo_meses,
+           r.fecha_inicio, r.km_inicio, p.vehiculo_id,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
            CASE WHEN v.tipo='camion'       THEN c.kilometraje
                 WHEN v.tipo='tractocamion' THEN t.kilometraje
                 WHEN v.tipo='utilitario'   THEN u.kilometraje
                 ELSE NULL END AS kilometraje,
            v.fecha_compra
-    FROM requerimientos_exclusivos r
-    JOIN vehiculos v ON v.id = r.vehiculo_id
+    FROM pendientes p
+    JOIN requerimientos_exclusivos r ON r.id = p.id
+    JOIN vehiculos v ON v.id = p.vehiculo_id
     JOIN modelos mo ON mo.id = v.modelo_id
     LEFT JOIN camiones             c ON c.vehiculo_id = v.id
     LEFT JOIN tractocamiones       t ON t.vehiculo_id = v.id
     LEFT JOIN vehiculos_utilitarios u ON u.vehiculo_id = v.id
-    WHERE r.status = 'activo'
+    WHERE p.status = 'activo'
+  `)
+  return r.recordset
+}
+
+export interface IncidenciaAbiertaFleet {
+  id:              number
+  nombre:          string
+  categoria:       string | null
+  severidad:       'superficial' | 'moderada' | 'grave'
+  fecha:           string
+  vehiculo_id:     number
+  vehiculo_nombre: string
+}
+
+// Incidencias sin atender de toda la flota. Las canceladas quedan fuera: siguen
+// existiendo como registro, pero dejaron de ser algo pendiente.
+export async function findIncidenciasAbiertasFleet(): Promise<IncidenciaAbiertaFleet[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT p.id, p.nombre, p.categoria, i.severidad, i.fecha, p.vehiculo_id,
+           CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre
+    FROM pendientes p
+    JOIN incidencias i ON i.id = p.id
+    JOIN vehiculos v   ON v.id = p.vehiculo_id
+    JOIN modelos mo    ON mo.id = v.modelo_id
+    WHERE p.status = 'activo'
+    ORDER BY CASE i.severidad WHEN 'grave' THEN 0 WHEN 'moderada' THEN 1 ELSE 2 END,
+             i.fecha
   `)
   return r.recordset
 }
 
 export interface MantenimientoLink {
-  requerimiento_id: number
-  fecha:            string
-  km_actual:        number
+  pendiente_id: number
+  fecha:        string
+  km_actual:    number | null
 }
 
-export async function findMantenimientoLinks(requerimientoIds: number[]): Promise<MantenimientoLink[]> {
-  if (requerimientoIds.length === 0) return []
+// El km y la fecha salen del propio vínculo, no del mantenimiento: son los que
+// se congelaron cuando se atendió el pendiente.
+export async function findMantenimientoLinks(pendienteIds: number[]): Promise<MantenimientoLink[]> {
+  if (pendienteIds.length === 0) return []
   const pool = await getPool()
   const req = pool.request()
-  const params = requerimientoIds.map((id, i) => {
+  const params = pendienteIds.map((id, i) => {
     req.input(`r${i}`, sql.Int, id)
     return `@r${i}`
   })
   const r = await req.query(`
-    SELECT mr.requerimiento_id, m.fecha, m.km_actual
-    FROM mantenimiento_requerimientos mr
-    JOIN mantenimiento m ON m.id = mr.mantenimiento_id
-    WHERE mr.requerimiento_id IN (${params.join(',')})
-      AND m.fecha <= CAST(GETDATE() AS DATE)
-    ORDER BY m.fecha DESC
+    SELECT mp.pendiente_id, mp.fecha, mp.km_actual
+    FROM mantenimiento_pendientes mp
+    WHERE mp.pendiente_id IN (${params.join(',')})
+      AND mp.fecha <= CAST(GETDATE() AS DATE)
+    ORDER BY mp.fecha DESC
   `)
   return r.recordset
 }

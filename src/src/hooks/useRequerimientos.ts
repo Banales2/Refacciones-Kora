@@ -9,6 +9,8 @@ export type StatusReq   = 'activo' | 'completado' | 'pausado' | 'cancelado'
 
 export interface RequerimientoExclusivo {
   id:                  number
+  // Siempre 'preventivo': el otro hijo de `pendientes` son las incidencias.
+  origen:              'preventivo'
   nombre:              string
   descripcion:         string | null
   categoria:           string | null
@@ -60,6 +62,7 @@ export function useCreateRequerimiento(vehiculoId: number) {
       api.post<{ data: RequerimientoExclusivo }>(`/vehiculos/${vehiculoId}/requerimientos`, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })
       qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
     },
   })
@@ -72,6 +75,7 @@ export function useUpdateRequerimiento(vehiculoId: number) {
       api.put<{ data: RequerimientoExclusivo }>(`/requerimientos/${id}`, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })
       qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
     },
   })
@@ -81,6 +85,9 @@ export function useDeleteRequerimiento(vehiculoId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.delete(`/requerimientos/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })
+    },
   })
 }

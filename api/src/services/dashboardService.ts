@@ -208,9 +208,9 @@ async function clasificarRequerimientosFleet() {
   const requerimientos = await repo.findRequerimientosActivosFleet()
   const links = await repo.findMantenimientoLinks(requerimientos.map(r => r.id))
 
-  const lastLinkByReq = new Map<number, { fecha: string; km_actual: number }>()
+  const lastLinkByReq = new Map<number, { fecha: string; km_actual: number | null }>()
   for (const l of links) {
-    if (!lastLinkByReq.has(l.requerimiento_id)) lastLinkByReq.set(l.requerimiento_id, l)
+    if (!lastLinkByReq.has(l.pendiente_id)) lastLinkByReq.set(l.pendiente_id, l)
   }
 
   const now = fechaMexicoComoDate()
