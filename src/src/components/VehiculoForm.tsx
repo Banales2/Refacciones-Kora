@@ -28,7 +28,7 @@ const TIPOS_OPTIONS = Object.entries(TIPO_META).map(([v, m]) => ({ value: v, lab
 
 // Los únicos tipos que pagan tenencia. Las cajas de trailer y los montacargas
 // no, por eso el bloque no se les muestra y sus tablas no tienen las columnas.
-const TIPOS_CON_TENENCIA: TipoVehiculo[] = ['camion', 'tractocamion', 'utilitario']
+export const TIPOS_CON_TENENCIA: TipoVehiculo[] = ['camion', 'tractocamion', 'utilitario']
 
 const COMBUSTIBLES = ['Diesel', 'Gasolina', 'Gas LP', 'Gas Natural', 'Eléctrico'].map((c) => ({ value: c, label: c }))
 const STATUSES     = ['Activo', 'Inactivo', 'Taller', 'Baja'].map((s) => ({ value: s, label: s }))
@@ -504,7 +504,6 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                   placeholder="dd/mm/aaaa"
                   valueFormat="DD/MM/YYYY"
                   clearable
-                  description="Vencimiento de la tenencia actual"
                   value={form.values.tenencia_expiracion || null}
                   onChange={(d) => form.setFieldValue('tenencia_expiracion', d ?? '')}
                   error={form.errors.tenencia_expiracion as string}

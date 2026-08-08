@@ -44,7 +44,7 @@ import {
 import type { Incidencia, IncidenciaPayload } from '../hooks/useIncidencias'
 import IncidenciaForm from '../components/IncidenciaForm'
 import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
-import { VehiculoForm } from '../components/VehiculoForm'
+import { VehiculoForm, TIPOS_CON_TENENCIA } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
@@ -1822,6 +1822,14 @@ function VehiculoDetalle({
           Este vehículo no tiene un seguro asignado. Asígnale uno desde el botón de editar.
         </Alert>
       )}
+      {/* La tenencia es opcional al capturar el vehículo, pero si falta la fecha
+          de vencimiento nadie la vigila: ningún aviso del dashboard la alcanza. */}
+      {TIPOS_CON_TENENCIA.includes(vehiculo.tipo) && !vehiculo.tenencia_expiracion && (
+        <Alert color="yellow" title="Sin tenencia" icon={<IconAlertTriangle size={16} />}>
+          Este vehículo no tiene tenencia registrada, así que no aparecerá en los avisos de
+          vencimiento. Regístrala desde el botón de editar.
+        </Alert>
+      )}
 
       {/* Ficha */}
       <Paper withBorder p="md" radius="md">
@@ -2058,6 +2066,11 @@ function VehiculosTable({
                     {v.seguro_id === null && (
                       <Tooltip label="Sin seguro asignado">
                         <IconAlertTriangle size={16} color="var(--mantine-color-red-6)" />
+                      </Tooltip>
+                    )}
+                    {TIPOS_CON_TENENCIA.includes(v.tipo) && !v.tenencia_expiracion && (
+                      <Tooltip label="Sin tenencia registrada">
+                        <IconAlertTriangle size={16} color="var(--mantine-color-yellow-7)" />
                       </Tooltip>
                     )}
                   </Group>
