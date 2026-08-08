@@ -1,5 +1,6 @@
 import { useAuth } from './hooks/useAuth'
 import Layout from './components/Layout'
+import { PWAUpdater } from './components/PWAUpdater'
 
 function App() {
   const { user, loading } = useAuth()
@@ -42,7 +43,16 @@ function App() {
     )
   }
 
-  return <Layout />
+  // El service worker precachea toda la aplicación y está configurado como
+  // 'prompt': la versión nueva se instala pero se queda esperando hasta que
+  // alguien la active. Sin este banner montado, nadie podía activarla y el
+  // navegador seguía sirviendo el build viejo por más que se recargara.
+  return (
+    <>
+      <Layout />
+      <PWAUpdater />
+    </>
+  )
 }
 
 export default App
