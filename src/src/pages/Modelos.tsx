@@ -24,7 +24,7 @@ import {
 } from '../hooks/useTiposPiezaModelo'
 import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
 import type { Modelo, ModeloPayload } from '../hooks/useModelos'
-import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode, TipoPlantilla } from '../hooks/usePlantilla'
+import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode } from '../hooks/usePlantilla'
 import type {
   TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload,
 } from '../hooks/useVehiculos'
@@ -63,11 +63,6 @@ const TRIGGER_META: Record<TriggerMode, { label: string; color: string }> = {
   km:    { label: 'Kilometraje',  color: 'blue'   },
   meses: { label: 'Tiempo',       color: 'green'  },
   ambos: { label: 'Km + tiempo',  color: 'orange' },
-}
-
-const TIPO_META: Record<TipoPlantilla, { label: string; color: string }> = {
-  recurrente: { label: 'Recurrente', color: 'indigo' },
-  unica:      { label: 'Única',      color: 'cyan'   },
 }
 
 function statusColor(s: string) {
@@ -235,7 +230,6 @@ function PlantillaForm({
       descripcion:     initial?.descripcion ?? '',
       categoria:       initial?.categoria ?? '',
       trigger_mode:    (initial?.trigger_mode ?? (soportaKm ? 'km' : 'meses')) as TriggerMode,
-      tipo:            (initial?.tipo ?? 'recurrente') as TipoPlantilla,
       intervalo_km:    initial?.intervalo_km ?? (null as number | null),
       intervalo_meses: initial?.intervalo_meses ?? (null as number | null),
       activo:          initial?.activo ?? true,
@@ -293,7 +287,6 @@ function PlantillaForm({
       descripcion:     vals.descripcion.trim(),
       categoria:       vals.categoria.trim(),
       trigger_mode:    vals.trigger_mode,
-      tipo:            vals.tipo,
       intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km    : null,
       intervalo_meses: (mode === 'meses' || mode === 'ambos') ? vals.intervalo_meses : null,
       activo:          vals.activo,
@@ -337,14 +330,6 @@ function PlantillaForm({
             { value: 'meses', label: 'Por tiempo (meses)' },
           ]}
           {...form.getInputProps('trigger_mode')}
-        />
-        <Select
-          label="Tipo" required
-          data={[
-            { value: 'recurrente', label: 'Recurrente — se repite periódicamente' },
-            { value: 'unica',      label: 'Única — se realiza una sola vez' },
-          ]}
-          {...form.getInputProps('tipo')}
         />
         {(mode === 'km' || mode === 'ambos') && (
           <NumberInput
@@ -443,7 +428,6 @@ function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tip
               <Table.Tr>
                 <Table.Th>Nombre</Table.Th>
                 <Table.Th>Categoría</Table.Th>
-                <Table.Th>Tipo</Table.Th>
                 <Table.Th>Disparador</Table.Th>
                 <Table.Th>Intervalo</Table.Th>
                 <Table.Th style={{ textAlign: 'center' }}>Activo</Table.Th>
@@ -458,11 +442,6 @@ function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tip
                     <Table.Td fw={500}>{item.nombre}</Table.Td>
                     <Table.Td>
                       {item.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge variant="light" color={TIPO_META[item.tipo].color} size="sm">
-                        {TIPO_META[item.tipo].label}
-                      </Badge>
                     </Table.Td>
                     <Table.Td>
                       <Badge variant="light" color={tm.color} size="sm">{tm.label}</Badge>

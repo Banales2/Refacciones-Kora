@@ -28,7 +28,6 @@ const Schema = z.object({
     .nullable()
     .optional(),
   trigger_mode:    z.enum(['km', 'meses', 'ambos']),
-  tipo:            z.enum(['recurrente', 'unica']).default('recurrente'),
   intervalo_km:    z.coerce.number().int().positive().nullable().optional(),
   intervalo_meses: z.coerce.number().int().positive().nullable().optional(),
   intervalo_dias:  z.coerce.number().int().positive().nullable().optional(),

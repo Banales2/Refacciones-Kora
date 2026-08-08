@@ -27,7 +27,6 @@ const Schema = z.object({
     .max(30, 'Máximo 30 caracteres')
     .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones'),
   trigger_mode:    z.enum(['km', 'meses', 'ambos']),
-  tipo:            z.enum(['recurrente', 'unica']).default('recurrente'),
   intervalo_km:    z.coerce.number().int().positive().nullable().optional(),
   intervalo_meses: z.coerce.number().int().positive().nullable().optional(),
   activo:          z.boolean().default(true),

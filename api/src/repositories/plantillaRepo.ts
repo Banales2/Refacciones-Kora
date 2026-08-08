@@ -2,7 +2,6 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 
 export type TriggerMode = 'km' | 'meses' | 'ambos'
-export type TipoPlantilla = 'recurrente' | 'unica'
 
 export interface PlantillaRequerimiento {
   id:              number
@@ -12,7 +11,6 @@ export interface PlantillaRequerimiento {
   intervalo_km:    number | null
   intervalo_meses: number | null
   trigger_mode:    TriggerMode
-  tipo:            TipoPlantilla
   activo:          boolean
   created_at:      string
   updated_at:      string
@@ -25,7 +23,6 @@ export interface PlantillaCreate {
   descripcion?:    string | null
   categoria?:      string | null
   trigger_mode:    TriggerMode
-  tipo?:           TipoPlantilla
   intervalo_km?:   number | null
   intervalo_meses?: number | null
   activo?:         boolean
@@ -36,14 +33,13 @@ export interface PlantillaUpdate {
   descripcion?:    string | null
   categoria?:      string | null
   trigger_mode?:   TriggerMode
-  tipo?:           TipoPlantilla
   intervalo_km?:   number | null
   intervalo_meses?: number | null
   activo?:         boolean
 }
 
 const COLS = `id, nombre, descripcion, categoria, intervalo_km, intervalo_meses,
-  trigger_mode, tipo, activo, created_at, updated_at, modelo_id`
+  trigger_mode, activo, created_at, updated_at, modelo_id`
 
 export async function findByModelo(modeloId: number): Promise<PlantillaRequerimiento[]> {
   const pool = await getPool()
@@ -69,15 +65,14 @@ export async function create(data: PlantillaCreate): Promise<PlantillaRequerimie
     .input('descripcion',    sql.NVarChar(sql.MAX), data.descripcion    ?? null)
     .input('categoria',      sql.NVarChar(80),  data.categoria          ?? null)
     .input('triggerMode',    sql.NVarChar(20),  data.trigger_mode)
-    .input('tipo',           sql.NVarChar(20),  data.tipo ?? 'recurrente')
     .input('intervaloKm',    sql.Int,           data.intervalo_km       ?? null)
     .input('intervaloMeses', sql.Int,           data.intervalo_meses    ?? null)
     .input('activo',         sql.Bit,           data.activo ?? true)
     .query(`
       INSERT INTO plantilla_requerimientos_modelo
-        (modelo_id, nombre, descripcion, categoria, trigger_mode, tipo, intervalo_km, intervalo_meses, activo)
+        (modelo_id, nombre, descripcion, categoria, trigger_mode, intervalo_km, intervalo_meses, activo)
       OUTPUT INSERTED.*
-      VALUES (@modeloId, @nombre, @descripcion, @categoria, @triggerMode, @tipo, @intervaloKm, @intervaloMeses, @activo)
+      VALUES (@modeloId, @nombre, @descripcion, @categoria, @triggerMode, @intervaloKm, @intervaloMeses, @activo)
     `)
   return r.recordset[0]
 }
@@ -91,7 +86,6 @@ export async function update(id: number, data: PlantillaUpdate): Promise<Plantil
   if ('descripcion' in data)            { req.input('descripcion',    sql.NVarChar(sql.MAX), data.descripcion ?? null); sets.push('descripcion=@descripcion') }
   if ('categoria'   in data)            { req.input('categoria',      sql.NVarChar(80),      data.categoria   ?? null); sets.push('categoria=@categoria')     }
   if (data.trigger_mode  !== undefined) { req.input('triggerMode',    sql.NVarChar(20),      data.trigger_mode);     sets.push('trigger_mode=@triggerMode')   }
-  if (data.tipo          !== undefined) { req.input('tipo',           sql.NVarChar(20),      data.tipo);             sets.push('tipo=@tipo')                  }
   if ('intervalo_km'    in data)        { req.input('intervaloKm',    sql.Int,               data.intervalo_km    ?? null); sets.push('intervalo_km=@intervaloKm') }
   if ('intervalo_meses' in data)        { req.input('intervaloMeses', sql.Int,               data.intervalo_meses ?? null); sets.push('intervalo_meses=@intervaloMeses') }
   if (data.activo        !== undefined) { req.input('activo',         sql.Bit,               data.activo);          sets.push('activo=@activo')              }
@@ -109,10 +103,10 @@ export async function copyModelToVehicle(vehiculoId: number, modeloId: number): 
     .input('modeloId',   sql.Int, modeloId)
     .query(`
       INSERT INTO requerimientos_exclusivos
-        (vehiculo_id, nombre, descripcion, categoria, trigger_mode, tipo,
+        (vehiculo_id, nombre, descripcion, categoria, trigger_mode,
          intervalo_km, intervalo_meses, status, plantilla_origen_id)
       SELECT
-        @vehiculoId, p.nombre, p.descripcion, p.categoria, p.trigger_mode, p.tipo,
+        @vehiculoId, p.nombre, p.descripcion, p.categoria, p.trigger_mode,
         p.intervalo_km, p.intervalo_meses, 'activo', p.id
       FROM plantilla_requerimientos_modelo p
       WHERE p.modelo_id = @modeloId
@@ -132,17 +126,16 @@ export async function copyToVehicles(plantilla: PlantillaRequerimiento): Promise
     .input('descripcion',   sql.NVarChar(sql.MAX), plantilla.descripcion ?? null)
     .input('categoria',     sql.NVarChar(80),      plantilla.categoria   ?? null)
     .input('triggerMode',   sql.NVarChar(20),      plantilla.trigger_mode)
-    .input('tipo',          sql.NVarChar(20),      plantilla.tipo)
     .input('intervaloKm',   sql.Int,               plantilla.intervalo_km    ?? null)
     .input('intervaloMes',  sql.Int,               plantilla.intervalo_meses ?? null)
     .input('plantillaId',   sql.Int,               plantilla.id)
     .input('modeloId',      sql.Int,               plantilla.modelo_id)
     .query(`
       INSERT INTO requerimientos_exclusivos
-        (vehiculo_id, nombre, descripcion, categoria, trigger_mode, tipo,
+        (vehiculo_id, nombre, descripcion, categoria, trigger_mode,
          intervalo_km, intervalo_meses, status, plantilla_origen_id)
       SELECT
-        v.id, @nombre, @descripcion, @categoria, @triggerMode, @tipo,
+        v.id, @nombre, @descripcion, @categoria, @triggerMode,
         @intervaloKm, @intervaloMes, 'activo', @plantillaId
       FROM vehiculos v
       WHERE v.modelo_id = @modeloId
@@ -160,14 +153,13 @@ export async function syncLinked(plantilla: PlantillaRequerimiento): Promise<voi
     .input('descripcion',   sql.NVarChar(sql.MAX), plantilla.descripcion ?? null)
     .input('categoria',     sql.NVarChar(80),      plantilla.categoria   ?? null)
     .input('triggerMode',   sql.NVarChar(20),      plantilla.trigger_mode)
-    .input('tipo',          sql.NVarChar(20),      plantilla.tipo)
     .input('intervaloKm',   sql.Int,               plantilla.intervalo_km    ?? null)
     .input('intervaloMes',  sql.Int,               plantilla.intervalo_meses ?? null)
     .input('plantillaId',   sql.Int,               plantilla.id)
     .query(`
       UPDATE requerimientos_exclusivos SET
         nombre=@nombre, descripcion=@descripcion, categoria=@categoria,
-        trigger_mode=@triggerMode, tipo=@tipo,
+        trigger_mode=@triggerMode,
         intervalo_km=@intervaloKm, intervalo_meses=@intervaloMes,
         updated_at=SYSDATETIME()
       WHERE plantilla_origen_id=@plantillaId

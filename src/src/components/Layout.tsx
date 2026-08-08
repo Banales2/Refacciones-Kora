@@ -22,6 +22,7 @@ import { useAuth } from '../hooks/useAuth'
 import Dashboard from './Dashboard'
 import Piezas from '../pages/Piezas'
 import Vehiculos from '../pages/Vehiculos'
+import Incidencias from '../pages/Incidencias'
 import Modelos from '../pages/Modelos'
 import SitiosYRutas from '../pages/SitiosYRutas'
 import Calendario from '../pages/Calendario'
@@ -29,26 +30,28 @@ import ValesGasolina from '../pages/ValesGasolina'
 import RegistrosCambios from '../pages/RegistrosCambios'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 
-type Section = 'dashboard' | 'piezas' | 'modelos' | 'vehiculos' | 'sitios' | 'calendario' | 'vales' | 'registros'
+type Section = 'dashboard' | 'piezas' | 'modelos' | 'vehiculos' | 'incidencias' | 'sitios' | 'calendario' | 'vales' | 'registros'
 
 const SECTION_LABELS: Record<Section, string> = {
-  dashboard:  'Dashboard',
-  piezas:     'Refacciones',
-  modelos:    'Modelos',
-  vehiculos:  'Vehículos',
-  sitios:     'Catálogos',
-  calendario: 'Calendario',
-  vales:      'Vales de gasolina',
-  registros:  'Registros de cambios',
+  dashboard:   'Dashboard',
+  piezas:      'Refacciones',
+  modelos:     'Modelos',
+  vehiculos:   'Vehículos',
+  incidencias: 'Incidencias',
+  sitios:      'Catálogos',
+  calendario:  'Calendario',
+  vales:       'Vales de gasolina',
+  registros:   'Registros de cambios',
 }
 
 const NAV_ITEMS: { section: Section; label: string; description: string }[] = [
-  { section: 'piezas',     label: 'Refacciones', description: 'Catálogo e inventario'                       },
-  { section: 'modelos',    label: 'Modelos',     description: 'Marcas y modelos de la flota'                },
-  { section: 'vehiculos',  label: 'Vehículos',   description: 'Unidades de reparto y tractocamiones'        },
-  { section: 'calendario', label: 'Calendario',  description: 'Fechas de mantenimiento'                     },
-  { section: 'vales',      label: 'Vales de gasolina', description: 'Vales entregados a los choferes'       },
-  { section: 'sitios',     label: 'Catálogos',   description: 'Proveedores, sucursales, translados y más'    },
+  { section: 'piezas',      label: 'Refacciones', description: 'Catálogo e inventario'                      },
+  { section: 'modelos',     label: 'Modelos',     description: 'Marcas y modelos de la flota'               },
+  { section: 'vehiculos',   label: 'Vehículos',   description: 'Unidades de reparto y tractocamiones'       },
+  { section: 'incidencias', label: 'Incidencias', description: 'Incidencias reportadas de la flota'         },
+  { section: 'calendario',  label: 'Calendario',  description: 'Fechas de mantenimiento'                    },
+  { section: 'vales',       label: 'Vales de gasolina', description: 'Vales entregados a los choferes'      },
+  { section: 'sitios',      label: 'Catálogos',   description: 'Proveedores, sucursales, translados y más'   },
 ]
 
 
@@ -264,6 +267,7 @@ export default function Layout() {
             backLabel={vehiculoOrigin ? SECTION_LABELS[vehiculoOrigin] : undefined}
           />
         )}
+        {section === 'incidencias' && <Incidencias />}
         {section === 'sitios'    && (
           <SitiosYRutas
             onNavigateVehiculo={navigateToVehiculo}

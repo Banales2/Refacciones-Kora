@@ -1,8 +1,6 @@
 import * as repo from '../repositories/dashboardRepo'
 import { RequerimientoFleet } from '../repositories/dashboardRepo'
-import * as requerimentosRepo from '../repositories/requerimentosRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
-import { getPool } from '../shared/db'
 import { parseVigencia, DIAS_ALERTA_LICENCIA } from '../shared/vigenciaLicencia'
 
 const MX_TZ = 'America/Mexico_City'
@@ -67,13 +65,12 @@ function rangoActualYAnterior(periodo: 'mes' | 'semana'): { actual: Rango; anter
   }
 }
 
-// Sincroniza el status de requerimientos únicos (según la fecha del
-// mantenimiento vinculado) una vez por día calendario. Se apoya en
-// dashboard_requerimientos_historial: si ya existe una fila para hoy, ya se
-// corrió; si no, sincroniza y registra el snapshot del día, dejando
-// reportes/gráficas del dashboard al corriente. Se llama desde el timer diario
-// y desde las lecturas del dashboard/requerimientos, así que corre "una vez al
-// día" sin importar si dispara por uso de la app o por el cron.
+// Registra el snapshot de vencidos/por vencer una vez por día calendario. Se
+// apoya en dashboard_requerimientos_historial: si ya existe una fila para hoy,
+// ya se corrió; si no, lo registra, dejando reportes/gráficas del dashboard al
+// corriente. Se llama desde el timer diario y desde las lecturas del
+// dashboard/requerimientos, así que corre "una vez al día" sin importar si
+// dispara por uso de la app o por el cron.
 let sincronizandoHoy: Promise<void> | null = null
 export async function ensureDailySync(): Promise<void> {
   const hoy = fechaMexico()
@@ -83,11 +80,8 @@ export async function ensureDailySync(): Promise<void> {
 
   // Evita carreras si varias peticiones llegan a la vez el primer momento del día
   if (!sincronizandoHoy) {
-    sincronizandoHoy = (async () => {
-      const pool = await getPool()
-      await requerimentosRepo.syncUnicaStatuses(pool)
-      await registrarSnapshotHistorial()
-    })().finally(() => { sincronizandoHoy = null })
+    sincronizandoHoy = registrarSnapshotHistorial()
+      .finally(() => { sincronizandoHoy = null })
   }
   await sincronizandoHoy
 }
@@ -398,8 +392,6 @@ export interface ReporteFlota {
     rango_anterior:                        Rango
     vencidos_actual:                       number
     vencidos_anterior:                     number | null
-    requerimientos_unicos_nuevos_actual:   number
-    requerimientos_unicos_nuevos_anterior: number
   }
   vehiculos: VehiculoReporte[]
 }
@@ -445,11 +437,7 @@ export async function getReporteFlota(periodo: 'mes' | 'semana' = 'mes'): Promis
   // Último día cubierto por el periodo anterior: la referencia contra la que
   // comparamos el snapshot histórico de vencidos.
   const fechaRefAnterior = addDias(anterior.end, -1)
-  const [snapshotAnterior, unicosActual, unicosAnterior] = await Promise.all([
-    repo.findHistorialCercano(fechaRefAnterior),
-    repo.countRequerimientosUnicosCreados(actual.start, actual.end),
-    repo.countRequerimientosUnicosCreados(anterior.start, anterior.end),
-  ])
+  const snapshotAnterior = await repo.findHistorialCercano(fechaRefAnterior)
 
   return {
     periodo,
@@ -466,8 +454,6 @@ export async function getReporteFlota(periodo: 'mes' | 'semana' = 'mes'): Promis
       rango_anterior: anterior,
       vencidos_actual:                       clasificacion.vencidos.length,
       vencidos_anterior:                     snapshotAnterior?.vencidos ?? null,
-      requerimientos_unicos_nuevos_actual:   unicosActual,
-      requerimientos_unicos_nuevos_anterior: unicosAnterior,
     },
     vehiculos,
   }

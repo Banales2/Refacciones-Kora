@@ -263,19 +263,6 @@ export async function findCostosPorVehiculoEnRango(start: string, end: string): 
   return r.recordset
 }
 
-export async function countRequerimientosUnicosCreados(start: string, end: string): Promise<number> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('start', sql.Date, start)
-    .input('end',   sql.Date, end)
-    .query(`
-      SELECT COUNT(*) AS total
-      FROM requerimientos_exclusivos
-      WHERE tipo = 'unica' AND created_at >= @start AND created_at < @end
-    `)
-  return r.recordset[0].total
-}
-
 export interface HistorialDia {
   fecha:      string
   vencidos:   number

@@ -2,7 +2,7 @@
 // ubicación (rutas / sucursales / unitarios) y tipo, con búsqueda paginada,
 // edición rápida de kilometraje, alta/edición/baja y reporte PDF del
 // inventario. La vista de detalle de un vehículo concentra sus datos, sus
-// mantenimientos realizados y sus requerimientos (recurrentes y únicos).
+// mantenimientos realizados y sus requerimientos.
 // Exporta también MantenimientoForm y RequerimientoForm, reutilizados por el
 // Calendario.
 import { useState, useEffect, useMemo, useRef } from 'react'
@@ -35,7 +35,7 @@ import {
   useRequerimientoCategorias,
 } from '../hooks/useRequerimientos'
 import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
-import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, TipoReq, StatusReq } from '../hooks/useRequerimientos'
+import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, StatusReq } from '../hooks/useRequerimientos'
 import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
@@ -68,11 +68,6 @@ const TRIGGER_META: Record<TriggerMode, { label: string; color: string }> = {
   ambos: { label: 'Km + tiempo', color: 'orange' },
 }
 
-const TIPO_META: Record<TipoReq, { label: string; color: string }> = {
-  recurrente: { label: 'Recurrente', color: 'indigo' },
-  unica:      { label: 'Única',      color: 'cyan'   },
-}
-
 const STATUS_META: Record<StatusReq, { label: string; color: string }> = {
   activo:     { label: 'Activo',      color: 'blue'  },
   completado: { label: 'Completado',  color: 'green' },
@@ -92,8 +87,7 @@ function statusColor(s: string) {
   return 'gray'
 }
 
-// El intervalo por tiempo puede medirse en días o meses (según la unidad
-// elegida), para requerimientos recurrentes o únicos.
+// El intervalo por tiempo puede medirse en días o meses, según la unidad elegida.
 function usaDias(unidad: 'dias' | 'meses') {
   return unidad === 'dias'
 }
@@ -152,7 +146,6 @@ export function RequerimientoForm({
       descripcion:     initial?.descripcion ?? '',
       categoria:       initial?.categoria ?? '',
       trigger_mode:    (initial?.trigger_mode ?? (soloTiempo ? 'meses' : 'ambos')) as TriggerMode,
-      tipo:            (initial?.tipo ?? 'recurrente') as TipoReq,
       intervalo_km:     initial?.intervalo_km ?? (null as number | null),
       // Un solo campo numérico para el intervalo por tiempo; la unidad decide si
       // se guarda como días o meses. Se inicializa con el que venga poblado.
@@ -246,7 +239,6 @@ export function RequerimientoForm({
       descripcion:     vals.descripcion.trim(),
       categoria:       vals.categoria?.trim()    || null,
       trigger_mode:    vals.trigger_mode,
-      tipo:            vals.tipo,
       intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km : null,
       intervalo_meses: (time && !dias) ? vals.intervalo_tiempo : null,
       intervalo_dias:  (time &&  dias) ? vals.intervalo_tiempo : null,
@@ -293,14 +285,6 @@ export function RequerimientoForm({
           error={form.errors.fecha_reporte as string}
         />
         <Select
-          label="Tipo" required
-          data={[
-            { value: 'recurrente', label: 'Recurrente — se repite periódicamente' },
-            { value: 'unica',      label: 'Única — se realiza una sola vez' },
-          ]}
-          {...form.getInputProps('tipo')}
-        />
-        <Select
           label="Disparador" required
           data={
             soloTiempo
@@ -326,7 +310,7 @@ export function RequerimientoForm({
         {(mode === 'meses' || mode === 'ambos') && (
           <Group align="flex-end" gap="sm" grow>
             <NumberInput
-              label={form.values.tipo === 'unica' ? 'Caduca en' : 'Intervalo'} required min={1}
+              label="Intervalo" required min={1}
               allowDecimal={false} allowNegative={false}
               {...form.getInputProps('intervalo_tiempo')}
             />
@@ -499,7 +483,6 @@ function RequerimientoTable({
           <Table.Tr>
             <Table.Th>Nombre</Table.Th>
             <Table.Th>Categoría</Table.Th>
-            <Table.Th>Tipo</Table.Th>
             <Table.Th>Disparador</Table.Th>
             <Table.Th>Intervalo</Table.Th>
             <Table.Th>Referencia</Table.Th>
@@ -550,11 +533,6 @@ function RequerimientoTable({
               </Table.Td>
               <Table.Td>{item.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
               <Table.Td>
-                <Badge variant="light" color={TIPO_META[item.tipo].color} size="sm">
-                  {TIPO_META[item.tipo].label}
-                </Badge>
-              </Table.Td>
-              <Table.Td>
                 <Badge variant="light" color={TRIGGER_META[item.trigger_mode].color} size="sm">
                   {TRIGGER_META[item.trigger_mode].label}
                 </Badge>
@@ -590,95 +568,6 @@ function RequerimientoTable({
         </Table.Tbody>
       </Table>
     </Table.ScrollContainer>
-  )
-}
-
-function UnicosSection({
-  items, mantenimientos, overdueIds, warnIds, onOpenDetalle, onEdit, onDelete,
-}: {
-  items:          RequerimientoExclusivo[]
-  mantenimientos: Mantenimiento[]
-  overdueIds:     Set<number>
-  warnIds:        Set<number>
-  onOpenDetalle:  (item: RequerimientoExclusivo) => void
-  onEdit:         (item: RequerimientoExclusivo) => void
-  onDelete:       (item: RequerimientoExclusivo) => void
-}) {
-  const completados = items.filter(i => i.status === 'completado')
-  const pendientes  = items.filter(i => i.status !== 'completado')
-
-  function fechaReferencia(item: RequerimientoExclusivo): string | null {
-    const linked = linkedMantenimiento(item.id, mantenimientos)
-    return linked?.fecha ?? item.fecha_inicio ?? null
-  }
-
-  const { sinFecha, anios } = groupByYearMonth(completados, fechaReferencia)
-  const anioMasReciente = anios[0]?.[0]
-
-  return (
-    <Stack gap="md">
-      <div>
-        <Text size="sm" fw={500} c="dimmed" mb={4}>Pendientes ({pendientes.length})</Text>
-        {pendientes.length === 0 ? (
-          <Text c="dimmed" size="sm">Sin requerimientos únicos pendientes.</Text>
-        ) : (
-          <RequerimientoTable
-            items={pendientes} mantenimientos={mantenimientos}
-            overdueIds={overdueIds} warnIds={warnIds}
-            onOpenDetalle={onOpenDetalle} onEdit={onEdit} onDelete={onDelete}
-          />
-        )}
-      </div>
-
-      <div>
-        <Text size="sm" fw={500} c="dimmed" mb={4}>Completados ({completados.length})</Text>
-        {completados.length === 0 ? (
-          <Text c="dimmed" size="sm">Sin requerimientos únicos completados.</Text>
-        ) : (
-          <Stack gap="sm">
-            <Accordion multiple defaultValue={anioMasReciente != null ? [String(anioMasReciente)] : []} variant="separated">
-              {anios.map(([anio, porMes]) => {
-                const totalAnio = [...porMes.values()].reduce((s, arr) => s + arr.length, 0)
-                return (
-                  <Accordion.Item key={anio} value={String(anio)}>
-                    <Accordion.Control>
-                      <Group justify="space-between" pr="md" wrap="nowrap">
-                        <Text fw={600}>{anio}</Text>
-                        <Badge variant="light" color="gray">{totalAnio}</Badge>
-                      </Group>
-                    </Accordion.Control>
-                    <Accordion.Panel>
-                      <Stack gap="md">
-                        {[...porMes.entries()].map(([mes, mesItems]) => (
-                          <div key={mes}>
-                            <Text size="sm" fw={500} c="dimmed" mb={4} tt="capitalize">{MESES[mes]}</Text>
-                            <RequerimientoTable
-                              items={mesItems} mantenimientos={mantenimientos}
-                              overdueIds={overdueIds} warnIds={warnIds}
-                              onOpenDetalle={onOpenDetalle} onEdit={onEdit} onDelete={onDelete}
-                            />
-                          </div>
-                        ))}
-                      </Stack>
-                    </Accordion.Panel>
-                  </Accordion.Item>
-                )
-              })}
-            </Accordion>
-            {sinFecha.length > 0 && (
-              <div>
-                <Text size="sm" fw={500} c="dimmed" mb={4}>Sin fecha de referencia</Text>
-                <RequerimientoTable
-                  items={sinFecha} mantenimientos={mantenimientos}
-                  overdueIds={overdueIds} warnIds={warnIds}
-                  onOpenDetalle={onOpenDetalle} onEdit={onEdit} onDelete={onDelete}
-                />
-              </div>
-            )}
-          </Stack>
-        )}
-      </div>
-    </Stack>
   )
 }
 
@@ -723,7 +612,6 @@ function RequerimientoDetalleDrawer({
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <Group gap={8} wrap="wrap">
               <Text size="xl" fw={700}>{item.nombre}</Text>
-              <Badge variant="light" color={TIPO_META[item.tipo].color}>{TIPO_META[item.tipo].label}</Badge>
               <Badge variant="light" color={STATUS_META[item.status].color}>{STATUS_META[item.status].label}</Badge>
               {item.plantilla_origen_id && <Badge variant="light" color="grape">Requerimiento del modelo</Badge>}
             </Group>
@@ -848,48 +736,11 @@ function RequerimientosSection({ vehiculo, mantenimientos, overdueIds = new Set<
           </Stack>
         </Center>
       ) : (
-        (() => {
-          const recurrentes = items.filter(i => i.tipo === 'recurrente')
-          const unicos      = items.filter(i => i.tipo === 'unica')
-          return (
-            <Stack gap="md">
-              <div>
-                <Text size="sm" fw={500} c="dimmed" mb={4}>Recurrentes ({recurrentes.length})</Text>
-                {recurrentes.length === 0 ? (
-                  <Text c="dimmed" size="sm">Sin requerimientos recurrentes.</Text>
-                ) : (
-                  <RequerimientoTable
-                    items={recurrentes} mantenimientos={mantenimientos}
-                    overdueIds={overdueIds} warnIds={warnIds}
-                    onOpenDetalle={setDetalleItem} onEdit={openEdit} onDelete={setDeleting}
-                  />
-                )}
-              </div>
-
-              <Accordion defaultValue={null} variant="separated">
-                <Accordion.Item value="unicos">
-                  <Accordion.Control>
-                    <Group justify="space-between" pr="md" wrap="nowrap">
-                      <Text fw={600}>Únicos</Text>
-                      <Badge variant="light" color="gray">{unicos.length}</Badge>
-                    </Group>
-                  </Accordion.Control>
-                  <Accordion.Panel>
-                    {unicos.length === 0 ? (
-                      <Text c="dimmed" size="sm">Sin requerimientos únicos.</Text>
-                    ) : (
-                      <UnicosSection
-                        items={unicos} mantenimientos={mantenimientos}
-                        overdueIds={overdueIds} warnIds={warnIds}
-                        onOpenDetalle={setDetalleItem} onEdit={openEdit} onDelete={setDeleting}
-                      />
-                    )}
-                  </Accordion.Panel>
-                </Accordion.Item>
-              </Accordion>
-            </Stack>
-          )
-        })()
+        <RequerimientoTable
+          items={items} mantenimientos={mantenimientos}
+          overdueIds={overdueIds} warnIds={warnIds}
+          onOpenDetalle={setDetalleItem} onEdit={openEdit} onDelete={setDeleting}
+        />
       )}
 
       <Modal

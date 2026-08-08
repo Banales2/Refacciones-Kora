@@ -2,7 +2,6 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 
 export type TriggerMode  = 'km' | 'meses' | 'ambos'
-export type TipoReq      = 'recurrente' | 'unica'
 export type StatusReq    = 'activo' | 'completado' | 'pausado' | 'cancelado'
 
 export interface RequerimientoExclusivo {
@@ -14,7 +13,6 @@ export interface RequerimientoExclusivo {
   intervalo_meses:     number | null
   intervalo_dias:      number | null
   trigger_mode:        TriggerMode
-  tipo:                TipoReq
   status:              StatusReq
   created_at:          string
   updated_at:          string
@@ -31,7 +29,6 @@ export interface RequerimientoCreate {
   descripcion?:         string | null
   categoria?:           string | null
   trigger_mode:         TriggerMode
-  tipo?:                TipoReq
   intervalo_km?:        number | null
   intervalo_meses?:     number | null
   intervalo_dias?:      number | null
@@ -47,7 +44,6 @@ export interface RequerimientoUpdate {
   descripcion?:     string | null
   categoria?:       string | null
   trigger_mode?:    TriggerMode
-  tipo?:            TipoReq
   intervalo_km?:    number | null
   intervalo_meses?: number | null
   intervalo_dias?:  number | null
@@ -58,7 +54,7 @@ export interface RequerimientoUpdate {
 }
 
 const COLS = `id, nombre, descripcion, categoria, intervalo_km, intervalo_meses, intervalo_dias,
-  trigger_mode, tipo, status, created_at, updated_at, vehiculo_id, plantilla_origen_id,
+  trigger_mode, status, created_at, updated_at, vehiculo_id, plantilla_origen_id,
   fecha_inicio, km_inicio, fecha_reporte`
 
 export async function findByVehiculo(vehiculoId: number): Promise<RequerimientoExclusivo[]> {
@@ -103,7 +99,6 @@ export async function create(data: RequerimientoCreate): Promise<RequerimientoEx
     .input('descripcion',   sql.NVarChar(sql.MAX), data.descripcion      ?? null)
     .input('categoria',     sql.NVarChar(80),     data.categoria         ?? null)
     .input('triggerMode',   sql.NVarChar(20),     data.trigger_mode)
-    .input('tipo',          sql.NVarChar(20),     data.tipo              ?? 'recurrente')
     .input('intervaloKm',   sql.Int,              data.intervalo_km      ?? null)
     .input('intervaloMes',  sql.Int,              data.intervalo_meses   ?? null)
     .input('intervaloDia',  sql.Int,              data.intervalo_dias    ?? null)
@@ -114,10 +109,10 @@ export async function create(data: RequerimientoCreate): Promise<RequerimientoEx
     .input('fechaReporte',  sql.Date,             data.fecha_reporte       ?? null)
     .query(`
       INSERT INTO requerimientos_exclusivos
-        (vehiculo_id, nombre, descripcion, categoria, trigger_mode, tipo,
+        (vehiculo_id, nombre, descripcion, categoria, trigger_mode,
          intervalo_km, intervalo_meses, intervalo_dias, status, plantilla_origen_id, fecha_inicio, km_inicio, fecha_reporte)
       OUTPUT INSERTED.*
-      VALUES (@vid, @nombre, @descripcion, @categoria, @triggerMode, @tipo,
+      VALUES (@vid, @nombre, @descripcion, @categoria, @triggerMode,
               @intervaloKm, @intervaloMes, @intervaloDia, @status, @origenId, @fechaInicio, @kmInicio, @fechaReporte)
     `)
   return r.recordset[0]
@@ -132,7 +127,6 @@ export async function update(id: number, data: RequerimientoUpdate): Promise<Req
   if ('descripcion' in data)           { req.input('descripcion', sql.NVarChar(sql.MAX), data.descripcion ?? null); sets.push('descripcion=@descripcion') }
   if ('categoria'   in data)           { req.input('categoria',   sql.NVarChar(80),      data.categoria   ?? null); sets.push('categoria=@categoria')     }
   if (data.trigger_mode !== undefined) { req.input('triggerMode', sql.NVarChar(20),      data.trigger_mode);     sets.push('trigger_mode=@triggerMode')   }
-  if (data.tipo         !== undefined) { req.input('tipo',        sql.NVarChar(20),      data.tipo);             sets.push('tipo=@tipo')                  }
   if ('intervalo_km'   in data)        { req.input('intervaloKm', sql.Int,               data.intervalo_km    ?? null); sets.push('intervalo_km=@intervaloKm') }
   if ('intervalo_meses' in data)       { req.input('intervaloMes',sql.Int,               data.intervalo_meses ?? null); sets.push('intervalo_meses=@intervaloMes') }
   if ('intervalo_dias'  in data)       { req.input('intervaloDia',sql.Int,               data.intervalo_dias  ?? null); sets.push('intervalo_dias=@intervaloDia') }
@@ -153,35 +147,4 @@ export async function remove(id: number): Promise<boolean> {
     .input('id', sql.Int, id)
     .query('DELETE FROM requerimientos_exclusivos OUTPUT DELETED.id WHERE id=@id')
   return r.recordset.length > 0
-}
-
-// Recalcula el status de requerimientos únicos según la fecha del mantenimiento
-// vinculado más reciente: 'completado' si esa fecha ya llegó (<=hoy), 'activo'
-// si sigue programada a futuro. Sin `ids`, corre sobre todos los únicos con
-// algún mantenimiento vinculado (para la sincronización global diaria). Con
-// `ids`, se limita a esos requerimientos (para sincronizar tras un cambio puntual).
-export async function syncUnicaStatuses(
-  exec: sql.ConnectionPool | sql.Transaction, ids?: number[]
-): Promise<void> {
-  if (ids && ids.length === 0) return
-  const req = exec.request()
-  const filter = ids
-    ? `AND re.id IN (${ids.map((id, i) => { req.input(`r${i}`, sql.Int, id); return `@r${i}` }).join(',')})`
-    : ''
-  await req.query(`
-    UPDATE re
-    SET re.status = CASE
-                       WHEN latest.fecha <= CAST(GETDATE() AS DATE) THEN 'completado'
-                       ELSE 'activo' END,
-        re.updated_at = SYSDATETIME()
-    FROM requerimientos_exclusivos re
-    CROSS APPLY (
-      SELECT TOP 1 m.fecha
-      FROM mantenimiento_requerimientos mr
-      JOIN mantenimiento m ON m.id = mr.mantenimiento_id
-      WHERE mr.requerimiento_id = re.id
-      ORDER BY m.fecha DESC
-    ) latest
-    WHERE re.tipo = 'unica' ${filter}
-  `)
 }

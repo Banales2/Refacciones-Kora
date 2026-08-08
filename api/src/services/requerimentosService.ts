@@ -5,7 +5,7 @@ import { ensureDailySync } from './dashboardService'
 
 export async function getByVehiculo(vehiculoId: number) {
   // "Una vez al día, cada vez que se use la app": consultar requerimientos ya
-  // dispara la sincronización de únicos si todavía no ha corrido hoy.
+  // dispara el snapshot diario del dashboard si todavía no ha corrido hoy.
   await ensureDailySync()
   return repo.findByVehiculo(vehiculoId)
 }

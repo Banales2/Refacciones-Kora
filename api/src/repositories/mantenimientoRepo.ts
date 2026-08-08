@@ -1,6 +1,5 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { syncUnicaStatuses } from './requerimentosRepo'
 
 export interface Mantenimiento {
   id:               number
@@ -135,7 +134,6 @@ export async function create(data: MantenimientoCreate): Promise<Mantenimiento> 
         .input('rid', sql.Int, rid)
         .query('INSERT INTO mantenimiento_requerimientos (mantenimiento_id, requerimiento_id) VALUES (@mid, @rid)')
     }
-    await syncUnicaStatuses(tx, data.requerimiento_ids ?? [])
     await tx.commit()
     // Se relee para traer el nombre del técnico resuelto por el join.
     return (await findById(mant.id))
@@ -163,34 +161,14 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
       await req.query(`UPDATE mantenimiento SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`)
     }
     if ('requerimiento_ids' in data) {
-      const prevIds = (await tx.request().input('id', sql.Int, id)
-        .query('SELECT requerimiento_id FROM mantenimiento_requerimientos WHERE mantenimiento_id=@id'))
-        .recordset.map((r: { requerimiento_id: number }) => r.requerimiento_id)
-      const nextIds = data.requerimiento_ids ?? []
-      const removedIds = prevIds.filter(rid => !nextIds.includes(rid))
-
       await tx.request().input('id', sql.Int, id)
         .query('DELETE FROM mantenimiento_requerimientos WHERE mantenimiento_id=@id')
-      for (const rid of nextIds) {
+      for (const rid of data.requerimiento_ids ?? []) {
         await tx.request()
           .input('mid', sql.Int, id)
           .input('rid', sql.Int, rid)
           .query('INSERT INTO mantenimiento_requerimientos (mantenimiento_id, requerimiento_id) VALUES (@mid, @rid)')
       }
-      for (const rid of removedIds) {
-        await tx.request()
-          .input('rid', sql.Int, rid)
-          .query("UPDATE requerimientos_exclusivos SET status='activo', updated_at=SYSDATETIME() WHERE id=@rid AND tipo='unica' AND status='completado'")
-      }
-      await syncUnicaStatuses(tx, nextIds)
-      // Por si un requerimiento desvinculado de este mantenimiento sigue enlazado a otro
-      await syncUnicaStatuses(tx, removedIds)
-    } else if (data.fecha !== undefined) {
-      // La fecha del mantenimiento cambió pero sus enlaces no; reevaluar con los enlaces actuales
-      const curIds = (await tx.request().input('id', sql.Int, id)
-        .query('SELECT requerimiento_id FROM mantenimiento_requerimientos WHERE mantenimiento_id=@id'))
-        .recordset.map((r: { requerimiento_id: number }) => r.requerimiento_id)
-      await syncUnicaStatuses(tx, curIds)
     }
     await tx.commit()
   } catch (err) {
@@ -205,10 +183,6 @@ export async function remove(id: number): Promise<boolean> {
   const tx = pool.transaction()
   await tx.begin()
   try {
-    const linkedIds = (await tx.request().input('id', sql.Int, id)
-      .query('SELECT requerimiento_id FROM mantenimiento_requerimientos WHERE mantenimiento_id=@id'))
-      .recordset.map((r: { requerimiento_id: number }) => r.requerimiento_id)
-
     // Devolver al inventario las piezas consumidas y liberar la FK de detalle_mtto_pieza
     const detalles = (await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM detalle_mtto_pieza OUTPUT DELETED.lote_id, DELETED.cantidad WHERE mantenimiento_id=@id'))
@@ -226,14 +200,6 @@ export async function remove(id: number): Promise<boolean> {
     const r = await tx.request()
       .input('id', sql.Int, id)
       .query('DELETE FROM mantenimiento OUTPUT DELETED.id WHERE id=@id')
-
-    for (const rid of linkedIds) {
-      await tx.request()
-        .input('rid', sql.Int, rid)
-        .query("UPDATE requerimientos_exclusivos SET status='activo', updated_at=SYSDATETIME() WHERE id=@rid AND tipo='unica' AND status='completado'")
-    }
-    // Por si el requerimiento sigue enlazado a otro mantenimiento
-    await syncUnicaStatuses(tx, linkedIds)
 
     await tx.commit()
     return r.recordset.length > 0

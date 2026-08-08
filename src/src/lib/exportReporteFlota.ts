@@ -96,13 +96,12 @@ export async function exportReporteFlotaToPdf(reporte: ReporteFlota, sucursales:
   doc.setTextColor(0)
   y += 7
   doc.setFontSize(10)
-  const compLineas = [
+  doc.text(
     `Requerimientos vencidos: ${reporte.comparacion.vencidos_actual} ` +
       deltaLabel(reporte.comparacion.vencidos_actual, reporte.comparacion.vencidos_anterior),
-    `Requerimientos únicos nuevos: ${reporte.comparacion.requerimientos_unicos_nuevos_actual} ` +
-      deltaLabel(reporte.comparacion.requerimientos_unicos_nuevos_actual, reporte.comparacion.requerimientos_unicos_nuevos_anterior),
-  ]
-  for (const linea of compLineas) { doc.text(linea, margin, y); y += 6 }
+    margin, y
+  )
+  y += 6
   y += 6
 
   // ── Detalle por vehículo, agrupado como en la pestaña Vehículos ──

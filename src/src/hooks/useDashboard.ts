@@ -181,8 +181,6 @@ export interface ReporteFlota {
     rango_anterior:                        { start: string; end: string }
     vencidos_actual:                       number
     vencidos_anterior:                     number | null
-    requerimientos_unicos_nuevos_actual:   number
-    requerimientos_unicos_nuevos_anterior: number
   }
   vehiculos: VehiculoReporte[]
 }

@@ -1,11 +1,10 @@
 // Requerimientos de mantenimiento propios de un vehículo: tareas recurrentes
-// o únicas que vencen por kilometraje, por tiempo o por ambos. Pueden nacer
-// de la plantilla del modelo (plantilla_origen_id) o crearse a mano.
+// que vencen por kilometraje, por tiempo o por ambos. Pueden nacer de la
+// plantilla del modelo (plantilla_origen_id) o crearse a mano.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 export type TriggerMode = 'km' | 'meses' | 'ambos'
-export type TipoReq     = 'recurrente' | 'unica'
 export type StatusReq   = 'activo' | 'completado' | 'pausado' | 'cancelado'
 
 export interface RequerimientoExclusivo {
@@ -17,7 +16,6 @@ export interface RequerimientoExclusivo {
   intervalo_meses:     number | null
   intervalo_dias:      number | null
   trigger_mode:        TriggerMode
-  tipo:                TipoReq
   status:              StatusReq
   created_at:          string
   updated_at:          string
@@ -33,7 +31,6 @@ export interface RequerimientoPayload {
   descripcion?:     string | null
   categoria?:       string | null
   trigger_mode:     TriggerMode
-  tipo?:            TipoReq
   intervalo_km?:    number | null
   intervalo_meses?: number | null
   intervalo_dias?:  number | null
