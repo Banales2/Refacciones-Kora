@@ -14,7 +14,7 @@ import { useSucursales } from '../hooks/useSucursales'
 import { useRutas } from '../hooks/useRutas'
 import { useSeguros } from '../hooks/useSeguros'
 import { usePermisosCirculacion } from '../hooks/usePermisosCirculacion'
-import { CODIGO, limpiarCodigo } from '../lib/validaciones'
+import { CODIGO, limpiarCodigo, KM_MAX, validarKm } from '../lib/validaciones'
 
 const TIPO_META: Record<TipoVehiculo, { label: string; color: string }> = {
   camion:       { label: 'Unidad de reparto', color: 'blue'   },
@@ -140,7 +140,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
       pies:        (v, vals) => needsField(vals.tipo, 'pies')        && (v === '' || v === null) ? 'Requerido' : null,
       kilometraje: (v, vals) =>
         needsField(vals.tipo, 'km') && (v === '' || v === null) ? 'Requerido' :
-        v !== '' && v !== null && !Number.isInteger(Number(v)) ? 'Solo números enteros' : null,
+        v !== '' && v !== null && !Number.isInteger(Number(v)) ? 'Solo números enteros' :
+        validarKm(v),
     },
   })
 
@@ -362,7 +363,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               </Grid.Col>
               <Grid.Col span={6}>
                 <NumberInput
-                  label="Kilometraje" placeholder="0" min={0} required
+                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required
+                  thousandSeparator=","
                   allowDecimal={false} allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
                 />
@@ -393,7 +395,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               </Grid.Col>
               <Grid.Col span={6}>
                 <NumberInput
-                  label="Kilometraje" placeholder="0" min={0} required
+                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required
+                  thousandSeparator=","
                   allowDecimal={false} allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
                 />
@@ -460,7 +463,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               </Grid.Col>
               <Grid.Col span={6}>
                 <NumberInput
-                  label="Kilometraje" placeholder="0" min={0} required
+                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required
+                  thousandSeparator=","
                   allowDecimal={false} allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
                 />

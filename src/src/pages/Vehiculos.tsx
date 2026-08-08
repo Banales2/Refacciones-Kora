@@ -23,7 +23,7 @@ import { useSucursales } from '../hooks/useSucursales'
 import type { Sucursal } from '../hooks/useSucursales'
 import { exportVehiculosReporteToPdf } from '../lib/exportVehiculosReporte'
 import {
-  TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre,
+  TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre, KM_MAX, validarKm,
 } from '../lib/validaciones'
 import {
   useMantenimientos, useCreateMantenimiento, useUpdateMantenimiento, useDeleteMantenimiento,
@@ -169,7 +169,7 @@ export function RequerimientoForm({
         !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
       fecha_reporte: (v) => !v ? 'Requerido' : null,
       intervalo_km: (v, vals) =>
-        (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
+        (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : validarKm(v),
       intervalo_meses: (v, vals) =>
         (vals.trigger_mode === 'meses' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
     },
@@ -273,9 +273,9 @@ export function RequerimientoForm({
         />
         {(mode === 'km' || mode === 'ambos') && (
           <NumberInput
-            label="Intervalo de kilometraje" required min={1}
+            label="Intervalo de kilometraje" required min={1} max={KM_MAX}
             suffix=" km" thousandSeparator=","
-            allowDecimal={false} allowNegative={false}
+            allowDecimal={false} allowNegative={false} clampBehavior="strict"
             {...form.getInputProps('intervalo_km')}
           />
         )}
@@ -1033,7 +1033,7 @@ export function MantenimientoForm({
       fecha:             (v) => !v ? 'Requerido' : null,
       tipo:              (v) => !v ? 'Requerido' : null,
       tecnico_id:        (v) => !v ? 'Requerido' : null,
-      km_actual:         (v) => tieneKilometraje && (v === '' || v === null) ? 'Requerido' : null,
+      km_actual:         (v) => tieneKilometraje && (v === '' || v === null) ? 'Requerido' : validarKm(v),
       costo:             (v) => v === '' || v === null ? 'Requerido' : null,
       observaciones:     (v) =>
         !v.trim() ? 'Requerido' :
@@ -1148,8 +1148,9 @@ export function MantenimientoForm({
           {tieneKilometraje && (
             <Grid.Col span={3}>
               <NumberInput
-                label="Kilometraje" placeholder="0" min={0} required
-                allowDecimal={false} allowNegative={false}
+                label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required
+                thousandSeparator=","
+                allowDecimal={false} allowNegative={false} clampBehavior="strict"
                 description={!isEdit && kmVehiculo != null
                   ? `Actual: ${kmVehiculo.toLocaleString('es-MX')} km`
                   : undefined}
@@ -1855,7 +1856,8 @@ function VehiculoDetalle({
                 <Grid.Col span={{ base: 6, sm: 3 }}>
                   {editingKm ? (
                     <NumberInput
-                      label="Kilometraje" size="xs" autoFocus min={0} suffix=" km" thousandSeparator=","
+                      label="Kilometraje" size="xs" autoFocus min={0} max={KM_MAX}
+                      suffix=" km" thousandSeparator="," clampBehavior="strict"
                       value={kmDraft}
                       onChange={(v) => setKmDraft(v as number | '')}
                       onBlur={saveKm}
@@ -2056,7 +2058,8 @@ function VehiculosTable({
                 >
                   {km.editingKmId === v.id ? (
                     <NumberInput
-                      autoFocus size="xs" min={0} thousandSeparator="," hideControls
+                      autoFocus size="xs" min={0} max={KM_MAX} thousandSeparator="," hideControls
+                      clampBehavior="strict"
                       value={km.kmDraft}
                       onChange={(val) => km.setKmDraft(val as number | '')}
                       onBlur={() => km.saveKm(v)}

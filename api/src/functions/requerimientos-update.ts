@@ -5,7 +5,7 @@ import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import * as service from '../services/requerimentosService'
-import { TEXTO_SIMPLE, TEXTO_LIBRE } from '../schemas/common'
+import { TEXTO_SIMPLE, TEXTO_LIBRE, KM_MAX } from '../schemas/common'
 
 const Schema = z.object({
   nombre: z
@@ -30,11 +30,11 @@ const Schema = z.object({
     .nullable()
     .optional(),
   trigger_mode:    z.enum(['km', 'meses', 'ambos']).optional(),
-  intervalo_km:    z.coerce.number().int().positive().nullable().optional(),
+  intervalo_km:    z.coerce.number().int().positive().max(KM_MAX, 'Máximo 9,999,999 km').nullable().optional(),
   intervalo_meses: z.coerce.number().int().positive().nullable().optional(),
   status:          z.enum(['activo', 'completado', 'pausado', 'cancelado']).optional(),
   fecha_inicio:    z.string().date().nullable().optional(),
-  km_inicio:       z.coerce.number().int().min(0).nullable().optional(),
+  km_inicio:       z.coerce.number().int().min(0).max(KM_MAX, 'Máximo 9,999,999 km').nullable().optional(),
   fecha_reporte:   z.string().date().nullable().optional(),
 })
 

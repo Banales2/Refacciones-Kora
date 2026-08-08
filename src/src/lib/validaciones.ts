@@ -54,3 +54,13 @@ export function limpiarTextoSimple(valor: string, max: number): string {
 export function limpiarTextoLibre(valor: string, max: number): string {
   return valor.replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 \r\n.,;:()¿?¡!"'%#°+&/-]/g, '').slice(0, max)
 }
+
+// Tope de cualquier campo de kilometraje: odómetros, lecturas de taller e
+// intervalos. Siete dígitos dan de sobra para la vida de una unidad y atajan el
+// dedazo de teclear un cero de más. Espeja KM_MAX del backend.
+export const KM_MAX = 9_999_999
+
+export function validarKm(valor: number | string | null | undefined): string | null {
+  if (valor === '' || valor === null || valor === undefined) return null
+  return Number(valor) > KM_MAX ? `Máximo ${KM_MAX.toLocaleString('es-MX')} km` : null
+}

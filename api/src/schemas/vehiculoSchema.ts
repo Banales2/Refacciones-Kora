@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { CODIGO } from './common'
+import { CODIGO, KM_MAX } from './common'
 
 export const TIPOS_VEHICULO = ['camion', 'tractocamion', 'caja_trailer', 'utilitario', 'montacargas'] as const
 export type TipoVehiculo = typeof TIPOS_VEHICULO[number]
@@ -31,7 +31,7 @@ export const VehiculoCreateSchema = z.object({
   // camion + tractocamion + utilitario + montacargas
   combustible: z.string().max(30).trim().optional(),
   // camion + tractocamion + utilitario
-  kilometraje: z.coerce.number().int().min(0).optional(),
+  kilometraje: z.coerce.number().int().min(0).max(KM_MAX, 'Máximo 9,999,999 km').optional(),
   status:      z.string().max(30).trim().optional(),
   // camion + montacargas
   ubicacion:   z.string().max(200).trim().nullable().optional(),
@@ -71,7 +71,7 @@ export const VehiculoUpdateSchema = z.object({
     .nullable()
     .optional(),
   combustible:  z.string().max(30).trim().optional(),
-  kilometraje:  z.coerce.number().int().min(0).optional(),
+  kilometraje:  z.coerce.number().int().min(0).max(KM_MAX, 'Máximo 9,999,999 km').optional(),
   status:       z.string().max(30).trim().optional(),
   ubicacion:    z.string().max(200).trim().nullable().optional(),
   sucursal_id:  z.coerce.number().int().positive().optional(),

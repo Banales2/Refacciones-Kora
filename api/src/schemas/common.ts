@@ -21,6 +21,11 @@ export const TELEFONO = /^[0-9 ()+-]+$/
 // mayúsculas, números y guiones. Sin espacios ni puntuación.
 export const CODIGO = /^[A-Z0-9-]+$/
 
+// Tope de cualquier campo de kilometraje: odómetros, lecturas de taller e
+// intervalos. Siete dígitos dan de sobra para la vida de una unidad y atajan el
+// dedazo de teclear un cero de más. Espeja KM_MAX del frontend.
+export const KM_MAX = 9_999_999
+
 // Allowlist para texto libre (descripciones). Más amplia porque necesita
 // puntuación para leerse bien, pero sigue dejando fuera lo que sirve para
 // inyectar marcado o scripts: < > { } [ ] \ | ` ~ ^ * = _ $ @.

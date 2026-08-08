@@ -4,7 +4,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
-import { TEXTO_LIBRE } from '../schemas/common'
+import { TEXTO_LIBRE, KM_MAX } from '../schemas/common'
 import * as service from '../services/agendaMantenimientoService'
 
 const Schema = z.object({
@@ -12,7 +12,7 @@ const Schema = z.object({
   tipo:              z.enum(['Preventivo', 'Correctivo']),
   tecnico_id:        z.coerce.number({ error: 'Técnico requerido' }).int().positive('Técnico requerido'),
   costo:             z.coerce.number({ error: 'Costo requerido' }).min(0),
-  km_actual:         z.coerce.number({ error: 'Kilometraje requerido' }).int().min(0),
+  km_actual:         z.coerce.number({ error: 'Kilometraje requerido' }).int().min(0).max(KM_MAX, 'Máximo 9,999,999 km'),
   observaciones:     z.string().trim().min(1, 'Observaciones requeridas').max(255, 'Máximo 255 caracteres')
                        .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos'),
   pendiente_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un requerimiento o incidencia'),

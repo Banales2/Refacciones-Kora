@@ -20,6 +20,7 @@ import type { Recarga, RecargaPayload } from '../hooks/useRecargas'
 import { useGasolineras } from '../hooks/useGasolineras'
 import { useConductores } from '../hooks/useConductores'
 import { useValesGasolina } from '../hooks/useValesGasolina'
+import { KM_MAX, validarKm } from '../lib/validaciones'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -204,7 +205,7 @@ function RecargaForm({
       costo:  (v) => (v === '' || Number(v) < 0 ? 'No puede ser negativo' : null),
       kilometraje: (v) =>
         v === '' || Number(v) < 0 ? 'No puede ser negativo' :
-        !Number.isInteger(Number(v)) ? 'Solo números enteros' : null,
+        !Number.isInteger(Number(v)) ? 'Solo números enteros' : validarKm(v),
     },
   })
 
@@ -283,8 +284,8 @@ function RecargaForm({
         />
         <NumberInput
           label="Kilometraje" placeholder="0" required
-          min={0} step={1} suffix=" km" thousandSeparator=","
-          allowDecimal={false} allowNegative={false}
+          min={0} max={KM_MAX} step={1} suffix=" km" thousandSeparator=","
+          allowDecimal={false} allowNegative={false} clampBehavior="strict"
           description="Kilometraje del vehículo al momento de la recarga"
           {...form.getInputProps('kilometraje')}
         />

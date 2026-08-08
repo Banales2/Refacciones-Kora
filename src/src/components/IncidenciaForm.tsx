@@ -48,6 +48,14 @@ export default function IncidenciaForm({
         v.length > 30 ? 'Máximo 30 caracteres' :
         !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
       fecha: (v) => !v ? 'Requerido' : null,
+      ubicacion: (v) =>
+        !v.trim() ? 'Requerido' :
+        v.length > 160 ? 'Máximo 160 caracteres' :
+        !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
+      reportado_por: (v) =>
+        !v.trim() ? 'Requerido' :
+        v.length > 120 ? 'Máximo 120 caracteres' :
+        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
     },
   })
 
@@ -114,18 +122,17 @@ export default function IncidenciaForm({
           />
           <TimeInput
             label="Hora"
-            description="Opcional"
             {...form.getInputProps('hora')}
           />
         </Group>
         <TextInput
-          label="Ubicación" maxLength={160}
+          label="Ubicación" required maxLength={160}
           placeholder="Dónde ocurrió o dónde se detectó"
           {...form.getInputProps('ubicacion')}
           onChange={(e) => form.setFieldValue('ubicacion', limpiarTextoLibre(e.currentTarget.value, 160))}
         />
         <TextInput
-          label="Reportado por" maxLength={120}
+          label="Reportado por" required maxLength={120}
           placeholder="Quién la reportó"
           {...form.getInputProps('reportado_por')}
           onChange={(e) => form.setFieldValue('reportado_por', limpiarTextoSimple(e.currentTarget.value, 120))}

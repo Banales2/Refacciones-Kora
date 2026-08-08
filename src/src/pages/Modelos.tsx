@@ -31,7 +31,7 @@ import type {
 import { VehiculoForm } from '../components/VehiculoForm'
 import {
   TEXTO_SIMPLE, TEXTO_LIBRE, ANIO_MODELO,
-  limpiarTextoSimple, limpiarTextoLibre, limpiarAnioModelo,
+  limpiarTextoSimple, limpiarTextoLibre, limpiarAnioModelo, KM_MAX, validarKm,
 } from '../lib/validaciones'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -248,7 +248,7 @@ function PlantillaForm({
         v.length > 30 ? 'Máximo 30 caracteres' :
         !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
       intervalo_km: (v, vals) =>
-        (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
+        (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : validarKm(v),
       intervalo_meses: (v, vals) =>
         (vals.trigger_mode === 'meses' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
     },
@@ -311,9 +311,9 @@ function PlantillaForm({
         />
         {(mode === 'km' || mode === 'ambos') && (
           <NumberInput
-            label="Intervalo de kilometraje" required min={1}
+            label="Intervalo de kilometraje" required min={1} max={KM_MAX}
             suffix=" km" thousandSeparator=","
-            allowDecimal={false} allowNegative={false}
+            allowDecimal={false} allowNegative={false} clampBehavior="strict"
             {...form.getInputProps('intervalo_km')}
           />
         )}
