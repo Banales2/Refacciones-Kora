@@ -18,11 +18,13 @@ export interface Incidencia {
   status:        StatusIncidencia
   created_at:    string
   updated_at:    string
-  reportado_por: string | null
+  // Obligatorios en la base (NOT NULL); la hora sigue siendo opcional porque
+  // quien reporta no siempre la sabe.
+  reportado_por: string
   severidad:     Severidad
   fecha:         string
   hora:          string | null
-  ubicacion:     string | null
+  ubicacion:     string
 }
 
 export interface IncidenciaConVehiculo extends Incidencia {
@@ -35,11 +37,11 @@ export interface IncidenciaPayload {
   descripcion:    string
   categoria?:     string | null
   status?:        StatusIncidencia
-  reportado_por?: string | null
+  reportado_por:  string
   severidad:      Severidad
   fecha:          string
   hora?:          string | null
-  ubicacion?:     string | null
+  ubicacion:      string
 }
 
 export function useIncidencias() {

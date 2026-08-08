@@ -23,11 +23,13 @@ export interface Incidencia {
   status:        StatusIncidencia
   created_at:    string
   updated_at:    string
-  reportado_por: string | null
+  // Obligatorios en la base (NOT NULL); la hora sigue siendo opcional porque
+  // quien reporta no siempre la sabe.
+  reportado_por: string
   severidad:     Severidad
   fecha:         string
   hora:          string | null
-  ubicacion:     string | null
+  ubicacion:     string
 }
 
 export interface IncidenciaConVehiculo extends Incidencia {
@@ -41,11 +43,11 @@ export interface IncidenciaCreate {
   descripcion?:   string | null
   categoria?:     string | null
   status?:        StatusIncidencia
-  reportado_por?: string | null
+  reportado_por:  string
   severidad:      Severidad
   fecha:          string
   hora?:          string | null
-  ubicacion?:     string | null
+  ubicacion:      string
 }
 
 export interface IncidenciaUpdate {
@@ -53,11 +55,11 @@ export interface IncidenciaUpdate {
   descripcion?:   string | null
   categoria?:     string | null
   status?:        StatusIncidencia
-  reportado_por?: string | null
+  reportado_por?: string
   severidad?:     Severidad
   fecha?:         string
   hora?:          string | null
-  ubicacion?:     string | null
+  ubicacion?:     string
 }
 
 // `hora` se convierte a texto "HH:MM" aquí: el driver devuelve las columnas TIME
@@ -120,11 +122,11 @@ export async function create(data: IncidenciaCreate): Promise<Incidencia> {
     })
     await tx.request()
       .input('id',        sql.Int,           id)
-      .input('reportado', sql.NVarChar(120), data.reportado_por ?? null)
+      .input('reportado', sql.NVarChar(120), data.reportado_por)
       .input('severidad', sql.NVarChar(20),  data.severidad)
       .input('fecha',     sql.Date,          data.fecha)
-      .input('hora',      sql.VarChar(8),    data.hora      ?? null)
-      .input('ubicacion', sql.NVarChar(160), data.ubicacion ?? null)
+      .input('hora',      sql.VarChar(8),    data.hora ?? null)
+      .input('ubicacion', sql.NVarChar(160), data.ubicacion)
       .query(`
         INSERT INTO incidencias (id, reportado_por, severidad, fecha, hora, ubicacion)
         VALUES (@id, @reportado, @severidad, @fecha, @hora, @ubicacion)
@@ -154,11 +156,13 @@ export async function update(id: number, data: IncidenciaUpdate): Promise<Incide
 
     const sets: string[] = []
     const req = tx.request().input('id', sql.Int, id)
-    if ('reportado_por' in data)      { req.input('reportado', sql.NVarChar(120), data.reportado_por ?? null); sets.push('reportado_por=@reportado') }
-    if (data.severidad !== undefined) { req.input('severidad', sql.NVarChar(20),  data.severidad);             sets.push('severidad=@severidad')     }
-    if (data.fecha     !== undefined) { req.input('fecha',     sql.Date,          data.fecha);                 sets.push('fecha=@fecha')             }
-    if ('hora'      in data)          { req.input('hora',      sql.VarChar(8),    data.hora      ?? null);     sets.push('hora=@hora')               }
-    if ('ubicacion' in data)          { req.input('ubicacion', sql.NVarChar(160), data.ubicacion ?? null);     sets.push('ubicacion=@ubicacion')     }
+    // reportado_por y ubicacion son NOT NULL: solo se tocan si vienen con valor,
+    // nunca se pueden vaciar desde un update parcial.
+    if (data.reportado_por !== undefined) { req.input('reportado', sql.NVarChar(120), data.reportado_por); sets.push('reportado_por=@reportado') }
+    if (data.ubicacion     !== undefined) { req.input('ubicacion', sql.NVarChar(160), data.ubicacion);     sets.push('ubicacion=@ubicacion')     }
+    if (data.severidad     !== undefined) { req.input('severidad', sql.NVarChar(20),  data.severidad);     sets.push('severidad=@severidad')     }
+    if (data.fecha         !== undefined) { req.input('fecha',     sql.Date,          data.fecha);         sets.push('fecha=@fecha')             }
+    if ('hora' in data)                   { req.input('hora',      sql.VarChar(8),    data.hora ?? null);  sets.push('hora=@hora')               }
     if (sets.length) {
       await req.query(`UPDATE incidencias SET ${sets.join(',')} WHERE id=@id`)
     }

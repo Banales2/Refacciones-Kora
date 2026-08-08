@@ -69,9 +69,9 @@ export default function IncidenciaForm({
       categoria:     vals.categoria.trim()     || null,
       severidad:     vals.severidad,
       fecha:         vals.fecha,
-      hora:          vals.hora                 || null,
-      ubicacion:     vals.ubicacion.trim()     || null,
-      reportado_por: vals.reportado_por.trim() || null,
+      hora:          vals.hora || null,
+      ubicacion:     vals.ubicacion.trim(),
+      reportado_por: vals.reportado_por.trim(),
       status:        vals.status,
     })
   }
