@@ -106,7 +106,7 @@ export async function exportVehiculosReporteToPdf(vehiculos: VehiculoRow[], sucu
       autoTable(doc, {
         startY: y,
         margin: { left: margin, right: margin },
-        head: [['Marca / Modelo', 'Serie', 'Placas', 'Estatus', 'Km', 'Tenencia', 'Fecha de compra']],
+        head: [['Marca / Modelo', 'Serie', 'Placas', 'Estatus', 'Km', 'Tenencia', 'Tenencia expira', 'Fecha de compra']],
         body: sub.items.map((v) => [
           `${v.marca} ${v.modelo}`,
           v.serie,
@@ -114,6 +114,7 @@ export async function exportVehiculosReporteToPdf(vehiculos: VehiculoRow[], sucu
           v.status ?? '—',
           v.kilometraje != null ? `${v.kilometraje.toLocaleString('es-MX')} km` : '—',
           v.tenencia ?? '—',
+          formatFecha(v.tenencia_expiracion),
           formatFecha(v.fecha_compra),
         ]),
         headStyles: { fillColor: [51, 51, 51], fontSize: 8 },

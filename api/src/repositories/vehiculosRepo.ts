@@ -17,7 +17,10 @@ export interface VehiculoRow {
   sucursal_id:  number | null
   sucursal:     string | null
   tonelaje:     number | null
-  tenencia:     string | null
+  // Tenencia: la llevan reparto, tractocamiones y utilitarios. Cajas de trailer
+  // y montacargas no, por eso vive en las tres tablas hijas y no en `vehiculos`.
+  tenencia:            string | null
+  tenencia_expiracion: string | null
   ruta_id:      number | null
   ruta:         string | null
   pies:         number | null
@@ -49,7 +52,12 @@ const SELECT_COLS = `
   CASE WHEN v.tipo='camion'       THEN c.ubicacion     WHEN v.tipo='utilitario'   THEN u.ubicacion
        WHEN v.tipo='montacargas'  THEN mc.ubicacion    ELSE NULL END AS ubicacion,
   COALESCE(c.sucursal_id, mc.sucursal_id) AS sucursal_id, s.nombre AS sucursal,
-  t.tonelaje, t.tenencia,
+  t.tonelaje,
+  CASE WHEN v.tipo='camion'       THEN c.tenencia      WHEN v.tipo='tractocamion' THEN t.tenencia
+       WHEN v.tipo='utilitario'   THEN u.tenencia      END AS tenencia,
+  CONVERT(char(10),
+    CASE WHEN v.tipo='camion'     THEN c.tenencia_expiracion WHEN v.tipo='tractocamion' THEN t.tenencia_expiracion
+         WHEN v.tipo='utilitario' THEN u.tenencia_expiracion END, 23) AS tenencia_expiracion,
   COALESCE(t.ruta_id, ct.ruta_id) AS ruta_id, r.nombre AS ruta,
   ct.pies,
   v.seguro_id, seg.poliza AS seguro_poliza, seg.compania AS seguro_compania,
@@ -191,7 +199,9 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
         .input('status',      sql.NVarChar(30),  data.status!)
         .input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null)
         .input('sucursal',    sql.Int,           data.sucursal_id!)
-        .query('INSERT INTO camiones (vehiculo_id,combustible,kilometraje,status,ubicacion,sucursal_id) VALUES (@vid,@combustible,@km,@status,@ubicacion,@sucursal)')
+        .input('tenencia',    sql.NVarChar(50),  data.tenencia ?? null)
+        .input('tenenciaExp', sql.Date,          data.tenencia_expiracion ?? null)
+        .query('INSERT INTO camiones (vehiculo_id,combustible,kilometraje,status,ubicacion,sucursal_id,tenencia,tenencia_expiracion) VALUES (@vid,@combustible,@km,@status,@ubicacion,@sucursal,@tenencia,@tenenciaExp)')
     } else if (data.tipo === 'tractocamion') {
       await sub
         .input('tonelaje',    sql.Int,          data.tonelaje!)
@@ -200,7 +210,8 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
         .input('km',          sql.Int,          data.kilometraje ?? 0)
         .input('status',      sql.NVarChar(30), data.status!)
         .input('ruta',        sql.Int,          data.ruta_id!)
-        .query('INSERT INTO tractocamiones (vehiculo_id,tonelaje,combustible,tenencia,kilometraje,status,ruta_id) VALUES (@vid,@tonelaje,@combustible,@tenencia,@km,@status,@ruta)')
+        .input('tenenciaExp', sql.Date,         data.tenencia_expiracion ?? null)
+        .query('INSERT INTO tractocamiones (vehiculo_id,tonelaje,combustible,tenencia,kilometraje,status,ruta_id,tenencia_expiracion) VALUES (@vid,@tonelaje,@combustible,@tenencia,@km,@status,@ruta,@tenenciaExp)')
     } else if (data.tipo === 'caja_trailer') {
       await sub
         .input('pies',   sql.Int,          data.pies!)
@@ -220,7 +231,9 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
         .input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null)
         .input('status',      sql.NVarChar(30),  data.status!)
         .input('km',          sql.Int,           data.kilometraje ?? 0)
-        .query('INSERT INTO vehiculos_utilitarios (vehiculo_id,combustible,ubicacion,status,kilometraje) VALUES (@vid,@combustible,@ubicacion,@status,@km)')
+        .input('tenencia',    sql.NVarChar(50),  data.tenencia ?? null)
+        .input('tenenciaExp', sql.Date,          data.tenencia_expiracion ?? null)
+        .query('INSERT INTO vehiculos_utilitarios (vehiculo_id,combustible,ubicacion,status,kilometraje,tenencia,tenencia_expiracion) VALUES (@vid,@combustible,@ubicacion,@status,@km,@tenencia,@tenenciaExp)')
     }
 
     await tx.commit()
@@ -285,6 +298,8 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
     if (data.status       !== undefined) { sub.input('status',      sql.NVarChar(30),  data.status);       subSets.push('status=@status') }
     if ('ubicacion' in data)             { sub.input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null); subSets.push('ubicacion=@ubicacion') }
     if (data.sucursal_id  !== undefined) { sub.input('sucursal',    sql.Int,           data.sucursal_id);  subSets.push('sucursal_id=@sucursal') }
+    if ('tenencia' in data)              { sub.input('tenencia',    sql.NVarChar(50),  data.tenencia ?? null); subSets.push('tenencia=@tenencia') }
+    if ('tenencia_expiracion' in data)   { sub.input('tenenciaExp', sql.Date,          data.tenencia_expiracion ?? null); subSets.push('tenencia_expiracion=@tenenciaExp') }
     if (subSets.length) await sub.query(`UPDATE camiones SET ${subSets.join(',')} WHERE vehiculo_id=@vid`)
   } else if (tipo === 'tractocamion') {
     if (data.tonelaje     !== undefined) { sub.input('tonelaje',    sql.Int,           data.tonelaje);     subSets.push('tonelaje=@tonelaje') }
@@ -293,6 +308,7 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
     if (data.kilometraje  !== undefined) { sub.input('km',          sql.Int,           data.kilometraje);  subSets.push('kilometraje=@km') }
     if (data.status       !== undefined) { sub.input('status',      sql.NVarChar(30),  data.status);       subSets.push('status=@status') }
     if (data.ruta_id      !== undefined) { sub.input('ruta',        sql.Int,           data.ruta_id);      subSets.push('ruta_id=@ruta') }
+    if ('tenencia_expiracion' in data)   { sub.input('tenenciaExp', sql.Date,          data.tenencia_expiracion ?? null); subSets.push('tenencia_expiracion=@tenenciaExp') }
     if (subSets.length) await sub.query(`UPDATE tractocamiones SET ${subSets.join(',')} WHERE vehiculo_id=@vid`)
   } else if (tipo === 'caja_trailer') {
     if (data.pies    !== undefined) { sub.input('pies',   sql.Int,          data.pies);    subSets.push('pies=@pies')     }
@@ -310,6 +326,8 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
     if ('ubicacion' in data)             { sub.input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null); subSets.push('ubicacion=@ubicacion') }
     if (data.status       !== undefined) { sub.input('status',      sql.NVarChar(30),  data.status);       subSets.push('status=@status')       }
     if (data.kilometraje  !== undefined) { sub.input('km',          sql.Int,           data.kilometraje);  subSets.push('kilometraje=@km')      }
+    if ('tenencia' in data)              { sub.input('tenencia',    sql.NVarChar(50),  data.tenencia ?? null); subSets.push('tenencia=@tenencia') }
+    if ('tenencia_expiracion' in data)   { sub.input('tenenciaExp', sql.Date,          data.tenencia_expiracion ?? null); subSets.push('tenencia_expiracion=@tenenciaExp') }
     if (subSets.length) await sub.query(`UPDATE vehiculos_utilitarios SET ${subSets.join(',')} WHERE vehiculo_id=@vid`)
   }
 

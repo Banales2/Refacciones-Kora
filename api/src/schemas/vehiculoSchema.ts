@@ -36,9 +36,11 @@ export const VehiculoCreateSchema = z.object({
   // camion + montacargas
   ubicacion:   z.string().max(200).trim().nullable().optional(),
   sucursal_id: z.coerce.number().int().positive().optional(),
+  // camion + tractocamion + utilitario: los únicos que pagan tenencia.
+  tenencia:            z.string().max(50).trim().nullable().optional(),
+  tenencia_expiracion: z.string().date().nullable().optional(),
   // tractocamion
   tonelaje:    z.coerce.number().int().positive().optional(),
-  tenencia:    z.string().max(50).trim().nullable().optional(),
   ruta_id:     z.coerce.number().int().positive().optional(),
   // caja_trailer
   pies:         z.coerce.number().int().positive().optional(),
@@ -76,7 +78,8 @@ export const VehiculoUpdateSchema = z.object({
   ubicacion:    z.string().max(200).trim().nullable().optional(),
   sucursal_id:  z.coerce.number().int().positive().optional(),
   tonelaje:     z.coerce.number().int().positive().optional(),
-  tenencia:     z.string().max(50).trim().nullable().optional(),
+  tenencia:            z.string().max(50).trim().nullable().optional(),
+  tenencia_expiracion: z.string().date().nullable().optional(),
   ruta_id:      z.coerce.number().int().positive().optional(),
   pies:         z.coerce.number().int().positive().optional(),
   fecha_compra: z.string().date().nullable().optional(),

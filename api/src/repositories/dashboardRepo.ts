@@ -35,6 +35,43 @@ export async function findSegurosPorVencer(limite: string): Promise<SeguroPorVen
   return r.recordset
 }
 
+// Tenencias por vencer. Vive en las tres tablas hijas de los tipos que la
+// pagan (reparto, tractocamiones y utilitarios), así que se unen aquí; cajas de
+// trailer y montacargas no tienen esas columnas porque no la llevan.
+export interface TenenciaPorVencer {
+  vehiculo_id:      number
+  vehiculo:         string
+  placas:           string | null
+  tipo:             string
+  folio:            string | null
+  fecha_expiracion: string
+}
+
+export async function findTenenciasPorVencer(limite: string): Promise<TenenciaPorVencer[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('limite', sql.Date, limite)
+    .query(`
+      WITH tenencias AS (
+        SELECT vehiculo_id, tenencia, tenencia_expiracion FROM camiones
+        UNION ALL
+        SELECT vehiculo_id, tenencia, tenencia_expiracion FROM tractocamiones
+        UNION ALL
+        SELECT vehiculo_id, tenencia, tenencia_expiracion FROM vehiculos_utilitarios
+      )
+      SELECT v.id AS vehiculo_id,
+             CONCAT(m.marca, ' ', m.nombre, ' — ', v.numero_serie) AS vehiculo,
+             v.placas, v.tipo, t.tenencia AS folio,
+             CONVERT(char(10), t.tenencia_expiracion, 23) AS fecha_expiracion
+      FROM tenencias t
+      JOIN vehiculos v ON v.id = t.vehiculo_id
+      JOIN modelos   m ON m.id = v.modelo_id
+      WHERE t.tenencia_expiracion IS NOT NULL
+        AND t.tenencia_expiracion <= @limite
+      ORDER BY t.tenencia_expiracion`)
+  return r.recordset
+}
+
 export async function findPermisosPorVencer(limite: string): Promise<PermisoPorVencer[]> {
   const pool = await getPool()
   const r = await pool.request()

@@ -26,6 +26,10 @@ const TIPO_META: Record<TipoVehiculo, { label: string; color: string }> = {
 
 const TIPOS_OPTIONS = Object.entries(TIPO_META).map(([v, m]) => ({ value: v, label: m.label }))
 
+// Los únicos tipos que pagan tenencia. Las cajas de trailer y los montacargas
+// no, por eso el bloque no se les muestra y sus tablas no tienen las columnas.
+const TIPOS_CON_TENENCIA: TipoVehiculo[] = ['camion', 'tractocamion', 'utilitario']
+
 const COMBUSTIBLES = ['Diesel', 'Gasolina', 'Gas LP', 'Gas Natural', 'Eléctrico'].map((c) => ({ value: c, label: c }))
 const STATUSES     = ['Activo', 'Inactivo', 'Taller', 'Baja'].map((s) => ({ value: s, label: s }))
 
@@ -40,7 +44,8 @@ type FormVals = {
   ubicacion:    string
   sucursal_id:  string
   tonelaje:     number | string
-  tenencia:     string
+  tenencia:            string
+  tenencia_expiracion: string
   ruta_id:      string
   pies:         number | string
   fecha_compra: string
@@ -60,7 +65,8 @@ function init(v?: VehiculoRow): FormVals {
     ubicacion:    v?.ubicacion   ?? '',
     sucursal_id:  v?.sucursal_id != null ? String(v.sucursal_id) : '',
     tonelaje:     v?.tonelaje    ?? '',
-    tenencia:     v?.tenencia    ?? '',
+    tenencia:            v?.tenencia ?? '',
+    tenencia_expiracion: v?.tenencia_expiracion ? v.tenencia_expiracion.split('T')[0] : '',
     ruta_id:      v?.ruta_id     != null ? String(v.ruta_id)     : '',
     pies:         v?.pies        ?? '',
     fecha_compra: v?.fecha_compra ? v.fecha_compra.split('T')[0] : '',
@@ -202,12 +208,15 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
         status:      vals.status,
         ubicacion:   vals.ubicacion || null,
         sucursal_id: parseInt(vals.sucursal_id),
+        tenencia:            vals.tenencia || null,
+        tenencia_expiracion: vals.tenencia_expiracion || null,
       }
     } else if (t === 'tractocamion') {
       extra = {
         tonelaje:    Number(vals.tonelaje),
         combustible: vals.combustible,
         tenencia:    vals.tenencia || null,
+        tenencia_expiracion: vals.tenencia_expiracion || null,
         kilometraje: Number(vals.kilometraje),
         status:      vals.status,
         ruta_id:     parseInt(vals.ruta_id),
@@ -231,6 +240,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
         ubicacion:   vals.ubicacion || null,
         status:      vals.status,
         kilometraje: Number(vals.kilometraje),
+        tenencia:            vals.tenencia || null,
+        tenencia_expiracion: vals.tenencia_expiracion || null,
       }
     }
 
@@ -404,9 +415,6 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               <Grid.Col span={6}>
                 <Select label="Translado" data={rutasOpts} placeholder="Translado asignado" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
               </Grid.Col>
-              <Grid.Col span={12}>
-                <TextInput label="Tenencia" placeholder="Folio de tenencia (opcional)" {...form.getInputProps('tenencia')} />
-              </Grid.Col>
             </Grid>
           </>
         )}
@@ -471,6 +479,36 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               </Grid.Col>
               <Grid.Col span={6}>
                 <TextInput label="Ubicación" placeholder="Ubicación actual (opcional)" {...form.getInputProps('ubicacion')} />
+              </Grid.Col>
+            </Grid>
+          </>
+        )}
+
+        {/* Tenencia: un solo bloque para los tres tipos que la pagan, en vez de
+            repetir los campos en cada rama. */}
+        {tipo && TIPOS_CON_TENENCIA.includes(tipo) && (
+          <>
+            <Divider label="Tenencia" labelPosition="left" />
+            <Grid>
+              <Grid.Col span={6}>
+                <TextInput
+                  label="No. de folio"
+                  placeholder="Folio de la tenencia (opcional)"
+                  maxLength={50}
+                  {...form.getInputProps('tenencia')}
+                />
+              </Grid.Col>
+              <Grid.Col span={6}>
+                <DateInput
+                  label="Expira"
+                  placeholder="dd/mm/aaaa"
+                  valueFormat="DD/MM/YYYY"
+                  clearable
+                  description="Vencimiento de la tenencia actual"
+                  value={form.values.tenencia_expiracion || null}
+                  onChange={(d) => form.setFieldValue('tenencia_expiracion', d ?? '')}
+                  error={form.errors.tenencia_expiracion as string}
+                />
               </Grid.Col>
             </Grid>
           </>

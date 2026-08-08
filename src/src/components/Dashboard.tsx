@@ -225,7 +225,12 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
       etiqueta: l.numero ? `${l.conductor} — ${l.numero}` : l.conductor,
       fecha_expiracion: l.fecha_expiracion, dias_restantes: l.dias_restantes, vehiculos: null,
     }))
-    return [...seguros, ...permisos, ...licencias].sort((a, b) => a.dias_restantes - b.dias_restantes)
+    const tenencias = (doc?.tenencias ?? []).map((t) => ({
+      key: `t-${t.vehiculo_id}`, tipo: 'Tenencia' as const, colorTipo: 'indigo', colorAviso: 'orange',
+      etiqueta: t.folio ? `${t.vehiculo} — folio ${t.folio}` : t.vehiculo,
+      fecha_expiracion: t.fecha_expiracion, dias_restantes: t.dias_restantes, vehiculos: null,
+    }))
+    return [...seguros, ...permisos, ...licencias, ...tenencias].sort((a, b) => a.dias_restantes - b.dias_restantes)
   }, [documentosData])
 
   const licenciasPorVencer = documentosData?.data.licencias ?? []

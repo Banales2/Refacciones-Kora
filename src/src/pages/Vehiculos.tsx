@@ -1912,12 +1912,20 @@ function VehiculoDetalle({
                       <InfoItem label="Tonelaje" value={`${vehiculo.tonelaje} ton`} />
                     </Grid.Col>
                   )}
-                  {vehiculo.tenencia && (
-                    <Grid.Col span={{ base: 6, sm: 3 }}>
-                      <InfoItem label="Tenencia" value={vehiculo.tenencia} />
-                    </Grid.Col>
-                  )}
                 </>
+              )}
+              {/* Tenencia: fuera del bloque del tractocamión, que era donde
+                  vivía cuando solo él la llevaba. Ahora también la pagan las
+                  unidades de reparto y los utilitarios. */}
+              {vehiculo.tenencia && (
+                <Grid.Col span={{ base: 6, sm: 3 }}>
+                  <InfoItem label="Folio de tenencia" value={vehiculo.tenencia} />
+                </Grid.Col>
+              )}
+              {vehiculo.tenencia_expiracion && (
+                <Grid.Col span={{ base: 6, sm: 3 }}>
+                  <InfoItem label="Tenencia expira" value={fmtShort(vehiculo.tenencia_expiracion)} />
+                </Grid.Col>
               )}
               {vehiculo.tipo === 'caja_trailer' && vehiculo.pies !== null && (
                 <Grid.Col span={{ base: 6, sm: 3 }}>

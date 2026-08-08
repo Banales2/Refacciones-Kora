@@ -21,7 +21,10 @@ export interface VehiculoRow {
   sucursal_id:  number | null
   sucursal:     string | null
   tonelaje:     number | null
-  tenencia:     string | null
+  // Tenencia: solo reparto, tractocamiones y utilitarios. En los demás tipos
+  // llega null porque no la pagan.
+  tenencia:            string | null
+  tenencia_expiracion: string | null
   ruta_id:      number | null
   ruta:         string | null
   pies:         number | null
@@ -47,7 +50,8 @@ export interface VehiculoCreatePayload {
   ubicacion?:    string | null
   sucursal_id?:  number
   tonelaje?:     number
-  tenencia?:     string | null
+  tenencia?:            string | null
+  tenencia_expiracion?: string | null
   ruta_id?:      number
   pies?:         number
   fecha_compra?: string | null

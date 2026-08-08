@@ -293,6 +293,7 @@ export interface DocumentosPorVencer {
   seguros:   (repo.SeguroPorVencer  & { dias_restantes: number })[]
   permisos:  (repo.PermisoPorVencer & { dias_restantes: number })[]
   licencias: LicenciaPorVencer[]
+  tenencias: (repo.TenenciaPorVencer & { dias_restantes: number })[]
 }
 
 export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
@@ -301,10 +302,11 @@ export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
   const hoyDate = new Date(`${hoy}T12:00:00`)
   const dias = (fecha: string) => diffDias(hoyDate, new Date(`${fecha}T12:00:00`))
 
-  const [seguros, permisos, conductores] = await Promise.all([
+  const [seguros, permisos, conductores, tenencias] = await Promise.all([
     repo.findSegurosPorVencer(limite),
     repo.findPermisosPorVencer(limite),
     repo.findConductoresConVigencia(),
+    repo.findTenenciasPorVencer(limite),
   ])
 
   // Las licencias no se pueden filtrar en SQL (vigencia es varchar): se
@@ -337,6 +339,7 @@ export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
     seguros:  seguros.map((s)  => ({ ...s,  dias_restantes: dias(s.fecha_expiracion) })),
     permisos: permisos.map((p) => ({ ...p, dias_restantes: dias(p.fecha_expiracion) })),
     licencias,
+    tenencias: tenencias.map((t) => ({ ...t, dias_restantes: dias(t.fecha_expiracion) })),
   }
 }
 

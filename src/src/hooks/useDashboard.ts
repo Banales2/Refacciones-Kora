@@ -112,10 +112,22 @@ export interface LicenciaPorVencer {
   dias_restantes:   number
 }
 
+// Tenencia de un vehículo. Solo la pagan reparto, tractocamiones y utilitarios.
+export interface TenenciaPorVencer {
+  vehiculo_id:      number
+  vehiculo:         string
+  placas:           string | null
+  tipo:             string
+  folio:            string | null
+  fecha_expiracion: string
+  dias_restantes:   number
+}
+
 export interface DocumentosPorVencer {
   seguros:   SeguroPorVencer[]
   permisos:  PermisoPorVencer[]
   licencias: LicenciaPorVencer[]
+  tenencias: TenenciaPorVencer[]
 }
 
 // Seguros y permisos de circulación ya vencidos o próximos a vencer (30 días),
