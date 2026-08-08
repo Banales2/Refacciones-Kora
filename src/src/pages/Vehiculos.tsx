@@ -509,11 +509,24 @@ function RequerimientoTable({
                       <IconPencil size={14} />
                     </ActionIcon>
                   </Tooltip>
-                  <Tooltip label="Eliminar">
-                    <ActionIcon variant="subtle" color="red" size="sm" onClick={() => onDelete(item)}>
-                      <IconTrash size={14} />
-                    </ActionIcon>
-                  </Tooltip>
+                  {/* Lo heredado de la plantilla del modelo se pausa, no se
+                      borra: el API lo rechaza igual, aquí sólo se explica. Va
+                      con `data-disabled` y no con `disabled` porque un botón
+                      deshabilitado no emite eventos y se perdería el tooltip. */}
+                  {item.plantilla_origen_id ? (
+                    <Tooltip label="Viene de la plantilla del modelo: edítalo y ponlo como pausado" multiline w={220}>
+                      <ActionIcon variant="subtle" color="red" size="sm"
+                        data-disabled onClick={(e) => e.preventDefault()}>
+                        <IconTrash size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  ) : (
+                    <Tooltip label="Eliminar">
+                      <ActionIcon variant="subtle" color="red" size="sm" onClick={() => onDelete(item)}>
+                        <IconTrash size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
                 </Group>
               </Table.Td>
             </Table.Tr>
