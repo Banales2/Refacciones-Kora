@@ -287,14 +287,16 @@ export function RequerimientoForm({
             {...form.getInputProps('intervalo_meses')}
           />
         )}
+        {/* Un preventivo no se completa: se atiende y vuelve a arrancar el
+            ciclo. Si por ahora no aplica, se pausa. */}
         <Select
           label="Status" required
           data={[
             { value: 'activo',     label: 'Activo' },
-            { value: 'completado', label: 'Completado' },
             { value: 'pausado',    label: 'Pausado' },
             { value: 'cancelado',  label: 'Cancelado' },
           ]}
+          allowDeselect={false}
           {...form.getInputProps('status')}
         />
 

@@ -5,6 +5,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 export type TriggerMode = 'km' | 'meses' | 'ambos'
+// 'completado' ya no se puede asignar a un preventivo —no se termina, se le
+// reinicia el ciclo— pero se conserva en el tipo para que un registro viejo que
+// lo traiga se siga mostrando en vez de romper la tabla.
 export type StatusReq   = 'activo' | 'completado' | 'pausado' | 'cancelado'
 
 export interface RequerimientoExclusivo {
