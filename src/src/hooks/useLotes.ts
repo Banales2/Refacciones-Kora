@@ -14,6 +14,10 @@ export interface Lote {
   cantidad_disponible: number
   num_factura: string | null
   proveedor: string
+  // Quién hizo la compra y quién la autorizó. El segundo lo pone la API con la
+  // cuenta que registró el lote: no se manda ni se edita.
+  comprado_por: string
+  autorizado_por: string
 }
 
 interface LotesResponse {
@@ -27,6 +31,7 @@ export interface LotePayload {
   costo_unitario: number
   cantidad_inicial: number
   num_factura: string
+  comprado_por: string
 }
 
 export function useLotes(piezaId: number | null) {

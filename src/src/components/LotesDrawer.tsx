@@ -13,6 +13,8 @@ import {
 } from '../hooks/useLotes'
 import type { Lote, LotePayload } from '../hooks/useLotes'
 import { useProveedores } from '../hooks/useProveedores'
+import { useUsuarioActual } from '../hooks/useUsuarioActual'
+import { TEXTO_SIMPLE, limpiarTextoSimple } from '../lib/validaciones'
 
 function stockColor(qty: number) {
   if (qty === 0) return 'red'
@@ -47,16 +49,20 @@ type LoteFormValues = {
   costo_unitario: number | string
   cantidad_inicial: number | string
   num_factura: string
+  comprado_por: string
 }
 
 function LoteForm({
   initial,
+  autorizadoPor,
   isPending,
   error,
   onSubmit,
   onCancel,
 }: {
   initial?: LoteFormValues
+  /** Sólo al editar: quien autorizó la compra en su momento. */
+  autorizadoPor?: string
   isPending: boolean
   error: string | null
   onSubmit: (v: LoteFormValues) => void
@@ -69,6 +75,11 @@ function LoteForm({
     label: p.nombre,
   }))
 
+  // Sólo informativo: el valor real lo pone la API con la cuenta de la sesión.
+  // Al editar se muestra el autorizador original, que no cambia.
+  const { data: usuario } = useUsuarioActual()
+  const autoriza = autorizadoPor ?? usuario?.data.nombre ?? ''
+
   const form = useForm<LoteFormValues>({
     initialValues: initial ?? {
       proveedor_id: '',
@@ -76,6 +87,7 @@ function LoteForm({
       costo_unitario: '',
       cantidad_inicial: '',
       num_factura: '',
+      comprado_por: '',
     },
     validate: {
       proveedor_id: (v) => (!v ? 'Proveedor requerido' : null),
@@ -99,6 +111,12 @@ function LoteForm({
         if (!v.trim()) return 'No. factura requerido'
         if (v.trim().length > 30) return 'Máximo 30 caracteres'
         if (!/^[A-Za-z0-9-]+$/.test(v.trim())) return 'Solo letras, números y guiones'
+        return null
+      },
+      comprado_por: (v) => {
+        if (!v.trim()) return 'Requerido'
+        if (v.trim().length > 120) return 'Máximo 120 caracteres'
+        if (!TEXTO_SIMPLE.test(v.trim())) return 'Solo letras, números, espacios y guiones'
         return null
       },
     },
@@ -154,6 +172,25 @@ function LoteForm({
             form.setFieldValue('num_factura', e.currentTarget.value.replace(/[^A-Za-z0-9-]/g, ''))
           }
         />
+        <TextInput
+          label="Comprado por"
+          placeholder="Quién hizo la compra"
+          description="El empleado que realizó la compra"
+          maxLength={120}
+          required
+          {...form.getInputProps('comprado_por')}
+          onChange={(e) =>
+            form.setFieldValue('comprado_por', limpiarTextoSimple(e.currentTarget.value, 120))
+          }
+        />
+        <TextInput
+          label="Autorizado por"
+          value={autoriza}
+          disabled
+          description={autorizadoPor
+            ? 'Quien registró la compra; no cambia al editarla'
+            : 'Se registra automáticamente con tu cuenta: registrarla es autorizarla'}
+        />
         {error && (
           <Alert color="red" title="Error">{error}</Alert>
         )}
@@ -194,6 +231,7 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
       costo_unitario: Number(values.costo_unitario),
       cantidad_inicial: Number(values.cantidad_inicial),
       num_factura: values.num_factura.trim(),
+      comprado_por: values.comprado_por.trim(),
     }
   }
 
@@ -270,13 +308,15 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                 <Text c="dimmed">Esta refacción no tiene lotes registrados.</Text>
               </Center>
             ) : (
-              <Table.ScrollContainer minWidth={560}>
+              <Table.ScrollContainer minWidth={840}>
                 <Table withTableBorder withColumnBorders striped>
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Fecha compra</Table.Th>
                       <Table.Th>Proveedor</Table.Th>
                       <Table.Th>Factura</Table.Th>
+                      <Table.Th>Compró</Table.Th>
+                      <Table.Th>Autorizó</Table.Th>
                       <Table.Th style={{ textAlign: 'right' }}>Costo unit.</Table.Th>
                       <Table.Th style={{ textAlign: 'center' }}>Inicial</Table.Th>
                       <Table.Th style={{ textAlign: 'center' }}>Disponible</Table.Th>
@@ -289,6 +329,8 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                         <Table.Td>{formatDate(lote.fecha_compra)}</Table.Td>
                         <Table.Td>{lote.proveedor}</Table.Td>
                         <Table.Td c="dimmed">{lote.num_factura ?? '—'}</Table.Td>
+                        <Table.Td>{lote.comprado_por || '—'}</Table.Td>
+                        <Table.Td>{lote.autorizado_por || '—'}</Table.Td>
                         <Table.Td style={{ textAlign: 'right' }}>
                           {formatMXN(lote.costo_unitario)}
                         </Table.Td>
@@ -350,7 +392,9 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
               costo_unitario: editLote.costo_unitario,
               cantidad_inicial: editLote.cantidad_inicial,
               num_factura: editLote.num_factura ?? '',
+              comprado_por: editLote.comprado_por,
             }}
+            autorizadoPor={editLote.autorizado_por}
             isPending={updateMut.isPending}
             error={updateMut.error ? (updateMut.error as Error).message : null}
             onSubmit={handleUpdate}

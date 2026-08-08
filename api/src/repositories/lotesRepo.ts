@@ -6,6 +6,7 @@ import { LoteCreate, LoteUpdate } from '../schemas/loteSchema'
 const SELECT_LOTE = `
   SELECT l.id, l.pieza_id, l.proveedor_id, l.fecha_compra, l.costo_unitario,
          l.cantidad_inicial, l.cantidad_disponible, l.num_factura,
+         l.comprado_por, l.autorizado_por,
          pr.nombre AS proveedor
   FROM lotes_pieza l
   JOIN proveedores pr ON pr.id = l.proveedor_id
@@ -19,7 +20,9 @@ export async function findById(id: number): Promise<LoteConProveedor | null> {
   return result.recordset[0] ?? null
 }
 
-export async function create(piezaId: number, data: LoteCreate): Promise<LoteConProveedor> {
+export async function create(
+  piezaId: number, data: LoteCreate, autorizadoPor: string
+): Promise<LoteConProveedor> {
   const pool = await getPool()
   const result = await pool.request()
     .input('pieza_id', sql.Int, piezaId)
@@ -28,11 +31,15 @@ export async function create(piezaId: number, data: LoteCreate): Promise<LoteCon
     .input('costo_unitario', sql.Decimal(18, 2), data.costo_unitario)
     .input('cantidad_inicial', sql.Int, data.cantidad_inicial)
     .input('num_factura', sql.NVarChar(100), data.num_factura ?? null)
+    .input('comprado_por', sql.NVarChar(120), data.comprado_por)
+    .input('autorizado_por', sql.NVarChar(120), autorizadoPor)
     .query(`
       INSERT INTO lotes_pieza
-        (pieza_id, proveedor_id, fecha_compra, costo_unitario, cantidad_inicial, cantidad_disponible, num_factura)
+        (pieza_id, proveedor_id, fecha_compra, costo_unitario, cantidad_inicial, cantidad_disponible,
+         num_factura, comprado_por, autorizado_por)
       OUTPUT INSERTED.id
-      VALUES (@pieza_id, @proveedor_id, @fecha_compra, @costo_unitario, @cantidad_inicial, @cantidad_inicial, @num_factura)
+      VALUES (@pieza_id, @proveedor_id, @fecha_compra, @costo_unitario, @cantidad_inicial, @cantidad_inicial,
+              @num_factura, @comprado_por, @autorizado_por)
     `)
   return findById(result.recordset[0].id) as Promise<LoteConProveedor>
 }
@@ -71,6 +78,12 @@ export async function update(id: number, data: LoteUpdate, newCantidadDisponible
   if ('num_factura' in data) {
     req.input('num_factura', sql.NVarChar(100), data.num_factura ?? null)
     sets.push('num_factura = @num_factura')
+  }
+  // `autorizado_por` no está aquí a propósito: registra quién dio de alta la
+  // compra y no cambia. `comprado_por` sí se corrige, es un dato del lote.
+  if (data.comprado_por !== undefined) {
+    req.input('comprado_por', sql.NVarChar(120), data.comprado_por)
+    sets.push('comprado_por = @comprado_por')
   }
 
   if (sets.length === 0) return findById(id)

@@ -24,4 +24,8 @@ export interface LoteConProveedor {
   cantidad_disponible: number
   num_factura: string | null
   proveedor: string
+  // Quién hizo la compra (un empleado, texto libre) y quién la autorizó. El
+  // segundo es la cuenta que registró el lote: no llega del cliente ni se edita.
+  comprado_por: string
+  autorizado_por: string
 }

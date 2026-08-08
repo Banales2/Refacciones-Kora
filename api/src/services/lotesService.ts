@@ -3,8 +3,10 @@ import { LoteConProveedor } from '../types/domain'
 import { LoteCreate, LoteUpdate } from '../schemas/loteSchema'
 import { NotFoundError, ValidationError } from '../shared/errors'
 
-export async function createLote(piezaId: number, data: LoteCreate): Promise<LoteConProveedor> {
-  return repo.create(piezaId, data)
+export async function createLote(
+  piezaId: number, data: LoteCreate, autorizadoPor: string
+): Promise<LoteConProveedor> {
+  return repo.create(piezaId, data, autorizadoPor)
 }
 
 export async function updateLote(id: number, data: LoteUpdate): Promise<LoteConProveedor> {

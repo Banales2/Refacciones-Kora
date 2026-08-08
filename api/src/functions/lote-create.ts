@@ -4,6 +4,7 @@ import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { LoteCreateSchema } from '../schemas/loteSchema'
+import { nombreOCorreo } from '../shared/usuario'
 import * as service from '../services/lotesService'
 
 export async function loteCreate(
@@ -16,7 +17,9 @@ export async function loteCreate(
     if (isNaN(piezaId)) return { status: 400, jsonBody: { error: 'ID de pieza inválido' } }
 
     const body = LoteCreateSchema.parse(await request.json())
-    const created = await service.createLote(piezaId, body)
+    // Quien registra la compra es quien la autoriza: sale de la sesión, no del
+    // cuerpo, para que no pueda quedar a nombre de otro.
+    const created = await service.createLote(piezaId, body, await nombreOCorreo(user))
 
     await audit({
       user,

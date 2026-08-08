@@ -1,4 +1,15 @@
 import { z } from 'zod'
+import { TEXTO_SIMPLE } from './common'
+
+// Quién hizo la compra. Es un empleado, no un catálogo: texto libre acotado.
+// `autorizado_por` no aparece en ningún schema a propósito: no se recibe del
+// cliente ni se edita, la API lo toma de la cuenta que registra el lote.
+const compradoPor = z
+  .string()
+  .trim()
+  .min(1, 'Requerido')
+  .max(120, 'Máximo 120 caracteres')
+  .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones')
 
 // Fecha local (no UTC) para no rechazar "hoy" en zonas horarias detrás de UTC.
 function todayIso() {
@@ -29,6 +40,7 @@ export const LoteCreateSchema = z.object({
     .min(1, 'Núm. factura requerido')
     .max(30, 'Máximo 30 caracteres')
     .regex(/^[A-Za-z0-9-]+$/, 'Solo letras, números y guiones'),
+  comprado_por: compradoPor,
 })
 
 export const LoteUpdateSchema = z.object({
@@ -52,6 +64,7 @@ export const LoteUpdateSchema = z.object({
     .max(30, 'Máximo 30 caracteres')
     .regex(/^[A-Za-z0-9-]+$/, 'Solo letras, números y guiones')
     .optional(),
+  comprado_por: compradoPor.optional(),
 })
 
 export type LoteCreate = z.infer<typeof LoteCreateSchema>
