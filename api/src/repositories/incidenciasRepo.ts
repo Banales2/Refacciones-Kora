@@ -104,6 +104,19 @@ export async function findAllConVehiculo(): Promise<IncidenciaConVehiculo[]> {
   return r.recordset
 }
 
+// Quiénes han reportado algo alguna vez, para ofrecerlos en el formulario. No
+// hay catálogo de empleados: el nombre es texto libre y las repeticiones salen
+// de lo ya capturado, igual que las categorías.
+export async function findReportadores(): Promise<string[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT DISTINCT reportado_por FROM incidencias
+    WHERE LTRIM(RTRIM(reportado_por)) <> ''
+    ORDER BY reportado_por
+  `)
+  return r.recordset.map((row: { reportado_por: string }) => row.reportado_por)
+}
+
 export async function findById(id: number): Promise<Incidencia | null> {
   const pool = await getPool()
   const r = await pool.request()

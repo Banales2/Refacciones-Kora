@@ -10,6 +10,10 @@ export async function getAll() {
   return repo.findAllConVehiculo()
 }
 
+export async function getReportadores() {
+  return repo.findReportadores()
+}
+
 export async function create(
   vehiculoId: number,
   data: Omit<IncidenciaCreate, 'vehiculo_id'>,

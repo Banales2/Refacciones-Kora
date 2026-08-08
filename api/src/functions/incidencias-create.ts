@@ -3,6 +3,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
+import { nombreOCorreo } from '../shared/usuario'
 import * as service from '../services/incidenciasService'
 import { IncidenciaCreateSchema } from '../schemas/incidenciaSchema'
 
@@ -14,7 +15,7 @@ export async function incidenciasCreate(req: HttpRequest, ctx: InvocationContext
     const body = IncidenciaCreateSchema.parse(await req.json())
     // Quien registra la incidencia es quien la autoriza: sale de la sesión, no
     // del cuerpo, para que nadie pueda darla de alta a nombre de otro.
-    const created = await service.create(vehiculoId, body, user.userDetails)
+    const created = await service.create(vehiculoId, body, await nombreOCorreo(user))
     await audit({
       user,
       accion: 'CREAR',

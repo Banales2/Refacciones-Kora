@@ -9,6 +9,7 @@ import * as sql from 'mssql'
 import { getPool } from './db'
 import { ClientPrincipal } from './auth'
 import { Fila } from './snapshot'
+import { nombreEnBD } from './usuario'
 
 export type Accion = 'CREAR' | 'EDITAR' | 'ELIMINAR' | 'VER_SENSIBLE' | 'LOGIN' | 'EXPORTAR'
 
@@ -152,35 +153,6 @@ function resumirCambios(cambios: Cambio[]): string {
     .join(' · ')
 }
 
-// El nombre vive en `usuarios` y no cambia casi nunca, así que se cachea por
-// proceso. El coste de una entrada obsoleta es un nombre viejo en un registro;
-// el de no cachear, una consulta extra en cada escritura de la aplicación.
-const nombres = new Map<string, string | null>()
-
-async function nombreDe(userId: string): Promise<string | null> {
-  if (nombres.has(userId)) return nombres.get(userId) ?? null
-  try {
-    const pool = await getPool()
-    const r = await pool.request()
-      .input('oid', sql.NVarChar(100), userId)
-      .query(`SELECT TOP 1 nombre FROM usuarios
-              WHERE TRY_CONVERT(uniqueidentifier, @oid) IS NOT NULL
-                AND EntraObjectId = TRY_CONVERT(uniqueidentifier, @oid)`)
-    const nombre = (r.recordset[0]?.nombre as string) ?? null
-    nombres.set(userId, nombre)
-    return nombre
-  } catch {
-    // Sin cachear el fallo: la próxima escritura vuelve a intentarlo.
-    return null
-  }
-}
-
-// `userId` de Static Web Apps viene sin guiones; la tabla los usa.
-function conGuiones(valor: string): string {
-  if (valor.includes('-') || valor.length !== 32) return valor
-  return [valor.slice(0, 8), valor.slice(8, 12), valor.slice(12, 16), valor.slice(16, 20), valor.slice(20)].join('-')
-}
-
 const MAX_DESCRIPCION = 1000
 
 // Qué llega a la tabla. `VER_SENSIBLE` se dispara en cada listado de
@@ -231,7 +203,7 @@ export async function audit(entry: AuditEntry): Promise<void> {
   if (!PERSISTIDAS.has(accion)) return
 
   try {
-    const nombre = await nombreDe(conGuiones(user.userId))
+    const nombre = await nombreEnBD(user.userId)
     const pool = await getPool()
     await pool.request()
       .input('email',       sql.NVarChar(255), user.userDetails ?? '(desconocido)')

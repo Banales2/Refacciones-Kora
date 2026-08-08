@@ -5,7 +5,8 @@ import { DateInput, TimeInput } from '@mantine/dates'
 import { useForm } from '@mantine/form'
 import type { Incidencia, IncidenciaPayload, Severidad, StatusIncidencia } from '../hooks/useIncidencias'
 import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
-import { useAuth } from '../hooks/useAuth'
+import { useReportadorOptions } from '../hooks/useReportadorOptions'
+import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre } from '../lib/validaciones'
 
 function todayIso() {
@@ -63,10 +64,13 @@ export default function IncidenciaForm({
   const { options: categoriaOptions, setSearch: setCategoriaSearch } =
     useCategoriaOptions(form.values.categoria, initial?.categoria)
 
+  const { options: reportadorOptions, setSearch: setReportadorSearch } =
+    useReportadorOptions(form.values.reportado_por, initial?.reportado_por)
+
   // Sólo informativo: el valor real lo pone la API con la cuenta de la sesión.
   // Al editar se muestra el autorizador original, que no cambia.
-  const { user } = useAuth()
-  const autorizadoPor = initial?.autorizado_por ?? user?.userDetails ?? ''
+  const { data: usuario } = useUsuarioActual()
+  const autorizadoPor = initial?.autorizado_por ?? usuario?.data.nombre ?? ''
 
   function handleSubmit(vals: typeof form.values) {
     onSubmit({
@@ -137,12 +141,16 @@ export default function IncidenciaForm({
           {...form.getInputProps('ubicacion')}
           onChange={(e) => form.setFieldValue('ubicacion', limpiarTextoLibre(e.currentTarget.value, 160))}
         />
-        <TextInput
-          label="Reportado por" required maxLength={120}
-          placeholder="Quién la reportó"
+        <Select
+          label="Reportado por" required
+          placeholder="Selecciona o escribe quién la reportó"
           description="El empleado que detectó el problema"
+          data={reportadorOptions}
+          searchable
+          onSearchChange={(v) => setReportadorSearch(limpiarTextoSimple(v, 120))}
+          nothingFoundMessage="Escribe el nombre de quien la reportó"
           {...form.getInputProps('reportado_por')}
-          onChange={(e) => form.setFieldValue('reportado_por', limpiarTextoSimple(e.currentTarget.value, 120))}
+          onChange={(v) => { form.setFieldValue('reportado_por', v ?? ''); setReportadorSearch('') }}
         />
         <TextInput
           label="Autorizado por"

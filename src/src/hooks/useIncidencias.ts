@@ -54,6 +54,14 @@ export function useIncidencias() {
   })
 }
 
+// Nombres ya usados al reportar, para ofrecerlos en el formulario.
+export function useIncidenciaReportadores() {
+  return useQuery({
+    queryKey: ['incidencias-reportadores'],
+    queryFn: () => api.get<{ data: string[] }>('/incidencias/reportadores'),
+  })
+}
+
 export function useIncidenciasVehiculo(vehiculoId: number) {
   return useQuery({
     queryKey: ['incidencias', vehiculoId],
@@ -68,6 +76,7 @@ function invalidar(qc: ReturnType<typeof useQueryClient>, vehiculoId: number) {
   qc.invalidateQueries({ queryKey: ['incidencias', vehiculoId] })
   qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })
   qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
+  qc.invalidateQueries({ queryKey: ['incidencias-reportadores'] })
 }
 
 export function useCreateIncidencia(vehiculoId: number) {
