@@ -25,6 +25,9 @@ export interface Incidencia {
   fecha:         string
   hora:          string | null
   ubicacion:     string
+  // Quien reporta detectó el problema; quien registra la incidencia la autoriza.
+  // Lo pone la API con la cuenta de la sesión: no se manda ni se edita.
+  autorizado_por: string
 }
 
 export interface IncidenciaConVehiculo extends Incidencia {

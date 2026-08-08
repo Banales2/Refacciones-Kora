@@ -12,7 +12,9 @@ export async function incidenciasCreate(req: HttpRequest, ctx: InvocationContext
     const vehiculoId = parseInt(req.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     const body = IncidenciaCreateSchema.parse(await req.json())
-    const created = await service.create(vehiculoId, body)
+    // Quien registra la incidencia es quien la autoriza: sale de la sesión, no
+    // del cuerpo, para que nadie pueda darla de alta a nombre de otro.
+    const created = await service.create(vehiculoId, body, user.userDetails)
     await audit({
       user,
       accion: 'CREAR',

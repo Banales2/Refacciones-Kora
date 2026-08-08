@@ -41,6 +41,8 @@ export const IncidenciaBase = {
   hora:      z.string().regex(HORA, 'Formato HH:MM').nullable().optional(),
 }
 
+// `autorizado_por` no aparece en ningún schema a propósito: no se recibe del
+// cliente ni se edita. La API lo toma de la cuenta de la sesión al dar de alta.
 export const IncidenciaCreateSchema = z.object({
   ...IncidenciaBase,
   status: z.enum(['activo', 'completado', 'pausado', 'cancelado']).default('activo'),

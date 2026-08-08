@@ -30,6 +30,10 @@ export interface Incidencia {
   fecha:         string
   hora:          string | null
   ubicacion:     string
+  // Quien detectó el problema (`reportado_por`) rara vez es quien lo da de alta.
+  // Registrar la incidencia es autorizarla, así que el autorizador es la cuenta
+  // de la sesión: no llega del cliente y no se edita después.
+  autorizado_por: string
 }
 
 export interface IncidenciaConVehiculo extends Incidencia {
@@ -69,7 +73,8 @@ const HORA_TXT = `CONVERT(varchar(5), i.hora, 108) AS hora`
 
 const SELECT_INC = `
   SELECT ${PENDIENTE_COLS},
-         i.reportado_por, i.severidad, i.fecha, ${HORA_TXT}, i.ubicacion
+         i.reportado_por, i.severidad, i.fecha, ${HORA_TXT}, i.ubicacion,
+         i.autorizado_por
   FROM pendientes p
   JOIN incidencias i ON i.id = p.id`
 
@@ -87,6 +92,7 @@ export async function findAllConVehiculo(): Promise<IncidenciaConVehiculo[]> {
   const r = await pool.request().query(`
     SELECT ${PENDIENTE_COLS},
            i.reportado_por, i.severidad, i.fecha, ${HORA_TXT}, i.ubicacion,
+           i.autorizado_por,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
            v.tipo AS vehiculo_tipo
     FROM pendientes p
@@ -106,7 +112,7 @@ export async function findById(id: number): Promise<Incidencia | null> {
   return r.recordset[0] ?? null
 }
 
-export async function create(data: IncidenciaCreate): Promise<Incidencia> {
+export async function create(data: IncidenciaCreate, autorizadoPor: string): Promise<Incidencia> {
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
@@ -127,9 +133,10 @@ export async function create(data: IncidenciaCreate): Promise<Incidencia> {
       .input('fecha',     sql.Date,          data.fecha)
       .input('hora',      sql.VarChar(8),    data.hora ?? null)
       .input('ubicacion', sql.NVarChar(160), data.ubicacion)
+      .input('autoriza',  sql.NVarChar(120), autorizadoPor)
       .query(`
-        INSERT INTO incidencias (id, reportado_por, severidad, fecha, hora, ubicacion)
-        VALUES (@id, @reportado, @severidad, @fecha, @hora, @ubicacion)
+        INSERT INTO incidencias (id, reportado_por, severidad, fecha, hora, ubicacion, autorizado_por)
+        VALUES (@id, @reportado, @severidad, @fecha, @hora, @ubicacion, @autoriza)
       `)
     await tx.commit()
   } catch (err) {
@@ -139,6 +146,8 @@ export async function create(data: IncidenciaCreate): Promise<Incidencia> {
   return (await findById(id))!
 }
 
+// `autorizado_por` no se edita: deja constancia de quién dio de alta —y con eso
+// autorizó— la incidencia, no de quién la tocó por última vez.
 export async function update(id: number, data: IncidenciaUpdate): Promise<Incidencia | null> {
   const existe = await findById(id)
   if (!existe) return null

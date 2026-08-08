@@ -51,7 +51,7 @@ export default function Incidencias() {
     return incidencias.filter((i) => {
       if (filtro === 'abiertas' && i.status !== 'activo') return false
       if (!q) return true
-      return [i.nombre, i.categoria, i.vehiculo_nombre, i.ubicacion, i.reportado_por]
+      return [i.nombre, i.categoria, i.vehiculo_nombre, i.ubicacion, i.reportado_por, i.autorizado_por]
         .some((c) => c?.toLowerCase().includes(q))
     })
   }, [incidencias, filtro, debounced])
@@ -145,7 +145,7 @@ export default function Incidencias() {
             </Text>
           </Center>
         ) : (
-          <Table.ScrollContainer minWidth={900}>
+          <Table.ScrollContainer minWidth={1040}>
             <Table striped highlightOnHover withTableBorder>
               <Table.Thead>
                 <Table.Tr>
@@ -155,6 +155,7 @@ export default function Incidencias() {
                   <Table.Th>Severidad</Table.Th>
                   <Table.Th>Reportada</Table.Th>
                   <Table.Th>Reportó</Table.Th>
+                  <Table.Th>Autorizó</Table.Th>
                   <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
                   <Table.Th style={{ width: 80 }} />
                 </Table.Tr>
@@ -174,6 +175,11 @@ export default function Incidencias() {
                       <Table.Td><Text size="sm">{fmtFechaHora(i.fecha, i.hora)}</Text></Table.Td>
                       <Table.Td>
                         {i.reportado_por ?? <Text component="span" c="dimmed" size="sm">—</Text>}
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm">
+                          {i.autorizado_por || <Text component="span" c="dimmed" size="sm">—</Text>}
+                        </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>
                         <Badge variant="light" color={st.color} size="sm">{st.label}</Badge>

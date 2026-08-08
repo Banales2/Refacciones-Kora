@@ -10,8 +10,12 @@ export async function getAll() {
   return repo.findAllConVehiculo()
 }
 
-export async function create(vehiculoId: number, data: Omit<IncidenciaCreate, 'vehiculo_id'>) {
-  return repo.create({ ...data, vehiculo_id: vehiculoId })
+export async function create(
+  vehiculoId: number,
+  data: Omit<IncidenciaCreate, 'vehiculo_id'>,
+  autorizadoPor: string,
+) {
+  return repo.create({ ...data, vehiculo_id: vehiculoId }, autorizadoPor)
 }
 
 export async function update(id: number, data: IncidenciaUpdate) {

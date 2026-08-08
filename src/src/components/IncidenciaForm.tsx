@@ -5,6 +5,7 @@ import { DateInput, TimeInput } from '@mantine/dates'
 import { useForm } from '@mantine/form'
 import type { Incidencia, IncidenciaPayload, Severidad, StatusIncidencia } from '../hooks/useIncidencias'
 import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
+import { useAuth } from '../hooks/useAuth'
 import { TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre } from '../lib/validaciones'
 
 function todayIso() {
@@ -61,6 +62,11 @@ export default function IncidenciaForm({
 
   const { options: categoriaOptions, setSearch: setCategoriaSearch } =
     useCategoriaOptions(form.values.categoria, initial?.categoria)
+
+  // Sólo informativo: el valor real lo pone la API con la cuenta de la sesión.
+  // Al editar se muestra el autorizador original, que no cambia.
+  const { user } = useAuth()
+  const autorizadoPor = initial?.autorizado_por ?? user?.userDetails ?? ''
 
   function handleSubmit(vals: typeof form.values) {
     onSubmit({
@@ -134,8 +140,17 @@ export default function IncidenciaForm({
         <TextInput
           label="Reportado por" required maxLength={120}
           placeholder="Quién la reportó"
+          description="El empleado que detectó el problema"
           {...form.getInputProps('reportado_por')}
           onChange={(e) => form.setFieldValue('reportado_por', limpiarTextoSimple(e.currentTarget.value, 120))}
+        />
+        <TextInput
+          label="Autorizado por"
+          value={autorizadoPor}
+          disabled
+          description={initial
+            ? 'Quien dio de alta la incidencia; no cambia al editarla'
+            : 'Se registra automáticamente con tu cuenta: darla de alta es autorizarla'}
         />
         <Select
           label="Status" required

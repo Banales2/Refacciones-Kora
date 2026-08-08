@@ -97,6 +97,7 @@ const CONSULTAS: Record<string, string> = {
 
   incidencias: `
     SELECT p.*, i.reportado_por, i.severidad, i.fecha, i.hora, i.ubicacion,
+           i.autorizado_por,
            v.numero_serie AS vehiculo_serie, v.placas AS vehiculo_placas
     FROM pendientes p
     JOIN incidencias i ON i.id = p.id
