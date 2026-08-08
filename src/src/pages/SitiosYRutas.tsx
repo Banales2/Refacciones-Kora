@@ -3,7 +3,7 @@
 // formulario genérico (nombre + ubicación) con CRUD.
 import { useState } from 'react'
 import {
-  Stack, Group, Text, TextInput, Table, Tabs,
+  Stack, Group, Text, TextInput, Select, Table, Tabs,
   Loader, Center, Alert, Button, ActionIcon,
   Modal, Tooltip, Divider, Badge,
 } from '@mantine/core'
@@ -39,6 +39,7 @@ import {
   TEXTO_SIMPLE, TEXTO_LIBRE, CONTACTO, CODIGO,
   limpiarTextoSimple, limpiarTextoLibre, limpiarContacto, limpiarCodigo,
 } from '../lib/validaciones'
+import { useCompaniaOptions } from '../hooks/useCompaniaOptions'
 import { estadoVigencia, parseVigencia } from '../lib/vigenciaLicencia'
 import type { Sucursal, SucursalPayload } from '../hooks/useSucursales'
 import type { Ruta, RutaPayload } from '../hooks/useRutas'
@@ -934,6 +935,12 @@ function SeguroForm({
     },
   })
 
+  // Las compañías ya usadas en otras pólizas, para no reescribirlas (ni con otra
+  // ortografía) cada vez. Igual que la categoría de un requerimiento: si no está
+  // en la lista, se crea escribiéndola.
+  const { options: companiaOptions, setSearch: setCompaniaSearch } =
+    useCompaniaOptions(form.values.compania, initial?.compania)
+
   return (
     <form onSubmit={form.onSubmit((v) => onSubmit({
       poliza:           v.poliza.trim(),
@@ -942,7 +949,16 @@ function SeguroForm({
     }))}>
       <Stack gap="sm">
         <TextInput label="No. póliza" placeholder="Ej. POL-123456" required {...form.getInputProps('poliza')} />
-        <TextInput label="Compañía"         placeholder="Ej. GNP Seguros"  required {...form.getInputProps('compania')} />
+        <Select
+          label="Compañía" required
+          placeholder="Selecciona o escribe para crear una compañía"
+          data={companiaOptions}
+          searchable
+          onSearchChange={(v) => setCompaniaSearch(limpiarTextoLibre(v, 120))}
+          nothingFoundMessage="Escribe para crear una nueva compañía"
+          {...form.getInputProps('compania')}
+          onChange={(v) => { form.setFieldValue('compania', v ?? ''); setCompaniaSearch('') }}
+        />
         <TextInput label="Fecha de expiración" type="date" required {...form.getInputProps('fecha_expiracion')} />
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Group justify="flex-end" mt="xs">
