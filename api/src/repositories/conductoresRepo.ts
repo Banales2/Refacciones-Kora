@@ -16,6 +16,9 @@ export interface Conductor {
   licencia_federal_numero:     string | null
   licencia_federal_expediente: string | null
   licencia_federal_vigencia:   string | null
+  // El expediente se renueva por su cuenta, en fecha distinta de la licencia
+  // que lo ampara, así que lleva su propia vigencia.
+  licencia_federal_expediente_vigencia: string | null
 }
 
 // Campos que el alta/edición puede mandar. Los de licencia son opcionales:
@@ -28,12 +31,14 @@ export interface ConductorInput {
   licencia_federal_numero?:     string | null
   licencia_federal_expediente?: string | null
   licencia_federal_vigencia?:   string | null
+  licencia_federal_expediente_vigencia?: string | null
 }
 
 const COLS = [
   'id', 'nombre', 'ubicacion',
   'licencia_estatal_numero', 'licencia_estatal_vigencia',
   'licencia_federal_numero', 'licencia_federal_expediente', 'licencia_federal_vigencia',
+  'licencia_federal_expediente_vigencia',
 ].join(', ')
 const OUT  = COLS.split(', ').map((c) => `INSERTED.${c}`).join(', ')
 
@@ -62,13 +67,15 @@ export async function create(data: ConductorInput & { nombre: string }): Promise
     .input('fedNum',    sql.VarChar(30),   data.licencia_federal_numero     ?? null)
     .input('fedExp',    sql.VarChar(30),   data.licencia_federal_expediente ?? null)
     .input('fedVig',    sql.VarChar(30),   data.licencia_federal_vigencia   ?? null)
+    .input('expVig',    sql.VarChar(30),   data.licencia_federal_expediente_vigencia ?? null)
     .query(`
       INSERT INTO conductores (
         nombre, ubicacion,
         licencia_estatal_numero, licencia_estatal_vigencia,
-        licencia_federal_numero, licencia_federal_expediente, licencia_federal_vigencia)
+        licencia_federal_numero, licencia_federal_expediente, licencia_federal_vigencia,
+        licencia_federal_expediente_vigencia)
       OUTPUT ${OUT}
-      VALUES (@nombre, @ubicacion, @licNum, @licVig, @fedNum, @fedExp, @fedVig)`)
+      VALUES (@nombre, @ubicacion, @licNum, @licVig, @fedNum, @fedExp, @fedVig, @expVig)`)
   return r.recordset[0]
 }
 
@@ -102,6 +109,10 @@ export async function update(id: number, data: ConductorInput): Promise<Conducto
   if (data.licencia_federal_vigencia !== undefined) {
     req.input('fedVig', sql.VarChar(30), data.licencia_federal_vigencia)
     sets.push('licencia_federal_vigencia=@fedVig')
+  }
+  if (data.licencia_federal_expediente_vigencia !== undefined) {
+    req.input('expVig', sql.VarChar(30), data.licencia_federal_expediente_vigencia)
+    sets.push('licencia_federal_expediente_vigencia=@expVig')
   }
   if (sets.length === 0) return findById(id)
 

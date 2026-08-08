@@ -218,7 +218,9 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
     }))
     const licencias = (doc?.licencias ?? []).map((l) => ({
       key: `l-${l.conductor_id}-${l.tipo}`,
-      tipo: l.tipo === 'estatal' ? ('Licencia estatal' as const) : ('Licencia federal' as const),
+      tipo: l.tipo === 'estatal'    ? ('Licencia estatal'   as const)
+          : l.tipo === 'expediente' ? ('Expediente federal' as const)
+          :                           ('Licencia federal'   as const),
       colorTipo: 'teal', colorAviso: 'yellow',
       etiqueta: l.numero ? `${l.conductor} — ${l.numero}` : l.conductor,
       fecha_expiracion: l.fecha_expiracion, dias_restantes: l.dias_restantes, vehiculos: null,
@@ -304,8 +306,9 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
         </Group>
       </Group>
 
-      {/* Aviso arriba de todo: una licencia vencida deja al conductor sin poder
-          salir, así que no basta con verla en la tabla de más abajo. */}
+      {/* Aviso arriba de todo: una licencia —o el expediente que la ampara—
+          vencida deja al conductor sin poder salir, así que no basta con verla
+          en la tabla de más abajo. */}
       {licenciasPorVencer.length > 0 && (() => {
         const vencidas = licenciasPorVencer.filter((l) => l.dias_restantes < 0)
         const hayVencidas = vencidas.length > 0
@@ -314,9 +317,9 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
           <Alert
             color={hayVencidas ? 'red' : 'yellow'}
             icon={<IconAlertTriangle size={16} />}
-            title={hayVencidas ? 'Licencias vencidas' : 'Licencias por vencer'}
+            title={hayVencidas ? 'Documentos de conductor vencidos' : 'Documentos de conductor por vencer'}
           >
-            {n} licencia{n !== 1 ? 's' : ''} de conductor {hayVencidas
+            {n} documento{n !== 1 ? 's' : ''} de conductor {hayVencidas
               ? (n !== 1 ? 'ya vencieron' : 'ya venció')
               : (n !== 1 ? 'vencen' : 'vence') + ' en menos de 2 meses'}
             {hayVencidas && licenciasPorVencer.length > vencidas.length &&

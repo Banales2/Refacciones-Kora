@@ -16,6 +16,9 @@ export interface Conductor {
   licencia_federal_numero:     string | null
   licencia_federal_expediente: string | null
   licencia_federal_vigencia:   string | null
+  // El expediente se renueva aparte de la licencia que lo ampara, así que
+  // lleva su propia vigencia.
+  licencia_federal_expediente_vigencia: string | null
 }
 
 export interface ConductorPayload {
@@ -26,6 +29,9 @@ export interface ConductorPayload {
   licencia_federal_numero:     string | null
   licencia_federal_expediente: string | null
   licencia_federal_vigencia:   string | null
+  // El expediente se renueva aparte de la licencia que lo ampara, así que
+  // lleva su propia vigencia.
+  licencia_federal_expediente_vigencia: string | null
 }
 
 export function useConductores() {

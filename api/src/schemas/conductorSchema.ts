@@ -48,6 +48,7 @@ export const ConductorCreateSchema = z.object({
   licencia_federal_numero:     licenciaNumero,
   licencia_federal_expediente: licenciaExpediente,
   licencia_federal_vigencia:   licenciaVigencia,
+  licencia_federal_expediente_vigencia: licenciaVigencia,
 })
 
 export const ConductorUpdateSchema = z.object({
@@ -58,6 +59,7 @@ export const ConductorUpdateSchema = z.object({
   licencia_federal_numero:     licenciaNumero,
   licencia_federal_expediente: licenciaExpediente,
   licencia_federal_vigencia:   licenciaVigencia,
+  licencia_federal_expediente_vigencia: licenciaVigencia,
 })
 
 export type ConductorCreate = z.infer<typeof ConductorCreateSchema>

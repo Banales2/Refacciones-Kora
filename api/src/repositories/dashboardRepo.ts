@@ -61,6 +61,8 @@ export interface LicenciaConductor {
   licencia_estatal_vigencia:   string | null
   licencia_federal_numero:     string | null
   licencia_federal_vigencia:   string | null
+  licencia_federal_expediente:          string | null
+  licencia_federal_expediente_vigencia: string | null
 }
 
 export async function findConductoresConVigencia(): Promise<LicenciaConductor[]> {
@@ -68,10 +70,12 @@ export async function findConductoresConVigencia(): Promise<LicenciaConductor[]>
   const r = await pool.request().query(`
     SELECT id, nombre,
            licencia_estatal_numero, licencia_estatal_vigencia,
-           licencia_federal_numero, licencia_federal_vigencia
+           licencia_federal_numero, licencia_federal_vigencia,
+           licencia_federal_expediente, licencia_federal_expediente_vigencia
     FROM conductores
     WHERE licencia_estatal_vigencia IS NOT NULL
        OR licencia_federal_vigencia IS NOT NULL
+       OR licencia_federal_expediente_vigencia IS NOT NULL
     ORDER BY nombre`)
   return r.recordset
 }

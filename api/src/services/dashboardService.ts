@@ -280,7 +280,7 @@ const DIAS_ALERTA_DOCUMENTOS = 30
 export interface LicenciaPorVencer {
   conductor_id:     number
   conductor:        string
-  tipo:             'estatal' | 'federal'
+  tipo:             'estatal' | 'federal' | 'expediente'
   numero:           string | null
   // Texto tal como se capturó, para mostrarlo igual que en el catálogo.
   vigencia:         string
@@ -314,6 +314,9 @@ export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
     const candidatos = [
       { tipo: 'estatal' as const, numero: c.licencia_estatal_numero, vigencia: c.licencia_estatal_vigencia },
       { tipo: 'federal' as const, numero: c.licencia_federal_numero, vigencia: c.licencia_federal_vigencia },
+      // El expediente vence por su cuenta: si no entrara aquí, sería la única
+      // vigencia del sistema que nadie avisa.
+      { tipo: 'expediente' as const, numero: c.licencia_federal_expediente, vigencia: c.licencia_federal_expediente_vigencia },
     ]
     for (const lic of candidatos) {
       if (!lic.vigencia) continue

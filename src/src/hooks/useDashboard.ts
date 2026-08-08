@@ -103,7 +103,7 @@ export interface PermisoPorVencer {
 export interface LicenciaPorVencer {
   conductor_id:     number
   conductor:        string
-  tipo:             'estatal' | 'federal'
+  tipo:             'estatal' | 'federal' | 'expediente'
   numero:           string | null
   // Vigencia tal como se capturó en el catálogo…
   vigencia:         string

@@ -414,13 +414,33 @@ function CeldaVigencia({ valor }: { valor: string | null }) {
     ? new Date(`${fecha}T12:00:00`).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : valor
   const est = estadoVigencia(valor)
-  if (!est) return <>{texto}</>
+  if (!est) return <Text component="span" size="xs">{texto}</Text>
   return (
     <Tooltip label={est.label}>
       <Badge variant="light" color={est.color} size="sm" leftSection={<IconAlertTriangle size={11} />}>
         {texto}
       </Badge>
     </Tooltip>
+  )
+}
+
+// Un documento por celda: el número arriba y su vigencia debajo, con la palabra
+// "Vence" delante. Antes cada vigencia iba en su propia columna a la derecha del
+// número, y con tres documentos en la misma fila costaba saber cuál vencía
+// cuándo —y el expediente ni siquiera quedaba junto a los suyos—.
+function CeldaDocumento({ numero, vigencia }: { numero: string | null; vigencia: string | null }) {
+  return (
+    <Stack gap={2}>
+      {numero ? <Text size="sm">{numero}</Text> : <SinDato />}
+      {vigencia ? (
+        <Group gap={4} wrap="nowrap">
+          <Text size="xs" c="dimmed">Vence</Text>
+          <CeldaVigencia valor={vigencia} />
+        </Group>
+      ) : (
+        <Text size="xs" c="dimmed">Sin vigencia</Text>
+      )}
+    </Stack>
   )
 }
 
@@ -441,8 +461,10 @@ function ConductorForm({
   // debajo para que se vuelva a elegir en vez de perderlo sin decir nada.
   const estatalPrevia = initial?.licencia_estatal_vigencia ?? null
   const federalPrevia = initial?.licencia_federal_vigencia ?? null
+  const expedientePrevia = initial?.licencia_federal_expediente_vigencia ?? null
   const estatalNoFecha = !!estatalPrevia && !parseVigencia(estatalPrevia)
   const federalNoFecha = !!federalPrevia && !parseVigencia(federalPrevia)
+  const expedienteNoFecha = !!expedientePrevia && !parseVigencia(expedientePrevia)
 
   const form = useForm({
     initialValues: {
@@ -453,6 +475,7 @@ function ConductorForm({
       licencia_federal_numero:     initial?.licencia_federal_numero     ?? '',
       licencia_federal_expediente: initial?.licencia_federal_expediente ?? '',
       licencia_federal_vigencia:   parseVigencia(federalPrevia) ?? '',
+      licencia_federal_expediente_vigencia: parseVigencia(expedientePrevia) ?? '',
     },
     validate: {
       nombre: (v) =>
@@ -470,6 +493,8 @@ function ConductorForm({
         v && !CODIGO.test(v.trim()) ? 'Solo mayúsculas, números y guiones' : null,
       licencia_federal_vigencia: (v) =>
         v && !parseVigencia(v) ? 'Fecha inválida' : null,
+      licencia_federal_expediente_vigencia: (v) =>
+        v && !parseVigencia(v) ? 'Fecha inválida' : null,
     },
   })
 
@@ -483,6 +508,7 @@ function ConductorForm({
       licencia_federal_numero:     v.licencia_federal_numero.trim()     || null,
       licencia_federal_expediente: v.licencia_federal_expediente.trim() || null,
       licencia_federal_vigencia:   v.licencia_federal_vigencia.trim()   || null,
+      licencia_federal_expediente_vigencia: v.licencia_federal_expediente_vigencia.trim() || null,
     }))}>
       <Stack gap="sm">
         <TextInput
@@ -509,7 +535,7 @@ function ConductorForm({
             onChange={(e) => form.setFieldValue('licencia_estatal_numero', limpiarCodigo(e.currentTarget.value, 30))}
           />
           <DateInput
-            label="Vigencia"
+            label="Vigencia de la licencia"
             placeholder="dd/mm/aaaa"
             valueFormat="DD/MM/YYYY"
             clearable
@@ -522,6 +548,9 @@ function ConductorForm({
           />
         </Group>
         <Divider label="Licencia federal" labelPosition="left" mt={4} />
+        {/* Un renglón por documento: la licencia federal y su expediente vencen
+            en fechas distintas, y con los tres números seguidos y una sola
+            vigencia al final no se sabía a cuál pertenecía. */}
         <Group grow align="flex-start">
           <TextInput
             label="No. licencia"
@@ -530,6 +559,18 @@ function ConductorForm({
             {...form.getInputProps('licencia_federal_numero')}
             onChange={(e) => form.setFieldValue('licencia_federal_numero', limpiarCodigo(e.currentTarget.value, 30))}
           />
+          <DateInput
+            label="Vigencia de la licencia"
+            placeholder="dd/mm/aaaa"
+            valueFormat="DD/MM/YYYY"
+            clearable
+            value={form.values.licencia_federal_vigencia || null}
+            onChange={(d) => form.setFieldValue('licencia_federal_vigencia', d ?? '')}
+            error={form.errors.licencia_federal_vigencia as string}
+            description={federalNoFecha ? `Antes decía "${federalPrevia}"; elige la fecha` : undefined}
+          />
+        </Group>
+        <Group grow align="flex-start">
           <TextInput
             label="No. expediente"
             placeholder="Ej. EXP-12345"
@@ -538,14 +579,14 @@ function ConductorForm({
             onChange={(e) => form.setFieldValue('licencia_federal_expediente', limpiarCodigo(e.currentTarget.value, 30))}
           />
           <DateInput
-            label="Vigencia"
+            label="Vigencia del expediente"
             placeholder="dd/mm/aaaa"
             valueFormat="DD/MM/YYYY"
             clearable
-            value={form.values.licencia_federal_vigencia || null}
-            onChange={(d) => form.setFieldValue('licencia_federal_vigencia', d ?? '')}
-            error={form.errors.licencia_federal_vigencia as string}
-            description={federalNoFecha ? `Antes decía "${federalPrevia}"; elige la fecha` : undefined}
+            value={form.values.licencia_federal_expediente_vigencia || null}
+            onChange={(d) => form.setFieldValue('licencia_federal_expediente_vigencia', d ?? '')}
+            error={form.errors.licencia_federal_expediente_vigencia as string}
+            description={expedienteNoFecha ? `Antes decía "${expedientePrevia}"; elige la fecha` : undefined}
           />
         </Group>
         {error && <Alert color="red" title="Error">{error}</Alert>}
@@ -571,10 +612,10 @@ function ConductoresPanel() {
   const items = data?.data ?? []
   const isPending = createMut.isPending || updateMut.isPending
 
-  // Licencias (estatal y federal) que ya vencieron o vencen dentro de 2 meses,
-  // para el aviso de arriba de la tabla.
+  // Documentos (licencia estatal, federal y expediente) que ya vencieron o
+  // vencen dentro de 2 meses, para el aviso de arriba de la tabla.
   const alertas = items.flatMap((c) =>
-    [c.licencia_estatal_vigencia, c.licencia_federal_vigencia]
+    [c.licencia_estatal_vigencia, c.licencia_federal_vigencia, c.licencia_federal_expediente_vigencia]
       .map((v) => estadoVigencia(v))
       .filter((e): e is NonNullable<typeof e> => e !== null)
   )
@@ -606,12 +647,12 @@ function ConductoresPanel() {
           <Alert
             color={vencidas > 0 ? 'red' : 'yellow'}
             icon={<IconAlertTriangle size={16} />}
-            title={vencidas > 0 ? 'Licencias vencidas' : 'Licencias por vencer'}
+            title={vencidas > 0 ? 'Documentos vencidos' : 'Documentos por vencer'}
           >
-            {vencidas > 0 && <>{vencidas} licencia{vencidas !== 1 ? 's' : ''} {vencidas !== 1 ? 'vencidas' : 'vencida'}</>}
+            {vencidas > 0 && <>{vencidas} documento{vencidas !== 1 ? 's' : ''} {vencidas !== 1 ? 'vencidos' : 'vencido'}</>}
             {vencidas > 0 && porVencer > 0 && ' y '}
             {porVencer > 0 && <>{porVencer} por vencer en menos de 2 meses</>}
-            . Están marcadas en la columna de vigencia.
+            . Están marcados junto al documento que les corresponde.
           </Alert>
         )}
 
@@ -625,11 +666,9 @@ function ConductoresPanel() {
                 <Table.Tr>
                   <Table.Th>Nombre</Table.Th>
                   <Table.Th>Ubicación</Table.Th>
-                  <Table.Th>Licencia estatal</Table.Th>
-                  <Table.Th style={{ width: 120 }}>Vigencia</Table.Th>
-                  <Table.Th>Licencia federal</Table.Th>
-                  <Table.Th style={{ width: 120 }}>Vigencia</Table.Th>
-                  <Table.Th>Expediente</Table.Th>
+                  <Table.Th style={{ width: 180 }}>Licencia estatal</Table.Th>
+                  <Table.Th style={{ width: 180 }}>Licencia federal</Table.Th>
+                  <Table.Th style={{ width: 180 }}>Expediente federal</Table.Th>
                   <Table.Th style={{ width: 80 }} />
                 </Table.Tr>
               </Table.Thead>
@@ -638,11 +677,24 @@ function ConductoresPanel() {
                   <Table.Tr key={c.id}>
                     <Table.Td fw={500}>{c.nombre}</Table.Td>
                     <Table.Td>{c.ubicacion ?? <SinDato />}</Table.Td>
-                    <Table.Td>{c.licencia_estatal_numero ?? <SinDato />}</Table.Td>
-                    <Table.Td><CeldaVigencia valor={c.licencia_estatal_vigencia} /></Table.Td>
-                    <Table.Td>{c.licencia_federal_numero ?? <SinDato />}</Table.Td>
-                    <Table.Td><CeldaVigencia valor={c.licencia_federal_vigencia} /></Table.Td>
-                    <Table.Td>{c.licencia_federal_expediente ?? <SinDato />}</Table.Td>
+                    <Table.Td>
+                      <CeldaDocumento
+                        numero={c.licencia_estatal_numero}
+                        vigencia={c.licencia_estatal_vigencia}
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <CeldaDocumento
+                        numero={c.licencia_federal_numero}
+                        vigencia={c.licencia_federal_vigencia}
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <CeldaDocumento
+                        numero={c.licencia_federal_expediente}
+                        vigencia={c.licencia_federal_expediente_vigencia}
+                      />
+                    </Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
                         <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(c)}><IconPencil size={14} /></ActionIcon></Tooltip>
