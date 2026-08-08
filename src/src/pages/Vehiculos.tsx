@@ -87,11 +87,6 @@ function statusColor(s: string) {
   return 'gray'
 }
 
-// El intervalo por tiempo puede medirse en días o meses, según la unidad elegida.
-function usaDias(unidad: 'dias' | 'meses') {
-  return unidad === 'dias'
-}
-
 function fmtIntervalo(item: RequerimientoExclusivo) {
   const parts: string[] = []
   if (item.intervalo_km)    parts.push(`${item.intervalo_km.toLocaleString('es-MX')} km`)
@@ -147,10 +142,7 @@ export function RequerimientoForm({
       categoria:       initial?.categoria ?? '',
       trigger_mode:    (initial?.trigger_mode ?? (soloTiempo ? 'meses' : 'ambos')) as TriggerMode,
       intervalo_km:     initial?.intervalo_km ?? (null as number | null),
-      // Un solo campo numérico para el intervalo por tiempo; la unidad decide si
-      // se guarda como días o meses. Se inicializa con el que venga poblado.
-      intervalo_tiempo: (initial?.intervalo_dias ?? initial?.intervalo_meses) ?? (null as number | null),
-      unidad_tiempo:    (initial?.intervalo_dias != null ? 'dias' : 'meses') as 'dias' | 'meses',
+      intervalo_meses:  initial?.intervalo_meses ?? (null as number | null),
       status:          (initial?.status ?? 'activo') as StatusReq,
       fecha_reporte:   initial?.fecha_reporte?.split('T')[0] ?? todayIso(),
       desde:           'ahora' as 'ahora' | 'ultimo',
@@ -171,7 +163,7 @@ export function RequerimientoForm({
       fecha_reporte: (v) => !v ? 'Requerido' : null,
       intervalo_km: (v, vals) =>
         (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
-      intervalo_tiempo: (v, vals) =>
+      intervalo_meses: (v, vals) =>
         (vals.trigger_mode === 'meses' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
     },
   })
@@ -231,17 +223,14 @@ export function RequerimientoForm({
       km_inicio    = initial!.km_inicio ?? null
     }
 
-    const time  = mode === 'meses' || mode === 'ambos'
-    const dias  = usaDias(vals.unidad_tiempo)
-
     onSubmit({
       nombre:          vals.nombre.trim(),
       descripcion:     vals.descripcion.trim(),
       categoria:       vals.categoria?.trim()    || null,
       trigger_mode:    vals.trigger_mode,
-      intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km : null,
-      intervalo_meses: (time && !dias) ? vals.intervalo_tiempo : null,
-      intervalo_dias:  (time &&  dias) ? vals.intervalo_tiempo : null,
+      intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km    : null,
+      intervalo_meses: (mode === 'meses' || mode === 'ambos') ? vals.intervalo_meses : null,
+      intervalo_dias:  null,
       status:          vals.status,
       fecha_inicio,
       km_inicio,
@@ -308,22 +297,12 @@ export function RequerimientoForm({
           />
         )}
         {(mode === 'meses' || mode === 'ambos') && (
-          <Group align="flex-end" gap="sm" grow>
-            <NumberInput
-              label="Intervalo" required min={1}
-              allowDecimal={false} allowNegative={false}
-              {...form.getInputProps('intervalo_tiempo')}
-            />
-            <Select
-              label="Unidad"
-              data={[
-                { value: 'dias',  label: 'Días' },
-                { value: 'meses', label: 'Meses' },
-              ]}
-              allowDeselect={false}
-              {...form.getInputProps('unidad_tiempo')}
-            />
-          </Group>
+          <NumberInput
+            label="Intervalo en meses" required min={1}
+            suffix=" meses"
+            allowDecimal={false} allowNegative={false}
+            {...form.getInputProps('intervalo_meses')}
+          />
         )}
         <Select
           label="Status" required
@@ -361,7 +340,7 @@ export function RequerimientoForm({
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
           <Button type="submit" loading={isPending}>
-            {isEdit ? 'Guardar cambios' : 'Crear requerimiento'}
+            {isEdit ? 'Guardar cambios' : 'Crear requerimiento preventivo'}
           </Button>
         </Group>
       </Stack>
@@ -602,7 +581,7 @@ function RequerimientoDetalleDrawer({
     <Drawer
       opened={item !== null}
       onClose={onClose}
-      title={<Text fw={700}>Detalle del requerimiento</Text>}
+      title={<Text fw={700}>Detalle del requerimiento preventivo</Text>}
       position="right"
       size="md"
       overlayProps={{ backgroundOpacity: 0.3 }}
@@ -713,8 +692,8 @@ function RequerimientosSection({ vehiculo, mantenimientos, overdueIds = new Set<
       <Divider
         label={
           <Group gap="xs">
-            <Text size="sm" fw={500}>Requerimientos exclusivos ({items.length})</Text>
-            <Tooltip label="Agregar requerimiento">
+            <Text size="sm" fw={500}>Requerimientos preventivos ({items.length})</Text>
+            <Tooltip label="Agregar requerimiento preventivo">
               <ActionIcon variant="light" color="blue" size="xs" onClick={openCreate}>
                 <IconPlus size={12} />
               </ActionIcon>
@@ -729,9 +708,9 @@ function RequerimientosSection({ vehiculo, mantenimientos, overdueIds = new Set<
       ) : items.length === 0 ? (
         <Center py="md">
           <Stack align="center" gap="xs">
-            <Text c="dimmed" size="sm">No hay requerimientos exclusivos para este vehículo.</Text>
+            <Text c="dimmed" size="sm">No hay requerimientos preventivos para este vehículo.</Text>
             <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={openCreate}>
-              Agregar requerimiento
+              Agregar requerimiento preventivo
             </Button>
           </Stack>
         </Center>
@@ -745,7 +724,7 @@ function RequerimientosSection({ vehiculo, mantenimientos, overdueIds = new Set<
 
       <Modal
         opened={formOpen} onClose={() => setFormOpen(false)}
-        title={editing ? 'Editar requerimiento' : 'Nuevo requerimiento exclusivo'}
+        title={editing ? 'Editar requerimiento preventivo' : 'Nuevo requerimiento preventivo'}
         centered size="md"
       >
         <RequerimientoForm
@@ -761,7 +740,7 @@ function RequerimientosSection({ vehiculo, mantenimientos, overdueIds = new Set<
 
       <Modal
         opened={deleting !== null} onClose={() => setDeleting(null)}
-        title="Eliminar requerimiento" centered size="sm"
+        title="Eliminar requerimiento preventivo" centered size="sm"
       >
         <Stack gap="md">
           <Text>¿Eliminar <strong>{deleting?.nombre}</strong>? Esta acción no se puede deshacer.</Text>
@@ -1014,9 +993,9 @@ export function MantenimientoForm({
           </Grid.Col>
           <Grid.Col span={12}>
             <MultiSelect
-              label="Requerimientos que cumple este mantenimiento"
+              label="Requerimientos preventivos que cumple este mantenimiento"
               required
-              placeholder={reqOptions.length ? 'Selecciona los requerimientos…' : 'Sin requerimientos activos'}
+              placeholder={reqOptions.length ? 'Selecciona los requerimientos…' : 'Sin requerimientos preventivos activos'}
               data={reqOptions}
               searchable
               clearable
@@ -1633,12 +1612,12 @@ function VehiculoDetalle({
       {overdueIds.size > 0 && (
         <Alert color="red" title="Mantenimiento requerido" icon={<IconAlertTriangle size={16} />}>
           Se requiere mantenimiento en{' '}
-          <strong>{overdueIds.size} requerimiento{overdueIds.size !== 1 ? 's' : ''}</strong>.
+          <strong>{overdueIds.size} requerimiento{overdueIds.size !== 1 ? 's' : ''} preventivo{overdueIds.size !== 1 ? 's' : ''}</strong>.
         </Alert>
       )}
       {warnIds.size > 0 && (
         <Alert color="yellow" title="Próximo a vencer" icon={<IconAlertTriangle size={16} />}>
-          <strong>{warnIds.size} requerimiento{warnIds.size !== 1 ? 's' : ''}</strong>{' '}
+          <strong>{warnIds.size} requerimiento{warnIds.size !== 1 ? 's' : ''} preventivo{warnIds.size !== 1 ? 's' : ''}</strong>{' '}
           {warnIds.size !== 1 ? 'están próximos a' : 'está próximo a'} vencer (menos de 1 mes o menos del 25% del intervalo de km restante).
         </Alert>
       )}
@@ -1784,7 +1763,7 @@ function VehiculoDetalle({
       {/* Refacción que usa esta unidad por cada tipo que pide su modelo */}
       <PiezasVehiculoSection vehiculoId={vehiculo.id} />
 
-      {/* Requerimientos exclusivos */}
+      {/* Requerimientos preventivos */}
       <RequerimientosSection
         vehiculo={vehiculo}
         mantenimientos={mantData?.data ?? []}
@@ -2221,7 +2200,7 @@ export default function Vehiculos({
           <Stack gap="md">
             <Text>¿Eliminar <strong>{deleting ? vehiculoLabel(deleting) : ''}</strong>? Esta acción no se puede deshacer.</Text>
             <Text size="sm" c="dimmed">
-              Sus requerimientos exclusivos se eliminan automáticamente. No podrá
+              Sus requerimientos preventivos se eliminan automáticamente. No podrá
               eliminarse si tiene mantenimientos, recargas o vales registrados.
             </Text>
             <Group justify="flex-end">
@@ -2321,7 +2300,7 @@ export default function Vehiculos({
         title="Eliminar vehículo" size="sm">
         <Stack gap="md">
           <Text>¿Eliminar <strong>{deleting ? vehiculoLabel(deleting) : ''}</strong>? Esta acción no se puede deshacer.</Text>
-          <Text size="sm" c="dimmed">Los requerimientos exclusivos se eliminarán automáticamente.</Text>
+          <Text size="sm" c="dimmed">Los requerimientos preventivos se eliminarán automáticamente.</Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setDeleteOpen(false)} disabled={deleteMut.isPending}>Cancelar</Button>
             <Button color="red" onClick={handleDelete} loading={deleteMut.isPending}>Eliminar</Button>

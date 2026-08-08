@@ -353,7 +353,7 @@ function PlantillaForm({
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
           <Button type="submit" loading={isPending}>
-            {initial ? 'Guardar cambios' : 'Crear requerimiento'}
+            {initial ? 'Guardar cambios' : 'Crear requerimiento preventivo'}
           </Button>
         </Group>
       </Stack>
@@ -399,8 +399,8 @@ function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tip
       <Divider
         label={
           <Group gap="xs">
-            <Text size="sm" fw={500}>Plantilla de requerimientos ({items.length})</Text>
-            <Tooltip label="Agregar requerimiento">
+            <Text size="sm" fw={500}>Plantilla de requerimientos preventivos ({items.length})</Text>
+            <Tooltip label="Agregar requerimiento preventivo">
               <ActionIcon variant="light" color="blue" size="xs" onClick={openCreate}>
                 <IconPlus size={12} />
               </ActionIcon>
@@ -415,9 +415,9 @@ function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tip
       ) : items.length === 0 ? (
         <Center py="md">
           <Stack align="center" gap="xs">
-            <Text c="dimmed" size="sm">No hay requerimientos definidos para este modelo.</Text>
+            <Text c="dimmed" size="sm">No hay requerimientos preventivos definidos para este modelo.</Text>
             <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={openCreate}>
-              Agregar requerimiento
+              Agregar requerimiento preventivo
             </Button>
           </Stack>
         </Center>
@@ -476,7 +476,7 @@ function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tip
 
       <Modal
         opened={formOpen} onClose={() => setFormOpen(false)}
-        title={editing ? 'Editar requerimiento' : 'Nuevo requerimiento de plantilla'}
+        title={editing ? 'Editar requerimiento preventivo' : 'Nuevo requerimiento preventivo de plantilla'}
         centered size="md"
       >
         <PlantillaForm
@@ -491,12 +491,12 @@ function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tip
 
       <Modal
         opened={deleting !== null} onClose={() => setDeleting(null)}
-        title="Eliminar requerimiento de plantilla" centered size="sm"
+        title="Eliminar requerimiento preventivo de plantilla" centered size="sm"
       >
         <Stack gap="md">
           <Text>¿Estás seguro de eliminar <strong>{deleting?.nombre}</strong>?</Text>
           <Alert color="orange" title="Atención" variant="light">
-            Todos los vehículos con este modelo perderán este requerimiento.
+            Todos los vehículos con este modelo perderán este requerimiento preventivo.
           </Alert>
           {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
           <Group justify="flex-end">
@@ -736,7 +736,7 @@ function ModeloDetalle({
         </Group>
       </Paper>
 
-      {/* Plantilla de requerimientos */}
+      {/* Plantilla de requerimientos preventivos */}
       <PlantillaSection modeloId={modelo.id} tiposPermitidos={modelo.tipos_permitidos ?? []} />
 
       {/* Piezas específicas del modelo */}
@@ -859,7 +859,7 @@ function ModeloDetalle({
             Esta acción no se puede deshacer.
           </Text>
           <Text size="sm" c="dimmed">
-            Sus requerimientos exclusivos se eliminan automáticamente. No podrá
+            Sus requerimientos preventivos se eliminan automáticamente. No podrá
             eliminarse si tiene mantenimientos, recargas o vales registrados.
           </Text>
           {deleteVehiculoMut.error && (
