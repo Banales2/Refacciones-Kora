@@ -111,6 +111,34 @@ function fmtShort(iso: string | null | undefined) {
   })
 }
 
+// Antigüedad desde la compra, en años y meses cumplidos. Devuelve null si la
+// fecha falta o es futura (compras capturadas por adelantado).
+function antiguedad(iso: string | null | undefined) {
+  if (!iso) return null
+  const compra = new Date(`${iso.split('T')[0]}T12:00:00`)
+  if (isNaN(compra.getTime())) return null
+  const hoy = new Date()
+  let meses = (hoy.getFullYear() - compra.getFullYear()) * 12 + (hoy.getMonth() - compra.getMonth())
+  if (hoy.getDate() < compra.getDate()) meses--
+  if (meses < 0) return null
+  const anios = Math.floor(meses / 12)
+  const resto = meses % 12
+  const partes: string[] = []
+  if (anios) partes.push(`${anios} año${anios !== 1 ? 's' : ''}`)
+  if (resto) partes.push(`${resto} mes${resto !== 1 ? 'es' : ''}`)
+  return partes.join(' ') || 'Menos de 1 mes'
+}
+
+// Edad del modelo, en años. `modelo_anio` es texto y a veces trae la versión
+// pegada ("2018-1"), así que solo se toma el año de adelante.
+function edadModelo(modeloAnio: string | null | undefined) {
+  const m = modeloAnio?.match(/^\s*(\d{4})/)
+  if (!m) return null
+  const anios = new Date().getFullYear() - Number(m[1])
+  if (anios < 0) return null
+  return anios === 0 ? 'Del año' : `${anios} año${anios !== 1 ? 's' : ''}`
+}
+
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
 }
@@ -1851,6 +1879,11 @@ function VehiculoDetalle({
               <Grid.Col span={{ base: 6, sm: 3 }}>
                 <InfoItem label="Año del modelo" value={vehiculo.modelo_anio} />
               </Grid.Col>
+              {edadModelo(vehiculo.modelo_anio) && (
+                <Grid.Col span={{ base: 6, sm: 3 }}>
+                  <InfoItem label="Edad del modelo" value={edadModelo(vehiculo.modelo_anio)} />
+                </Grid.Col>
+              )}
               <Grid.Col span={{ base: 6, sm: 3 }}>
                 <InfoItem label="Serie" value={vehiculo.serie} />
               </Grid.Col>
@@ -1953,6 +1986,11 @@ function VehiculoDetalle({
                       day: '2-digit', month: 'short', year: 'numeric',
                     })}
                   />
+                </Grid.Col>
+              )}
+              {antiguedad(vehiculo.fecha_compra) && (
+                <Grid.Col span={{ base: 6, sm: 3 }}>
+                  <InfoItem label="Antigüedad en flota" value={antiguedad(vehiculo.fecha_compra)} />
                 </Grid.Col>
               )}
             </Grid>
