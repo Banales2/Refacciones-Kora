@@ -169,9 +169,6 @@ function isOverdue(req: RequerimientoFleet, base: Base, now: Date): boolean {
   if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && req.intervalo_km != null && req.kilometraje != null) {
     if (req.kilometraje - base.baseKm >= req.intervalo_km) return true
   }
-  if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_dias != null && base.baseFecha) {
-    if (diffDias(base.baseFecha, now) >= req.intervalo_dias) return true
-  }
   if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_meses != null && base.baseFecha) {
     if (diffMeses(base.baseFecha, now) >= req.intervalo_meses) return true
   }
@@ -181,9 +178,6 @@ function isOverdue(req: RequerimientoFleet, base: Base, now: Date): boolean {
 function isWarning(req: RequerimientoFleet, base: Base, now: Date): boolean {
   if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && req.intervalo_km != null && req.kilometraje != null) {
     if (req.kilometraje - base.baseKm >= req.intervalo_km * 0.75) return true
-  }
-  if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_dias != null && base.baseFecha) {
-    if (diffDias(base.baseFecha, now) >= req.intervalo_dias * 0.75) return true
   }
   if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_meses != null && base.baseFecha) {
     if (diffMeses(base.baseFecha, now) >= req.intervalo_meses - 1) return true
@@ -199,9 +193,6 @@ function calcularUrgencia(req: RequerimientoFleet, base: Base, now: Date): numbe
   const ratios: number[] = []
   if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && req.intervalo_km != null && req.kilometraje != null) {
     ratios.push((req.kilometraje - base.baseKm) / req.intervalo_km)
-  }
-  if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_dias != null && base.baseFecha) {
-    ratios.push(diffDias(base.baseFecha, now) / req.intervalo_dias)
   }
   if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_meses != null && base.baseFecha) {
     ratios.push(diffMeses(base.baseFecha, now) / req.intervalo_meses)

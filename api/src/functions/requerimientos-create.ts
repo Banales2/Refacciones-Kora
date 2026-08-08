@@ -30,7 +30,6 @@ const Schema = z.object({
   trigger_mode:    z.enum(['km', 'meses', 'ambos']),
   intervalo_km:    z.coerce.number().int().positive().nullable().optional(),
   intervalo_meses: z.coerce.number().int().positive().nullable().optional(),
-  intervalo_dias:  z.coerce.number().int().positive().nullable().optional(),
   status:          z.enum(['activo', 'completado', 'pausado', 'cancelado']).default('activo'),
   fecha_inicio:    z.string().date().nullable().optional(),
   km_inicio:       z.coerce.number().int().min(0).nullable().optional(),

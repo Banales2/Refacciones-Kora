@@ -91,7 +91,6 @@ function fmtIntervalo(item: RequerimientoExclusivo) {
   const parts: string[] = []
   if (item.intervalo_km)    parts.push(`${item.intervalo_km.toLocaleString('es-MX')} km`)
   if (item.intervalo_meses) parts.push(`${item.intervalo_meses} mes${item.intervalo_meses !== 1 ? 'es' : ''}`)
-  if (item.intervalo_dias)  parts.push(`${item.intervalo_dias} día${item.intervalo_dias !== 1 ? 's' : ''}`)
   return parts.join(' / ') || '—'
 }
 
@@ -230,7 +229,6 @@ export function RequerimientoForm({
       trigger_mode:    vals.trigger_mode,
       intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km    : null,
       intervalo_meses: (mode === 'meses' || mode === 'ambos') ? vals.intervalo_meses : null,
-      intervalo_dias:  null,
       status:          vals.status,
       fecha_inicio,
       km_inicio,
@@ -381,10 +379,6 @@ function isOverdue(
   }
 
   if (req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') {
-    if (req.intervalo_dias != null && baseFecha) {
-      const days = Math.floor((now.getTime() - baseFecha.getTime()) / 86_400_000)
-      if (days >= req.intervalo_dias) return true
-    }
     if (req.intervalo_meses != null && baseFecha) {
       const months =
         (now.getFullYear() - baseFecha.getFullYear()) * 12 +
@@ -427,10 +421,6 @@ function isWarning(
   }
 
   if (req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') {
-    if (req.intervalo_dias != null && baseFecha) {
-      const days = Math.floor((now.getTime() - baseFecha.getTime()) / 86_400_000)
-      if (days >= req.intervalo_dias * 0.75) return true
-    }
     if (req.intervalo_meses != null && baseFecha) {
       const months =
         (now.getFullYear() - baseFecha.getFullYear()) * 12 +
