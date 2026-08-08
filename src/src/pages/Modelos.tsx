@@ -17,7 +17,7 @@ import {
 import {
   usePlantillaModelo, useCreatePlantilla, useUpdatePlantilla, useDeletePlantilla,
 } from '../hooks/usePlantilla'
-import { useRequerimientoCategorias } from '../hooks/useRequerimientos'
+import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
 import { useVehiculos, useCreateVehiculo, useDeleteVehiculo, vehiculoLabel } from '../hooks/useVehiculos'
 import {
   useTiposPiezaModelo, useAddTiposPiezaModelo, useRemoveTipoPiezaModelo,
@@ -256,30 +256,8 @@ function PlantillaForm({
 
   const mode = form.values.trigger_mode
 
-  // Categorías: las ya usadas en los requerimientos, más la del que se edita y
-  // la que el usuario esté escribiendo, que se ofrece como opción para crearla.
-  const { data: categoriasData } = useRequerimientoCategorias()
-  const [categoriaSearch, setCategoriaSearch] = useState('')
-
-  // Se saca de `initial` antes del useMemo: dentro, el compilador de React
-  // infiere el objeto completo como dependencia y no coincide con la lista
-  // manual (que solo mira la categoría), lo que le impide optimizar el hook.
-  const categoriaInicial = initial?.categoria
-
-  const categoriaOptions = useMemo(() => {
-    const existentes = new Set(categoriasData?.data ?? [])
-    if (categoriaInicial) existentes.add(categoriaInicial)
-
-    const opts = [...existentes].sort((a, b) => a.localeCompare(b, 'es-MX'))
-      .map((c) => ({ value: c, label: c }))
-
-    const nueva = categoriaSearch.trim()
-    const yaExiste = [...existentes].some((c) => c.toLowerCase() === nueva.toLowerCase())
-    if (nueva && !yaExiste) {
-      opts.unshift({ value: nueva, label: `+ Crear categoría "${nueva}"` })
-    }
-    return opts
-  }, [categoriasData, categoriaInicial, categoriaSearch])
+  const { options: categoriaOptions, setSearch: setCategoriaSearch } =
+    useCategoriaOptions(form.values.categoria, initial?.categoria)
 
   function handleSubmit(vals: typeof form.values) {
     onSubmit({
@@ -317,7 +295,7 @@ function PlantillaForm({
           nothingFoundMessage="Escribe para crear una nueva categoría"
           maxLength={30}
           {...form.getInputProps('categoria')}
-          onChange={(v) => form.setFieldValue('categoria', v ?? '')}
+          onChange={(v) => { form.setFieldValue('categoria', v ?? ''); setCategoriaSearch('') }}
         />
         <Select
           label="Disparador" required

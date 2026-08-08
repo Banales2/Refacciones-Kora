@@ -37,15 +37,26 @@ export function usePlantillaModelo(modeloId: number) {
   })
 }
 
+// Tocar una plantilla no se queda en el modelo: la API copia, sincroniza o borra
+// el requerimiento correspondiente en TODOS los vehículos de ese modelo. Por eso
+// se invalidan las claves completas de `requerimientos` y `pendientes` (sin id de
+// vehículo, para que caigan las de todos) y no solo la plantilla. Sin esto, un
+// requerimiento borrado en el modelo seguía apareciendo en la ficha del vehículo
+// hasta recargar la página.
+function invalidarPlantilla(qc: ReturnType<typeof useQueryClient>, modeloId: number) {
+  qc.invalidateQueries({ queryKey: ['plantilla', modeloId] })
+  qc.invalidateQueries({ queryKey: ['requerimientos'] })
+  qc.invalidateQueries({ queryKey: ['pendientes'] })
+  qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
+  qc.invalidateQueries({ queryKey: ['dashboard'] })
+}
+
 export function useCreatePlantilla(modeloId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (payload: PlantillaPayload) =>
       api.post<{ data: PlantillaRequerimiento }>(`/modelos/${modeloId}/plantilla`, payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['plantilla', modeloId] })
-      qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
-    },
+    onSuccess: () => invalidarPlantilla(qc, modeloId),
   })
 }
 
@@ -54,10 +65,7 @@ export function useUpdatePlantilla(modeloId: number) {
   return useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: Partial<PlantillaPayload> }) =>
       api.put<{ data: PlantillaRequerimiento }>(`/plantilla/${id}`, payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['plantilla', modeloId] })
-      qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
-    },
+    onSuccess: () => invalidarPlantilla(qc, modeloId),
   })
 }
 
@@ -65,6 +73,6 @@ export function useDeletePlantilla(modeloId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.delete(`/plantilla/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['plantilla', modeloId] }),
+    onSuccess: () => invalidarPlantilla(qc, modeloId),
   })
 }

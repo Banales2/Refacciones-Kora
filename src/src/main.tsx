@@ -12,7 +12,15 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       retry: 1,
-      refetchOnWindowFocus: false,
+      // La navegación es por estado local, sin router: cambiar de sección
+      // desmonta y vuelve a montar la pantalla. Con 'always' cada regreso
+      // revalida contra la API, así que un cambio hecho en otra pantalla se ve
+      // sin recargar. No parpadea: se pintan los datos en caché al instante y
+      // se corrigen solos cuando llega la respuesta.
+      refetchOnMount: 'always',
+      // Volver a la pestaña del navegador también revalida: entre varias
+      // personas usando la app, lo que se ve al regresar está al día.
+      refetchOnWindowFocus: true,
     },
   },
 })

@@ -32,8 +32,8 @@ import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimie
 import { DateInput } from '@mantine/dates'
 import {
   useRequerimientos, useCreateRequerimiento, useUpdateRequerimiento, useDeleteRequerimiento,
-  useRequerimientoCategorias,
 } from '../hooks/useRequerimientos'
+import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
 import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
 import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, StatusReq } from '../hooks/useRequerimientos'
 import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
@@ -178,31 +178,8 @@ export function RequerimientoForm({
   const mode  = form.values.trigger_mode
   const desde = form.values.desde
 
-  // Categorías: las ya usadas en la flota, más la del requerimiento que se edita
-  // (por si fue eliminada del resto) y la que el usuario esté escribiendo, que
-  // se ofrece como opción para crearla.
-  const { data: categoriasData } = useRequerimientoCategorias()
-  const [categoriaSearch, setCategoriaSearch] = useState('')
-
-  // Se saca de `initial` antes del useMemo: dentro, el compilador de React
-  // infiere el objeto completo como dependencia y no coincide con la lista
-  // manual (que solo mira la categoría), lo que le impide optimizar el hook.
-  const categoriaInicial = initial?.categoria
-
-  const categoriaOptions = useMemo(() => {
-    const existentes = new Set(categoriasData?.data ?? [])
-    if (categoriaInicial) existentes.add(categoriaInicial)
-
-    const opts = [...existentes].sort((a, b) => a.localeCompare(b, 'es-MX'))
-      .map((c) => ({ value: c, label: c }))
-
-    const nueva = categoriaSearch.trim()
-    const yaExiste = [...existentes].some((c) => c.toLowerCase() === nueva.toLowerCase())
-    if (nueva && !yaExiste) {
-      opts.unshift({ value: nueva, label: `+ Crear categoría "${nueva}"` })
-    }
-    return opts
-  }, [categoriasData, categoriaInicial, categoriaSearch])
+  const { options: categoriaOptions, setSearch: setCategoriaSearch } =
+    useCategoriaOptions(form.values.categoria, initial?.categoria)
 
   // Baseline preview
   const baselineKm   = desde === 'ahora' ? (vehiculo?.kilometraje ?? null)  : (lastMant?.km_actual  ?? null)
@@ -268,7 +245,7 @@ export function RequerimientoForm({
           nothingFoundMessage="Escribe para crear una nueva categoría"
           maxLength={30}
           {...form.getInputProps('categoria')}
-          onChange={(v) => form.setFieldValue('categoria', v ?? '')}
+          onChange={(v) => { form.setFieldValue('categoria', v ?? ''); setCategoriaSearch('') }}
         />
         <DateInput
           label="Fecha de reporte" required

@@ -1,6 +1,8 @@
 import * as repo from '../repositories/dashboardRepo'
 import { RequerimientoFleet } from '../repositories/dashboardRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
+import * as pendientesRepo from '../repositories/pendientesRepo'
+import { getPool } from '../shared/db'
 import { parseVigencia, DIAS_ALERTA_LICENCIA } from '../shared/vigenciaLicencia'
 
 const MX_TZ = 'America/Mexico_City'
@@ -65,12 +67,19 @@ function rangoActualYAnterior(periodo: 'mes' | 'semana'): { actual: Rango; anter
   }
 }
 
-// Registra el snapshot de vencidos/por vencer una vez por día calendario. Se
-// apoya en dashboard_requerimientos_historial: si ya existe una fila para hoy,
-// ya se corrió; si no, lo registra, dejando reportes/gráficas del dashboard al
-// corriente. Se llama desde el timer diario y desde las lecturas del
-// dashboard/requerimientos, así que corre "una vez al día" sin importar si
-// dispara por uso de la app o por el cron.
+// Cierra las incidencias cuyo mantenimiento ya ocurrió y registra el snapshot de
+// vencidos/por vencer, una vez por día calendario. Se apoya en
+// dashboard_requerimientos_historial: si ya existe una fila para hoy, ya se
+// corrió; si no, hace ambas cosas.
+//
+// La pasada de incidencias hace falta porque el paso del tiempo no dispara
+// ninguna escritura: un mantenimiento agendado para mañana no cierra nada hoy,
+// y al llegar su fecha nadie toca la tabla. Los cambios explícitos (crear,
+// editar o borrar un mantenimiento) los resuelve mantenimientoRepo en el acto.
+//
+// Se llama desde el timer diario y desde las lecturas del dashboard y de los
+// requerimientos, así que corre "una vez al día" sin importar si dispara por uso
+// de la app o por el cron.
 let sincronizandoHoy: Promise<void> | null = null
 export async function ensureDailySync(): Promise<void> {
   const hoy = fechaMexico()
@@ -80,8 +89,11 @@ export async function ensureDailySync(): Promise<void> {
 
   // Evita carreras si varias peticiones llegan a la vez el primer momento del día
   if (!sincronizandoHoy) {
-    sincronizandoHoy = registrarSnapshotHistorial()
-      .finally(() => { sincronizandoHoy = null })
+    sincronizandoHoy = (async () => {
+      const pool = await getPool()
+      await pendientesRepo.syncIncidenciaStatuses(pool)
+      await registrarSnapshotHistorial()
+    })().finally(() => { sincronizandoHoy = null })
   }
   await sincronizandoHoy
 }
@@ -250,6 +262,14 @@ export async function getRequerimientosPorVencer(): Promise<RequerimientoVencido
   const { porVencer } = await clasificarRequerimientosFleet()
   return porVencer
     .map(r => ({ id: r.id, nombre: r.nombre, categoria: r.categoria, vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre }))
+}
+
+// Incidencias abiertas de la flota, las más graves primero. Pasa por
+// ensureDailySync para que un mantenimiento agendado cuya fecha ya llegó no siga
+// contando como pendiente.
+export async function getIncidenciasAbiertas(): Promise<repo.IncidenciaAbiertaFleet[]> {
+  await ensureDailySync()
+  return repo.findIncidenciasAbiertasFleet()
 }
 
 // ─── Seguros / permisos / licencias por vencer ──────────────────────────────

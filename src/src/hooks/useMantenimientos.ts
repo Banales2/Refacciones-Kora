@@ -45,6 +45,10 @@ export function useCreateMantenimiento(vehiculoId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mantenimientos',  vehiculoId] })
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+      // El mantenimiento cierra las incidencias que atendió, así que sus listas
+      // (la del vehículo, la de la flota y la de pendientes) quedan obsoletas.
+      qc.invalidateQueries({ queryKey: ['incidencias'] })
+      qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
       // Registrar el mantenimiento avanza el odómetro del vehículo.
       qc.invalidateQueries({ queryKey: ['vehiculos'] })
@@ -60,6 +64,9 @@ export function useUpdateMantenimiento(vehiculoId: number) {
     onSuccess: (_res, { id }) => {
       qc.invalidateQueries({ queryKey: ['mantenimientos',  vehiculoId] })
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+      // Cambiar qué atiende (o mover su fecha) abre o cierra incidencias.
+      qc.invalidateQueries({ queryKey: ['incidencias'] })
+      qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
       // El drawer de detalle trae su propia copia del mantenimiento (técnico,
       // fecha, costo…); sin esto seguiría mostrando la versión anterior.
@@ -74,6 +81,9 @@ export function useDeleteMantenimiento(vehiculoId: number) {
     mutationFn: (id: number) => api.delete(`/mantenimientos/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mantenimientos', vehiculoId] })
+      // Borrarlo reabre las incidencias que cerraba.
+      qc.invalidateQueries({ queryKey: ['incidencias'] })
+      qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })

@@ -100,6 +100,48 @@ export async function remove(id: number): Promise<boolean> {
   }
 }
 
+// Una incidencia se cierra sola en cuanto un mantenimiento que la atiende ya
+// ocurrió, y se reabre si ese vínculo desaparece. Un mantenimiento programado a
+// futuro todavía no cuenta: solo cierra cuando su fecha llega.
+//
+// Solo mueve entre 'activo' y 'completado'. 'cancelado' y 'pausado' los puso una
+// persona a propósito y no se tocan: cancelar es justamente decir "ya no me
+// alertes", y reabrirla por un vínculo sería ignorar esa decisión.
+//
+// Los preventivos quedan fuera: no se "completan", se les reinicia el ciclo, y
+// eso ya lo resuelve el snapshot de fecha/km del vínculo.
+export async function syncIncidenciaStatuses(
+  exec: sql.ConnectionPool | sql.Transaction, ids?: number[]
+): Promise<void> {
+  if (ids && ids.length === 0) return
+
+  const filtro = (req: sql.Request) => ids
+    ? `AND p.id IN (${ids.map((id, i) => { req.input(`p${i}`, sql.Int, id); return `@p${i}` }).join(',')})`
+    : ''
+
+  const atendida = `
+    EXISTS (
+      SELECT 1 FROM mantenimiento_pendientes mp
+      WHERE mp.pendiente_id = p.id AND mp.fecha <= CAST(GETDATE() AS DATE)
+    )`
+
+  const cerrar = exec.request()
+  await cerrar.query(`
+    UPDATE p SET p.status = 'completado', p.updated_at = SYSDATETIME()
+    FROM pendientes p
+    WHERE p.origen = 'incidencia' AND p.status = 'activo' ${filtro(cerrar)}
+      AND ${atendida}
+  `)
+
+  const reabrir = exec.request()
+  await reabrir.query(`
+    UPDATE p SET p.status = 'activo', p.updated_at = SYSDATETIME()
+    FROM pendientes p
+    WHERE p.origen = 'incidencia' AND p.status = 'completado' ${filtro(reabrir)}
+      AND NOT ${atendida}
+  `)
+}
+
 // Todo lo que un vehículo tiene abierto, de los dos tipos: alimenta el selector
 // de "qué atiende este mantenimiento" y el de las agendas.
 export async function findActivosByVehiculo(vehiculoId: number): Promise<PendienteBase[]> {

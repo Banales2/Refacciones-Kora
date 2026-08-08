@@ -66,6 +66,23 @@ export function useRequerimientosPorVencer() {
   })
 }
 
+export interface IncidenciaAbierta {
+  id:              number
+  nombre:          string
+  categoria:       string | null
+  severidad:       'superficial' | 'moderada' | 'grave'
+  fecha:           string
+  vehiculo_id:     number
+  vehiculo_nombre: string
+}
+
+export function useIncidenciasAbiertas() {
+  return useQuery({
+    queryKey: ['dashboard', 'incidencias-abiertas'],
+    queryFn: () => api.get<{ data: IncidenciaAbierta[] }>('/dashboard/incidencias-abiertas'),
+  })
+}
+
 export interface SeguroPorVencer {
   id:               number
   poliza:           string

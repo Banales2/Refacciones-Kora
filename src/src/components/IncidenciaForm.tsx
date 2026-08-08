@@ -1,11 +1,10 @@
 // Formulario de incidencia, compartido por la página de Incidencias y por la
 // sección de incidencias del detalle de un vehículo.
-import { useMemo, useState } from 'react'
 import { Stack, Group, TextInput, Textarea, Select, Button, Alert } from '@mantine/core'
 import { DateInput, TimeInput } from '@mantine/dates'
 import { useForm } from '@mantine/form'
 import type { Incidencia, IncidenciaPayload, Severidad, StatusIncidencia } from '../hooks/useIncidencias'
-import { useRequerimientoCategorias } from '../hooks/useRequerimientos'
+import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
 import { TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre } from '../lib/validaciones'
 
 function todayIso() {
@@ -52,21 +51,8 @@ export default function IncidenciaForm({
     },
   })
 
-  const { data: categoriasData } = useRequerimientoCategorias()
-  const [categoriaSearch, setCategoriaSearch] = useState('')
-  const categoriaInicial = initial?.categoria
-
-  const categoriaOptions = useMemo(() => {
-    const existentes = new Set(categoriasData?.data ?? [])
-    if (categoriaInicial) existentes.add(categoriaInicial)
-    const opts = [...existentes].sort((a, b) => a.localeCompare(b, 'es-MX'))
-      .map((c) => ({ value: c, label: c }))
-    const nueva = categoriaSearch.trim()
-    if (nueva && ![...existentes].some((c) => c.toLowerCase() === nueva.toLowerCase())) {
-      opts.unshift({ value: nueva, label: `+ Crear categoría "${nueva}"` })
-    }
-    return opts
-  }, [categoriasData, categoriaInicial, categoriaSearch])
+  const { options: categoriaOptions, setSearch: setCategoriaSearch } =
+    useCategoriaOptions(form.values.categoria, initial?.categoria)
 
   function handleSubmit(vals: typeof form.values) {
     onSubmit({
@@ -105,7 +91,7 @@ export default function IncidenciaForm({
           onSearchChange={(v) => setCategoriaSearch(limpiarTextoSimple(v, 30))}
           nothingFoundMessage="Escribe para crear una nueva categoría"
           {...form.getInputProps('categoria')}
-          onChange={(v) => form.setFieldValue('categoria', v ?? '')}
+          onChange={(v) => { form.setFieldValue('categoria', v ?? ''); setCategoriaSearch('') }}
         />
         <Select
           label="Severidad" required

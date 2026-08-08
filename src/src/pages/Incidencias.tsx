@@ -96,10 +96,21 @@ export default function Incidencias() {
           </Button>
         </Group>
 
-        {graves > 0 && (
-          <Alert color="red" title="Incidencias graves sin atender" icon={<IconAlertTriangle size={16} />}>
-            Hay <strong>{graves}</strong> incidencia{graves !== 1 ? 's' : ''} grave{graves !== 1 ? 's' : ''} sin
-            atender. Esas unidades no deberían salir así.
+        {abiertas > 0 && (
+          <Alert
+            color={graves > 0 ? 'red' : 'orange'}
+            title={`${abiertas} incidencia${abiertas !== 1 ? 's' : ''} sin atender`}
+            icon={<IconAlertTriangle size={16} />}
+          >
+            {graves > 0 ? (
+              <>
+                De ellas, <strong>{graves}</strong> {graves !== 1 ? 'son graves' : 'es grave'}: esas
+                unidades no deberían salir así.
+              </>
+            ) : (
+              <>Ninguna es grave.</>
+            )}{' '}
+            Se cierran solas al registrar el mantenimiento que las atiende.
           </Alert>
         )}
 

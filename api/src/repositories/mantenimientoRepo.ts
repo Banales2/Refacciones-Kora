@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { syncIncidenciaStatuses } from './pendientesRepo'
 
 export interface Mantenimiento {
   id:               number
@@ -152,6 +153,8 @@ export async function create(data: MantenimientoCreate): Promise<Mantenimiento> 
       `)
     const mant = r.recordset[0]
     await linkPendientes(tx, mant.id, data.pendiente_ids ?? [], data.fecha, data.km_actual ?? null)
+    // Las incidencias que este mantenimiento atiende quedan cerradas.
+    await syncIncidenciaStatuses(tx, data.pendiente_ids ?? [])
     await tx.commit()
     // Se relee para traer el nombre del técnico resuelto por el join.
     return (await findById(mant.id))
@@ -178,6 +181,11 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
     if (sets.length) {
       await req.query(`UPDATE mantenimiento SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`)
     }
+    // Pendientes cuyo status hay que reevaluar al final: los que se vinculan,
+    // los que se desvinculan y —si cambió la fecha— los que ya estaban, porque
+    // la fecha pudo cruzar el umbral de "ya ocurrió".
+    const afectados = new Set<number>()
+
     if ('pendiente_ids' in data) {
       // Diferencial en vez de borrar todo y reinsertar: así no se tocan filas
       // que no cambian. El snapshot no depende de esto — se resincroniza abajo.
@@ -188,6 +196,7 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
       const next     = data.pendiente_ids ?? []
       const quitados = prev.filter(pid => !next.includes(pid))
       const nuevos   = next.filter(pid => !prev.includes(pid))
+      for (const pid of [...prev, ...next]) afectados.add(pid)
 
       for (const pid of quitados) {
         await tx.request()
@@ -221,6 +230,17 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
       `)
     }
 
+    // Mover la fecha puede abrir o cerrar incidencias que ni se tocaron: un
+    // mantenimiento que se pasa a futuro reabre lo que había cerrado.
+    if ('fecha' in data) {
+      const actuales: number[] = (await tx.request().input('id', sql.Int, id)
+        .query('SELECT pendiente_id FROM mantenimiento_pendientes WHERE mantenimiento_id=@id'))
+        .recordset.map((r: { pendiente_id: number }) => r.pendiente_id)
+      for (const pid of actuales) afectados.add(pid)
+    }
+
+    await syncIncidenciaStatuses(tx, [...afectados])
+
     await tx.commit()
   } catch (err) {
     await tx.rollback()
@@ -245,12 +265,21 @@ export async function remove(id: number): Promise<boolean> {
         .query('UPDATE lotes_pieza SET cantidad_disponible = cantidad_disponible + @cant WHERE id=@lid')
     }
 
+    // Hay que quedarse con los ids antes de soltar los vínculos: después ya no
+    // hay forma de saber qué incidencias cerraba este mantenimiento.
+    const vinculados: number[] = (await tx.request().input('id', sql.Int, id)
+      .query('SELECT pendiente_id FROM mantenimiento_pendientes WHERE mantenimiento_id=@id'))
+      .recordset.map((r: { pendiente_id: number }) => r.pendiente_id)
+
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM mantenimiento_pendientes WHERE mantenimiento_id=@id')
 
     const r = await tx.request()
       .input('id', sql.Int, id)
       .query('DELETE FROM mantenimiento OUTPUT DELETED.id WHERE id=@id')
+
+    // Se reabren, salvo las que sigan atendidas por otro mantenimiento.
+    await syncIncidenciaStatuses(tx, vinculados)
 
     await tx.commit()
     return r.recordset.length > 0
