@@ -469,14 +469,14 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
               {totalSinTenencia > 0 && (
                 <>
                   <strong>{totalSinTenencia} vehículo{totalSinTenencia !== 1 ? 's' : ''}</strong>
-                  {totalSinTenencia !== 1 ? ' están' : ' está'} sin tenencia registrada.
+                  {totalSinTenencia !== 1 ? ' no tienen' : ' no tiene'} tenencia registrada.
                 </>
               )}
               {totalSinTenencia > 0 && totalSinSeguro > 0 && ' '}
               {totalSinSeguro > 0 && (
                 <>
                   <strong>{totalSinSeguro} vehículo{totalSinSeguro !== 1 ? 's' : ''}</strong>
-                  {totalSinSeguro !== 1 ? ' están' : ' está'} sin seguro asignado.
+                  {totalSinSeguro !== 1 ? ' no tienen' : ' no tiene'} seguro asignado.
                 </>
               )}
             </Alert>

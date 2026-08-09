@@ -2529,13 +2529,13 @@ export default function Vehiculos({
               {sinTenencia > 0 && (
                 <>
                   <strong>{sinTenencia} vehículo{sinTenencia !== 1 ? 's' : ''}</strong>
-                  {sinTenencia !== 1 ? ' están' : ' está'} sin tenencia registrada.{' '}
+                  {sinTenencia !== 1 ? ' no tienen' : ' no tiene'} tenencia registrada.{' '}
                 </>
               )}
               {sinSeguro > 0 && (
                 <>
                   <strong>{sinSeguro} vehículo{sinSeguro !== 1 ? 's' : ''}</strong>
-                  {sinSeguro !== 1 ? ' están' : ' está'} sin seguro asignado.
+                  {sinSeguro !== 1 ? ' no tienen' : ' no tiene'} seguro asignado.
                 </>
               )}
             </Text>
