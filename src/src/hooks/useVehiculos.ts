@@ -70,17 +70,24 @@ export function vehiculoLabel(v: Pick<VehiculoRow, 'marca' | 'modelo' | 'serie'>
   return `${v.marca} ${v.modelo} — ${v.serie}`
 }
 
+// Documento que le falta al vehículo, para buscar justo las unidades incompletas.
+// La tenencia solo la pagan camiones, tractocamiones y utilitarios, así que ese
+// filtro deja fuera cajas de trailer y montacargas.
+export type FaltaDocumento = 'tenencia' | 'seguro'
+
 export function useVehiculos(
-  page = 1, search = '', tipo?: TipoVehiculo, modeloId?: number, pageSize?: number, enabled = true
+  page = 1, search = '', tipo?: TipoVehiculo, modeloId?: number, pageSize?: number, enabled = true,
+  falta?: FaltaDocumento
 ) {
   return useQuery({
-    queryKey: ['vehiculos', page, search, tipo, modeloId, pageSize],
+    queryKey: ['vehiculos', page, search, tipo, modeloId, pageSize, falta],
     queryFn: () => {
       const qs = new URLSearchParams({ page: String(page) })
       if (search)   qs.set('search',    search)
       if (tipo)     qs.set('tipo',      tipo)
       if (modeloId) qs.set('modelo_id', String(modeloId))
       if (pageSize) qs.set('pageSize',  String(pageSize))
+      if (falta)    qs.set('falta',     falta)
       return api.get<ListResponse>(`/vehiculos?${qs}`)
     },
     enabled,
@@ -101,12 +108,19 @@ export function fetchTodosLosVehiculos() {
   return api.get<ListResponse>('/vehiculos?page=1&pageSize=100')
 }
 
+// Alta, cambio o baja de un vehículo mueven los avisos del tablero (tenencia y
+// seguro faltantes salen de ahí), así que se invalidan junto con la lista.
+function invalidarFlota(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['vehiculos'] })
+  qc.invalidateQueries({ queryKey: ['dashboard'] })
+}
+
 export function useCreateVehiculo() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (payload: VehiculoCreatePayload) =>
       api.post<{ data: VehiculoRow }>('/vehiculos', payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vehiculos'] }),
+    onSuccess: () => invalidarFlota(qc),
   })
 }
 
@@ -115,7 +129,7 @@ export function useUpdateVehiculo() {
   return useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: VehiculoUpdatePayload }) =>
       api.put<{ data: VehiculoRow }>(`/vehiculos/${id}`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vehiculos'] }),
+    onSuccess: () => invalidarFlota(qc),
   })
 }
 
@@ -123,6 +137,6 @@ export function useDeleteVehiculo() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.delete(`/vehiculos/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vehiculos'] }),
+    onSuccess: () => invalidarFlota(qc),
   })
 }

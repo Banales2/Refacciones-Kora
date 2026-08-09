@@ -17,18 +17,37 @@ export interface PermisoPorVencer {
   vehiculos:        number
 }
 
+// Flota en operación: todo lo que no está dado de baja. Los avisos de este
+// tablero son para actuar, y sobre una unidad de baja no hay nada que hacer. El
+// status vive en la tabla hija de cada tipo, de ahí el COALESCE.
+const FLOTA_EN_OPERACION = `
+  flota AS (
+    SELECT v.id, v.seguro_id, v.permiso_id
+    FROM vehiculos v
+    LEFT JOIN camiones              c  ON c.vehiculo_id  = v.id
+    LEFT JOIN tractocamiones        t  ON t.vehiculo_id  = v.id
+    LEFT JOIN vehiculos_utilitarios u  ON u.vehiculo_id  = v.id
+    LEFT JOIN cajas_trailer         ct ON ct.vehiculo_id = v.id
+    LEFT JOIN montacargas           mc ON mc.vehiculo_id = v.id
+    WHERE COALESCE(c.status, t.status, u.status, ct.status, mc.status, '') <> 'Baja'
+  )
+`
+
 // Seguros cuya fecha de expiración es <= @limite (incluye ya vencidos), con el
-// conteo de vehículos que los usan.
+// conteo de vehículos que los usan. La póliza aparece aunque su único vehículo
+// esté de baja (sigue siendo un documento del catálogo que vence), pero esa
+// unidad no se cuenta.
 export async function findSegurosPorVencer(limite: string): Promise<SeguroPorVencer[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('limite', sql.Date, limite)
     .query(`
+      WITH ${FLOTA_EN_OPERACION}
       SELECT s.id, s.poliza, s.compania,
              CONVERT(char(10), s.fecha_expiracion, 23) AS fecha_expiracion,
              COUNT(v.id) AS vehiculos
       FROM seguros s
-      LEFT JOIN vehiculos v ON v.seguro_id = s.id
+      LEFT JOIN flota v ON v.seguro_id = s.id
       WHERE s.fecha_expiracion <= @limite
       GROUP BY s.id, s.poliza, s.compania, s.fecha_expiracion
       ORDER BY s.fecha_expiracion`)
@@ -53,11 +72,11 @@ export async function findTenenciasPorVencer(limite: string): Promise<TenenciaPo
     .input('limite', sql.Date, limite)
     .query(`
       WITH tenencias AS (
-        SELECT vehiculo_id, tenencia, tenencia_expiracion FROM camiones
+        SELECT vehiculo_id, tenencia, tenencia_expiracion, status FROM camiones
         UNION ALL
-        SELECT vehiculo_id, tenencia, tenencia_expiracion FROM tractocamiones
+        SELECT vehiculo_id, tenencia, tenencia_expiracion, status FROM tractocamiones
         UNION ALL
-        SELECT vehiculo_id, tenencia, tenencia_expiracion FROM vehiculos_utilitarios
+        SELECT vehiculo_id, tenencia, tenencia_expiracion, status FROM vehiculos_utilitarios
       )
       SELECT v.id AS vehiculo_id,
              CONCAT(m.marca, ' ', m.nombre, ' — ', v.numero_serie) AS vehiculo,
@@ -68,7 +87,61 @@ export async function findTenenciasPorVencer(limite: string): Promise<TenenciaPo
       JOIN modelos   m ON m.id = v.modelo_id
       WHERE t.tenencia_expiracion IS NOT NULL
         AND t.tenencia_expiracion <= @limite
+        -- Una unidad de baja no va a renovar tenencia: sacarla del aviso.
+        AND COALESCE(t.status, '') <> 'Baja'
       ORDER BY t.tenencia_expiracion`)
+  return r.recordset
+}
+
+// Unidades a las que les falta un documento de plano (no que esté por vencer:
+// que nunca se capturó). Sin ellas, el aviso de vencimientos deja fuera justo a
+// las que peor están, porque no tienen fecha con la cual aparecer.
+export interface VehiculoSinDocumento {
+  vehiculo_id: number
+  vehiculo:    string
+  placas:      string | null
+  tipo:        string
+}
+
+const SELECT_VEHICULO_SIN_DOC = `
+  SELECT v.id AS vehiculo_id,
+         CONCAT(m.marca, ' ', m.nombre, ' — ', v.numero_serie) AS vehiculo,
+         v.placas, v.tipo
+  FROM vehiculos v
+  JOIN modelos m ON m.id = v.modelo_id
+`
+
+// Una unidad dada de baja no necesita tenencia ni seguro: contarla solo infla
+// el aviso con algo que nadie va a ir a capturar. El status vive en la tabla
+// hija de cada tipo, por eso el COALESCE.
+const NO_DADO_DE_BAJA = `COALESCE(c.status, t.status, u.status, '') <> 'Baja'`
+
+// Solo los tipos que pagan tenencia, y solo si no tienen fecha de vencimiento:
+// el folio suelto no basta porque nada lo vigila.
+export async function findVehiculosSinTenencia(): Promise<VehiculoSinDocumento[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    ${SELECT_VEHICULO_SIN_DOC}
+    LEFT JOIN camiones              c ON c.vehiculo_id = v.id
+    LEFT JOIN tractocamiones        t ON t.vehiculo_id = v.id
+    LEFT JOIN vehiculos_utilitarios u ON u.vehiculo_id = v.id
+    WHERE v.tipo IN ('camion','tractocamion','utilitario')
+      AND COALESCE(c.tenencia_expiracion, t.tenencia_expiracion, u.tenencia_expiracion) IS NULL
+      AND ${NO_DADO_DE_BAJA}
+    ORDER BY v.tipo, m.marca, m.nombre, v.numero_serie`)
+  return r.recordset
+}
+
+// Aquí entran los cinco tipos, así que en vez de repetir los joins por status
+// se reusa la flota en operación.
+export async function findVehiculosSinSeguro(): Promise<VehiculoSinDocumento[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    WITH ${FLOTA_EN_OPERACION}
+    ${SELECT_VEHICULO_SIN_DOC}
+    JOIN flota f ON f.id = v.id
+    WHERE v.seguro_id IS NULL
+    ORDER BY v.tipo, m.marca, m.nombre, v.numero_serie`)
   return r.recordset
 }
 
@@ -77,11 +150,12 @@ export async function findPermisosPorVencer(limite: string): Promise<PermisoPorV
   const r = await pool.request()
     .input('limite', sql.Date, limite)
     .query(`
+      WITH ${FLOTA_EN_OPERACION}
       SELECT p.id, p.zona_circulacion,
              CONVERT(char(10), p.fecha_expiracion, 23) AS fecha_expiracion,
              COUNT(v.id) AS vehiculos
       FROM permisos_circulacion p
-      LEFT JOIN vehiculos v ON v.permiso_id = p.id
+      LEFT JOIN flota v ON v.permiso_id = p.id
       WHERE p.fecha_expiracion <= @limite
       GROUP BY p.id, p.zona_circulacion, p.fecha_expiracion
       ORDER BY p.fecha_expiracion`)

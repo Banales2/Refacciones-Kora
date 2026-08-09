@@ -123,11 +123,22 @@ export interface TenenciaPorVencer {
   dias_restantes:   number
 }
 
+// Unidad a la que le falta el documento por completo. No tiene fecha, así que
+// no puede aparecer en las listas de "por vencer": se avisa aparte.
+export interface VehiculoSinDocumento {
+  vehiculo_id: number
+  vehiculo:    string
+  placas:      string | null
+  tipo:        string
+}
+
 export interface DocumentosPorVencer {
   seguros:   SeguroPorVencer[]
   permisos:  PermisoPorVencer[]
   licencias: LicenciaPorVencer[]
   tenencias: TenenciaPorVencer[]
+  sin_tenencia: VehiculoSinDocumento[]
+  sin_seguro:   VehiculoSinDocumento[]
 }
 
 // Seguros y permisos de circulación ya vencidos o próximos a vencer (30 días),

@@ -294,6 +294,9 @@ export interface DocumentosPorVencer {
   permisos:  (repo.PermisoPorVencer & { dias_restantes: number })[]
   licencias: LicenciaPorVencer[]
   tenencias: (repo.TenenciaPorVencer & { dias_restantes: number })[]
+  // Faltantes de plano, sin fecha con la cual aparecer en las listas de arriba.
+  sin_tenencia: repo.VehiculoSinDocumento[]
+  sin_seguro:   repo.VehiculoSinDocumento[]
 }
 
 export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
@@ -302,11 +305,13 @@ export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
   const hoyDate = new Date(`${hoy}T12:00:00`)
   const dias = (fecha: string) => diffDias(hoyDate, new Date(`${fecha}T12:00:00`))
 
-  const [seguros, permisos, conductores, tenencias] = await Promise.all([
+  const [seguros, permisos, conductores, tenencias, sinTenencia, sinSeguro] = await Promise.all([
     repo.findSegurosPorVencer(limite),
     repo.findPermisosPorVencer(limite),
     repo.findConductoresConVigencia(),
     repo.findTenenciasPorVencer(limite),
+    repo.findVehiculosSinTenencia(),
+    repo.findVehiculosSinSeguro(),
   ])
 
   // Las licencias no se pueden filtrar en SQL (vigencia es varchar): se
@@ -340,6 +345,8 @@ export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
     permisos: permisos.map((p) => ({ ...p, dias_restantes: dias(p.fecha_expiracion) })),
     licencias,
     tenencias: tenencias.map((t) => ({ ...t, dias_restantes: dias(t.fecha_expiracion) })),
+    sin_tenencia: sinTenencia,
+    sin_seguro:   sinSeguro,
   }
 }
 

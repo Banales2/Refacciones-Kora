@@ -34,7 +34,8 @@ import {
   useRequerimientos, useCreateRequerimiento, useUpdateRequerimiento, useDeleteRequerimiento,
 } from '../hooks/useRequerimientos'
 import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
-import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
+import type { FaltaDocumento, TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
+import { useDocumentosPorVencer } from '../hooks/useDashboard'
 import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, StatusReq } from '../hooks/useRequerimientos'
 import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
 import type { OrigenPendiente } from '../hooks/usePendientes'
@@ -127,6 +128,12 @@ function antiguedad(iso: string | null | undefined) {
   if (anios) partes.push(`${anios} año${anios !== 1 ? 's' : ''}`)
   if (resto) partes.push(`${resto} mes${resto !== 1 ? 'es' : ''}`)
   return partes.join(' ') || 'Menos de 1 mes'
+}
+
+// Unidad fuera de la flota: no se le reclaman documentos ni entra en los
+// conteos de faltantes. Espeja el filtro del backend.
+function dadoDeBaja(v: Pick<VehiculoRow, 'status'>) {
+  return v.status?.trim().toLowerCase() === 'baja'
 }
 
 // Edad del modelo, en años. `modelo_anio` es texto y a veces trae la versión
@@ -1845,14 +1852,16 @@ function VehiculoDetalle({
           {warnIds.size !== 1 ? 'están próximos a' : 'está próximo a'} vencer (menos de 1 mes o menos del 25% del intervalo de km restante).
         </Alert>
       )}
-      {vehiculo.seguro_id === null && (
+      {/* A una unidad dada de baja ya no se le va a capturar nada, así que no se
+          le reclaman documentos: tampoco cuenta en los avisos del tablero. */}
+      {!dadoDeBaja(vehiculo) && vehiculo.seguro_id === null && (
         <Alert color="red" title="Sin seguro" icon={<IconAlertTriangle size={16} />}>
           Este vehículo no tiene un seguro asignado. Asígnale uno desde el botón de editar.
         </Alert>
       )}
       {/* La tenencia es opcional al capturar el vehículo, pero si falta la fecha
           de vencimiento nadie la vigila: ningún aviso del dashboard la alcanza. */}
-      {TIPOS_CON_TENENCIA.includes(vehiculo.tipo) && !vehiculo.tenencia_expiracion && (
+      {!dadoDeBaja(vehiculo) && TIPOS_CON_TENENCIA.includes(vehiculo.tipo) && !vehiculo.tenencia_expiracion && (
         <Alert color="yellow" title="Sin tenencia" icon={<IconAlertTriangle size={16} />}>
           Este vehículo no tiene tenencia registrada, así que no aparecerá en los avisos de
           vencimiento. Regístrala desde el botón de editar.
@@ -2101,12 +2110,12 @@ function VehiculosTable({
                 <Table.Td fw={500}>
                   <Group gap={6} wrap="nowrap">
                     <span>{v.marca} {v.modelo}</span>
-                    {v.seguro_id === null && (
+                    {!dadoDeBaja(v) && v.seguro_id === null && (
                       <Tooltip label="Sin seguro asignado">
                         <IconAlertTriangle size={16} color="var(--mantine-color-red-6)" />
                       </Tooltip>
                     )}
-                    {TIPOS_CON_TENENCIA.includes(v.tipo) && !v.tenencia_expiracion && (
+                    {!dadoDeBaja(v) && TIPOS_CON_TENENCIA.includes(v.tipo) && !v.tenencia_expiracion && (
                       <Tooltip label="Sin tenencia registrada">
                         <IconAlertTriangle size={16} color="var(--mantine-color-yellow-7)" />
                       </Tooltip>
@@ -2273,11 +2282,17 @@ export default function Vehiculos({
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
   const [debouncedSearch]       = useDebouncedValue(search, 400)
+  // Filtro por documento faltante: convive con la búsqueda por texto y, como
+  // ella, se resuelve en el servidor (la lista viene paginada, así que filtrar
+  // en pantalla solo alcanzaría a la página visible).
+  const [falta, setFalta]       = useState<FaltaDocumento | null>(null)
   const [selected, setSelected] = useState<VehiculoRow | null>(initialVehiculo ?? null)
   // True mientras se muestra el vehículo con el que se entró desde otra sección;
   // se apaga en cuanto el usuario elige otro vehículo de la lista.
   const [externalEntry, setExternalEntry] = useState(!!(initialVehiculo || initialVehiculoId))
-  const searching = debouncedSearch.length > 0
+  // Con cualquiera de los dos activos se usa la lista paginada del servidor en
+  // vez de la vista agrupada.
+  const searching = debouncedSearch.length > 0 || falta !== null
 
   // Elegir un vehículo de la lista: deja de ser una entrada externa, así que el
   // botón de regreso vuelve a la lista y ya no a la sección de origen.
@@ -2316,13 +2331,15 @@ export default function Vehiculos({
   // Al cambiar la búsqueda se vuelve a la página 1. Se ajusta durante el
   // render (patrón recomendado por React) en vez de en un efecto, para no
   // disparar un render extra con la página vieja.
-  const [prevBusqueda, setPrevBusqueda] = useState(debouncedSearch)
-  if (prevBusqueda !== debouncedSearch) {
-    setPrevBusqueda(debouncedSearch)
+  const filtroActual = `${debouncedSearch}|${falta ?? ''}`
+  const [prevBusqueda, setPrevBusqueda] = useState(filtroActual)
+  if (prevBusqueda !== filtroActual) {
+    setPrevBusqueda(filtroActual)
     setPage(1)
   }
 
-  const { data, isLoading, isError } = useVehiculos(page, debouncedSearch, undefined, undefined, undefined, searching)
+  const { data, isLoading, isError } =
+    useVehiculos(page, debouncedSearch, undefined, undefined, undefined, searching, falta ?? undefined)
   const totalPages = Math.ceil(
     (data?.pagination?.total ?? 0) / (data?.pagination?.pageSize ?? 20)
   )
@@ -2330,6 +2347,12 @@ export default function Vehiculos({
   const { data: allData, isLoading: allLoading, isError: allError } =
     useVehiculos(1, '', undefined, undefined, 100, !searching)
   const { data: sucursalesData } = useSucursales()
+
+  // Conteos de toda la flota (no de la página visible): salen del mismo endpoint
+  // que alimenta los avisos del tablero.
+  const { data: documentosData } = useDocumentosPorVencer()
+  const sinTenencia = documentosData?.data.sin_tenencia.length ?? 0
+  const sinSeguro   = documentosData?.data.sin_seguro.length   ?? 0
 
   const createMut = useCreateVehiculo()
   const updateMut = useUpdateVehiculo()
@@ -2499,6 +2522,41 @@ export default function Vehiculos({
         </Group>
       </Group>
 
+      {(sinTenencia > 0 || sinSeguro > 0) && (
+        <Alert color="orange" title="Documentos faltantes" icon={<IconAlertTriangle size={16} />}>
+          <Stack gap="xs">
+            <Text size="sm">
+              {sinTenencia > 0 && (
+                <>
+                  <strong>{sinTenencia} vehículo{sinTenencia !== 1 ? 's' : ''}</strong>
+                  {sinTenencia !== 1 ? ' están' : ' está'} sin tenencia registrada.{' '}
+                </>
+              )}
+              {sinSeguro > 0 && (
+                <>
+                  <strong>{sinSeguro} vehículo{sinSeguro !== 1 ? 's' : ''}</strong>
+                  {sinSeguro !== 1 ? ' están' : ' está'} sin seguro asignado.
+                </>
+              )}
+            </Text>
+            <Group gap="xs">
+              {sinTenencia > 0 && (
+                <Button size="xs" variant={falta === 'tenencia' ? 'filled' : 'default'}
+                  onClick={() => setFalta(falta === 'tenencia' ? null : 'tenencia')}>
+                  Ver sin tenencia
+                </Button>
+              )}
+              {sinSeguro > 0 && (
+                <Button size="xs" variant={falta === 'seguro' ? 'filled' : 'default'}
+                  onClick={() => setFalta(falta === 'seguro' ? null : 'seguro')}>
+                  Ver sin seguro
+                </Button>
+              )}
+            </Group>
+          </Stack>
+        </Alert>
+      )}
+
       <TextInput
         placeholder="Buscar por nombre, marca, modelo, serie o placas…"
         value={search}
@@ -2512,6 +2570,27 @@ export default function Vehiculos({
         }
       />
 
+      {/* El filtro se ve como un chip bajo la barra: así queda claro que la lista
+          de abajo está recortada, aunque la búsqueda esté vacía. */}
+      {falta !== null && (
+        <Group gap="xs">
+          <Badge
+            size="lg" variant="light" color="orange"
+            rightSection={
+              <Text component="span" size="xs" style={{ cursor: 'pointer' }}
+                onClick={() => setFalta(null)}>✕</Text>
+            }
+          >
+            {falta === 'tenencia' ? 'Solo sin tenencia' : 'Solo sin seguro'}
+          </Badge>
+          <Text size="xs" c="dimmed">
+            {falta === 'tenencia'
+              ? 'Camiones de reparto, tractocamiones y utilitarios sin fecha de tenencia.'
+              : 'Vehículos sin póliza asignada.'}
+          </Text>
+        </Group>
+      )}
+
       {searching ? (
         isLoading ? (
           <Center py="xl"><Loader /></Center>
@@ -2519,7 +2598,11 @@ export default function Vehiculos({
           <Alert color="red" title="Error al cargar">No se pudieron obtener los vehículos.</Alert>
         ) : data?.data?.length === 0 ? (
           <Center py="xl">
-            <Text c="dimmed">No se encontraron vehículos para "{search}".</Text>
+            <Text c="dimmed">
+              {search
+                ? `No se encontraron vehículos para "${search}".`
+                : 'No se encontraron vehículos con ese filtro.'}
+            </Text>
           </Center>
         ) : (
           <>

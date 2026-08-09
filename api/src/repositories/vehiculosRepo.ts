@@ -1,6 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { TipoVehiculo, VehiculoCreate, VehiculoUpdate } from '../schemas/vehiculoSchema'
+import { FaltaDocumento, TipoVehiculo, VehiculoCreate, VehiculoUpdate } from '../schemas/vehiculoSchema'
 
 export interface VehiculoRow {
   id:           number
@@ -81,24 +81,44 @@ const JOINS = `
   LEFT JOIN permisos_circulacion per ON per.id = v.permiso_id
 `
 
+// Sin tenencia = de los tipos que la pagan y sin fecha de vencimiento capturada.
+// El folio sin fecha no cuenta: es lo que ningún aviso alcanza a vigilar.
+export const SIN_TENENCIA = `
+  v.tipo IN ('camion','tractocamion','utilitario')
+  AND COALESCE(c.tenencia_expiracion, t.tenencia_expiracion, u.tenencia_expiracion) IS NULL
+`
+
+// Las unidades dadas de baja quedan fuera de los filtros por documento faltante,
+// igual que de los conteos del tablero: ya no se les va a capturar nada. Solo
+// aplica a esos filtros; buscar por texto sí las sigue encontrando.
+const NO_DADO_DE_BAJA = `
+  COALESCE(c.status, t.status, u.status, ct.status, mc.status, '') <> 'Baja'
+`
+
 const WHERE_FILTER = `
   WHERE (@tipo     IS NULL OR v.tipo      = @tipo)
     AND (@modeloId IS NULL OR v.modelo_id = @modeloId)
     AND (@search IS NULL
          OR m.marca LIKE @search OR m.nombre LIKE @search
          OR v.numero_serie LIKE @search OR v.placas LIKE @search)
+    AND (@falta IS NULL
+         OR (${NO_DADO_DE_BAJA}
+             AND ((@falta = 'tenencia' AND ${SIN_TENENCIA})
+               OR (@falta = 'seguro'   AND v.seguro_id IS NULL))))
 `
 
 // ── Read ──────────────────────────────────────────────────────────────────────
 
 export async function findAll(params: {
   offset: number; pageSize: number; search?: string; tipo?: TipoVehiculo; modelo_id?: number
+  falta?: FaltaDocumento
 }): Promise<{ data: VehiculoRow[]; total: number }> {
   const pool = await getPool()
   const req = pool.request()
     .input('search',   sql.NVarChar(100), params.search ? `%${params.search}%` : null)
     .input('tipo',     sql.NVarChar(20),  params.tipo     ?? null)
     .input('modeloId', sql.Int,           params.modelo_id ?? null)
+    .input('falta',    sql.NVarChar(20),  params.falta    ?? null)
     .input('offset',   sql.Int,           params.offset)
     .input('pageSize', sql.Int,           params.pageSize)
 

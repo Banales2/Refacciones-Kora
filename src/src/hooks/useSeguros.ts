@@ -61,7 +61,11 @@ export function useAssignVehiculosSeguro() {
   return useMutation({
     mutationFn: ({ id, vehiculoIds }: { id: number; vehiculoIds: number[] }) =>
       api.post<void>(`/seguros/${id}/vehiculos`, { vehiculo_ids: vehiculoIds }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vehiculos'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vehiculos'] })
+      // Cambia el conteo de unidades sin seguro que avisa el tablero.
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }
 
@@ -71,6 +75,9 @@ export function useUnassignVehiculoSeguro() {
   return useMutation({
     mutationFn: ({ id, vehiculoId }: { id: number; vehiculoId: number }) =>
       api.delete<void>(`/seguros/${id}/vehiculos/${vehiculoId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vehiculos'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vehiculos'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }

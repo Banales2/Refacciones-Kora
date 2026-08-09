@@ -233,6 +233,37 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
     return [...seguros, ...permisos, ...licencias, ...tenencias].sort((a, b) => a.dias_restantes - b.dias_restantes)
   }, [documentosData])
 
+  // Unidades sin tenencia o sin seguro. Van aparte de la lista de arriba: no
+  // tienen fecha, así que no hay "días restantes" con los cuales ordenarlas ni
+  // aparecer entre los vencimientos. Se juntan por vehículo porque a más de una
+  // le falta lo mismo… y a algunas les faltan las dos.
+  const sinDocumento = useMemo(() => {
+    const doc = documentosData?.data
+    const porVehiculo = new Map<number, {
+      vehiculo_id: number; vehiculo: string; placas: string | null; tipo: string
+      tenencia: boolean; seguro: boolean
+    }>()
+    const registrar = (
+      lista: { vehiculo_id: number; vehiculo: string; placas: string | null; tipo: string }[],
+      falta: 'tenencia' | 'seguro',
+    ) => {
+      for (const v of lista) {
+        const prev = porVehiculo.get(v.vehiculo_id) ?? { ...v, tenencia: false, seguro: false }
+        prev[falta] = true
+        porVehiculo.set(v.vehiculo_id, prev)
+      }
+    }
+    registrar(doc?.sin_tenencia ?? [], 'tenencia')
+    registrar(doc?.sin_seguro   ?? [], 'seguro')
+    // Primero a las que les falta todo.
+    return [...porVehiculo.values()].sort((a, b) =>
+      Number(b.tenencia) + Number(b.seguro) - (Number(a.tenencia) + Number(a.seguro)) ||
+      a.vehiculo.localeCompare(b.vehiculo, 'es-MX'))
+  }, [documentosData])
+
+  const totalSinTenencia = documentosData?.data.sin_tenencia.length ?? 0
+  const totalSinSeguro   = documentosData?.data.sin_seguro.length   ?? 0
+
   const licenciasPorVencer = documentosData?.data.licencias ?? []
   const historial = (historialData?.data ?? []).map(h => ({ ...h, fechaLabel: formatFechaCorta(h.fecha) }))
 
@@ -418,6 +449,78 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+        )}
+      </Card>
+
+      {/* ── Vehículos sin tenencia o sin seguro ── */}
+      <Card withBorder padding="lg" radius="md">
+        <Text fw={600} mb={2}>Vehículos sin documentos</Text>
+        <Text size="xs" c="dimmed" mb="md">
+          Unidades sin tenencia o sin seguro capturado. No aparecen arriba porque no tienen fecha
+          de vencimiento que vigilar. La tenencia solo aplica a reparto, tractocamiones y utilitarios.
+        </Text>
+        {loadingDocumentos ? (
+          <Center py="xl"><Loader size="sm" /></Center>
+        ) : sinDocumento.length === 0 ? (
+          <Center py="xl"><Text c="dimmed" size="sm">Todas las unidades tienen tenencia y seguro.</Text></Center>
+        ) : (
+          <Stack gap="sm">
+            <Alert color="orange" icon={<IconAlertTriangle size={16} />}>
+              {totalSinTenencia > 0 && (
+                <>
+                  <strong>{totalSinTenencia} vehículo{totalSinTenencia !== 1 ? 's' : ''}</strong>
+                  {totalSinTenencia !== 1 ? ' están' : ' está'} sin tenencia registrada.
+                </>
+              )}
+              {totalSinTenencia > 0 && totalSinSeguro > 0 && ' '}
+              {totalSinSeguro > 0 && (
+                <>
+                  <strong>{totalSinSeguro} vehículo{totalSinSeguro !== 1 ? 's' : ''}</strong>
+                  {totalSinSeguro !== 1 ? ' están' : ' está'} sin seguro asignado.
+                </>
+              )}
+            </Alert>
+            <Table.ScrollContainer minWidth={520}>
+              <Table striped withTableBorder>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Vehículo</Table.Th>
+                    <Table.Th>Placas</Table.Th>
+                    <Table.Th>Tipo</Table.Th>
+                    <Table.Th>Le falta</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {sinDocumento.map((v) => (
+                    <Table.Tr key={v.vehiculo_id}>
+                      <Table.Td fw={500}>
+                        {onNavigateVehiculo ? (
+                          <Text
+                            component="button" size="sm" fw={500} c="blue"
+                            style={{
+                              cursor: 'pointer', background: 'none', border: 'none', padding: 0,
+                              textAlign: 'left', textDecoration: 'underline', textUnderlineOffset: 2,
+                            }}
+                            onClick={() => onNavigateVehiculo(v.vehiculo_id)}
+                          >
+                            {v.vehiculo}
+                          </Text>
+                        ) : v.vehiculo}
+                      </Table.Td>
+                      <Table.Td>{v.placas ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
+                      <Table.Td>{TIPO_LABELS[v.tipo] ?? v.tipo}</Table.Td>
+                      <Table.Td>
+                        <Group gap={6} wrap="nowrap">
+                          {v.tenencia && <Badge variant="light" color="indigo" size="sm">Tenencia</Badge>}
+                          {v.seguro   && <Badge variant="light" color="red"    size="sm">Seguro</Badge>}
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          </Stack>
         )}
       </Card>
 

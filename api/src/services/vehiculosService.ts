@@ -43,7 +43,7 @@ function validateCreate(data: VehiculoCreate) {
 
 export async function getAll(params: VehiculoQuery) {
   const offset = (params.page - 1) * params.pageSize
-  const result = await repo.findAll({ offset, pageSize: params.pageSize, search: params.search, tipo: params.tipo, modelo_id: params.modelo_id })
+  const result = await repo.findAll({ offset, pageSize: params.pageSize, search: params.search, tipo: params.tipo, modelo_id: params.modelo_id, falta: params.falta })
   return { ...result, page: params.page, pageSize: params.pageSize }
 }
 
