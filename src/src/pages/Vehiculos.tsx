@@ -5,7 +5,7 @@
 // mantenimientos realizados y sus requerimientos.
 // Exporta también MantenimientoForm y RequerimientoForm, reutilizados por el
 // Calendario.
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import {
   Stack, Group, Text, TextInput, Textarea, Table, Badge,
   Pagination, Loader, Center, Alert, Button, Select, MultiSelect,
@@ -34,8 +34,8 @@ import {
   useRequerimientos, useCreateRequerimiento, useUpdateRequerimiento, useDeleteRequerimiento,
 } from '../hooks/useRequerimientos'
 import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
-import type { FaltaDocumento, TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
-import { useDocumentosPorVencer } from '../hooks/useDashboard'
+import type { AlertaVehiculo, TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
+import { useDocumentosPorVencer, useRequerimientosVencidos } from '../hooks/useDashboard'
 import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, StatusReq } from '../hooks/useRequerimientos'
 import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
 import type { OrigenPendiente } from '../hooks/usePendientes'
@@ -128,6 +128,22 @@ function antiguedad(iso: string | null | undefined) {
   if (anios) partes.push(`${anios} año${anios !== 1 ? 's' : ''}`)
   if (resto) partes.push(`${resto} mes${resto !== 1 ? 'es' : ''}`)
   return partes.join(' ') || 'Menos de 1 mes'
+}
+
+// Textos del chip que queda bajo la barra de búsqueda cuando hay un filtro de
+// atención activo, y la línea que explica qué se está mostrando.
+const ALERTA_CHIP: Record<AlertaVehiculo, string> = {
+  sin_tenencia:            'Solo sin tenencia',
+  sin_seguro:              'Solo sin seguro',
+  requerimientos_vencidos: 'Solo con requerimientos vencidos',
+  permiso_por_vencer:      'Solo con permiso por vencer',
+}
+
+const ALERTA_DETALLE: Record<AlertaVehiculo, string> = {
+  sin_tenencia:            'Camiones de reparto, tractocamiones y utilitarios sin fecha de tenencia.',
+  sin_seguro:              'Vehículos sin póliza asignada.',
+  requerimientos_vencidos: 'Con al menos un requerimiento preventivo vencido por kilometraje o por tiempo.',
+  permiso_por_vencer:      'Con permiso de circulación ya vencido o que vence dentro de 30 días.',
 }
 
 // Unidad fuera de la flota: no se le reclaman documentos ni entra en los
@@ -2282,17 +2298,17 @@ export default function Vehiculos({
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
   const [debouncedSearch]       = useDebouncedValue(search, 400)
-  // Filtro por documento faltante: convive con la búsqueda por texto y, como
+  // Filtro por motivo de atención: convive con la búsqueda por texto y, como
   // ella, se resuelve en el servidor (la lista viene paginada, así que filtrar
   // en pantalla solo alcanzaría a la página visible).
-  const [falta, setFalta]       = useState<FaltaDocumento | null>(null)
+  const [alerta, setAlerta]     = useState<AlertaVehiculo | null>(null)
   const [selected, setSelected] = useState<VehiculoRow | null>(initialVehiculo ?? null)
   // True mientras se muestra el vehículo con el que se entró desde otra sección;
   // se apaga en cuanto el usuario elige otro vehículo de la lista.
   const [externalEntry, setExternalEntry] = useState(!!(initialVehiculo || initialVehiculoId))
   // Con cualquiera de los dos activos se usa la lista paginada del servidor en
   // vez de la vista agrupada.
-  const searching = debouncedSearch.length > 0 || falta !== null
+  const searching = debouncedSearch.length > 0 || alerta !== null
 
   // Elegir un vehículo de la lista: deja de ser una entrada externa, así que el
   // botón de regreso vuelve a la lista y ya no a la sección de origen.
@@ -2331,7 +2347,7 @@ export default function Vehiculos({
   // Al cambiar la búsqueda se vuelve a la página 1. Se ajusta durante el
   // render (patrón recomendado por React) en vez de en un efecto, para no
   // disparar un render extra con la página vieja.
-  const filtroActual = `${debouncedSearch}|${falta ?? ''}`
+  const filtroActual = `${debouncedSearch}|${alerta ?? ''}`
   const [prevBusqueda, setPrevBusqueda] = useState(filtroActual)
   if (prevBusqueda !== filtroActual) {
     setPrevBusqueda(filtroActual)
@@ -2339,7 +2355,7 @@ export default function Vehiculos({
   }
 
   const { data, isLoading, isError } =
-    useVehiculos(page, debouncedSearch, undefined, undefined, undefined, searching, falta ?? undefined)
+    useVehiculos(page, debouncedSearch, undefined, undefined, undefined, searching, alerta ?? undefined)
   const totalPages = Math.ceil(
     (data?.pagination?.total ?? 0) / (data?.pagination?.pageSize ?? 20)
   )
@@ -2348,11 +2364,37 @@ export default function Vehiculos({
     useVehiculos(1, '', undefined, undefined, 100, !searching)
   const { data: sucursalesData } = useSucursales()
 
-  // Conteos de toda la flota (no de la página visible): salen del mismo endpoint
-  // que alimenta los avisos del tablero.
-  const { data: documentosData } = useDocumentosPorVencer()
+  // Conteos de toda la flota (no de la página visible): salen de los mismos
+  // endpoints que alimentan los avisos del tablero, así que ambas pantallas
+  // cuentan lo mismo.
+  const { data: documentosData }   = useDocumentosPorVencer()
+  const { data: requerimientosData } = useRequerimientosVencidos()
+
   const sinTenencia = documentosData?.data.sin_tenencia.length ?? 0
   const sinSeguro   = documentosData?.data.sin_seguro.length   ?? 0
+  // Un vehículo puede tener varios requerimientos vencidos; aquí se cuentan
+  // unidades, no requerimientos.
+  const conVencidos = new Set((requerimientosData?.data ?? []).map((r) => r.vehiculo_id)).size
+  // Cada vehículo tiene un solo permiso, así que sumar los vehículos de cada
+  // permiso por vencer no repite unidades.
+  const conPermisoPorVencer = (documentosData?.data.permisos ?? [])
+    .reduce((total, p) => total + p.vehiculos, 0)
+
+  const todosLosAvisos: { alerta: AlertaVehiculo; total: number; texto: string; boton: string }[] = [
+    { alerta: 'sin_tenencia', total: sinTenencia,
+      texto: `${sinTenencia !== 1 ? 'no tienen' : 'no tiene'} tenencia registrada`,
+      boton: 'Ver sin tenencia' },
+    { alerta: 'sin_seguro', total: sinSeguro,
+      texto: `${sinSeguro !== 1 ? 'no tienen' : 'no tiene'} seguro asignado`,
+      boton: 'Ver sin seguro' },
+    { alerta: 'requerimientos_vencidos', total: conVencidos,
+      texto: `${conVencidos !== 1 ? 'tienen' : 'tiene'} requerimientos preventivos vencidos`,
+      boton: 'Ver con vencidos' },
+    { alerta: 'permiso_por_vencer', total: conPermisoPorVencer,
+      texto: `${conPermisoPorVencer !== 1 ? 'traen' : 'trae'} el permiso de circulación vencido o por vencer`,
+      boton: 'Ver permiso por vencer' },
+  ]
+  const avisos = todosLosAvisos.filter((a) => a.total > 0)
 
   const createMut = useCreateVehiculo()
   const updateMut = useUpdateVehiculo()
@@ -2522,36 +2564,27 @@ export default function Vehiculos({
         </Group>
       </Group>
 
-      {(sinTenencia > 0 || sinSeguro > 0) && (
-        <Alert color="orange" title="Documentos faltantes" icon={<IconAlertTriangle size={16} />}>
+      {avisos.length > 0 && (
+        <Alert color="orange" title="Unidades que necesitan atención" icon={<IconAlertTriangle size={16} />}>
           <Stack gap="xs">
             <Text size="sm">
-              {sinTenencia > 0 && (
-                <>
-                  <strong>{sinTenencia} vehículo{sinTenencia !== 1 ? 's' : ''}</strong>
-                  {sinTenencia !== 1 ? ' no tienen' : ' no tiene'} tenencia registrada.{' '}
-                </>
-              )}
-              {sinSeguro > 0 && (
-                <>
-                  <strong>{sinSeguro} vehículo{sinSeguro !== 1 ? 's' : ''}</strong>
-                  {sinSeguro !== 1 ? ' no tienen' : ' no tiene'} seguro asignado.
-                </>
-              )}
+              {avisos.map((a, i) => (
+                <Fragment key={a.alerta}>
+                  {i > 0 && ' '}
+                  <strong>{a.total} vehículo{a.total !== 1 ? 's' : ''}</strong> {a.texto}.
+                </Fragment>
+              ))}
             </Text>
             <Group gap="xs">
-              {sinTenencia > 0 && (
-                <Button size="xs" variant={falta === 'tenencia' ? 'filled' : 'default'}
-                  onClick={() => setFalta(falta === 'tenencia' ? null : 'tenencia')}>
-                  Ver sin tenencia
+              {avisos.map((a) => (
+                <Button
+                  key={a.alerta} size="xs"
+                  variant={alerta === a.alerta ? 'filled' : 'default'}
+                  onClick={() => setAlerta(alerta === a.alerta ? null : a.alerta)}
+                >
+                  {a.boton}
                 </Button>
-              )}
-              {sinSeguro > 0 && (
-                <Button size="xs" variant={falta === 'seguro' ? 'filled' : 'default'}
-                  onClick={() => setFalta(falta === 'seguro' ? null : 'seguro')}>
-                  Ver sin seguro
-                </Button>
-              )}
+              ))}
             </Group>
           </Stack>
         </Alert>
@@ -2572,22 +2605,18 @@ export default function Vehiculos({
 
       {/* El filtro se ve como un chip bajo la barra: así queda claro que la lista
           de abajo está recortada, aunque la búsqueda esté vacía. */}
-      {falta !== null && (
+      {alerta !== null && (
         <Group gap="xs">
           <Badge
             size="lg" variant="light" color="orange"
             rightSection={
               <Text component="span" size="xs" style={{ cursor: 'pointer' }}
-                onClick={() => setFalta(null)}>✕</Text>
+                onClick={() => setAlerta(null)}>✕</Text>
             }
           >
-            {falta === 'tenencia' ? 'Solo sin tenencia' : 'Solo sin seguro'}
+            {ALERTA_CHIP[alerta]}
           </Badge>
-          <Text size="xs" c="dimmed">
-            {falta === 'tenencia'
-              ? 'Camiones de reparto, tractocamiones y utilitarios sin fecha de tenencia.'
-              : 'Vehículos sin póliza asignada.'}
-          </Text>
+          <Text size="xs" c="dimmed">{ALERTA_DETALLE[alerta]}</Text>
         </Group>
       )}
 

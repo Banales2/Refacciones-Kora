@@ -1,6 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { FaltaDocumento, TipoVehiculo, VehiculoCreate, VehiculoUpdate } from '../schemas/vehiculoSchema'
+import { AlertaVehiculo, TipoVehiculo, VehiculoCreate, VehiculoUpdate } from '../schemas/vehiculoSchema'
 
 export interface VehiculoRow {
   id:           number
@@ -88,37 +88,49 @@ export const SIN_TENENCIA = `
   AND COALESCE(c.tenencia_expiracion, t.tenencia_expiracion, u.tenencia_expiracion) IS NULL
 `
 
-// Las unidades dadas de baja quedan fuera de los filtros por documento faltante,
-// igual que de los conteos del tablero: ya no se les va a capturar nada. Solo
+// Las unidades dadas de baja quedan fuera de los filtros de atención, igual que
+// de los conteos del tablero: ya no se les va a capturar ni renovar nada. Solo
 // aplica a esos filtros; buscar por texto sí las sigue encontrando.
 const NO_DADO_DE_BAJA = `
   COALESCE(c.status, t.status, u.status, ct.status, mc.status, '') <> 'Baja'
 `
 
+// Los requerimientos vencidos no se pueden resolver aquí: dependen del
+// kilometraje contra el último mantenimiento y de intervalos en meses, y esa
+// clasificación ya vive en el servicio del tablero. Llegan resueltos, como una
+// lista de ids separados por coma.
 const WHERE_FILTER = `
   WHERE (@tipo     IS NULL OR v.tipo      = @tipo)
     AND (@modeloId IS NULL OR v.modelo_id = @modeloId)
     AND (@search IS NULL
          OR m.marca LIKE @search OR m.nombre LIKE @search
          OR v.numero_serie LIKE @search OR v.placas LIKE @search)
-    AND (@falta IS NULL
+    AND (@alerta IS NULL
          OR (${NO_DADO_DE_BAJA}
-             AND ((@falta = 'tenencia' AND ${SIN_TENENCIA})
-               OR (@falta = 'seguro'   AND v.seguro_id IS NULL))))
+             AND ((@alerta = 'sin_tenencia' AND ${SIN_TENENCIA})
+               OR (@alerta = 'sin_seguro'   AND v.seguro_id IS NULL)
+               OR (@alerta = 'permiso_por_vencer'
+                   AND v.permiso_id IS NOT NULL AND per.fecha_expiracion <= @limite)
+               OR (@alerta = 'requerimientos_vencidos'
+                   AND v.id IN (SELECT TRY_CAST(value AS INT) FROM STRING_SPLIT(@idsAlerta, ','))))))
 `
 
 // ── Read ──────────────────────────────────────────────────────────────────────
 
 export async function findAll(params: {
   offset: number; pageSize: number; search?: string; tipo?: TipoVehiculo; modelo_id?: number
-  falta?: FaltaDocumento
+  // Filtro de atención, con lo que hace falta para resolverlo: la fecha límite
+  // de "por vencer" y los ids que el servicio ya clasificó.
+  alerta?: AlertaVehiculo; limite?: string; idsAlerta?: number[]
 }): Promise<{ data: VehiculoRow[]; total: number }> {
   const pool = await getPool()
   const req = pool.request()
-    .input('search',   sql.NVarChar(100), params.search ? `%${params.search}%` : null)
-    .input('tipo',     sql.NVarChar(20),  params.tipo     ?? null)
-    .input('modeloId', sql.Int,           params.modelo_id ?? null)
-    .input('falta',    sql.NVarChar(20),  params.falta    ?? null)
+    .input('search',    sql.NVarChar(100), params.search ? `%${params.search}%` : null)
+    .input('tipo',      sql.NVarChar(20),  params.tipo     ?? null)
+    .input('modeloId',  sql.Int,           params.modelo_id ?? null)
+    .input('alerta',    sql.NVarChar(30),  params.alerta   ?? null)
+    .input('limite',    sql.Date,          params.limite   ?? null)
+    .input('idsAlerta', sql.NVarChar(sql.MAX), params.idsAlerta?.join(',') ?? '')
     .input('offset',   sql.Int,           params.offset)
     .input('pageSize', sql.Int,           params.pageSize)
 

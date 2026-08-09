@@ -277,6 +277,21 @@ export async function getIncidenciasAbiertas(): Promise<repo.IncidenciaAbiertaFl
 // dentro de este número de días.
 const DIAS_ALERTA_DOCUMENTOS = 30
 
+// Fecha hasta la que se considera "por vencer". La usa también la búsqueda de
+// vehículos, para que su filtro y este tablero digan lo mismo.
+export function limiteAlertaDocumentos(): string {
+  return addDias(fechaMexico(), DIAS_ALERTA_DOCUMENTOS)
+}
+
+// Vehículos con al menos un requerimiento preventivo vencido. Se expone para
+// que la búsqueda de vehículos filtre por lo mismo que avisa el tablero, sin
+// reimplementar la regla (km contra el último mantenimiento + intervalo en
+// meses) ni en SQL ni en el navegador.
+export async function getVehiculosConRequerimientosVencidos(): Promise<number[]> {
+  const { vencidos } = await clasificarRequerimientosFleet()
+  return [...new Set(vencidos.map((r) => r.vehiculo_id))]
+}
+
 export interface LicenciaPorVencer {
   conductor_id:     number
   conductor:        string

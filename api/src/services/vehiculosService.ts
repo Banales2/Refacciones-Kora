@@ -1,6 +1,7 @@
 import * as repo from '../repositories/vehiculosRepo'
 import * as plantillaRepo from '../repositories/plantillaRepo'
 import * as modelosRepo from '../repositories/modelosRepo'
+import * as dashboardService from './dashboardService'
 import { getPool } from '../shared/db'
 import { VehiculoQuery, VehiculoCreate, VehiculoUpdate, TipoVehiculo } from '../schemas/vehiculoSchema'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
@@ -43,7 +44,24 @@ function validateCreate(data: VehiculoCreate) {
 
 export async function getAll(params: VehiculoQuery) {
   const offset = (params.page - 1) * params.pageSize
-  const result = await repo.findAll({ offset, pageSize: params.pageSize, search: params.search, tipo: params.tipo, modelo_id: params.modelo_id, falta: params.falta })
+
+  // Los requerimientos vencidos los clasifica el tablero, no SQL. Si no hay
+  // ninguno, la consulta sobra: se responde la página vacía.
+  let idsAlerta: number[] | undefined
+  if (params.alerta === 'requerimientos_vencidos') {
+    idsAlerta = await dashboardService.getVehiculosConRequerimientosVencidos()
+    if (idsAlerta.length === 0) {
+      return { data: [], total: 0, page: params.page, pageSize: params.pageSize }
+    }
+  }
+
+  const result = await repo.findAll({
+    offset, pageSize: params.pageSize,
+    search: params.search, tipo: params.tipo, modelo_id: params.modelo_id,
+    alerta: params.alerta,
+    limite: params.alerta === 'permiso_por_vencer' ? dashboardService.limiteAlertaDocumentos() : undefined,
+    idsAlerta,
+  })
   return { ...result, page: params.page, pageSize: params.pageSize }
 }
 

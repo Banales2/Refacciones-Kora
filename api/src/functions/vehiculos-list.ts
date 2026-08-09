@@ -17,7 +17,7 @@ export async function vehiculosList(
       search:    request.query.get('search')    ?? undefined,
       tipo:      request.query.get('tipo')      ?? undefined,
       modelo_id: request.query.get('modelo_id') ?? undefined,
-      falta:     request.query.get('falta')     ?? undefined,
+      alerta:    request.query.get('alerta')    ?? undefined,
     })
 
     const result = await service.getAll(params)

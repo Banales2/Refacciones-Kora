@@ -4,10 +4,14 @@ import { CODIGO, KM_MAX } from './common'
 export const TIPOS_VEHICULO = ['camion', 'tractocamion', 'caja_trailer', 'utilitario', 'montacargas'] as const
 export type TipoVehiculo = typeof TIPOS_VEHICULO[number]
 
-// Filtro por documento faltante. Solo aplica a los tipos que pagan tenencia:
-// una caja de trailer sin tenencia no es una unidad incompleta.
-export const FALTAS_DOCUMENTO = ['tenencia', 'seguro'] as const
-export type FaltaDocumento = typeof FALTAS_DOCUMENTO[number]
+// Motivos por los que una unidad necesita atención, para poder listarlas desde
+// la búsqueda. Los dos primeros son documentos que nunca se capturaron; los
+// otros dos, cosas que ya vencieron o están por vencer. Las unidades dadas de
+// baja quedan fuera de todos: ya no se les va a capturar ni renovar nada.
+export const ALERTAS_VEHICULO = [
+  'sin_tenencia', 'sin_seguro', 'requerimientos_vencidos', 'permiso_por_vencer',
+] as const
+export type AlertaVehiculo = typeof ALERTAS_VEHICULO[number]
 
 export const VehiculoQuerySchema = z.object({
   page:      z.coerce.number().int().min(1).default(1),
@@ -15,7 +19,7 @@ export const VehiculoQuerySchema = z.object({
   search:    z.string().max(100).optional(),
   tipo:      z.enum(TIPOS_VEHICULO).optional(),
   modelo_id: z.coerce.number().int().positive().optional(),
-  falta:     z.enum(FALTAS_DOCUMENTO).optional(),
+  alerta:    z.enum(ALERTAS_VEHICULO).optional(),
 })
 
 export const VehiculoCreateSchema = z.object({
