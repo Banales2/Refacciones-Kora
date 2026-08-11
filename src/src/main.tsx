@@ -6,6 +6,8 @@ import './index.css'
 import App from './App.tsx'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MantineProvider, createTheme } from '@mantine/core'
+import { DatesProvider } from '@mantine/dates'
+import 'dayjs/locale/es'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,7 +35,11 @@ const theme = createTheme({
 createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={queryClient}>
     <MantineProvider theme={theme} defaultColorScheme="auto">
-      <App />
+      {/* Todos los calendarios en español y con la semana empezando en lunes,
+          como los calendarios de aquí; sin esto Mantine cae en inglés. */}
+      <DatesProvider settings={{ locale: 'es', firstDayOfWeek: 1 }}>
+        <App />
+      </DatesProvider>
     </MantineProvider>
   </QueryClientProvider>
 )

@@ -12,6 +12,7 @@ import {
   useRegistrosCambios, useFiltrosRegistros,
 } from '../hooks/useRegistrosCambios'
 import type { RegistroCambio, Cambio } from '../hooks/useRegistrosCambios'
+import { FechaInput } from '../components/FechaInput'
 
 const TAMANO = 50
 
@@ -272,19 +273,21 @@ export default function RegistrosCambios() {
           data={(opciones?.tablas ?? []).map((t) => ({ value: t.tabla, label: t.etiqueta }))}
           w={200}
         />
-        <TextInput
+        <FechaInput
           label="Desde"
-          type="date"
+          clearable
+          maxDate={hasta || undefined}
           value={desde}
-          onChange={(e) => filtrar(setDesde)(e.currentTarget.value)}
-          w={150}
+          onChange={filtrar(setDesde)}
+          w={165}
         />
-        <TextInput
+        <FechaInput
           label="Hasta"
-          type="date"
+          clearable
+          minDate={desde || undefined}
           value={hasta}
-          onChange={(e) => filtrar(setHasta)(e.currentTarget.value)}
-          w={150}
+          onChange={filtrar(setHasta)}
+          w={165}
         />
         {hayFiltros && (
           <Button variant="subtle" color="gray" leftSection={<IconX size={16} />} onClick={limpiar}>

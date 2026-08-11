@@ -29,7 +29,7 @@ import {
   useMantenimientos, useCreateMantenimiento, useUpdateMantenimiento, useDeleteMantenimiento,
 } from '../hooks/useMantenimientos'
 import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimientos'
-import { DateInput } from '@mantine/dates'
+import { FechaInput } from '../components/FechaInput'
 import {
   useRequerimientos, useCreateRequerimiento, useUpdateRequerimiento, useDeleteRequerimiento,
 } from '../hooks/useRequerimientos'
@@ -298,13 +298,12 @@ export function RequerimientoForm({
           {...form.getInputProps('categoria')}
           onChange={(v) => { form.setFieldValue('categoria', v ?? ''); setCategoriaSearch('') }}
         />
-        <DateInput
+        <FechaInput
           label="Fecha de reporte" required
           description="Cuándo se encontró/reportó el requerimiento"
-          placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
           maxDate={hoyIso()}
-          value={form.values.fecha_reporte || null}
-          onChange={(d) => form.setFieldValue('fecha_reporte', d ?? '')}
+          value={form.values.fecha_reporte}
+          onChange={(d) => form.setFieldValue('fecha_reporte', d)}
           error={form.errors.fecha_reporte as string}
         />
         <Select
@@ -1180,12 +1179,11 @@ export function MantenimientoForm({
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Grid>
           <Grid.Col span={6}>
-            <DateInput
+            <FechaInput
               label="Fecha" required
-              placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
               clearable maxDate={hoyIso()}
-              value={form.values.fecha || null}
-              onChange={(d) => form.setFieldValue('fecha', d ?? '')}
+              value={form.values.fecha}
+              onChange={(d) => form.setFieldValue('fecha', d)}
               error={form.errors.fecha as string}
             />
           </Grid.Col>

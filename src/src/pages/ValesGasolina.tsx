@@ -16,6 +16,7 @@ import type { ValeGasolina, ValeGasolinaPayload } from '../hooks/useValesGasolin
 import { useConductores } from '../hooks/useConductores'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import { useAuth } from '../hooks/useAuth'
+import { FechaInput } from '../components/FechaInput'
 
 function todayIso() {
   const d = new Date()
@@ -201,12 +202,13 @@ function ValeForm({
           {...form.getInputProps('vehiculo_id')}
           onChange={seleccionarVehiculo}
         />
-        <TextInput
+        <FechaInput
           label="Fecha"
-          type="date"
           required
-          max={hoy}
-          {...form.getInputProps('fecha')}
+          maxDate={hoy}
+          value={form.values.fecha}
+          onChange={(d) => form.setFieldValue('fecha', d)}
+          error={form.errors.fecha as string}
         />
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Group justify="flex-end" mt="xs">

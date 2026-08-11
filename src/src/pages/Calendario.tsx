@@ -9,7 +9,8 @@ import {
   Stack, Text, Card, Group, Badge, Center, Loader, ActionIcon, Modal, SimpleGrid, ThemeIcon, Grid, Divider,
   Button, Select, MultiSelect, Alert, Textarea, Tooltip,
 } from '@mantine/core'
-import { Calendar, DateInput } from '@mantine/dates'
+import { Calendar } from '@mantine/dates'
+import { FechaInput } from '../components/FechaInput'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
@@ -223,19 +224,19 @@ function AgendaForm({
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Grid>
           <Grid.Col span={6}>
-            <DateInput
-              label="Inicio" required placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
-              value={form.values.fecha_inicio || null}
-              onChange={(d) => form.setFieldValue('fecha_inicio', d ?? '')}
+            <FechaInput
+              label="Inicio" required
+              value={form.values.fecha_inicio}
+              onChange={(d) => form.setFieldValue('fecha_inicio', d)}
               error={form.errors.fecha_inicio as string}
             />
           </Grid.Col>
           <Grid.Col span={6}>
-            <DateInput
-              label="Fin" required placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
+            <FechaInput
+              label="Fin" required
               minDate={form.values.fecha_inicio || undefined}
-              value={form.values.fecha_fin || null}
-              onChange={(d) => form.setFieldValue('fecha_fin', d ?? '')}
+              value={form.values.fecha_fin}
+              onChange={(d) => form.setFieldValue('fecha_fin', d)}
               error={form.errors.fecha_fin as string}
             />
           </Grid.Col>

@@ -15,6 +15,7 @@ import type { Lote, LotePayload } from '../hooks/useLotes'
 import { useProveedores } from '../hooks/useProveedores'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { TEXTO_SIMPLE, limpiarTextoSimple } from '../lib/validaciones'
+import { FechaInput } from './FechaInput'
 
 function stockColor(qty: number) {
   if (qty === 0) return 'red'
@@ -133,12 +134,13 @@ function LoteForm({
           required
           {...form.getInputProps('proveedor_id')}
         />
-        <TextInput
+        <FechaInput
           label="Fecha de compra"
-          type="date"
           required
-          max={hoy}
-          {...form.getInputProps('fecha_compra')}
+          maxDate={hoy}
+          value={form.values.fecha_compra}
+          onChange={(d) => form.setFieldValue('fecha_compra', d)}
+          error={form.errors.fecha_compra as string}
         />
         <NumberInput
           label="Costo unitario"

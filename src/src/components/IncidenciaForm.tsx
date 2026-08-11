@@ -1,7 +1,8 @@
 // Formulario de incidencia, compartido por la página de Incidencias y por la
 // sección de incidencias del detalle de un vehículo.
 import { Stack, Group, TextInput, Textarea, Select, Button, Alert } from '@mantine/core'
-import { DateInput, TimeInput } from '@mantine/dates'
+import { TimeInput } from '@mantine/dates'
+import { FechaInput } from './FechaInput'
 import { useForm } from '@mantine/form'
 import type { Incidencia, IncidenciaPayload, Severidad, StatusIncidencia } from '../hooks/useIncidencias'
 import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
@@ -122,12 +123,11 @@ export default function IncidenciaForm({
           {...form.getInputProps('severidad')}
         />
         <Group grow align="flex-start">
-          <DateInput
+          <FechaInput
             label="Fecha" required
-            placeholder="dd/mm/aaaa" valueFormat="DD/MM/YYYY"
             maxDate={todayIso()}
-            value={form.values.fecha || null}
-            onChange={(d) => form.setFieldValue('fecha', d ?? '')}
+            value={form.values.fecha}
+            onChange={(d) => form.setFieldValue('fecha', d)}
             error={form.errors.fecha as string}
           />
           <TimeInput

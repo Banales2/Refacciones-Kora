@@ -7,7 +7,7 @@ import {
   Stack, Grid, TextInput, NumberInput, Select, Divider,
   Badge, Text, Button, Group, Alert, Modal,
 } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { FechaInput } from './FechaInput'
 import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
 import { useModelos } from '../hooks/useModelos'
 import { useSucursales } from '../hooks/useSucursales'
@@ -15,6 +15,7 @@ import { useRutas } from '../hooks/useRutas'
 import { useSeguros } from '../hooks/useSeguros'
 import { usePermisosCirculacion } from '../hooks/usePermisosCirculacion'
 import { CODIGO, limpiarCodigo, KM_MAX, validarKm } from '../lib/validaciones'
+import { hoyIso } from '../lib/fechas'
 
 const TIPO_META: Record<TipoVehiculo, { label: string; color: string }> = {
   camion:       { label: 'Unidad de reparto', color: 'blue'   },
@@ -73,13 +74,6 @@ function init(v?: VehiculoRow): FormVals {
     seguro_id:    v?.seguro_id   != null ? String(v.seguro_id)   : '',
     permiso_id:   v?.permiso_id  != null ? String(v.permiso_id)  : '',
   }
-}
-
-// Fecha local de hoy en "YYYY-MM-DD" (construirla con métodos UTC recorrería
-// el día en zonas horarias detrás de UTC).
-function hoyIso(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function needsField(tipo: TipoVehiculo | '', check: 'combustible' | 'status' | 'km' | 'sucursal' | 'ruta' | 'tonelaje' | 'pies' | 'ubicacion' | 'placas') {
@@ -326,18 +320,12 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
           )}
         </Grid>
 
-        <DateInput
+        <FechaInput
           label="Fecha de compra"
-          placeholder="dd/mm/aaaa"
-          valueFormat="DD/MM/YYYY"
           required
           maxDate={hoyIso()}
-          // Mantine 9 trabaja con fechas en texto "YYYY-MM-DD". Pasarle un Date
-          // aquí colgaba el navegador: DateInput sincroniza su estado interno en
-          // un efecto que depende de `value`, y un objeto nuevo en cada render
-          // reactivaba el efecto sin parar.
-          value={form.values.fecha_compra || null}
-          onChange={(d) => form.setFieldValue('fecha_compra', d ?? '')}
+          value={form.values.fecha_compra}
+          onChange={(d) => form.setFieldValue('fecha_compra', d)}
           error={form.errors.fecha_compra}
         />
 
@@ -499,13 +487,11 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 />
               </Grid.Col>
               <Grid.Col span={6}>
-                <DateInput
+                <FechaInput
                   label="Expira"
-                  placeholder="dd/mm/aaaa"
-                  valueFormat="DD/MM/YYYY"
                   clearable
-                  value={form.values.tenencia_expiracion || null}
-                  onChange={(d) => form.setFieldValue('tenencia_expiracion', d ?? '')}
+                  value={form.values.tenencia_expiracion}
+                  onChange={(d) => form.setFieldValue('tenencia_expiracion', d)}
                   error={form.errors.tenencia_expiracion as string}
                 />
               </Grid.Col>

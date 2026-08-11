@@ -7,7 +7,7 @@ import {
   Loader, Center, Alert, Button, ActionIcon,
   Modal, Tooltip, Divider, Badge,
 } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { FechaInput } from '../components/FechaInput'
 import { useForm } from '@mantine/form'
 import { IconPencil, IconTrash, IconPlus, IconAlertTriangle } from '@tabler/icons-react'
 import {
@@ -535,15 +535,11 @@ function ConductorForm({
             {...form.getInputProps('licencia_estatal_numero')}
             onChange={(e) => form.setFieldValue('licencia_estatal_numero', limpiarCodigo(e.currentTarget.value, 30))}
           />
-          <DateInput
+          <FechaInput
             label="Vigencia de la licencia"
-            placeholder="dd/mm/aaaa"
-            valueFormat="DD/MM/YYYY"
             clearable
-            // Mantine 9 maneja la fecha como texto "YYYY-MM-DD", que es justo lo
-            // que se guarda en la columna.
-            value={form.values.licencia_estatal_vigencia || null}
-            onChange={(d) => form.setFieldValue('licencia_estatal_vigencia', d ?? '')}
+            value={form.values.licencia_estatal_vigencia}
+            onChange={(d) => form.setFieldValue('licencia_estatal_vigencia', d)}
             error={form.errors.licencia_estatal_vigencia as string}
             description={estatalNoFecha ? `Antes decía "${estatalPrevia}"; elige la fecha` : undefined}
           />
@@ -560,13 +556,11 @@ function ConductorForm({
             {...form.getInputProps('licencia_federal_numero')}
             onChange={(e) => form.setFieldValue('licencia_federal_numero', limpiarCodigo(e.currentTarget.value, 30))}
           />
-          <DateInput
+          <FechaInput
             label="Vigencia de la licencia"
-            placeholder="dd/mm/aaaa"
-            valueFormat="DD/MM/YYYY"
             clearable
-            value={form.values.licencia_federal_vigencia || null}
-            onChange={(d) => form.setFieldValue('licencia_federal_vigencia', d ?? '')}
+            value={form.values.licencia_federal_vigencia}
+            onChange={(d) => form.setFieldValue('licencia_federal_vigencia', d)}
             error={form.errors.licencia_federal_vigencia as string}
             description={federalNoFecha ? `Antes decía "${federalPrevia}"; elige la fecha` : undefined}
           />
@@ -579,13 +573,11 @@ function ConductorForm({
             {...form.getInputProps('licencia_federal_expediente')}
             onChange={(e) => form.setFieldValue('licencia_federal_expediente', limpiarCodigo(e.currentTarget.value, 30))}
           />
-          <DateInput
+          <FechaInput
             label="Vigencia del expediente"
-            placeholder="dd/mm/aaaa"
-            valueFormat="DD/MM/YYYY"
             clearable
-            value={form.values.licencia_federal_expediente_vigencia || null}
-            onChange={(d) => form.setFieldValue('licencia_federal_expediente_vigencia', d ?? '')}
+            value={form.values.licencia_federal_expediente_vigencia}
+            onChange={(d) => form.setFieldValue('licencia_federal_expediente_vigencia', d)}
             error={form.errors.licencia_federal_expediente_vigencia as string}
             description={expedienteNoFecha ? `Antes decía "${expedientePrevia}"; elige la fecha` : undefined}
           />
@@ -959,7 +951,12 @@ function SeguroForm({
           {...form.getInputProps('compania')}
           onChange={(v) => { form.setFieldValue('compania', v ?? ''); setCompaniaSearch('') }}
         />
-        <TextInput label="Fecha de expiración" type="date" required {...form.getInputProps('fecha_expiracion')} />
+        <FechaInput
+          label="Fecha de expiración" required
+          value={form.values.fecha_expiracion}
+          onChange={(d) => form.setFieldValue('fecha_expiracion', d)}
+          error={form.errors.fecha_expiracion as string}
+        />
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
@@ -1134,8 +1131,20 @@ function PermisoForm({
     }))}>
       <Stack gap="sm">
         <TextInput label="Zona de circulación" placeholder="Ej. Zona Metropolitana" required {...form.getInputProps('zona_circulacion')} />
-        <TextInput label="Fecha de emisión" type="date" required {...form.getInputProps('fecha_emision')} />
-        <TextInput label="Fecha de expiración" type="date" required {...form.getInputProps('fecha_expiracion')} />
+        <FechaInput
+          label="Fecha de emisión" required
+          maxDate={form.values.fecha_expiracion || undefined}
+          value={form.values.fecha_emision}
+          onChange={(d) => form.setFieldValue('fecha_emision', d)}
+          error={form.errors.fecha_emision as string}
+        />
+        <FechaInput
+          label="Fecha de expiración" required
+          minDate={form.values.fecha_emision || undefined}
+          value={form.values.fecha_expiracion}
+          onChange={(d) => form.setFieldValue('fecha_expiracion', d)}
+          error={form.errors.fecha_expiracion as string}
+        />
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>

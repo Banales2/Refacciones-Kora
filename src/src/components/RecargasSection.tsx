@@ -9,7 +9,7 @@
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Divider, Loader, Center, Alert, Button,
-  ActionIcon, Modal, Tooltip, TextInput, NumberInput, Select, Badge, Accordion,
+  ActionIcon, Modal, Tooltip, NumberInput, Select, Badge, Accordion,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
@@ -21,6 +21,7 @@ import { useGasolineras } from '../hooks/useGasolineras'
 import { useConductores } from '../hooks/useConductores'
 import { useValesGasolina } from '../hooks/useValesGasolina'
 import { KM_MAX, validarKm } from '../lib/validaciones'
+import { FechaInput } from './FechaInput'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -265,12 +266,13 @@ function RecargaForm({
             No hay vales libres de este vehículo. Registra uno en Vales de gasolina.
           </Text>
         )}
-        <TextInput
+        <FechaInput
           label="Fecha"
-          type="date"
           required
-          max={hoy}
-          {...form.getInputProps('fecha')}
+          maxDate={hoy}
+          value={form.values.fecha}
+          onChange={(d) => form.setFieldValue('fecha', d)}
+          error={form.errors.fecha as string}
         />
         <NumberInput
           label="Litros" placeholder="0.00" required
