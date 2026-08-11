@@ -1869,7 +1869,7 @@ function VehiculoDetalle({
       )}
       {/* A una unidad dada de baja ya no se le va a capturar nada, así que no se
           le reclaman documentos: tampoco cuenta en los avisos del tablero. */}
-      {!dadoDeBaja(vehiculo) && vehiculo.seguro_id === null && (
+      {!dadoDeBaja(vehiculo) && llevaSeguro(vehiculo.tipo) && vehiculo.seguro_id === null && (
         <Alert color="red" title="Sin seguro" icon={<IconAlertTriangle size={16} />}>
           Este vehículo no tiene un seguro asignado. Asígnale uno desde el botón de editar.
         </Alert>
@@ -2132,7 +2132,7 @@ function VehiculosTable({
                 <Table.Td fw={500}>
                   <Group gap={6} wrap="nowrap">
                     <span>{v.marca} {v.modelo}</span>
-                    {!dadoDeBaja(v) && v.seguro_id === null && (
+                    {!dadoDeBaja(v) && llevaSeguro(v.tipo) && v.seguro_id === null && (
                       <Tooltip label="Sin seguro asignado">
                         <IconAlertTriangle size={16} color="var(--mantine-color-red-6)" />
                       </Tooltip>
