@@ -1,5 +1,7 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { PERMISO_ID_SQL, SEGURO_ID_SQL } from './documentosVehiculo'
+import { TIPOS_CON_SEGURO } from '../schemas/vehiculoSchema'
 
 // ─── Seguros / permisos por vencer ──────────────────────────────────────────
 export interface SeguroPorVencer {
@@ -19,10 +21,13 @@ export interface PermisoPorVencer {
 
 // Flota en operación: todo lo que no está dado de baja. Los avisos de este
 // tablero son para actuar, y sobre una unidad de baja no hay nada que hacer. El
-// status vive en la tabla hija de cada tipo, de ahí el COALESCE.
+// status vive en la tabla hija de cada tipo, de ahí el COALESCE — y desde que
+// seguro y permiso también viven ahí, salen del mismo juego de joins.
 const FLOTA_EN_OPERACION = `
   flota AS (
-    SELECT v.id, v.seguro_id, v.permiso_id
+    SELECT v.id, v.tipo,
+           ${SEGURO_ID_SQL}  AS seguro_id,
+           ${PERMISO_ID_SQL} AS permiso_id
     FROM vehiculos v
     LEFT JOIN camiones              c  ON c.vehiculo_id  = v.id
     LEFT JOIN tractocamiones        t  ON t.vehiculo_id  = v.id
@@ -132,15 +137,17 @@ export async function findVehiculosSinTenencia(): Promise<VehiculoSinDocumento[]
   return r.recordset
 }
 
-// Aquí entran los cinco tipos, así que en vez de repetir los joins por status
-// se reusa la flota en operación.
+// Todos los tipos que se aseguran —o sea, todos menos las cajas de trailer, que
+// no llevan póliza y antes salían aquí reclamando una que nadie iba a contratar.
+// En vez de repetir los joins por status se reusa la flota en operación.
 export async function findVehiculosSinSeguro(): Promise<VehiculoSinDocumento[]> {
   const pool = await getPool()
   const r = await pool.request().query(`
     WITH ${FLOTA_EN_OPERACION}
     ${SELECT_VEHICULO_SIN_DOC}
     JOIN flota f ON f.id = v.id
-    WHERE v.seguro_id IS NULL
+    WHERE f.seguro_id IS NULL
+      AND v.tipo IN (${TIPOS_CON_SEGURO.map((t) => `'${t}'`).join(',')})
     ORDER BY v.tipo, m.marca, m.nombre, v.numero_serie`)
   return r.recordset
 }

@@ -45,6 +45,7 @@ import {
 import type { Incidencia, IncidenciaPayload } from '../hooks/useIncidencias'
 import IncidenciaForm from '../components/IncidenciaForm'
 import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
+import { llevaPermiso, llevaSeguro } from '../lib/tipoVehiculo'
 import { VehiculoForm, TIPOS_CON_TENENCIA } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
@@ -141,7 +142,7 @@ const ALERTA_CHIP: Record<AlertaVehiculo, string> = {
 
 const ALERTA_DETALLE: Record<AlertaVehiculo, string> = {
   sin_tenencia:            'Camiones de reparto, tractocamiones y utilitarios sin fecha de tenencia.',
-  sin_seguro:              'Vehículos sin póliza asignada.',
+  sin_seguro:              'Unidades que se aseguran (todas menos las cajas de trailer) sin póliza asignada.',
   requerimientos_vencidos: 'Con al menos un requerimiento preventivo vencido por kilometraje o por tiempo.',
   permiso_por_vencer:      'Con permiso de circulación ya vencido o que vence dentro de 30 días.',
 }
@@ -1915,22 +1916,29 @@ function VehiculoDetalle({
                   <InfoItem label="Placas" value={vehiculo.placas} />
                 </Grid.Col>
               )}
-              <Grid.Col span={{ base: 6, sm: 3 }}>
-                <InfoItem
-                  label="Seguro"
-                  value={vehiculo.seguro_id !== null
-                    ? `${vehiculo.seguro_poliza} — ${vehiculo.seguro_compania}`
-                    : null}
-                />
-              </Grid.Col>
-              <Grid.Col span={{ base: 6, sm: 3 }}>
-                <InfoItem
-                  label="Permiso de circulación"
-                  value={vehiculo.permiso_id !== null
-                    ? `${vehiculo.permiso_zona} (expira ${vehiculo.permiso_expiracion})`
-                    : null}
-                />
-              </Grid.Col>
+              {/* Una caja de trailer no se asegura y solo reparto y utilitarios
+                  tramitan permiso: donde no aplica, el dato no se muestra en
+                  blanco (parecía un pendiente por capturar). */}
+              {llevaSeguro(vehiculo.tipo) && (
+                <Grid.Col span={{ base: 6, sm: 3 }}>
+                  <InfoItem
+                    label="Seguro"
+                    value={vehiculo.seguro_id !== null
+                      ? `${vehiculo.seguro_poliza} — ${vehiculo.seguro_compania}`
+                      : null}
+                  />
+                </Grid.Col>
+              )}
+              {llevaPermiso(vehiculo.tipo) && (
+                <Grid.Col span={{ base: 6, sm: 3 }}>
+                  <InfoItem
+                    label="Permiso de circulación"
+                    value={vehiculo.permiso_id !== null
+                      ? `${vehiculo.permiso_zona} (expira ${vehiculo.permiso_expiracion})`
+                      : null}
+                  />
+                </Grid.Col>
+              )}
               {vehiculo.kilometraje !== null && (
                 <Grid.Col span={{ base: 6, sm: 3 }}>
                   {editingKm ? (

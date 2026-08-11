@@ -4,6 +4,13 @@ import { CODIGO, KM_MAX } from './common'
 export const TIPOS_VEHICULO = ['camion', 'tractocamion', 'caja_trailer', 'utilitario', 'montacargas'] as const
 export type TipoVehiculo = typeof TIPOS_VEHICULO[number]
 
+// Qué tipos llevan cada documento. Una caja de trailer no se asegura, y el
+// permiso de circulación solo lo tramitan las unidades que entran a la zona:
+// ni tractocamiones, ni cajas, ni montacargas. Ambas columnas viven en las
+// tablas hijas de estos tipos, así que la lista y el esquema van juntos.
+export const TIPOS_CON_SEGURO: TipoVehiculo[]  = ['camion', 'tractocamion', 'utilitario', 'montacargas']
+export const TIPOS_CON_PERMISO: TipoVehiculo[] = ['camion', 'utilitario']
+
 // Motivos por los que una unidad necesita atención, para poder listarlas desde
 // la búsqueda. Los dos primeros son documentos que nunca se capturaron; los
 // otros dos, cosas que ya vencieron o están por vencer. Las unidades dadas de
@@ -59,10 +66,19 @@ export const VehiculoCreateSchema = z.object({
   seguro_id:    z.coerce.number().int().positive().nullable().optional(),
   permiso_id:   z.coerce.number().int().positive().nullable().optional(),
 })
-  // Los montacargas no llevan placas; el resto de los tipos sí.
   .superRefine((data, ctx) => {
+    // Los montacargas no llevan placas; el resto de los tipos sí.
     if (data.tipo !== 'montacargas' && !data.placas?.trim()) {
       ctx.addIssue({ code: 'custom', message: 'Placas requeridas', path: ['placas'] })
+    }
+    // Y no se acepta un documento que ese tipo no puede tener: la columna ni
+    // siquiera existe en su tabla hija, así que se rechaza aquí con un motivo
+    // en vez de reventar contra el esquema.
+    if (data.seguro_id != null && !TIPOS_CON_SEGURO.includes(data.tipo)) {
+      ctx.addIssue({ code: 'custom', message: 'Este tipo de unidad no se asegura', path: ['seguro_id'] })
+    }
+    if (data.permiso_id != null && !TIPOS_CON_PERMISO.includes(data.tipo)) {
+      ctx.addIssue({ code: 'custom', message: 'Este tipo de unidad no lleva permiso de circulación', path: ['permiso_id'] })
     }
   })
 

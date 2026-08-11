@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { TABLAS_CON_SEGURO, vehiculosConDocumento } from './documentosVehiculo'
 
 export interface Seguro {
   id:               number
@@ -63,7 +64,7 @@ export async function countVehiculos(id: number): Promise<number> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, id)
-    .query('SELECT COUNT(*) AS cnt FROM vehiculos WHERE seguro_id = @id')
+    .query(`SELECT COUNT(*) AS cnt FROM (${vehiculosConDocumento('seguro_id', '@id')}) x`)
   return r.recordset[0].cnt
 }
 
@@ -77,6 +78,10 @@ export async function remove(id: number): Promise<boolean> {
 
 // Asigna este seguro a los vehículos indicados (los mueve desde cualquier
 // seguro previo). La FK garantiza que solo se aceptan seguros existentes.
+//
+// La póliza vive en la tabla hija de cada tipo, así que se recorren las cuatro
+// que la tienen; el id que caiga en una caja de trailer no coincide con ninguna
+// y simplemente no se asigna, que es justo lo que debe pasar.
 export async function assignVehiculos(seguroId: number, vehiculoIds: number[]): Promise<void> {
   if (vehiculoIds.length === 0) return
   const pool = await getPool()
@@ -85,15 +90,25 @@ export async function assignVehiculos(seguroId: number, vehiculoIds: number[]): 
     req.input(`v${i}`, sql.Int, vid)
     return `@v${i}`
   })
-  await req.query(`UPDATE vehiculos SET seguro_id=@sid WHERE id IN (${params.join(',')})`)
+  await req.query(
+    TABLAS_CON_SEGURO
+      .map((tabla) => `UPDATE ${tabla} SET seguro_id=@sid WHERE vehiculo_id IN (${params.join(',')});`)
+      .join('\n')
+  )
 }
 
-// Quita un vehículo de este seguro (solo si realmente lo tenía asignado).
+// Quita un vehículo de este seguro (solo si realmente lo tenía asignado). El
+// vehículo está en una sola tabla hija, así que basta con que alguno de los
+// UPDATE haya tocado un renglón.
 export async function unassignVehiculo(seguroId: number, vehiculoId: number): Promise<boolean> {
   const pool = await getPool()
   const r = await pool.request()
     .input('sid', sql.Int, seguroId)
     .input('vid', sql.Int, vehiculoId)
-    .query('UPDATE vehiculos SET seguro_id=NULL OUTPUT DELETED.id WHERE id=@vid AND seguro_id=@sid')
-  return r.recordset.length > 0
+    .query(
+      TABLAS_CON_SEGURO
+        .map((tabla) => `UPDATE ${tabla} SET seguro_id=NULL WHERE vehiculo_id=@vid AND seguro_id=@sid;`)
+        .join('\n')
+    )
+  return r.rowsAffected.some((n) => n > 0)
 }

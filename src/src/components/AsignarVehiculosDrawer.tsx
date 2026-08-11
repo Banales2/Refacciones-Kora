@@ -19,6 +19,9 @@ export interface AsignarVehiculosDrawerProps {
   subtitulo: string
   targetId: number | null
   field:    'seguro_id' | 'permiso_id'
+  // Tipos que llevan este documento. Los demás ni siquiera tienen la columna en
+  // su tabla, así que no se ofrecen para agregar.
+  tiposPermitidos: string[]
   // Describe a qué seguro/permiso pertenece hoy un vehículo disponible, para
   // avisar que al agregarlo se moverá desde ahí. null si no tiene ninguno.
   actualLabel: (v: VehiculoRow) => string | null
@@ -32,7 +35,7 @@ export interface AsignarVehiculosDrawerProps {
 }
 
 export function AsignarVehiculosDrawer({
-  opened, onClose, titulo, subtitulo, targetId, field,
+  opened, onClose, titulo, subtitulo, targetId, field, tiposPermitidos,
   actualLabel, assign, assignPending, assignError, unassign, unassignPendingId,
   onNavigateVehiculo,
 }: AsignarVehiculosDrawerProps) {
@@ -43,7 +46,7 @@ export function AsignarVehiculosDrawer({
   const vehiculos = data?.data ?? []
 
   const asignados    = vehiculos.filter((v) => v[field] === targetId)
-  const disponibles  = vehiculos.filter((v) => v[field] !== targetId)
+  const disponibles  = vehiculos.filter((v) => v[field] !== targetId && tiposPermitidos.includes(v.tipo))
   const opciones = disponibles.map((v) => {
     const actual = actualLabel(v)
     return {

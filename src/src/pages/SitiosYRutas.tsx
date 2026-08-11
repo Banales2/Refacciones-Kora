@@ -8,6 +8,7 @@ import {
   Modal, Tooltip, Divider, Badge,
 } from '@mantine/core'
 import { FechaInput } from '../components/FechaInput'
+import { TIPOS_CON_PERMISO, TIPOS_CON_SEGURO } from '../lib/tipoVehiculo'
 import { useForm } from '@mantine/form'
 import { IconPencil, IconTrash, IconPlus, IconAlertTriangle } from '@tabler/icons-react'
 import {
@@ -1089,6 +1090,7 @@ function SegurosPanel({
         subtitulo={asignando ? `${asignando.compania} · expira ${asignando.fecha_expiracion}` : ''}
         targetId={asignando?.id ?? null}
         field="seguro_id"
+        tiposPermitidos={TIPOS_CON_SEGURO}
         actualLabel={(v) => (v.seguro_id != null ? v.seguro_poliza : null)}
         assign={(ids, onDone) => asignando && assignMut.mutate({ id: asignando.id, vehiculoIds: ids }, { onSuccess: onDone })}
         assignPending={assignMut.isPending}
@@ -1279,6 +1281,7 @@ function PermisosPanel({
         subtitulo={asignando ? `Permiso de circulación · expira ${asignando.fecha_expiracion}` : ''}
         targetId={asignando?.id ?? null}
         field="permiso_id"
+        tiposPermitidos={TIPOS_CON_PERMISO}
         actualLabel={(v) => (v.permiso_id != null ? v.permiso_zona : null)}
         assign={(ids, onDone) => asignando && assignMut.mutate({ id: asignando.id, vehiculoIds: ids }, { onSuccess: onDone })}
         assignPending={assignMut.isPending}

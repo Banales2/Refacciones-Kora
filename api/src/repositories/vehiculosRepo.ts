@@ -1,6 +1,10 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { AlertaVehiculo, TipoVehiculo, VehiculoCreate, VehiculoUpdate } from '../schemas/vehiculoSchema'
+import {
+  AlertaVehiculo, TipoVehiculo, VehiculoCreate, VehiculoUpdate,
+  TIPOS_CON_SEGURO, TIPOS_CON_PERMISO,
+} from '../schemas/vehiculoSchema'
+import { PERMISO_ID_SQL, SEGURO_ID_SQL } from './documentosVehiculo'
 
 export interface VehiculoRow {
   id:           number
@@ -25,6 +29,8 @@ export interface VehiculoRow {
   ruta:         string | null
   pies:         number | null
   fecha_compra: string | null
+  // Seguro y permiso también viven en las hijas: las cajas de trailer no se
+  // aseguran, y el permiso de circulación solo lo llevan reparto y utilitarios.
   seguro_id:        number | null
   seguro_poliza:    string | null
   seguro_compania:  string | null
@@ -60,9 +66,9 @@ const SELECT_COLS = `
          WHEN v.tipo='utilitario' THEN u.tenencia_expiracion END, 23) AS tenencia_expiracion,
   COALESCE(t.ruta_id, ct.ruta_id) AS ruta_id, r.nombre AS ruta,
   ct.pies,
-  v.seguro_id, seg.poliza AS seguro_poliza, seg.compania AS seguro_compania,
+  ${SEGURO_ID_SQL} AS seguro_id, seg.poliza AS seguro_poliza, seg.compania AS seguro_compania,
   CONVERT(char(10), seg.fecha_expiracion, 23) AS seguro_expiracion,
-  v.permiso_id, per.zona_circulacion AS permiso_zona,
+  ${PERMISO_ID_SQL} AS permiso_id, per.zona_circulacion AS permiso_zona,
   CONVERT(char(10), per.fecha_expiracion, 23) AS permiso_expiracion,
   m.anio AS modelo_anio
 `
@@ -77,8 +83,8 @@ const JOINS = `
   LEFT JOIN montacargas          mc ON mc.vehiculo_id = v.id
   LEFT JOIN sucursales           s  ON s.id = COALESCE(c.sucursal_id, mc.sucursal_id)
   LEFT JOIN rutas                r  ON r.id = COALESCE(t.ruta_id, ct.ruta_id)
-  LEFT JOIN seguros              seg ON seg.id = v.seguro_id
-  LEFT JOIN permisos_circulacion per ON per.id = v.permiso_id
+  LEFT JOIN seguros              seg ON seg.id = ${SEGURO_ID_SQL}
+  LEFT JOIN permisos_circulacion per ON per.id = ${PERMISO_ID_SQL}
 `
 
 // Sin tenencia = de los tipos que la pagan y sin fecha de vencimiento capturada.
@@ -86,6 +92,13 @@ const JOINS = `
 export const SIN_TENENCIA = `
   v.tipo IN ('camion','tractocamion','utilitario')
   AND COALESCE(c.tenencia_expiracion, t.tenencia_expiracion, u.tenencia_expiracion) IS NULL
+`
+
+// Sin seguro = de los tipos que se aseguran y sin póliza asignada. Las cajas de
+// trailer no entran: no se aseguran, así que reclamarles la póliza era ruido.
+export const SIN_SEGURO = `
+  v.tipo IN (${TIPOS_CON_SEGURO.map((t) => `'${t}'`).join(',')})
+  AND ${SEGURO_ID_SQL} IS NULL
 `
 
 // Las unidades dadas de baja quedan fuera de los filtros de atención, igual que
@@ -108,9 +121,9 @@ const WHERE_FILTER = `
     AND (@alerta IS NULL
          OR (${NO_DADO_DE_BAJA}
              AND ((@alerta = 'sin_tenencia' AND ${SIN_TENENCIA})
-               OR (@alerta = 'sin_seguro'   AND v.seguro_id IS NULL)
+               OR (@alerta = 'sin_seguro'   AND ${SIN_SEGURO})
                OR (@alerta = 'permiso_por_vencer'
-                   AND v.permiso_id IS NOT NULL AND per.fecha_expiracion <= @limite)
+                   AND ${PERMISO_ID_SQL} IS NOT NULL AND per.fecha_expiracion <= @limite)
                OR (@alerta = 'requerimientos_vencidos'
                    AND v.id IN (SELECT TRY_CAST(value AS INT) FROM STRING_SPLIT(@idsAlerta, ','))))))
 `
@@ -218,12 +231,15 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
       .input('serie',        sql.NVarChar(80),  data.serie)
       .input('placas',       sql.NVarChar(20),  data.placas ?? null)
       .input('fechaCompra',  sql.Date,          data.fecha_compra ?? null)
-      .input('seguroId',     sql.Int,           data.seguro_id ?? null)
-      .input('permisoId',    sql.Int,           data.permiso_id ?? null)
-      .query('INSERT INTO vehiculos (modelo_id, tipo, numero_serie, placas, fecha_compra, seguro_id, permiso_id) OUTPUT INSERTED.id VALUES (@modelo_id, @tipo, @serie, @placas, @fechaCompra, @seguroId, @permisoId)')
+      .query('INSERT INTO vehiculos (modelo_id, tipo, numero_serie, placas, fecha_compra) OUTPUT INSERTED.id VALUES (@modelo_id, @tipo, @serie, @placas, @fechaCompra)')
     const vid = vRes.recordset[0].id
 
+    // Seguro y permiso van en la tabla hija, y solo en las de los tipos que los
+    // llevan: la columna ni existe en las demás. El servicio ya rechazó el
+    // payload que traiga uno donde no aplica.
     const sub = tx.request().input('vid', sql.Int, vid)
+    if (TIPOS_CON_SEGURO.includes(data.tipo))  sub.input('seguroId',  sql.Int, data.seguro_id ?? null)
+    if (TIPOS_CON_PERMISO.includes(data.tipo)) sub.input('permisoId', sql.Int, data.permiso_id ?? null)
     if (data.tipo === 'camion') {
       await sub
         .input('combustible', sql.NVarChar(30),  data.combustible!)
@@ -233,7 +249,7 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
         .input('sucursal',    sql.Int,           data.sucursal_id!)
         .input('tenencia',    sql.NVarChar(50),  data.tenencia ?? null)
         .input('tenenciaExp', sql.Date,          data.tenencia_expiracion ?? null)
-        .query('INSERT INTO camiones (vehiculo_id,combustible,kilometraje,status,ubicacion,sucursal_id,tenencia,tenencia_expiracion) VALUES (@vid,@combustible,@km,@status,@ubicacion,@sucursal,@tenencia,@tenenciaExp)')
+        .query('INSERT INTO camiones (vehiculo_id,combustible,kilometraje,status,ubicacion,sucursal_id,tenencia,tenencia_expiracion,seguro_id,permiso_id) VALUES (@vid,@combustible,@km,@status,@ubicacion,@sucursal,@tenencia,@tenenciaExp,@seguroId,@permisoId)')
     } else if (data.tipo === 'tractocamion') {
       await sub
         .input('tonelaje',    sql.Int,          data.tonelaje!)
@@ -243,7 +259,7 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
         .input('status',      sql.NVarChar(30), data.status!)
         .input('ruta',        sql.Int,          data.ruta_id!)
         .input('tenenciaExp', sql.Date,         data.tenencia_expiracion ?? null)
-        .query('INSERT INTO tractocamiones (vehiculo_id,tonelaje,combustible,tenencia,kilometraje,status,ruta_id,tenencia_expiracion) VALUES (@vid,@tonelaje,@combustible,@tenencia,@km,@status,@ruta,@tenenciaExp)')
+        .query('INSERT INTO tractocamiones (vehiculo_id,tonelaje,combustible,tenencia,kilometraje,status,ruta_id,tenencia_expiracion,seguro_id) VALUES (@vid,@tonelaje,@combustible,@tenencia,@km,@status,@ruta,@tenenciaExp,@seguroId)')
     } else if (data.tipo === 'caja_trailer') {
       await sub
         .input('pies',   sql.Int,          data.pies!)
@@ -256,7 +272,7 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
         .input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null)
         .input('status',      sql.NVarChar(30),  data.status!)
         .input('sucursal',    sql.Int,           data.sucursal_id!)
-        .query('INSERT INTO montacargas (vehiculo_id,combustible,ubicacion,status,sucursal_id) VALUES (@vid,@combustible,@ubicacion,@status,@sucursal)')
+        .query('INSERT INTO montacargas (vehiculo_id,combustible,ubicacion,status,sucursal_id,seguro_id) VALUES (@vid,@combustible,@ubicacion,@status,@sucursal,@seguroId)')
     } else {
       await sub
         .input('combustible', sql.NVarChar(30),  data.combustible!)
@@ -265,7 +281,7 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
         .input('km',          sql.Int,           data.kilometraje ?? 0)
         .input('tenencia',    sql.NVarChar(50),  data.tenencia ?? null)
         .input('tenenciaExp', sql.Date,          data.tenencia_expiracion ?? null)
-        .query('INSERT INTO vehiculos_utilitarios (vehiculo_id,combustible,ubicacion,status,kilometraje,tenencia,tenencia_expiracion) VALUES (@vid,@combustible,@ubicacion,@status,@km,@tenencia,@tenenciaExp)')
+        .query('INSERT INTO vehiculos_utilitarios (vehiculo_id,combustible,ubicacion,status,kilometraje,tenencia,tenencia_expiracion,seguro_id,permiso_id) VALUES (@vid,@combustible,@ubicacion,@status,@km,@tenencia,@tenenciaExp,@seguroId,@permisoId)')
     }
 
     await tx.commit()
@@ -316,13 +332,22 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
   if (data.serie       !== undefined) { baseReq.input('serie',       sql.NVarChar(80),  data.serie);       baseSets.push('numero_serie=@serie') }
   if ('placas' in data)               { baseReq.input('placas',     sql.NVarChar(20),  data.placas ?? null); baseSets.push('placas=@placas') }
   if ('fecha_compra' in data)         { baseReq.input('fechaCompra', sql.Date,          data.fecha_compra ?? null); baseSets.push('fecha_compra=@fechaCompra') }
-  if ('seguro_id' in data)            { baseReq.input('seguroId',    sql.Int,           data.seguro_id ?? null);    baseSets.push('seguro_id=@seguroId') }
-  if ('permiso_id' in data)           { baseReq.input('permisoId',   sql.Int,           data.permiso_id ?? null);   baseSets.push('permiso_id=@permisoId') }
   if (baseSets.length) await baseReq.query(`UPDATE vehiculos SET ${baseSets.join(',')} WHERE id=@id`)
 
   // Update subtable
   const sub = pool.request().input('vid', sql.Int, id)
   const subSets: string[] = []
+
+  // Seguro y permiso son columnas de la hija, y solo de los tipos que los
+  // llevan. Para un tipo que no lo lleva se ignora en silencio: el servicio ya
+  // rechaza el payload que lo traiga con valor, así que aquí solo puede quedar
+  // el null que manda un formulario donde el campo ni se muestra.
+  if ('seguro_id' in data && TIPOS_CON_SEGURO.includes(tipo)) {
+    sub.input('seguroId', sql.Int, data.seguro_id ?? null); subSets.push('seguro_id=@seguroId')
+  }
+  if ('permiso_id' in data && TIPOS_CON_PERMISO.includes(tipo)) {
+    sub.input('permisoId', sql.Int, data.permiso_id ?? null); subSets.push('permiso_id=@permisoId')
+  }
 
   if (tipo === 'camion') {
     if (data.combustible  !== undefined) { sub.input('combustible', sql.NVarChar(30),  data.combustible);  subSets.push('combustible=@combustible') }

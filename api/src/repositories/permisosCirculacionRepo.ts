@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { TABLAS_CON_PERMISO, vehiculosConDocumento } from './documentosVehiculo'
 
 export interface PermisoCirculacion {
   id:               number
@@ -84,7 +85,7 @@ export async function countVehiculos(id: number): Promise<number> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, id)
-    .query('SELECT COUNT(*) AS cnt FROM vehiculos WHERE permiso_id = @id')
+    .query(`SELECT COUNT(*) AS cnt FROM (${vehiculosConDocumento('permiso_id', '@id')}) x`)
   return r.recordset[0].cnt
 }
 
@@ -98,6 +99,10 @@ export async function remove(id: number): Promise<boolean> {
 
 // Asigna este permiso a los vehículos indicados (los mueve desde cualquier
 // permiso previo). La FK garantiza que solo se aceptan permisos existentes.
+//
+// El permiso solo lo llevan reparto y utilitarios, así que se recorren esas dos
+// tablas: un tracto, una caja o un montacargas en la lista no coincide con
+// ninguna y se queda sin permiso, que es lo correcto.
 export async function assignVehiculos(permisoId: number, vehiculoIds: number[]): Promise<void> {
   if (vehiculoIds.length === 0) return
   const pool = await getPool()
@@ -106,15 +111,25 @@ export async function assignVehiculos(permisoId: number, vehiculoIds: number[]):
     req.input(`v${i}`, sql.Int, vid)
     return `@v${i}`
   })
-  await req.query(`UPDATE vehiculos SET permiso_id=@pid WHERE id IN (${params.join(',')})`)
+  await req.query(
+    TABLAS_CON_PERMISO
+      .map((tabla) => `UPDATE ${tabla} SET permiso_id=@pid WHERE vehiculo_id IN (${params.join(',')});`)
+      .join('\n')
+  )
 }
 
-// Quita un vehículo de este permiso (solo si realmente lo tenía asignado).
+// Quita un vehículo de este permiso (solo si realmente lo tenía asignado). El
+// vehículo está en una sola tabla hija, así que basta con que alguno de los
+// UPDATE haya tocado un renglón.
 export async function unassignVehiculo(permisoId: number, vehiculoId: number): Promise<boolean> {
   const pool = await getPool()
   const r = await pool.request()
     .input('pid', sql.Int, permisoId)
     .input('vid', sql.Int, vehiculoId)
-    .query('UPDATE vehiculos SET permiso_id=NULL OUTPUT DELETED.id WHERE id=@vid AND permiso_id=@pid')
-  return r.recordset.length > 0
+    .query(
+      TABLAS_CON_PERMISO
+        .map((tabla) => `UPDATE ${tabla} SET permiso_id=NULL WHERE vehiculo_id=@vid AND permiso_id=@pid;`)
+        .join('\n')
+    )
+  return r.rowsAffected.some((n) => n > 0)
 }

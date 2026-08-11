@@ -3,7 +3,10 @@ import * as plantillaRepo from '../repositories/plantillaRepo'
 import * as modelosRepo from '../repositories/modelosRepo'
 import * as dashboardService from './dashboardService'
 import { getPool } from '../shared/db'
-import { VehiculoQuery, VehiculoCreate, VehiculoUpdate, TipoVehiculo } from '../schemas/vehiculoSchema'
+import {
+  VehiculoQuery, VehiculoCreate, VehiculoUpdate, TipoVehiculo,
+  TIPOS_CON_SEGURO, TIPOS_CON_PERMISO,
+} from '../schemas/vehiculoSchema'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
 
 function requireField(value: unknown, label: string) {
@@ -104,9 +107,22 @@ async function validateTipoPermitido(modeloId: number, tipo: TipoVehiculo) {
   }
 }
 
+// Al editar, el tipo no viaja en el payload (no se puede cambiar): sale del
+// registro actual, así que la regla de qué documentos admite se revisa aquí y
+// no en el esquema.
+function validateDocumentos(tipo: TipoVehiculo, data: VehiculoUpdate) {
+  if (data.seguro_id != null && !TIPOS_CON_SEGURO.includes(tipo)) {
+    throw new ValidationError('Este tipo de unidad no se asegura')
+  }
+  if (data.permiso_id != null && !TIPOS_CON_PERMISO.includes(tipo)) {
+    throw new ValidationError('Este tipo de unidad no lleva permiso de circulación')
+  }
+}
+
 export async function update(id: number, data: VehiculoUpdate) {
   const current = await repo.findById(id)
   if (!current) throw new NotFoundError('Vehículo')
+  validateDocumentos(current.tipo as TipoVehiculo, data)
   await validateSerieYPlacas(data.serie, data.placas, id)
   const updated = await repo.update(id, current.tipo as TipoVehiculo, data)
   if (!updated) throw new NotFoundError('Vehículo')

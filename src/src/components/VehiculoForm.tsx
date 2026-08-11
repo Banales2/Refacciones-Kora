@@ -16,6 +16,7 @@ import { useSeguros } from '../hooks/useSeguros'
 import { usePermisosCirculacion } from '../hooks/usePermisosCirculacion'
 import { CODIGO, limpiarCodigo, KM_MAX, validarKm } from '../lib/validaciones'
 import { hoyIso } from '../lib/fechas'
+import { llevaPermiso, llevaSeguro } from '../lib/tipoVehiculo'
 
 const TIPO_META: Record<TipoVehiculo, { label: string; color: string }> = {
   camion:       { label: 'Unidad de reparto', color: 'blue'   },
@@ -76,8 +77,10 @@ function init(v?: VehiculoRow): FormVals {
   }
 }
 
-function needsField(tipo: TipoVehiculo | '', check: 'combustible' | 'status' | 'km' | 'sucursal' | 'ruta' | 'tonelaje' | 'pies' | 'ubicacion' | 'placas') {
+function needsField(tipo: TipoVehiculo | '', check: 'combustible' | 'status' | 'km' | 'sucursal' | 'ruta' | 'tonelaje' | 'pies' | 'ubicacion' | 'placas' | 'seguro' | 'permiso') {
   const t = tipo
+  if (check === 'seguro')      return t !== '' && llevaSeguro(t)
+  if (check === 'permiso')     return t !== '' && llevaPermiso(t)
   if (check === 'placas')      return t !== '' && t !== 'montacargas'
   if (check === 'combustible') return t === 'camion' || t === 'tractocamion' || t === 'utilitario' || t === 'montacargas'
   if (check === 'status')      return t === 'camion' || t === 'tractocamion' || t === 'caja_trailer' || t === 'utilitario' || t === 'montacargas'
@@ -184,13 +187,16 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
 
   function submit(vals: FormVals) {
     const t = (isEdit ? initial!.tipo : vals.tipo) as TipoVehiculo
+    // El seguro y el permiso solo viajan para los tipos que los llevan: si
+    // alguien eligió una póliza y luego cambió el tipo a caja de trailer, el
+    // valor sigue en el formulario pero no debe mandarse — la API lo rechaza.
     const base = {
       modelo_id:    parseInt(vals.modelo_id),
       serie:        vals.serie,
       placas:       vals.placas.trim() || null,
       fecha_compra: vals.fecha_compra || null,
-      seguro_id:    vals.seguro_id ? parseInt(vals.seguro_id) : null,
-      permiso_id:   vals.permiso_id ? parseInt(vals.permiso_id) : null,
+      ...(llevaSeguro(t)  ? { seguro_id:  vals.seguro_id  ? parseInt(vals.seguro_id)  : null } : {}),
+      ...(llevaPermiso(t) ? { permiso_id: vals.permiso_id ? parseInt(vals.permiso_id) : null } : {}),
     }
 
     // Campos que aplican según el tipo de vehículo (el else final cubre 'utilitario')
@@ -329,25 +335,32 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
           error={form.errors.fecha_compra}
         />
 
-        <Select
-          label="Seguro"
-          placeholder="Sin seguro asignado"
-          data={segurosOpts}
-          clearable
-          searchable
-          nothingFoundMessage="No hay seguros — regístralos en Catálogos → Seguros"
-          {...form.getInputProps('seguro_id')}
-        />
+        {/* Las cajas de trailer no se aseguran, y el permiso de circulación solo
+            lo llevan reparto y utilitarios: donde no aplica, el campo no existe
+            (tampoco la columna en la base). */}
+        {needsField(tipo, 'seguro') && (
+          <Select
+            label="Seguro"
+            placeholder="Sin seguro asignado"
+            data={segurosOpts}
+            clearable
+            searchable
+            nothingFoundMessage="No hay seguros — regístralos en Catálogos → Seguros"
+            {...form.getInputProps('seguro_id')}
+          />
+        )}
 
-        <Select
-          label="Permiso de circulación"
-          placeholder="Sin permiso asignado"
-          data={permisosOpts}
-          clearable
-          searchable
-          nothingFoundMessage="No hay permisos — regístralos en Catálogos → Permisos"
-          {...form.getInputProps('permiso_id')}
-        />
+        {needsField(tipo, 'permiso') && (
+          <Select
+            label="Permiso de circulación"
+            placeholder="Sin permiso asignado"
+            data={permisosOpts}
+            clearable
+            searchable
+            nothingFoundMessage="No hay permisos — regístralos en Catálogos → Permisos"
+            {...form.getInputProps('permiso_id')}
+          />
+        )}
 
         {/* Campos condicionales — camion */}
         {(tipo === 'camion') && (
