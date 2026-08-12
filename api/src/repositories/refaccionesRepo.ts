@@ -129,11 +129,43 @@ export async function update(id: number, data: RefaccionUpdate): Promise<Pieza |
   return findById(id)
 }
 
-export async function remove(id: number): Promise<boolean> {
+// Lotes de esta pieza que ya se consumieron en algún mantenimiento. Son los
+// que impiden borrarla: el detalle del mantenimiento los referencia y borrarlos
+// falsearía un gasto ya registrado.
+export async function countConsumosEnMantenimientos(piezaId: number): Promise<number> {
   const pool = await getPool()
   const result = await pool
     .request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM piezas OUTPUT DELETED.id WHERE id = @id')
-  return result.recordset.length > 0
+    .input('id', sql.Int, piezaId)
+    .query(`
+      SELECT COUNT(DISTINCT d.mantenimiento_id) AS n
+      FROM detalle_mtto_pieza d
+      JOIN lotes_pieza l ON l.id = d.lote_id
+      WHERE l.pieza_id = @id
+    `)
+  return result.recordset[0].n as number
+}
+
+// Arrastra los lotes de compra: son parte de la pieza, no registros propios, y
+// dejarlos sueltos no tendría sentido. Los que ya se usaron en un mantenimiento
+// se descartan antes, en el service.
+export async function remove(id: number): Promise<boolean> {
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    await tx.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM lotes_pieza WHERE pieza_id = @id')
+
+    const result = await tx.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM piezas OUTPUT DELETED.id WHERE id = @id')
+
+    await tx.commit()
+    return result.recordset.length > 0
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
 }

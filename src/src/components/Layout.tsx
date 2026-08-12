@@ -11,13 +11,17 @@ import {
   Text,
   ActionIcon,
   Stack,
-  Divider,
   Badge,
   Tooltip,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { useIsFetching, useQueryClient } from '@tanstack/react-query'
-import { IconRefresh } from '@tabler/icons-react'
+import {
+  IconRefresh, IconLayoutDashboard, IconTruck, IconCar, IconTool,
+  IconAlertTriangle, IconCalendar, IconGasStation, IconBox, IconSettings,
+  IconHistory,
+} from '@tabler/icons-react'
+import type { Icon } from '@tabler/icons-react'
 import { useAuth } from '../hooks/useAuth'
 import Dashboard from './Dashboard'
 import Piezas from '../pages/Piezas'
@@ -28,32 +32,93 @@ import SitiosYRutas from '../pages/SitiosYRutas'
 import Calendario from '../pages/Calendario'
 import ValesGasolina from '../pages/ValesGasolina'
 import RegistrosCambios from '../pages/RegistrosCambios'
+import Mantenimientos from '../pages/Mantenimientos'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 
-type Section = 'dashboard' | 'piezas' | 'modelos' | 'vehiculos' | 'incidencias' | 'sitios' | 'calendario' | 'vales' | 'registros'
+type Section =
+  | 'dashboard' | 'piezas' | 'modelos' | 'vehiculos' | 'incidencias'
+  | 'mantenimientos' | 'sitios' | 'calendario' | 'vales' | 'registros'
 
 const SECTION_LABELS: Record<Section, string> = {
-  dashboard:   'Dashboard',
-  piezas:      'Refacciones',
-  modelos:     'Modelos',
-  vehiculos:   'Vehículos',
-  incidencias: 'Incidencias',
-  sitios:      'Catálogos',
-  calendario:  'Calendario',
-  vales:       'Vales de gasolina',
-  registros:   'Registros de cambios',
+  dashboard:      'Dashboard',
+  piezas:         'Refacciones',
+  modelos:        'Modelos',
+  vehiculos:      'Vehículos',
+  incidencias:    'Incidencias',
+  mantenimientos: 'Mantenimientos',
+  sitios:         'Catálogos',
+  calendario:     'Calendario',
+  vales:          'Vales de gasolina',
+  registros:      'Registros de cambios',
 }
 
-const NAV_ITEMS: { section: Section; label: string; description: string }[] = [
-  { section: 'piezas',      label: 'Refacciones', description: 'Catálogo e inventario'                      },
-  { section: 'modelos',     label: 'Modelos',     description: 'Marcas y modelos de la flota'               },
-  { section: 'vehiculos',   label: 'Vehículos',   description: 'Unidades de reparto y tractocamiones'       },
-  { section: 'incidencias', label: 'Incidencias', description: 'Incidencias reportadas de la flota'         },
-  { section: 'calendario',  label: 'Calendario',  description: 'Fechas de mantenimiento'                    },
-  { section: 'vales',       label: 'Vales de gasolina', description: 'Vales entregados a los choferes'      },
-  { section: 'sitios',      label: 'Catálogos',   description: 'Proveedores, sucursales, translados y más'   },
+// Agrupadas por lo que hace el usuario, no por tabla: primero la flota, luego
+// lo que se le hace a la flota, y al final los catálogos que alimentan a ambos.
+// La descripción se movió al tooltip: en la barra ocupaba tres renglones por
+// entrada y obligaba a bajar la vista para llegar a Catálogos.
+const NAV_GROUPS: {
+  titulo: string
+  items: { section: Section; label: string; description: string; icon: Icon }[]
+}[] = [
+  {
+    titulo: 'Flota',
+    items: [
+      { section: 'vehiculos',   label: 'Vehículos',   description: 'Unidades de reparto y tractocamiones', icon: IconTruck },
+      { section: 'modelos',     label: 'Modelos',     description: 'Marcas y modelos de la flota',         icon: IconCar   },
+    ],
+  },
+  {
+    titulo: 'Operación',
+    items: [
+      { section: 'mantenimientos', label: 'Mantenimientos', description: 'Historial de servicios de toda la flota', icon: IconTool          },
+      { section: 'incidencias',    label: 'Incidencias',    description: 'Incidencias reportadas de la flota',      icon: IconAlertTriangle },
+      { section: 'calendario',     label: 'Calendario',     description: 'Fechas de mantenimiento',                 icon: IconCalendar      },
+      { section: 'vales',          label: 'Vales',          description: 'Vales de gasolina entregados a choferes', icon: IconGasStation    },
+    ],
+  },
+  {
+    titulo: 'Inventario',
+    items: [
+      { section: 'piezas', label: 'Refacciones', description: 'Catálogo e inventario',                    icon: IconBox      },
+      { section: 'sitios', label: 'Catálogos',   description: 'Proveedores, sucursales, translados y más', icon: IconSettings },
+    ],
+  },
 ]
 
+
+function GrupoTitulo({ children }: { children: string }) {
+  return (
+    <Text size="10px" fw={700} c="dimmed" tt="uppercase" px="xs" pb={4} style={{ letterSpacing: '.06em' }}>
+      {children}
+    </Text>
+  )
+}
+
+// Una sola línea por entrada: icono, etiqueta y nada más. Lo que antes era la
+// descripción vive en el tooltip, que sólo estorba a quien lo pide.
+function NavItem({
+  label, description, icon: IconComponent, active, onClick,
+}: {
+  label:       string
+  description: string
+  icon:        Icon
+  active:      boolean
+  onClick:     () => void
+}) {
+  return (
+    <Tooltip label={description} position="right" openDelay={500} withArrow>
+      <NavLink
+        label={label}
+        leftSection={<IconComponent size={17} stroke={1.6} />}
+        active={active}
+        onClick={onClick}
+        py={6}
+        style={{ borderRadius: 6 }}
+        styles={{ label: { fontSize: 13.5 } }}
+      />
+    </Tooltip>
+  )
+}
 
 export default function Layout() {
   const { user } = useAuth()
@@ -131,7 +196,7 @@ export default function Layout() {
     <AppShell
       header={{ height: 56 }}
       navbar={{
-        width: 220,
+        width: 196,
         breakpoint: 'sm',
         collapsed: { mobile: !mobileOpened, desktop: desktopCollapsed },
       }}
@@ -202,26 +267,25 @@ export default function Layout() {
       </AppShell.Header>
 
       {/* ── Sidebar ── */}
-      <AppShell.Navbar p="sm">
-        <Stack gap={2}>
-          <NavLink
-            label="Dashboard"
-            active={section === 'dashboard'}
-            onClick={() => navigate('dashboard')}
-            style={{ borderRadius: 6 }}
+      <AppShell.Navbar p="xs">
+        <Stack gap={1}>
+          <NavItem
+            label="Dashboard" description="Resumen de la flota" icon={IconLayoutDashboard}
+            active={section === 'dashboard'} onClick={() => navigate('dashboard')}
           />
 
-          <Divider my="xs" label="Módulos" labelPosition="left" />
-
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.section}
-              label={item.label}
-              description={item.description}
-              active={section === item.section}
-              onClick={() => navigate(item.section)}
-              style={{ borderRadius: 6 }}
-            />
+          {NAV_GROUPS.map((grupo) => (
+            <Stack key={grupo.titulo} gap={1} mt="sm">
+              <GrupoTitulo>{grupo.titulo}</GrupoTitulo>
+              {grupo.items.map((item) => (
+                <NavItem
+                  key={item.section}
+                  label={item.label} description={item.description} icon={item.icon}
+                  active={section === item.section}
+                  onClick={() => navigate(item.section)}
+                />
+              ))}
+            </Stack>
           ))}
 
           {/* La bitácora enseña la actividad de todo el mundo, con su correo.
@@ -229,16 +293,13 @@ export default function Layout() {
               staticwebapp.config.json, que devuelve 403 a quien no sea admin—,
               pero evita ofrecer una pantalla que acabaría en un error. */}
           {esAdmin && (
-            <>
-              <Divider my="xs" label="Administración" labelPosition="left" />
-              <NavLink
-                label="Registros de cambios"
-                description="Quién creó, modificó o eliminó qué"
-                active={section === 'registros'}
-                onClick={() => navigate('registros')}
-                style={{ borderRadius: 6 }}
+            <Stack gap={1} mt="sm">
+              <GrupoTitulo>Administración</GrupoTitulo>
+              <NavItem
+                label="Registros" description="Quién creó, modificó o eliminó qué" icon={IconHistory}
+                active={section === 'registros'} onClick={() => navigate('registros')}
               />
-            </>
+            </Stack>
           )}
         </Stack>
       </AppShell.Navbar>
@@ -278,6 +339,9 @@ export default function Layout() {
             permisoDrawerId={permisoDrawerId}
             onPermisoDrawerChange={setPermisoDrawerId}
           />
+        )}
+        {section === 'mantenimientos' && (
+          <Mantenimientos onNavigateVehiculo={navigateToVehiculoId} />
         )}
         {section === 'calendario' && <Calendario onNavigateVehiculo={navigateToVehiculoId} />}
         {section === 'vales'      && <ValesGasolina />}

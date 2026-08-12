@@ -6,6 +6,10 @@ export async function getByVehiculo(vehiculoId: number) {
   return repo.findByVehiculo(vehiculoId)
 }
 
+export async function getAll() {
+  return repo.findAll()
+}
+
 // Registrar un mantenimiento es la ocasión en que se lee el odómetro, así que
 // el km reportado pasa a ser el kilometraje del vehículo (avanzarKilometraje
 // ignora los tipos sin odómetro y no permite retrocesos).

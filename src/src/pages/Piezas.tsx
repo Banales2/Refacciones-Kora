@@ -349,6 +349,10 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
             <Text component="span" fw={700}>{deletePieza?.numero_serie}</Text>?
             Esta acción no se puede deshacer.
           </Text>
+          <Text size="sm" c="dimmed">
+            Se eliminan también sus lotes de compra. No podrá eliminarse si alguno
+            de esos lotes ya se usó en un mantenimiento.
+          </Text>
           {deleteMut.error && (
             <Alert color="red" title="Error">
               {(deleteMut.error as Error).message}

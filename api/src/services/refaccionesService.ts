@@ -58,6 +58,16 @@ export async function remove(id: number): Promise<void> {
       `Esta refacción está asignada a ${vehiculos} vehículo(s) y no puede eliminarse`
     )
   }
+  // Los lotes de compra se van con la pieza (repo.remove), pero sólo mientras
+  // ninguno se haya consumido: un mantenimiento ya registrado no puede quedarse
+  // sin la refacción que dice haber usado.
+  const consumos = await repo.countConsumosEnMantenimientos(id)
+  if (consumos > 0) {
+    throw new ConflictError(
+      `Esta refacción se usó en ${consumos} mantenimiento(s) y no puede eliminarse. ` +
+      `Elimina primero esos mantenimientos.`
+    )
+  }
   const deleted = await repo.remove(id)
   if (!deleted) throw new NotFoundError('Refacción')
 }

@@ -29,11 +29,47 @@ export interface MantenimientoPayload {
   pendiente_ids:  number[]
 }
 
+/** Mantenimiento con su unidad resuelta: el historial de toda la flota. */
+export interface MantenimientoDeFlota extends Mantenimiento {
+  vehiculo_serie:  string
+  vehiculo_placas: string | null
+  vehiculo_tipo:   string
+}
+
 export function useMantenimientos(vehiculoId: number) {
   return useQuery({
     queryKey: ['mantenimientos', vehiculoId],
     queryFn: () => api.get<{ data: Mantenimiento[] }>(`/vehiculos/${vehiculoId}/mantenimientos`),
     enabled: vehiculoId > 0,
+  })
+}
+
+// Historial completo, sin pasar por el detalle de cada vehículo. Comparte el
+// prefijo 'mantenimientos' a propósito: cualquier alta o baja lo invalida.
+export function useTodosLosMantenimientos() {
+  return useQuery({
+    queryKey: ['mantenimientos', 'todos'],
+    queryFn: () => api.get<{ data: MantenimientoDeFlota[] }>('/mantenimientos'),
+  })
+}
+
+// Borrar un mantenimiento devuelve al inventario las refacciones que consumió y
+// reabre los pendientes que cerraba: casi todo el caché queda obsoleto.
+function invalidarTrasBorrado(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['mantenimientos'] })
+  qc.invalidateQueries({ queryKey: ['incidencias'] })
+  qc.invalidateQueries({ queryKey: ['pendientes'] })
+  qc.invalidateQueries({ queryKey: ['dashboard'] })
+  qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
+  qc.invalidateQueries({ queryKey: ['lotes'] })
+  qc.invalidateQueries({ queryKey: ['refacciones'] })
+}
+
+export function useDeleteMantenimiento() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/mantenimientos/${id}`),
+    onSuccess: () => invalidarTrasBorrado(qc),
   })
 }
 
@@ -43,7 +79,7 @@ export function useCreateMantenimiento(vehiculoId: number) {
     mutationFn: (payload: MantenimientoPayload) =>
       api.post<{ data: Mantenimiento }>(`/vehiculos/${vehiculoId}/mantenimientos`, payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['mantenimientos',  vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['mantenimientos'] })
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
       // El mantenimiento cierra las incidencias que atendió, así que sus listas
       // (la del vehículo, la de la flota y la de pendientes) quedan obsoletas.
@@ -62,7 +98,7 @@ export function useUpdateMantenimiento(vehiculoId: number) {
     mutationFn: ({ id, payload }: { id: number; payload: Partial<MantenimientoPayload> }) =>
       api.put<{ data: Mantenimiento }>(`/mantenimientos/${id}`, payload),
     onSuccess: (_res, { id }) => {
-      qc.invalidateQueries({ queryKey: ['mantenimientos',  vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['mantenimientos'] })
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
       // Cambiar qué atiende (o mover su fecha) abre o cierra incidencias.
       qc.invalidateQueries({ queryKey: ['incidencias'] })
@@ -75,16 +111,3 @@ export function useUpdateMantenimiento(vehiculoId: number) {
   })
 }
 
-export function useDeleteMantenimiento(vehiculoId: number) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete(`/mantenimientos/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['mantenimientos', vehiculoId] })
-      // Borrarlo reabre las incidencias que cerraba.
-      qc.invalidateQueries({ queryKey: ['incidencias'] })
-      qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })
-      qc.invalidateQueries({ queryKey: ['dashboard'] })
-    },
-  })
-}

@@ -1310,6 +1310,11 @@ export function MantenimientoForm({
                         placeholder="Selecciona la refacción"
                         data={loteOptions(idx)}
                         searchable
+                        nothingFoundMessage={
+                          lotes.length === 0
+                            ? 'No hay refacciones con existencias: regístralas con "Nueva refacción"'
+                            : 'Sin coincidencias'
+                        }
                         value={piezas[idx].lote_id || null}
                         onChange={(v) => setLote(idx, v)}
                         error={form.errors[`piezas.${idx}.lote_id`]}
@@ -1505,7 +1510,7 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
   const items      = data?.data ?? []
   const createMut  = useCreateMantenimiento(vehiculoId)
   const updateMut  = useUpdateMantenimiento(vehiculoId)
-  const deleteMut  = useDeleteMantenimiento(vehiculoId)
+  const deleteMut  = useDeleteMantenimiento()
   const piezasMut  = useCreateDetallesMtto()
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }

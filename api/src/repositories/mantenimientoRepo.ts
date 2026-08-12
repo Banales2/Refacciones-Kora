@@ -19,6 +19,13 @@ export interface Mantenimiento {
   piezas_total:     number
 }
 
+/** Mantenimiento con la unidad resuelta, para el historial de toda la flota. */
+export interface MantenimientoDeFlota extends Mantenimiento {
+  vehiculo_serie:  string
+  vehiculo_placas: string | null
+  vehiculo_tipo:   string
+}
+
 export interface MantenimientoCreate {
   vehiculo_id:        number
   fecha:              string
@@ -120,6 +127,34 @@ export async function findByVehiculo(vehiculoId: number): Promise<Mantenimiento[
     .query(`${SELECT_MANT} WHERE m.vehiculo_id=@vid ORDER BY m.fecha DESC`)
   const withReqs = await attachPendienteIds(pool, r.recordset)
   return attachPiezasTotal(pool, withReqs)
+}
+
+// Historial completo de la flota, para la pantalla que rastrea todos los
+// mantenimientos sin pasar por el detalle de cada vehículo. Trae la unidad
+// resuelta porque sin ella la fila no dice a qué se refiere.
+export async function findAll(): Promise<MantenimientoDeFlota[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT m.id, m.vehiculo_id, m.fecha, m.tipo, m.tecnico_id, t.nombre AS tecnico,
+           m.costo, m.km_actual, m.observaciones,
+           v.numero_serie AS vehiculo_serie, v.placas AS vehiculo_placas,
+           v.tipo AS vehiculo_tipo
+    FROM mantenimiento m
+    LEFT JOIN tecnicos  t ON t.id = m.tecnico_id
+    JOIN      vehiculos v ON v.id = m.vehiculo_id
+    ORDER BY m.fecha DESC, m.id DESC
+  `)
+  const extra = new Map<number, Pick<MantenimientoDeFlota, 'vehiculo_serie' | 'vehiculo_placas' | 'vehiculo_tipo'>>()
+  for (const row of r.recordset) {
+    extra.set(row.id, {
+      vehiculo_serie:  row.vehiculo_serie,
+      vehiculo_placas: row.vehiculo_placas,
+      vehiculo_tipo:   row.vehiculo_tipo,
+    })
+  }
+  const withReqs = await attachPendienteIds(pool, r.recordset)
+  const completos = await attachPiezasTotal(pool, withReqs)
+  return completos.map(m => ({ ...m, ...extra.get(m.id)! }))
 }
 
 export async function findById(id: number): Promise<Mantenimiento | null> {
