@@ -391,11 +391,6 @@ export default function Incidencias({ onNavigateVehiculo }: {
                 Editar
               </Button>
               <Group gap="sm">
-                {onNavigateVehiculo && (
-                  <Button variant="default" onClick={() => irAlVehiculo(detalle.vehiculo_id)}>
-                    Ver vehículo
-                  </Button>
-                )}
                 {detalle.status === 'activo' && (
                   <Button color="teal" leftSection={<IconTool size={16} />}
                     onClick={() => abrirAtender(detalle)}>
