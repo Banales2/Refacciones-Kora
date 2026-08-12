@@ -267,7 +267,7 @@ export default function Layout() {
             backLabel={vehiculoOrigin ? SECTION_LABELS[vehiculoOrigin] : undefined}
           />
         )}
-        {section === 'incidencias' && <Incidencias />}
+        {section === 'incidencias' && <Incidencias onNavigateVehiculo={navigateToVehiculoId} />}
         {section === 'sitios'    && (
           <SitiosYRutas
             onNavigateVehiculo={navigateToVehiculo}

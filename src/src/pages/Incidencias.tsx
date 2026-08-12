@@ -1,19 +1,29 @@
 // Página Incidencias: lo reportado en toda la flota, con alta, edición y baja.
-// Una incidencia se cierra atendiéndola en un mantenimiento (desde el detalle
-// del vehículo) o se cancela, que conserva el registro pero deja de alertar.
+// Una incidencia se cierra atendiéndola en un mantenimiento —que se puede
+// registrar aquí mismo o desde el detalle del vehículo— o se cancela, que
+// conserva el registro pero deja de alertar.
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert, Badge, Button, ActionIcon,
-  Modal, Select, TextInput, Tooltip, SegmentedControl,
+  Modal, Select, TextInput, Tooltip, SegmentedControl, Grid, Divider, Anchor,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconTrash, IconPlus, IconAlertTriangle, IconSearch } from '@tabler/icons-react'
+import {
+  IconPencil, IconTrash, IconPlus, IconAlertTriangle, IconSearch, IconTool,
+} from '@tabler/icons-react'
 import {
   useIncidencias, useCreateIncidencia, useUpdateIncidencia, useDeleteIncidencia,
 } from '../hooks/useIncidencias'
 import type { Incidencia, IncidenciaConVehiculo, IncidenciaPayload } from '../hooks/useIncidencias'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
+import type { TipoVehiculo } from '../hooks/useVehiculos'
+import { useCreateMantenimiento } from '../hooks/useMantenimientos'
+import type { MantenimientoPayload } from '../hooks/useMantenimientos'
+import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
+import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import IncidenciaForm from '../components/IncidenciaForm'
+import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
+import { MantenimientoForm } from './Vehiculos'
 import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
 
 function fmtFechaHora(fecha: string, hora: string | null) {
@@ -23,7 +33,20 @@ function fmtFechaHora(fecha: string, hora: string | null) {
   return hora ? `${f}, ${hora.slice(0, 5)}` : f
 }
 
-export default function Incidencias() {
+function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <Text size="xs" c="dimmed">{label}</Text>
+      <Text size="sm">{value || <Text component="span" c="dimmed">—</Text>}</Text>
+    </div>
+  )
+}
+
+export default function Incidencias({ onNavigateVehiculo }: {
+  // Saltar a la ficha del vehículo de la incidencia. Lo provee Layout, que es
+  // quien maneja la navegación entre secciones.
+  onNavigateVehiculo?: (vehiculoId: number) => void
+}) {
   const { data, isLoading, isError } = useIncidencias()
   const { data: vehiculosData } = useVehiculos()
 
@@ -37,12 +60,23 @@ export default function Incidencias() {
   const [editando, setEditando]       = useState<IncidenciaConVehiculo | null>(null)
   const [borrando, setBorrando]       = useState<IncidenciaConVehiculo | null>(null)
   const [formError, setFormError]     = useState<string | null>(null)
+  // Incidencia cuya ficha se está viendo, y la que se está atendiendo con un
+  // mantenimiento nuevo. Son distintas porque atender se puede disparar desde
+  // el renglón sin pasar por la ficha.
+  const [detalle, setDetalle]         = useState<IncidenciaConVehiculo | null>(null)
+  const [atendiendo, setAtendiendo]   = useState<IncidenciaConVehiculo | null>(null)
+  const [mantError, setMantError]     = useState<string | null>(null)
+  // Mantenimiento recién registrado cuyo detalle se abre cuando sus refacciones
+  // no se pudieron guardar completas.
+  const [detalleMttoId, setDetalleMttoId] = useState<number | null>(null)
 
   // Las mutaciones necesitan el id del vehículo para invalidar sus listas.
   const vehiculoActivo = editando?.vehiculo_id ?? borrando?.vehiculo_id ?? Number(vehiculoNueva ?? 0)
   const createMut = useCreateIncidencia(vehiculoActivo)
   const updateMut = useUpdateIncidencia(vehiculoActivo)
   const deleteMut = useDeleteIncidencia(vehiculoActivo)
+  const mantMut   = useCreateMantenimiento(atendiendo?.vehiculo_id ?? 0)
+  const piezasMut = useCreateDetallesMtto()
 
   const incidencias = useMemo(() => data?.data ?? [], [data])
 
@@ -78,6 +112,45 @@ export default function Incidencias() {
       onSuccess: () => setEditando(null),
       onError: (e) => setFormError((e as Error).message),
     })
+  }
+
+  // Atender la incidencia = registrarle el mantenimiento que la cierra. Es el
+  // mismo formulario del detalle del vehículo, con la incidencia ya vinculada;
+  // el alta invalida la lista de incidencias, así que esta se marca como
+  // atendida sola. Se puede seguir agregando lo demás que se hizo en ese
+  // servicio, por eso el selector de pendientes queda editable.
+  function abrirAtender(i: IncidenciaConVehiculo) {
+    setMantError(null)
+    setDetalle(null)
+    setAtendiendo(i)
+  }
+
+  function handleAtender(payload: MantenimientoPayload, piezas: DetalleMttoPayload[]) {
+    setMantError(null)
+    mantMut.mutate(payload, {
+      onSuccess: (res) => {
+        if (!piezas.length) { setAtendiendo(null); return }
+        piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
+          onSuccess: () => setAtendiendo(null),
+          // El mantenimiento ya quedó registrado: no hay forma de deshacer el
+          // alta, así que se abre su detalle para capturar a mano lo que faltó.
+          onError: (e: Error) => {
+            setAtendiendo(null)
+            setDetalleMttoId(res.data.id)
+            alert(
+              `El mantenimiento se registró, pero no se pudieron guardar todas las refacciones: ${e.message}\n\n` +
+              'Revisa el detalle del mantenimiento para agregar las que falten.'
+            )
+          },
+        })
+      },
+      onError: (e: Error) => setMantError(e.message),
+    })
+  }
+
+  function irAlVehiculo(vehiculoId: number) {
+    setDetalle(null)
+    onNavigateVehiculo?.(vehiculoId)
   }
 
   return (
@@ -165,9 +238,24 @@ export default function Incidencias() {
                   const sev = SEVERIDAD_META[i.severidad]
                   const st  = STATUS_INCIDENCIA_META[i.status]
                   return (
-                    <Table.Tr key={i.id}>
+                    <Table.Tr
+                      key={i.id}
+                      onClick={() => setDetalle(i)}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <Table.Td fw={500}>{i.nombre}</Table.Td>
-                      <Table.Td><Text size="sm">{i.vehiculo_nombre}</Text></Table.Td>
+                      <Table.Td onClick={(e) => e.stopPropagation()}>
+                        {onNavigateVehiculo ? (
+                          // Botón y no <a>: no hay URL a la que apuntar (la
+                          // navegación es por estado), y así se puede tabular.
+                          <Anchor component="button" type="button" size="sm"
+                            onClick={() => irAlVehiculo(i.vehiculo_id)}>
+                            {i.vehiculo_nombre}
+                          </Anchor>
+                        ) : (
+                          <Text size="sm">{i.vehiculo_nombre}</Text>
+                        )}
+                      </Table.Td>
                       <Table.Td>{i.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
                       <Table.Td>
                         <Badge variant="light" color={sev.color} size="sm">{sev.label}</Badge>
@@ -184,8 +272,18 @@ export default function Incidencias() {
                       <Table.Td style={{ textAlign: 'center' }}>
                         <Badge variant="light" color={st.color} size="sm">{st.label}</Badge>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td onClick={(e) => e.stopPropagation()}>
                         <Group gap={4} justify="flex-end">
+                          {/* Solo las que siguen sin atender: registrarle un
+                              mantenimiento a una ya cerrada no cierra nada. */}
+                          {i.status === 'activo' && (
+                            <Tooltip label="Registrar el mantenimiento que la atiende">
+                              <ActionIcon variant="subtle" color="teal" size="sm"
+                                onClick={() => abrirAtender(i)}>
+                                <IconTool size={14} />
+                              </ActionIcon>
+                            </Tooltip>
+                          )}
                           <Tooltip label="Editar">
                             <ActionIcon variant="subtle" color="blue" size="sm"
                               onClick={() => { setFormError(null); setEditando(i) }}>
@@ -233,6 +331,114 @@ export default function Incidencias() {
           )}
         </Stack>
       </Modal>
+
+      {/* ── Ficha de la incidencia ── */}
+      <Modal
+        opened={detalle !== null} onClose={() => setDetalle(null)}
+        title="Detalle de la incidencia" centered size="lg"
+      >
+        {detalle && (
+          <Stack gap="md">
+            <div>
+              <Group gap="xs" align="center">
+                <Text fw={600} size="lg">{detalle.nombre}</Text>
+                <Badge variant="light" size="sm" color={SEVERIDAD_META[detalle.severidad].color}>
+                  {SEVERIDAD_META[detalle.severidad].label}
+                </Badge>
+                <Badge variant="light" size="sm" color={STATUS_INCIDENCIA_META[detalle.status].color}>
+                  {STATUS_INCIDENCIA_META[detalle.status].label}
+                </Badge>
+              </Group>
+              <Text size="sm" c="dimmed" mt={4}>
+                {detalle.descripcion || 'Sin descripción capturada.'}
+              </Text>
+            </div>
+
+            <Divider />
+
+            <Grid>
+              <Grid.Col span={{ base: 12, sm: 6 }}>
+                <InfoItem
+                  label="Vehículo"
+                  value={onNavigateVehiculo ? (
+                    <Anchor component="button" type="button" size="sm"
+                      onClick={() => irAlVehiculo(detalle.vehiculo_id)}>
+                      {detalle.vehiculo_nombre}
+                    </Anchor>
+                  ) : detalle.vehiculo_nombre}
+                />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, sm: 6 }}>
+                <InfoItem label="Categoría" value={detalle.categoria} />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, sm: 6 }}>
+                <InfoItem label="Ocurrió" value={fmtFechaHora(detalle.fecha, detalle.hora)} />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, sm: 6 }}>
+                <InfoItem label="Ubicación" value={detalle.ubicacion} />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, sm: 6 }}>
+                <InfoItem label="Reportó" value={detalle.reportado_por} />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, sm: 6 }}>
+                <InfoItem label="Autorizó" value={detalle.autorizado_por} />
+              </Grid.Col>
+            </Grid>
+
+            <Group justify="space-between" mt="xs">
+              <Button variant="subtle" leftSection={<IconPencil size={16} />}
+                onClick={() => { setFormError(null); setEditando(detalle); setDetalle(null) }}>
+                Editar
+              </Button>
+              <Group gap="sm">
+                {onNavigateVehiculo && (
+                  <Button variant="default" onClick={() => irAlVehiculo(detalle.vehiculo_id)}>
+                    Ver vehículo
+                  </Button>
+                )}
+                {detalle.status === 'activo' && (
+                  <Button color="teal" leftSection={<IconTool size={16} />}
+                    onClick={() => abrirAtender(detalle)}>
+                    Registrar mantenimiento
+                  </Button>
+                )}
+              </Group>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+
+      {/* ── Atender la incidencia con un mantenimiento ── */}
+      <Modal
+        opened={atendiendo !== null} onClose={() => setAtendiendo(null)}
+        title={atendiendo ? `Atender — ${atendiendo.nombre}` : ''}
+        centered size="md" closeOnClickOutside={false}
+      >
+        {atendiendo && (
+          <Stack gap="sm">
+            <Alert color="blue" variant="light">
+              Se registrará en <strong>{atendiendo.vehiculo_nombre}</strong> y cerrará esta
+              incidencia. Si el mismo servicio atendió más pendientes, agrégalos abajo.
+            </Alert>
+            <MantenimientoForm
+              vehiculoId={atendiendo.vehiculo_id}
+              tipoVehiculo={atendiendo.vehiculo_tipo as TipoVehiculo}
+              prefillPendienteIds={[atendiendo.id]}
+              isPending={mantMut.isPending || piezasMut.isPending}
+              error={mantError}
+              onSubmit={handleAtender}
+              onCancel={() => setAtendiendo(null)}
+            />
+          </Stack>
+        )}
+      </Modal>
+
+      {detalleMttoId !== null && (
+        <MantenimientoDetalleDrawer
+          mantenimientoId={detalleMttoId}
+          onClose={() => setDetalleMttoId(null)}
+        />
+      )}
 
       <Modal
         opened={editando !== null} onClose={() => setEditando(null)}
