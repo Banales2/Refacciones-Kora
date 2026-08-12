@@ -1,7 +1,8 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { PERMISO_ID_SQL, SEGURO_ID_SQL } from './documentosVehiculo'
-import { TIPOS_CON_SEGURO } from '../schemas/vehiculoSchema'
+import {
+  JOINS_HIJAS, NO_DADO_DE_BAJA, PERMISO_ID_SQL, SEGURO_ID_SQL, SIN_SEGURO, SIN_TENENCIA,
+} from './vehiculosSql'
 
 // ─── Seguros / permisos por vencer ──────────────────────────────────────────
 export interface SeguroPorVencer {
@@ -29,12 +30,8 @@ const FLOTA_EN_OPERACION = `
            ${SEGURO_ID_SQL}  AS seguro_id,
            ${PERMISO_ID_SQL} AS permiso_id
     FROM vehiculos v
-    LEFT JOIN camiones              c  ON c.vehiculo_id  = v.id
-    LEFT JOIN tractocamiones        t  ON t.vehiculo_id  = v.id
-    LEFT JOIN vehiculos_utilitarios u  ON u.vehiculo_id  = v.id
-    LEFT JOIN cajas_trailer         ct ON ct.vehiculo_id = v.id
-    LEFT JOIN montacargas           mc ON mc.vehiculo_id = v.id
-    WHERE COALESCE(c.status, t.status, u.status, ct.status, mc.status, '') <> 'Baja'
+    ${JOINS_HIJAS}
+    WHERE ${NO_DADO_DE_BAJA}
   )
 `
 
@@ -108,47 +105,38 @@ export interface VehiculoSinDocumento {
   tipo:        string
 }
 
+// Los mismos joins de siempre, para que las condiciones compartidas encuentren
+// los alias que esperan (c/t/ct/u/mc).
 const SELECT_VEHICULO_SIN_DOC = `
   SELECT v.id AS vehiculo_id,
          CONCAT(m.marca, ' ', m.nombre, ' — ', v.numero_serie) AS vehiculo,
          v.placas, v.tipo
   FROM vehiculos v
   JOIN modelos m ON m.id = v.modelo_id
+  ${JOINS_HIJAS}
 `
 
-// Una unidad dada de baja no necesita tenencia ni seguro: contarla solo infla
-// el aviso con algo que nadie va a ir a capturar. El status vive en la tabla
-// hija de cada tipo, por eso el COALESCE.
-const NO_DADO_DE_BAJA = `COALESCE(c.status, t.status, u.status, '') <> 'Baja'`
+const ORDEN_SIN_DOC = 'ORDER BY v.tipo, m.marca, m.nombre, v.numero_serie'
 
-// Solo los tipos que pagan tenencia, y solo si no tienen fecha de vencimiento:
-// el folio suelto no basta porque nada lo vigila.
+// Qué cuenta como "sin tenencia" y como "sin seguro" lo define vehiculosSql,
+// que es de donde salen también el filtro de la búsqueda y los avisos de cada
+// vehículo. Estas listas son la versión agrupada para el tablero: mismo
+// criterio, otra forma de presentarlo.
 export async function findVehiculosSinTenencia(): Promise<VehiculoSinDocumento[]> {
   const pool = await getPool()
   const r = await pool.request().query(`
     ${SELECT_VEHICULO_SIN_DOC}
-    LEFT JOIN camiones              c ON c.vehiculo_id = v.id
-    LEFT JOIN tractocamiones        t ON t.vehiculo_id = v.id
-    LEFT JOIN vehiculos_utilitarios u ON u.vehiculo_id = v.id
-    WHERE v.tipo IN ('camion','tractocamion','utilitario')
-      AND COALESCE(c.tenencia_expiracion, t.tenencia_expiracion, u.tenencia_expiracion) IS NULL
-      AND ${NO_DADO_DE_BAJA}
-    ORDER BY v.tipo, m.marca, m.nombre, v.numero_serie`)
+    WHERE ${SIN_TENENCIA} AND ${NO_DADO_DE_BAJA}
+    ${ORDEN_SIN_DOC}`)
   return r.recordset
 }
 
-// Todos los tipos que se aseguran —o sea, todos menos las cajas de trailer, que
-// no llevan póliza y antes salían aquí reclamando una que nadie iba a contratar.
-// En vez de repetir los joins por status se reusa la flota en operación.
 export async function findVehiculosSinSeguro(): Promise<VehiculoSinDocumento[]> {
   const pool = await getPool()
   const r = await pool.request().query(`
-    WITH ${FLOTA_EN_OPERACION}
     ${SELECT_VEHICULO_SIN_DOC}
-    JOIN flota f ON f.id = v.id
-    WHERE f.seguro_id IS NULL
-      AND v.tipo IN (${TIPOS_CON_SEGURO.map((t) => `'${t}'`).join(',')})
-    ORDER BY v.tipo, m.marca, m.nombre, v.numero_serie`)
+    WHERE ${SIN_SEGURO} AND ${NO_DADO_DE_BAJA}
+    ${ORDEN_SIN_DOC}`)
   return r.recordset
 }
 

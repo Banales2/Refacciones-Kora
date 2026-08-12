@@ -34,7 +34,7 @@ import {
   useRequerimientos, useCreateRequerimiento, useUpdateRequerimiento, useDeleteRequerimiento,
 } from '../hooks/useRequerimientos'
 import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
-import type { AlertaVehiculo, TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
+import type { AlertaDocumento, AlertaVehiculo, TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
 import { useDocumentosPorVencer, useRequerimientosVencidos } from '../hooks/useDashboard'
 import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, StatusReq } from '../hooks/useRequerimientos'
 import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
@@ -46,7 +46,7 @@ import type { Incidencia, IncidenciaPayload } from '../hooks/useIncidencias'
 import IncidenciaForm from '../components/IncidenciaForm'
 import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
 import { llevaPermiso, llevaSeguro } from '../lib/tipoVehiculo'
-import { VehiculoForm, TIPOS_CON_TENENCIA } from '../components/VehiculoForm'
+import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
@@ -140,17 +140,30 @@ const ALERTA_CHIP: Record<AlertaVehiculo, string> = {
   permiso_por_vencer:      'Solo con permiso por vencer',
 }
 
+// Cómo se pinta cada documento faltante que reporta la API, en la ficha (Alert)
+// y en el renglón del listado (triángulo con tooltip). El "qué" lo decide el
+// backend; aquí solo está el "cómo se ve".
+const AVISO_DOCUMENTO: Record<AlertaDocumento, {
+  color: string; iconColor: string; titulo: string; tooltip: string; detalle: string
+}> = {
+  sin_seguro: {
+    color: 'red', iconColor: 'var(--mantine-color-red-6)',
+    titulo: 'Sin seguro', tooltip: 'Sin seguro asignado',
+    detalle: 'Este vehículo no tiene un seguro asignado. Asígnale uno desde el botón de editar.',
+  },
+  sin_tenencia: {
+    color: 'yellow', iconColor: 'var(--mantine-color-yellow-7)',
+    titulo: 'Sin tenencia', tooltip: 'Sin tenencia registrada',
+    detalle: 'Este vehículo no tiene tenencia registrada, así que no aparecerá en los avisos de ' +
+             'vencimiento. Regístrala desde el botón de editar.',
+  },
+}
+
 const ALERTA_DETALLE: Record<AlertaVehiculo, string> = {
   sin_tenencia:            'Camiones de reparto, tractocamiones y utilitarios sin fecha de tenencia.',
   sin_seguro:              'Unidades que se aseguran (todas menos las cajas de trailer) sin póliza asignada.',
   requerimientos_vencidos: 'Con al menos un requerimiento preventivo vencido por kilometraje o por tiempo.',
   permiso_por_vencer:      'Con permiso de circulación ya vencido o que vence dentro de 30 días.',
-}
-
-// Unidad fuera de la flota: no se le reclaman documentos ni entra en los
-// conteos de faltantes. Espeja el filtro del backend.
-function dadoDeBaja(v: Pick<VehiculoRow, 'status'>) {
-  return v.status?.trim().toLowerCase() === 'baja'
 }
 
 // Edad del modelo, en años. `modelo_anio` es texto y a veces trae la versión
@@ -1867,21 +1880,15 @@ function VehiculoDetalle({
           {warnIds.size !== 1 ? 'están próximos a' : 'está próximo a'} vencer (menos de 1 mes o menos del 25% del intervalo de km restante).
         </Alert>
       )}
-      {/* A una unidad dada de baja ya no se le va a capturar nada, así que no se
-          le reclaman documentos: tampoco cuenta en los avisos del tablero. */}
-      {!dadoDeBaja(vehiculo) && llevaSeguro(vehiculo.tipo) && vehiculo.seguro_id === null && (
-        <Alert color="red" title="Sin seguro" icon={<IconAlertTriangle size={16} />}>
-          Este vehículo no tiene un seguro asignado. Asígnale uno desde el botón de editar.
+      {/* Documentos faltantes, tal como los resuelve la API: ya vienen filtrados
+          por tipo (una caja no lleva seguro) y sin las unidades dadas de baja,
+          a las que ya no se les va a capturar nada. */}
+      {vehiculo.alertas.map((a) => (
+        <Alert key={a} color={AVISO_DOCUMENTO[a].color} title={AVISO_DOCUMENTO[a].titulo}
+               icon={<IconAlertTriangle size={16} />}>
+          {AVISO_DOCUMENTO[a].detalle}
         </Alert>
-      )}
-      {/* La tenencia es opcional al capturar el vehículo, pero si falta la fecha
-          de vencimiento nadie la vigila: ningún aviso del dashboard la alcanza. */}
-      {!dadoDeBaja(vehiculo) && TIPOS_CON_TENENCIA.includes(vehiculo.tipo) && !vehiculo.tenencia_expiracion && (
-        <Alert color="yellow" title="Sin tenencia" icon={<IconAlertTriangle size={16} />}>
-          Este vehículo no tiene tenencia registrada, así que no aparecerá en los avisos de
-          vencimiento. Regístrala desde el botón de editar.
-        </Alert>
-      )}
+      ))}
 
       {/* Ficha */}
       <Paper withBorder p="md" radius="md">
@@ -2132,16 +2139,11 @@ function VehiculosTable({
                 <Table.Td fw={500}>
                   <Group gap={6} wrap="nowrap">
                     <span>{v.marca} {v.modelo}</span>
-                    {!dadoDeBaja(v) && llevaSeguro(v.tipo) && v.seguro_id === null && (
-                      <Tooltip label="Sin seguro asignado">
-                        <IconAlertTriangle size={16} color="var(--mantine-color-red-6)" />
+                    {v.alertas.map((a) => (
+                      <Tooltip key={a} label={AVISO_DOCUMENTO[a].tooltip}>
+                        <IconAlertTriangle size={16} color={AVISO_DOCUMENTO[a].iconColor} />
                       </Tooltip>
-                    )}
-                    {!dadoDeBaja(v) && TIPOS_CON_TENENCIA.includes(v.tipo) && !v.tenencia_expiracion && (
-                      <Tooltip label="Sin tenencia registrada">
-                        <IconAlertTriangle size={16} color="var(--mantine-color-yellow-7)" />
-                      </Tooltip>
-                    )}
+                    ))}
                   </Group>
                 </Table.Td>
                 {/* El año trae la versión pegada cuando el modelo la tiene ("2018-1"). */}

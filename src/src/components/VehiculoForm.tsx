@@ -30,7 +30,7 @@ const TIPOS_OPTIONS = Object.entries(TIPO_META).map(([v, m]) => ({ value: v, lab
 
 // Los únicos tipos que pagan tenencia. Las cajas de trailer y los montacargas
 // no, por eso el bloque no se les muestra y sus tablas no tienen las columnas.
-export const TIPOS_CON_TENENCIA: TipoVehiculo[] = ['camion', 'tractocamion', 'utilitario']
+const TIPOS_CON_TENENCIA: TipoVehiculo[] = ['camion', 'tractocamion', 'utilitario']
 
 const COMBUSTIBLES = ['Diesel', 'Gasolina', 'Gas LP', 'Gas Natural', 'Eléctrico'].map((c) => ({ value: c, label: c }))
 const STATUSES     = ['Activo', 'Inactivo', 'Taller', 'Baja'].map((s) => ({ value: s, label: s }))

@@ -4,7 +4,9 @@ import {
   AlertaVehiculo, TipoVehiculo, VehiculoCreate, VehiculoUpdate,
   TIPOS_CON_SEGURO, TIPOS_CON_PERMISO,
 } from '../schemas/vehiculoSchema'
-import { PERMISO_ID_SQL, SEGURO_ID_SQL } from './documentosVehiculo'
+import {
+  JOINS_HIJAS, NO_DADO_DE_BAJA, PERMISO_ID_SQL, SEGURO_ID_SQL, SIN_SEGURO, SIN_TENENCIA,
+} from './vehiculosSql'
 
 export interface VehiculoRow {
   id:           number
@@ -39,6 +41,30 @@ export interface VehiculoRow {
   permiso_zona:      string | null
   permiso_expiracion: string | null
   modelo_anio:       string | null
+  // Documentos que le faltan a esta unidad, ya resueltos por la API: qué tipos
+  // llevan cada documento y qué cuenta como faltante se decide en un solo
+  // lugar, y las pantallas solo pintan lo que llega.
+  alertas:           AlertaDocumento[]
+}
+
+// Subconjunto de AlertaVehiculo que se puede resolver por vehículo con lo que
+// ya trae la consulta. Los requerimientos vencidos no entran: dependen del
+// kilometraje contra el último mantenimiento y los clasifica el tablero.
+export type AlertaDocumento = Extract<AlertaVehiculo, 'sin_seguro' | 'sin_tenencia'>
+
+// La consulta devuelve un bit por aviso; hacia afuera se expone la lista, que
+// es lo que las pantallas necesitan para pintar sus badges.
+interface VehiculoRowSql extends Omit<VehiculoRow, 'alertas'> {
+  alerta_sin_seguro:   boolean
+  alerta_sin_tenencia: boolean
+}
+
+function conAlertas(row: VehiculoRowSql): VehiculoRow {
+  const { alerta_sin_seguro, alerta_sin_tenencia, ...resto } = row
+  const alertas: AlertaDocumento[] = []
+  if (alerta_sin_seguro)   alertas.push('sin_seguro')
+  if (alerta_sin_tenencia) alertas.push('sin_tenencia')
+  return { ...resto, alertas }
 }
 
 // ── Shared SQL fragments ──────────────────────────────────────────────────────
@@ -70,42 +96,22 @@ const SELECT_COLS = `
   CONVERT(char(10), seg.fecha_expiracion, 23) AS seguro_expiracion,
   ${PERMISO_ID_SQL} AS permiso_id, per.zona_circulacion AS permiso_zona,
   CONVERT(char(10), per.fecha_expiracion, 23) AS permiso_expiracion,
-  m.anio AS modelo_anio
+  m.anio AS modelo_anio,
+  -- Avisos resueltos aquí, con los mismos fragmentos que usa el filtro
+  -- ?alerta=: antes cada pantalla los recalculaba por su cuenta y se le
+  -- olvidaba alguna condición (las cajas seguían saliendo "sin seguro").
+  CAST(CASE WHEN ${NO_DADO_DE_BAJA} AND ${SIN_SEGURO}   THEN 1 ELSE 0 END AS bit) AS alerta_sin_seguro,
+  CAST(CASE WHEN ${NO_DADO_DE_BAJA} AND ${SIN_TENENCIA} THEN 1 ELSE 0 END AS bit) AS alerta_sin_tenencia
 `
 
 const JOINS = `
   FROM vehiculos v
   JOIN modelos m ON m.id = v.modelo_id
-  LEFT JOIN camiones             c  ON c.vehiculo_id  = v.id
-  LEFT JOIN tractocamiones       t  ON t.vehiculo_id  = v.id
-  LEFT JOIN cajas_trailer        ct ON ct.vehiculo_id = v.id
-  LEFT JOIN vehiculos_utilitarios u  ON u.vehiculo_id  = v.id
-  LEFT JOIN montacargas          mc ON mc.vehiculo_id = v.id
+  ${JOINS_HIJAS}
   LEFT JOIN sucursales           s  ON s.id = COALESCE(c.sucursal_id, mc.sucursal_id)
   LEFT JOIN rutas                r  ON r.id = COALESCE(t.ruta_id, ct.ruta_id)
   LEFT JOIN seguros              seg ON seg.id = ${SEGURO_ID_SQL}
   LEFT JOIN permisos_circulacion per ON per.id = ${PERMISO_ID_SQL}
-`
-
-// Sin tenencia = de los tipos que la pagan y sin fecha de vencimiento capturada.
-// El folio sin fecha no cuenta: es lo que ningún aviso alcanza a vigilar.
-export const SIN_TENENCIA = `
-  v.tipo IN ('camion','tractocamion','utilitario')
-  AND COALESCE(c.tenencia_expiracion, t.tenencia_expiracion, u.tenencia_expiracion) IS NULL
-`
-
-// Sin seguro = de los tipos que se aseguran y sin póliza asignada. Las cajas de
-// trailer no entran: no se aseguran, así que reclamarles la póliza era ruido.
-export const SIN_SEGURO = `
-  v.tipo IN (${TIPOS_CON_SEGURO.map((t) => `'${t}'`).join(',')})
-  AND ${SEGURO_ID_SQL} IS NULL
-`
-
-// Las unidades dadas de baja quedan fuera de los filtros de atención, igual que
-// de los conteos del tablero: ya no se les va a capturar ni renovar nada. Solo
-// aplica a esos filtros; buscar por texto sí las sigue encontrando.
-const NO_DADO_DE_BAJA = `
-  COALESCE(c.status, t.status, u.status, ct.status, mc.status, '') <> 'Baja'
 `
 
 // Los requerimientos vencidos no se pueden resolver aquí: dependen del
@@ -154,7 +160,10 @@ export async function findAll(params: {
 
     SELECT COUNT(*) AS total ${JOINS} ${WHERE_FILTER};
   `)
-  return { data: result.recordsets[0], total: result.recordsets[1][0].total }
+  return {
+    data: (result.recordsets[0] as unknown as VehiculoRowSql[]).map(conAlertas),
+    total: result.recordsets[1][0].total,
+  }
 }
 
 // Sin paginar: para reportes que necesitan la flota completa de una sola vez.
@@ -164,7 +173,7 @@ export async function findAllParaReporte(): Promise<VehiculoRow[]> {
     SELECT ${SELECT_COLS} ${JOINS}
     ORDER BY v.tipo, m.marca, m.nombre, v.numero_serie
   `)
-  return result.recordset
+  return (result.recordset as VehiculoRowSql[]).map(conAlertas)
 }
 
 export async function findById(id: number): Promise<VehiculoRow | null> {
@@ -172,7 +181,8 @@ export async function findById(id: number): Promise<VehiculoRow | null> {
   const result = await pool.request()
     .input('id', sql.Int, id)
     .query(`SELECT ${SELECT_COLS} ${JOINS} WHERE v.id = @id`)
-  return result.recordset[0] ?? null
+  const row = (result.recordset as VehiculoRowSql[])[0]
+  return row ? conAlertas(row) : null
 }
 
 // ¿Ya hay un vehículo con este número de serie? exceptId excluye el propio al

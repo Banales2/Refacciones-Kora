@@ -1,6 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { TABLAS_CON_SEGURO, vehiculosConDocumento } from './documentosVehiculo'
+import { TABLAS_CON_SEGURO, vehiculosConDocumento } from './vehiculosSql'
 
 export interface Seguro {
   id:               number

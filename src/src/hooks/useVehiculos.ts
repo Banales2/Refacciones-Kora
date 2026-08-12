@@ -6,6 +6,11 @@ import { api } from '../lib/api'
 
 export type TipoVehiculo = 'camion' | 'tractocamion' | 'caja_trailer' | 'utilitario' | 'montacargas'
 
+// Documentos que le faltan a una unidad. Los resuelve la API: qué tipos llevan
+// cada documento y qué cuenta como faltante se decide en un solo lugar (antes
+// cada pantalla lo recalculaba y a una se le olvidaba filtrar por tipo).
+export type AlertaDocumento = 'sin_seguro' | 'sin_tenencia'
+
 export interface VehiculoRow {
   id:           number
   tipo:         TipoVehiculo
@@ -37,6 +42,7 @@ export interface VehiculoRow {
   permiso_zona:       string | null
   permiso_expiracion: string | null
   modelo_anio:        string | null
+  alertas:            AlertaDocumento[]
 }
 
 export interface VehiculoCreatePayload {
