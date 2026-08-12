@@ -50,6 +50,7 @@ export function useCreateLote() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['lotes'] })
       qc.invalidateQueries({ queryKey: ['refacciones'] })
+      qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
     },
   })
 }
@@ -62,6 +63,7 @@ export function useUpdateLote() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['lotes'] })
       qc.invalidateQueries({ queryKey: ['refacciones'] })
+      qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
     },
   })
 }
@@ -73,6 +75,7 @@ export function useDeleteLote() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['lotes'] })
       qc.invalidateQueries({ queryKey: ['refacciones'] })
+      qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
     },
   })
 }

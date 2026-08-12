@@ -50,6 +50,8 @@ import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
+import type { LoteDisponible } from '../hooks/useLotesDisponibles'
+import NuevaRefaccionModal from '../components/NuevaRefaccionModal'
 import { usePiezasVehiculo, useSetPiezaVehiculo, useRemovePiezaVehiculo } from '../hooks/usePiezasVehiculo'
 import { useAddTiposPiezaVehiculo, useRemoveTipoPiezaVehiculo } from '../hooks/useTiposPiezaVehiculo'
 import { useTiposPieza } from '../hooks/useTiposPieza'
@@ -1092,7 +1094,16 @@ export function MantenimientoForm({
   // devolviendo el stock al lote.
   const isEdit = !!initial
   const { data: lotesData } = useLotesDisponibles(!isEdit)
-  const lotes = lotesData?.data ?? []
+
+  // Refacciones dadas de alta desde este mismo formulario: se agregan a mano
+  // porque la lista de lotes disponibles todavía puede estar refrescándose.
+  const [nuevaRefOpen, setNuevaRefOpen] = useState(false)
+  const [lotesNuevos, setLotesNuevos] = useState<LoteDisponible[]>([])
+  const lotes = useMemo(() => {
+    const base = lotesData?.data ?? []
+    const ids = new Set(base.map(l => l.id))
+    return [...base, ...lotesNuevos.filter(l => !ids.has(l.id))]
+  }, [lotesData, lotesNuevos])
 
   // El odómetro actual del vehículo precarga el campo de kilometraje al registrar.
   const { data: vehiculoData } = useVehiculo(isEdit ? undefined : vehiculoId)
@@ -1164,6 +1175,15 @@ export function MantenimientoForm({
     if (lote) form.setFieldValue(`piezas.${idx}.costo_unitario`, lote.costo_unitario)
   }
 
+  // Alta encadenada refacción → lote → proveedor: al terminar, la refacción
+  // nueva entra ya capturada como un renglón más del mantenimiento.
+  function handleRefaccionCreada(lote: LoteDisponible) {
+    setLotesNuevos((prev) => [...prev, lote])
+    form.insertListItem('piezas', {
+      lote_id: String(lote.id), cantidad: 1, costo_unitario: lote.costo_unitario,
+    })
+  }
+
   const totalPiezas = piezas.reduce(
     (s, p) => s + (Number(p.cantidad) || 0) * (Number(p.costo_unitario) || 0), 0
   )
@@ -1188,6 +1208,7 @@ export function MantenimientoForm({
   }
 
   return (
+    <>
     <form onSubmit={form.onSubmit(handleSubmit)}>
       <Stack gap="sm">
         {error && <Alert color="red" title="Error">{error}</Alert>}
@@ -1324,12 +1345,20 @@ export function MantenimientoForm({
             )}
 
             <Group justify="space-between">
-              <Button
-                variant="light" size="xs" leftSection={<IconPlus size={14} />}
-                onClick={() => form.insertListItem('piezas', { lote_id: '', cantidad: 1, costo_unitario: '' })}
-              >
-                Agregar refacción
-              </Button>
+              <Group gap="xs">
+                <Button
+                  variant="light" size="xs" leftSection={<IconPlus size={14} />}
+                  onClick={() => form.insertListItem('piezas', { lote_id: '', cantidad: 1, costo_unitario: '' })}
+                >
+                  Agregar refacción
+                </Button>
+                <Button
+                  variant="subtle" size="xs" leftSection={<IconPlus size={14} />}
+                  onClick={() => setNuevaRefOpen(true)}
+                >
+                  Nueva refacción
+                </Button>
+              </Group>
               {piezas.length > 0 && (
                 <Text size="sm" c="dimmed">
                   Total refacciones: <Text component="span" fw={600}>
@@ -1347,6 +1376,14 @@ export function MantenimientoForm({
         </Group>
       </Stack>
     </form>
+
+    {/* Alta encadenada: refacción → su primer lote → proveedor si hace falta. */}
+    <NuevaRefaccionModal
+      opened={nuevaRefOpen}
+      onClose={() => setNuevaRefOpen(false)}
+      onCreated={handleRefaccionCreada}
+    />
+    </>
   )
 }
 
