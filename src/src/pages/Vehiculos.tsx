@@ -1554,22 +1554,32 @@ export function MantenimientoForm({
               </Stack>
             )}
 
-            <Group justify="space-between">
-              <Group gap="xs">
-                {/* Los tres botones tocan el inventario de formas distintas, así
-                    que se nombran por lo que hacen con él: gastarlo, surtirlo o
-                    darle algo que no tenía. */}
-                <Tooltip label="Descontar del inventario algo que ya tiene existencias">
-                  <Button
-                    variant="light" size="xs" leftSection={<IconPlus size={14} />}
-                    onClick={() => form.insertListItem('piezas', { lote_id: '', cantidad: 1, costo_unitario: '' })}
-                  >
-                    Usar del inventario
-                  </Button>
-                </Tooltip>
+            {/* Los tres botones tocan el inventario de formas distintas, así que
+                se nombran por lo que hacen con él: gastarlo, surtirlo o darle
+                algo que no tenía. El normal va solo en su renglón; los otros dos
+                quedan abajo, como la salida para cuando ese no alcanza. */}
+            <Stack gap={8}>
+              <Group justify="space-between">
+                <Button
+                  variant="light" size="sm" leftSection={<IconPlus size={16} />}
+                  onClick={() => form.insertListItem('piezas', { lote_id: '', cantidad: 1, costo_unitario: '' })}
+                >
+                  Usar del inventario
+                </Button>
+                {piezas.length > 0 && (
+                  <Text size="sm" c="dimmed">
+                    Total refacciones: <Text component="span" fw={600}>
+                      {totalPiezas.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}
+                    </Text>
+                  </Text>
+                )}
+              </Group>
+
+              <Group gap="xs" align="center">
+                <Text size="xs" c="dimmed">¿No aparece en el inventario?</Text>
                 <Tooltip label="La refacción existe pero se quedó sin existencias: registra la compra que la surte">
                   <Button
-                    variant="subtle" size="xs" leftSection={<IconPlus size={14} />}
+                    variant="subtle" size="compact-xs" leftSection={<IconPlus size={12} />}
                     onClick={() => setNuevoLoteOpen(true)}
                   >
                     Registrar compra
@@ -1577,21 +1587,14 @@ export function MantenimientoForm({
                 </Tooltip>
                 <Tooltip label="La refacción no está en el catálogo todavía: se da de alta junto con su primera compra">
                   <Button
-                    variant="subtle" size="xs" leftSection={<IconPlus size={14} />}
+                    variant="subtle" size="compact-xs" leftSection={<IconPlus size={12} />}
                     onClick={() => setNuevaRefOpen(true)}
                   >
                     Dar de alta refacción
                   </Button>
                 </Tooltip>
               </Group>
-              {piezas.length > 0 && (
-                <Text size="sm" c="dimmed">
-                  Total refacciones: <Text component="span" fw={600}>
-                    {totalPiezas.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}
-                  </Text>
-                </Text>
-              )}
-            </Group>
+            </Stack>
           </>
         )}
 
