@@ -1517,8 +1517,8 @@ export function MantenimientoForm({
                         searchable
                         nothingFoundMessage={
                           lotes.length === 0
-                            ? 'Sin existencias: usa "Nueva refacción" o "Nuevo lote"'
-                            : 'Sin coincidencias: si ya existe pero no tiene stock, usa "Nuevo lote"'
+                            ? 'Nada con existencias: usa "Registrar compra" o "Dar de alta refacción"'
+                            : 'Sin coincidencias: si existe pero no tiene stock, usa "Registrar compra"'
                         }
                         value={piezas[idx].lote_id || null}
                         onChange={(v) => setLote(idx, v)}
@@ -1556,24 +1556,33 @@ export function MantenimientoForm({
 
             <Group justify="space-between">
               <Group gap="xs">
-                <Button
-                  variant="light" size="xs" leftSection={<IconPlus size={14} />}
-                  onClick={() => form.insertListItem('piezas', { lote_id: '', cantidad: 1, costo_unitario: '' })}
-                >
-                  Agregar refacción
-                </Button>
-                <Button
-                  variant="subtle" size="xs" leftSection={<IconPlus size={14} />}
-                  onClick={() => setNuevaRefOpen(true)}
-                >
-                  Nueva refacción
-                </Button>
-                <Button
-                  variant="subtle" size="xs" leftSection={<IconPlus size={14} />}
-                  onClick={() => setNuevoLoteOpen(true)}
-                >
-                  Nuevo lote
-                </Button>
+                {/* Los tres botones tocan el inventario de formas distintas, así
+                    que se nombran por lo que hacen con él: gastarlo, surtirlo o
+                    darle algo que no tenía. */}
+                <Tooltip label="Descontar del inventario algo que ya tiene existencias">
+                  <Button
+                    variant="light" size="xs" leftSection={<IconPlus size={14} />}
+                    onClick={() => form.insertListItem('piezas', { lote_id: '', cantidad: 1, costo_unitario: '' })}
+                  >
+                    Usar del inventario
+                  </Button>
+                </Tooltip>
+                <Tooltip label="La refacción existe pero se quedó sin existencias: registra la compra que la surte">
+                  <Button
+                    variant="subtle" size="xs" leftSection={<IconPlus size={14} />}
+                    onClick={() => setNuevoLoteOpen(true)}
+                  >
+                    Registrar compra
+                  </Button>
+                </Tooltip>
+                <Tooltip label="La refacción no está en el catálogo todavía: se da de alta junto con su primera compra">
+                  <Button
+                    variant="subtle" size="xs" leftSection={<IconPlus size={14} />}
+                    onClick={() => setNuevaRefOpen(true)}
+                  >
+                    Dar de alta refacción
+                  </Button>
+                </Tooltip>
               </Group>
               {piezas.length > 0 && (
                 <Text size="sm" c="dimmed">

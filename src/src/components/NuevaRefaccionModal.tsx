@@ -76,7 +76,7 @@ export default function NuevaRefaccionModal({
     <Modal
       opened={opened}
       onClose={cerrar}
-      title={pieza ? 'Nueva refacción — lote de compra' : 'Nueva refacción'}
+      title={pieza ? 'Alta de refacción — su primera compra' : 'Dar de alta una refacción'}
       centered
       closeOnClickOutside={false}
       zIndex={300}

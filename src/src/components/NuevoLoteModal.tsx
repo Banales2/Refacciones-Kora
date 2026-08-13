@@ -71,7 +71,7 @@ export default function NuevoLoteModal({
     <Modal
       opened={opened}
       onClose={cerrar}
-      title="Nuevo lote de una refacción existente"
+      title="Registrar compra de una refacción"
       centered
       closeOnClickOutside={false}
       zIndex={300}
@@ -82,7 +82,7 @@ export default function NuevoLoteModal({
           placeholder={isLoading ? 'Cargando refacciones…' : 'Busca la refacción por serie o descripción'}
           data={opciones}
           searchable
-          nothingFoundMessage='Sin coincidencias: dala de alta con "Nueva refacción"'
+          nothingFoundMessage='Sin coincidencias: dala de alta con "Dar de alta refacción"'
           value={piezaId}
           onChange={setPiezaId}
           disabled={crearLoteMut.isPending}
