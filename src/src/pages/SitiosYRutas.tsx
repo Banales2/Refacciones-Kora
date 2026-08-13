@@ -534,6 +534,7 @@ function ConductorForm({
             label="No. licencia"
             placeholder="Ej. ABC1234567"
             maxLength={30}
+            spellCheck={false}
             {...form.getInputProps('licencia_estatal_numero')}
             onChange={(e) => form.setFieldValue('licencia_estatal_numero', limpiarCodigo(e.currentTarget.value, 30))}
           />
@@ -555,6 +556,7 @@ function ConductorForm({
             label="No. licencia"
             placeholder="Ej. ABC1234567"
             maxLength={30}
+            spellCheck={false}
             {...form.getInputProps('licencia_federal_numero')}
             onChange={(e) => form.setFieldValue('licencia_federal_numero', limpiarCodigo(e.currentTarget.value, 30))}
           />
@@ -572,6 +574,7 @@ function ConductorForm({
             label="No. expediente"
             placeholder="Ej. EXP-12345"
             maxLength={30}
+            spellCheck={false}
             {...form.getInputProps('licencia_federal_expediente')}
             onChange={(e) => form.setFieldValue('licencia_federal_expediente', limpiarCodigo(e.currentTarget.value, 30))}
           />

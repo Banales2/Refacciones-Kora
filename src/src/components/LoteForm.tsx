@@ -90,7 +90,7 @@ export function LoteForm({
       num_factura: (v) => {
         if (!v.trim()) return 'No. factura requerido'
         if (v.trim().length > 30) return 'Máximo 30 caracteres'
-        if (!/^[A-Za-z0-9-]+$/.test(v.trim())) return 'Solo letras, números y guiones'
+        if (!/^[A-Za-z0-9/-]+$/.test(v.trim())) return 'Solo letras, números, guiones y diagonales'
         return null
       },
       comprado_por: (v) => {
@@ -140,6 +140,7 @@ export function LoteForm({
             max={200000}
             clampBehavior="strict"
             decimalScale={2}
+            thousandSeparator=","
             prefix="$"
             required
             {...form.getInputProps('costo_unitario')}
@@ -156,13 +157,14 @@ export function LoteForm({
           />
           <TextInput
             label="No. factura"
-            placeholder="Ej. A-12345"
+            placeholder="Ej. A-12345 o A-123/2026"
             maxLength={30}
             required
+            spellCheck={false}
             {...form.getInputProps('num_factura')}
             onChange={(e) =>
-              // Allowlist: solo letras, números y guiones
-              form.setFieldValue('num_factura', e.currentTarget.value.replace(/[^A-Za-z0-9-]/g, ''))
+              // Allowlist: solo letras, números, guiones y diagonales
+              form.setFieldValue('num_factura', e.currentTarget.value.replace(/[^A-Za-z0-9/-]/g, ''))
             }
           />
           <TextInput

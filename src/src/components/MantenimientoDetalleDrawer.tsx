@@ -135,7 +135,7 @@ function DetalleForm({
           {...form.getInputProps('cantidad')}
         />
         <NumberInput
-          label="Costo unitario" placeholder="0.00" min={0} decimalScale={2} prefix="$"
+          label="Costo unitario" placeholder="0.00" min={0} decimalScale={2} thousandSeparator="," prefix="$"
           required
           {...form.getInputProps('costo_unitario')}
         />

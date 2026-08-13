@@ -39,7 +39,8 @@ export const LoteCreateSchema = z.object({
     .trim()
     .min(1, 'Núm. factura requerido')
     .max(30, 'Máximo 30 caracteres')
-    .regex(/^[A-Za-z0-9-]+$/, 'Solo letras, números y guiones'),
+    // La diagonal es común en los folios ("A-123/2026"), así que va permitida.
+    .regex(/^[A-Za-z0-9/-]+$/, 'Solo letras, números, guiones y diagonales'),
   comprado_por: compradoPor,
 })
 
@@ -62,7 +63,8 @@ export const LoteUpdateSchema = z.object({
     .trim()
     .min(1, 'Núm. factura requerido')
     .max(30, 'Máximo 30 caracteres')
-    .regex(/^[A-Za-z0-9-]+$/, 'Solo letras, números y guiones')
+    // La diagonal es común en los folios ("A-123/2026"), así que va permitida.
+    .regex(/^[A-Za-z0-9/-]+$/, 'Solo letras, números, guiones y diagonales')
     .optional(),
   comprado_por: compradoPor.optional(),
 })

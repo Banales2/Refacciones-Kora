@@ -1427,7 +1427,8 @@ export function MantenimientoForm({
           )}
           <Grid.Col span={tieneKilometraje ? 3 : 6}>
             <NumberInput
-              label="Costo de mano de obra" placeholder="0.00" min={0} decimalScale={2} prefix="$" required
+              label="Costo de mano de obra" placeholder="0.00" min={0} decimalScale={2}
+              thousandSeparator="," prefix="$" required
               {...form.getInputProps('costo')}
             />
           </Grid.Col>
@@ -1531,7 +1532,7 @@ export function MantenimientoForm({
                     <Grid.Col span={3}>
                       <NumberInput
                         label={idx === 0 ? 'Costo unit.' : undefined}
-                        placeholder="0.00" min={0} decimalScale={2} prefix="$"
+                        placeholder="0.00" min={0} decimalScale={2} thousandSeparator="," prefix="$"
                         {...form.getInputProps(`piezas.${idx}.costo_unitario`)}
                       />
                     </Grid.Col>

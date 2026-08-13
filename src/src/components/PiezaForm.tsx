@@ -83,6 +83,7 @@ export function PiezaForm({
           placeholder="EJ-001"
           required
           maxLength={20}
+          spellCheck={false}
           {...form.getInputProps('numero_serie')}
           styles={{ input: { textTransform: 'uppercase' } }}
           onChange={(e) =>

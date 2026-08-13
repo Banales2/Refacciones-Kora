@@ -307,7 +307,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
           <Grid.Col span={tipo === 'montacargas' ? 12 : 6}>
             <TextInput
               label="No. de serie" placeholder="Serie" required
-              maxLength={20}
+              maxLength={20} spellCheck={false}
               styles={{ input: { textTransform: 'uppercase' } }}
               {...form.getInputProps('serie')}
               onChange={(e) => form.setFieldValue('serie', limpiarCodigo(e.currentTarget.value, 20))}
@@ -317,7 +317,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
             <Grid.Col span={6}>
               <TextInput
                 label="Placas" placeholder="Ej. ABC-123-A" required
-                maxLength={10}
+                maxLength={10} spellCheck={false}
                 styles={{ input: { textTransform: 'uppercase' } }}
                 {...form.getInputProps('placas')}
                 onChange={(e) => form.setFieldValue('placas', limpiarCodigo(e.currentTarget.value, 10))}
