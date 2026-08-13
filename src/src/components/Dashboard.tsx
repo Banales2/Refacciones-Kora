@@ -398,10 +398,8 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
         />
         <StatCard
           label="Costo total (últimos 30 días)"
-          value={loadingResumen ? '—' : formatMXN(
-            (resumen?.data.mantenimientos.costo_total ?? 0) + (resumen?.data.piezas.costo_total ?? 0)
-          )}
-          sub="Mantenimiento + refacciones"
+          value={loadingResumen ? '—' : formatMXN(resumen?.data.costo_total_periodo ?? 0)}
+          sub="Mano de obra + refacciones compradas"
           color="blue"
         />
       </SimpleGrid>

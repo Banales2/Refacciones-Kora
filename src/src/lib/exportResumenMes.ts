@@ -37,25 +37,28 @@ export async function exportResumenMesToExcel(resumen: ResumenMes) {
   wb.creator = 'Refacciones Kora'
   wb.created = new Date()
 
-  const costoTotalPeriodo = resumen.mantenimientos.costo_total + resumen.piezas.costo_total
-
   const wsResumen = wb.addWorksheet('Resumen')
   wsResumen.columns = [
-    { header: 'Concepto', key: 'concepto', width: 32 },
+    { header: 'Concepto', key: 'concepto', width: 46 },
     { header: 'Valor', key: 'valor', width: 22 },
   ]
   wsResumen.getRow(1).font = { bold: true }
+  // El total no suma las piezas usadas en mantenimientos: ya vienen cobradas en
+  // el costo de las refacciones compradas. Por eso se desglosan.
   wsResumen.addRows([
     { concepto: 'Periodo', valor: rangoLabel(resumen) },
     { concepto: 'Mantenimientos realizados', valor: resumen.mantenimientos.count },
     { concepto: 'Costo total mantenimientos', valor: resumen.mantenimientos.costo_total },
+    { concepto: '    Mano de obra', valor: resumen.mantenimientos.costo_mano_obra },
+    { concepto: '    Refacciones usadas (ya cobradas en la compra)', valor: resumen.mantenimientos.costo_piezas },
     { concepto: 'Refacciones compradas (lotes)', valor: resumen.piezas.count },
     { concepto: 'Costo total refacciones', valor: resumen.piezas.costo_total },
-    { concepto: 'Costo total del periodo', valor: costoTotalPeriodo },
+    { concepto: 'Costo total del periodo (mano de obra + refacciones compradas)', valor: resumen.costo_total_periodo },
   ])
-  for (const rowNum of [3, 5, 6]) {
+  for (const rowNum of [4, 5, 6, 8, 9]) {
     wsResumen.getCell(rowNum, 2).numFmt = '"$"#,##0.00'
   }
+  wsResumen.getRow(9).font = { bold: true }
 
   const wsMtto = wb.addWorksheet('Mantenimientos')
   wsMtto.columns = [

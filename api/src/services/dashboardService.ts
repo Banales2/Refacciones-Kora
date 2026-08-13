@@ -131,14 +131,20 @@ export async function getResumenMes() {
   }
   const vehiculos = [...porVehiculo.values()].sort((a, b) => b.costo_total - a.costo_total)
 
-  const mantenimientosCostoTotal = mantenimientos.reduce((s, m) => s + m.costo + m.piezas_total, 0)
+  const manoObra = mantenimientos.reduce((s, m) => s + m.costo, 0)
+  const piezasUsadas = mantenimientos.reduce((s, m) => s + m.piezas_total, 0)
   const piezasCostoTotal = lotes.reduce((s, l) => s + l.cantidad_inicial * l.costo_unitario, 0)
 
   return {
     rango: { start, end },
     mantenimientos: {
       count: mantenimientos.length,
-      costo_total: mantenimientosCostoTotal,
+      // Lo que costó el mantenimiento visto solo: mano de obra más las piezas
+      // que consumió. Ojo al sumarlo con el costo de las refacciones compradas:
+      // esas piezas ya se cobraron al comprarlas (ver `costo_total_periodo`).
+      costo_total: manoObra + piezasUsadas,
+      costo_mano_obra: manoObra,
+      costo_piezas: piezasUsadas,
       por_vehiculo: vehiculos,
     },
     piezas: {
@@ -146,6 +152,10 @@ export async function getResumenMes() {
       costo_total: piezasCostoTotal,
       lotes,
     },
+    // Lo que realmente salió de caja en el periodo. Las piezas se pagan al
+    // comprarlas, así que sumar además las que consumieron los mantenimientos
+    // las cobraría dos veces: solo entra la mano de obra.
+    costo_total_periodo: manoObra + piezasCostoTotal,
   }
 }
 
@@ -494,7 +504,9 @@ export async function getReporteFlota(periodo: 'mes' | 'semana' = 'mes'): Promis
       piezas_usadas:       piezasUsadas,
       piezas_compradas:    piezasCompradas,
       total_mantenimiento: manoObra + piezasUsadas,
-      total:               manoObra + piezasUsadas + piezasCompradas,
+      // `piezas_usadas` no entra: esas piezas ya se pagaron al comprarlas y
+      // están dentro de `piezas_compradas`. Sumarlas contaría el gasto dos veces.
+      total:               manoObra + piezasCompradas,
     },
     comparacion: {
       rango_actual:   actual,

@@ -26,15 +26,23 @@ export interface LoteMes {
 export interface ResumenMes {
   rango: { start: string; end: string }
   mantenimientos: {
-    count:        number
-    costo_total:  number
-    por_vehiculo: VehiculoConMantenimiento[]
+    count:           number
+    /** Mano de obra + piezas consumidas: lo que costó el servicio visto solo. */
+    costo_total:     number
+    costo_mano_obra: number
+    costo_piezas:    number
+    por_vehiculo:    VehiculoConMantenimiento[]
   }
   piezas: {
     count:       number
     costo_total: number
     lotes:       LoteMes[]
   }
+  /**
+   * Gasto real del periodo: mano de obra + refacciones compradas. Las piezas
+   * consumidas en mantenimientos no se suman porque ya se pagaron al comprarlas.
+   */
+  costo_total_periodo: number
 }
 
 export function useResumenMes() {

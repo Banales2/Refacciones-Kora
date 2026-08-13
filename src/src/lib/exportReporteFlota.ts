@@ -75,10 +75,15 @@ export async function exportReporteFlotaToPdf(reporte: ReporteFlota, sucursales:
     `Refacciones usadas en mantenimientos:         ${formatMXN(reporte.costos.piezas_usadas)}`,
     `Subtotal mantenimiento:                       ${formatMXN(reporte.costos.total_mantenimiento)}`,
     `Refacciones compradas (lotes del mes):        ${formatMXN(reporte.costos.piezas_compradas)}`,
+    // Las refacciones usadas no entran en el total: se pagaron al comprarlas.
+    `(las refacciones usadas ya vienen cobradas en las compradas)`,
   ]
   for (const linea of costoLineas) { doc.text(linea, margin, y); y += 6 }
   doc.setFont('helvetica', 'bold')
-  doc.text(`Costo total del mes: ${formatMXN(reporte.costos.total)}`, margin, y)
+  doc.text(
+    `Costo total del mes (mano de obra + refacciones compradas): ${formatMXN(reporte.costos.total)}`,
+    margin, y,
+  )
   doc.setFont('helvetica', 'normal')
   y += 10
 
