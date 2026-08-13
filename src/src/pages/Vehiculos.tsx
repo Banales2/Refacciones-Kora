@@ -52,6 +52,7 @@ import RecargasSection from '../components/RecargasSection'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 import type { LoteDisponible } from '../hooks/useLotesDisponibles'
 import NuevaRefaccionModal from '../components/NuevaRefaccionModal'
+import NuevoLoteModal from '../components/NuevoLoteModal'
 import NuevoTecnicoModal from '../components/NuevoTecnicoModal'
 import { usePiezasVehiculo, useSetPiezaVehiculo, useRemovePiezaVehiculo } from '../hooks/usePiezasVehiculo'
 import { useAddTiposPiezaVehiculo, useRemoveTipoPiezaVehiculo } from '../hooks/useTiposPiezaVehiculo'
@@ -1238,6 +1239,7 @@ export function MantenimientoForm({
   // Refacciones dadas de alta desde este mismo formulario: se agregan a mano
   // porque la lista de lotes disponibles todavía puede estar refrescándose.
   const [nuevaRefOpen, setNuevaRefOpen] = useState(false)
+  const [nuevoLoteOpen, setNuevoLoteOpen] = useState(false)
   const [lotesNuevos, setLotesNuevos] = useState<LoteDisponible[]>([])
   const lotes = useMemo(() => {
     const base = lotesData?.data ?? []
@@ -1333,7 +1335,8 @@ export function MantenimientoForm({
   }
 
   // Alta encadenada refacción → lote → proveedor: al terminar, la refacción
-  // nueva entra ya capturada como un renglón más del mantenimiento.
+  // nueva entra ya capturada como un renglón más del mantenimiento. Lo mismo
+  // vale para un lote suelto de una refacción que ya existía.
   function handleRefaccionCreada(lote: LoteDisponible) {
     setLotesNuevos((prev) => [...prev, lote])
     form.insertListItem('piezas', {
@@ -1514,8 +1517,8 @@ export function MantenimientoForm({
                         searchable
                         nothingFoundMessage={
                           lotes.length === 0
-                            ? 'No hay refacciones con existencias: regístralas con "Nueva refacción"'
-                            : 'Sin coincidencias'
+                            ? 'Sin existencias: usa "Nueva refacción" o "Nuevo lote"'
+                            : 'Sin coincidencias: si ya existe pero no tiene stock, usa "Nuevo lote"'
                         }
                         value={piezas[idx].lote_id || null}
                         onChange={(v) => setLote(idx, v)}
@@ -1565,6 +1568,12 @@ export function MantenimientoForm({
                 >
                   Nueva refacción
                 </Button>
+                <Button
+                  variant="subtle" size="xs" leftSection={<IconPlus size={14} />}
+                  onClick={() => setNuevoLoteOpen(true)}
+                >
+                  Nuevo lote
+                </Button>
               </Group>
               {piezas.length > 0 && (
                 <Text size="sm" c="dimmed">
@@ -1588,6 +1597,13 @@ export function MantenimientoForm({
     <NuevaRefaccionModal
       opened={nuevaRefOpen}
       onClose={() => setNuevaRefOpen(false)}
+      onCreated={handleRefaccionCreada}
+    />
+
+    {/* Refacción que ya existe pero se quedó sin existencias: solo el lote. */}
+    <NuevoLoteModal
+      opened={nuevoLoteOpen}
+      onClose={() => setNuevoLoteOpen(false)}
       onCreated={handleRefaccionCreada}
     />
 
