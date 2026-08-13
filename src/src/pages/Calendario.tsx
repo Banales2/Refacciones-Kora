@@ -35,6 +35,8 @@ import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import type { TipoVehiculo, VehiculoRow } from '../hooks/useVehiculos'
 import { useMantenimientos } from '../hooks/useMantenimientos'
 import { useTecnicos } from '../hooks/useTecnicos'
+import type { Tecnico } from '../hooks/useTecnicos'
+import NuevoTecnicoModal from '../components/NuevoTecnicoModal'
 import type { MantenimientoPayload } from '../hooks/useMantenimientos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
@@ -191,10 +193,17 @@ function AgendaForm({
   }, [pendientesData])
   const hayPendientes = pendienteGroups.length > 0
 
-  // El técnico se elige del catálogo y se guarda por id.
+  // El técnico se elige del catálogo y se guarda por id. Los dados de alta desde
+  // aquí se agregan a mano porque el catálogo todavía puede estar refrescándose.
   const { data: tecnicosData } = useTecnicos()
-  const tecnicoOptions = (tecnicosData?.data ?? [])
-    .map(t => ({ value: String(t.id), label: t.nombre }))
+  const [nuevoTecnicoOpen, setNuevoTecnicoOpen] = useState(false)
+  const [tecnicosNuevos, setTecnicosNuevos] = useState<Tecnico[]>([])
+  const tecnicoOptions = useMemo(() => {
+    const base = tecnicosData?.data ?? []
+    const ids = new Set(base.map(t => t.id))
+    return [...base, ...tecnicosNuevos.filter(t => !ids.has(t.id))]
+      .map(t => ({ value: String(t.id), label: t.nombre }))
+  }, [tecnicosData, tecnicosNuevos])
 
   const form = useForm<AgendaFormVals>({
     initialValues: { fecha_inicio: '', fecha_fin: '', tipo: '', tecnico_id: '', observaciones: '', pendiente_ids: [] },
@@ -251,15 +260,23 @@ function AgendaForm({
           {...form.getInputProps('tipo')}
           onChange={(v) => form.setFieldValue('tipo', v ?? '')}
         />
-        <Select
-          label="Técnico" required
-          placeholder="Selecciona un técnico"
-          data={tecnicoOptions}
-          searchable
-          nothingFoundMessage="Registra técnicos en Catálogos"
-          {...form.getInputProps('tecnico_id')}
-          onChange={(v) => form.setFieldValue('tecnico_id', v ?? '')}
-        />
+        <div>
+          <Select
+            label="Técnico" required
+            placeholder="Selecciona un técnico"
+            data={tecnicoOptions}
+            searchable
+            nothingFoundMessage='Sin coincidencias: usa "Nuevo técnico"'
+            {...form.getInputProps('tecnico_id')}
+            onChange={(v) => form.setFieldValue('tecnico_id', v ?? '')}
+          />
+          <Button
+            variant="subtle" size="xs" mt={4} leftSection={<IconPlus size={14} />}
+            onClick={() => setNuevoTecnicoOpen(true)}
+          >
+            Nuevo técnico
+          </Button>
+        </div>
         <div>
           <MultiSelect
             label="Qué se busca resolver"
@@ -300,6 +317,15 @@ function AgendaForm({
           lastMant={lastMant}
         />
       </Modal>
+
+      <NuevoTecnicoModal
+        opened={nuevoTecnicoOpen}
+        onClose={() => setNuevoTecnicoOpen(false)}
+        onCreated={(tecnico) => {
+          setTecnicosNuevos((prev) => [...prev, tecnico])
+          form.setFieldValue('tecnico_id', String(tecnico.id))
+        }}
+      />
     </form>
   )
 }

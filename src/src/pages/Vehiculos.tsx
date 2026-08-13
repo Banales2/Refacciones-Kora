@@ -7,9 +7,9 @@
 // Calendario.
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import {
-  Stack, Group, Text, TextInput, Textarea, Table, Badge,
+  Stack, Group, Text, TextInput, Textarea, Table, Badge, Pill,
   Pagination, Loader, Center, Alert, Button, Select, MultiSelect,
-  Modal, ActionIcon, Tooltip, NumberInput,
+  Modal, ActionIcon, Tooltip, NumberInput, Input,
   Divider, Grid, Paper, SegmentedControl, Accordion, Drawer,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
@@ -52,11 +52,13 @@ import RecargasSection from '../components/RecargasSection'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 import type { LoteDisponible } from '../hooks/useLotesDisponibles'
 import NuevaRefaccionModal from '../components/NuevaRefaccionModal'
+import NuevoTecnicoModal from '../components/NuevoTecnicoModal'
 import { usePiezasVehiculo, useSetPiezaVehiculo, useRemovePiezaVehiculo } from '../hooks/usePiezasVehiculo'
 import { useAddTiposPiezaVehiculo, useRemoveTipoPiezaVehiculo } from '../hooks/useTiposPiezaVehiculo'
 import { useTiposPieza } from '../hooks/useTiposPieza'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
 import { useTecnicos } from '../hooks/useTecnicos'
+import type { Tecnico } from '../hooks/useTecnicos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
@@ -825,16 +827,31 @@ function RequerimientosSection({ vehiculo, mantenimientos, overdueIds = new Set<
 
 // ── Sección de incidencias ────────────────────────────────────────────────────
 
-function IncidenciasSection({ vehiculoId }: { vehiculoId: number }) {
+// Cómo deshacer el cierre de una incidencia si el mantenimiento que lo
+// justifica no llega a registrarse. Se comparte con la página de Incidencias.
+export type DeshacerAtencion =
+  | { tipo: 'eliminar' }
+  | { tipo: 'revertir'; status: StatusIncidencia }
+
+function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; tipoVehiculo?: TipoVehiculo }) {
   const { data, isLoading } = useIncidenciasVehiculo(vehiculoId)
   const createMut = useCreateIncidencia(vehiculoId)
   const updateMut = useUpdateIncidencia(vehiculoId)
   const deleteMut = useDeleteIncidencia(vehiculoId)
+  const mantMut   = useCreateMantenimiento(vehiculoId)
+  const piezasMut = useCreateDetallesMtto()
 
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Incidencia | null>(null)
   const [deleting, setDeleting]   = useState<Incidencia | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  // Incidencia marcada como atendida: hay que registrarle el mantenimiento que
+  // la cerró antes de darla por buena. `deshacer` dice cómo revertir el cambio
+  // si se cancela: borrarla si nació así, o devolverle su status si se editó.
+  const [atendiendo, setAtendiendo]   = useState<Incidencia | null>(null)
+  const [deshacer, setDeshacer]       = useState<DeshacerAtencion | null>(null)
+  const [mantError, setMantError]     = useState<string | null>(null)
+  const [detalleMttoId, setDetalleMttoId] = useState<number | null>(null)
 
   const items = data?.data ?? []
   // Lo que sigue sin atender primero, y dentro de eso lo más grave arriba.
@@ -851,14 +868,87 @@ function IncidenciasSection({ vehiculoId }: { vehiculoId: number }) {
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
   function openEdit(item: Incidencia) { setEditing(item); setFormError(null); setFormOpen(true) }
 
+  // Marcar una incidencia como atendida obliga a registrar el mantenimiento que
+  // la cerró: si no, quedaría cerrada sin nada que explique cómo (y de hecho la
+  // sincronización diaria la volvería a abrir). El cambio se guarda primero
+  // porque el mantenimiento la vincula por id; si no llega a registrarse, se
+  // deshace (ver `cancelarAtencion`).
   function handleSubmit(payload: IncidenciaPayload) {
     setFormError(null)
     const onError = (e: unknown) => setFormError((e as Error).message)
+    const pideMantenimiento = payload.status === 'completado'
+
     if (editing) {
-      updateMut.mutate({ id: editing.id, payload }, { onSuccess: () => setFormOpen(false), onError })
-    } else {
-      createMut.mutate(payload, { onSuccess: () => setFormOpen(false), onError })
+      const statusPrevio = editing.status
+      updateMut.mutate({ id: editing.id, payload }, {
+        onSuccess: ({ data }) => {
+          setFormOpen(false)
+          if (pideMantenimiento && statusPrevio !== 'completado') {
+            setMantError(null)
+            setDeshacer({ tipo: 'revertir', status: statusPrevio })
+            setAtendiendo(data)
+          }
+        },
+        onError,
+      })
+      return
     }
+
+    createMut.mutate(payload, {
+      onSuccess: ({ data }) => {
+        setFormOpen(false)
+        if (pideMantenimiento) {
+          setMantError(null)
+          setDeshacer({ tipo: 'eliminar' })
+          setAtendiendo(data)
+        }
+      },
+      onError,
+    })
+  }
+
+  // Cancelar deja la incidencia como estaba: borrada si nació atendida (sin el
+  // mantenimiento el alta nunca se completó) o con su status anterior si se
+  // editó para cerrarla.
+  function cancelarAtencion() {
+    if (!atendiendo || !deshacer) { setAtendiendo(null); return }
+    setMantError(null)
+    const cerrar = () => { setAtendiendo(null); setDeshacer(null) }
+    const onError = (e: unknown) =>
+      setMantError(`No se pudo deshacer el cambio en la incidencia: ${(e as Error).message}`)
+
+    if (deshacer.tipo === 'eliminar') {
+      deleteMut.mutate(atendiendo.id, { onSuccess: cerrar, onError })
+    } else {
+      updateMut.mutate(
+        { id: atendiendo.id, payload: { status: deshacer.status } },
+        { onSuccess: cerrar, onError },
+      )
+    }
+  }
+
+  function handleAtender(payload: MantenimientoPayload, piezas: DetalleMttoPayload[]) {
+    setMantError(null)
+    mantMut.mutate(payload, {
+      onSuccess: (res) => {
+        setDeshacer(null)
+        if (!piezas.length) { setAtendiendo(null); return }
+        piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
+          onSuccess: () => setAtendiendo(null),
+          // El mantenimiento ya quedó registrado: no hay forma de deshacer el
+          // alta, así que se abre su detalle para capturar a mano lo que faltó.
+          onError: (e: Error) => {
+            setAtendiendo(null)
+            setDetalleMttoId(res.data.id)
+            alert(
+              `El mantenimiento se registró, pero no se pudieron guardar todas las refacciones: ${e.message}\n\n` +
+              'Revisa el detalle del mantenimiento para agregar las que falten.'
+            )
+          },
+        })
+      },
+      onError: (e: Error) => setMantError(e.message),
+    })
   }
 
   return (
@@ -965,6 +1055,42 @@ function IncidenciasSection({ vehiculoId }: { vehiculoId: number }) {
         />
       </Modal>
 
+      {/* Incidencia marcada como atendida: falta el mantenimiento que la cierra. */}
+      <Modal
+        opened={atendiendo !== null} onClose={cancelarAtencion}
+        title={atendiendo ? `Registra el mantenimiento — ${atendiendo.nombre}` : ''}
+        centered size="md" closeOnClickOutside={false} withCloseButton={false}
+      >
+        {atendiendo && (
+          <Stack gap="sm">
+            <Alert color="orange" variant="light" title="Falta el mantenimiento que la cierra">
+              Marcaste la incidencia como <strong>atendida</strong>, así que hay que registrar el
+              mantenimiento con el que se atendió. Si cancelas,{' '}
+              {deshacer?.tipo === 'revertir'
+                ? 'la incidencia vuelve a como estaba.'
+                : 'la incidencia se descarta y no queda registrada.'}
+            </Alert>
+            <MantenimientoForm
+              vehiculoId={vehiculoId}
+              tipoVehiculo={tipoVehiculo}
+              pendienteFijo={{ id: atendiendo.id, nombre: atendiendo.nombre }}
+              isPending={mantMut.isPending || piezasMut.isPending
+                || deleteMut.isPending || updateMut.isPending}
+              error={mantError}
+              onSubmit={handleAtender}
+              onCancel={cancelarAtencion}
+            />
+          </Stack>
+        )}
+      </Modal>
+
+      {detalleMttoId !== null && (
+        <MantenimientoDetalleDrawer
+          mantenimientoId={detalleMttoId}
+          onClose={() => setDetalleMttoId(null)}
+        />
+      )}
+
       <Modal
         opened={deleting !== null} onClose={() => setDeleting(null)}
         title="Eliminar incidencia" centered size="sm"
@@ -1032,12 +1158,19 @@ function initMant(m?: Mantenimiento, prefillPendienteIds?: number[], kmVehiculo?
 }
 
 export function MantenimientoForm({
-  vehiculoId, tipoVehiculo, initial, prefillPendienteIds, isPending, error, onSubmit, onCancel,
+  vehiculoId, tipoVehiculo, initial, prefillPendienteIds, pendienteFijo,
+  isPending, error, onSubmit, onCancel,
 }: {
   vehiculoId:               number
   tipoVehiculo?:            TipoVehiculo
   initial?:                 Mantenimiento
   prefillPendienteIds?:     number[]
+  /**
+   * Pendiente que este mantenimiento existe para cerrar y que por eso no se
+   * puede quitar: se muestra fijo y va siempre en el alta. Los demás se siguen
+   * agregando y quitando con normalidad.
+   */
+  pendienteFijo?:           { id: number; nombre: string }
   isPending:                boolean
   error:                    string | null
   onSubmit:                 (p: MantenimientoPayload, piezas: DetalleMttoPayload[]) => void
@@ -1058,6 +1191,10 @@ export function MantenimientoForm({
     [initial, prefillPendienteIds]
   )
 
+  // Solo el id: `pendienteFijo` llega como objeto nuevo en cada render y
+  // recalcularía las opciones sin necesidad.
+  const fijoId = pendienteFijo?.id ?? null
+
   const pendienteGroups = useMemo(() => {
     const porId = new Map<number, { id: number; nombre: string; origen: OrigenPendiente; activo: boolean }>()
     for (const p of pendientesData?.data ?? []) {
@@ -1075,6 +1212,9 @@ export function MantenimientoForm({
       }
     }
 
+    // El fijo se muestra aparte, no como una opción más del selector.
+    if (fijoId != null) porId.delete(fijoId)
+
     const items = [...porId.values()]
     return (['preventivo', 'incidencia'] as OrigenPendiente[])
       .map(origen => ({
@@ -1085,7 +1225,7 @@ export function MantenimientoForm({
           .map(p => ({ value: String(p.id), label: p.activo ? p.nombre : `${p.nombre} (cerrado)` })),
       }))
       .filter(g => g.items.length > 0)
-  }, [pendientesData, reqData, incData, linkedIds])
+  }, [pendientesData, reqData, incData, linkedIds, fijoId])
 
   const hayPendientes = pendienteGroups.some(g => g.items.length > 0)
 
@@ -1112,10 +1252,17 @@ export function MantenimientoForm({
   // El técnico se guarda por id contra el catálogo. Si el técnico se eliminó,
   // el mantenimiento queda sin técnico y hay que elegir otro al editarlo.
   const { data: tecnicosData } = useTecnicos()
-  const tecnicoOptions = useMemo(
-    () => (tecnicosData?.data ?? []).map((t) => ({ value: String(t.id), label: t.nombre })),
-    [tecnicosData]
-  )
+
+  // Técnicos dados de alta desde este mismo formulario: se agregan a mano
+  // porque el catálogo todavía puede estar refrescándose.
+  const [nuevoTecnicoOpen, setNuevoTecnicoOpen] = useState(false)
+  const [tecnicosNuevos, setTecnicosNuevos] = useState<Tecnico[]>([])
+  const tecnicoOptions = useMemo(() => {
+    const base = tecnicosData?.data ?? []
+    const ids = new Set(base.map((t) => t.id))
+    return [...base, ...tecnicosNuevos.filter((t) => !ids.has(t.id))]
+      .map((t) => ({ value: String(t.id), label: t.nombre }))
+  }, [tecnicosData, tecnicosNuevos])
 
   const form = useForm<MantForm>({
     initialValues: initMant(initial, prefillPendienteIds, kmVehiculo),
@@ -1129,7 +1276,10 @@ export function MantenimientoForm({
         !v.trim() ? 'Requerido' :
         v.length > 255 ? 'Máximo 255 caracteres' :
         !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
-      pendiente_ids:     (v) => v.length === 0 ? 'Selecciona al menos un requerimiento o incidencia' : null,
+      // Con un pendiente fijo el mantenimiento ya atiende algo, así que el
+      // selector puede quedarse vacío.
+      pendiente_ids:     (v) => !pendienteFijo && v.length === 0
+        ? 'Selecciona al menos un requerimiento o incidencia' : null,
       piezas: {
         lote_id:  (v: string) => !v ? 'Selecciona la refacción' : null,
         cantidad: (v: number | string, vals: MantForm, path: string) => {
@@ -1175,6 +1325,13 @@ export function MantenimientoForm({
     if (lote) form.setFieldValue(`piezas.${idx}.costo_unitario`, lote.costo_unitario)
   }
 
+  // El técnico recién dado de alta queda seleccionado, que es para lo que se
+  // abrió el alta desde aquí.
+  function handleTecnicoCreado(tecnico: Tecnico) {
+    setTecnicosNuevos((prev) => [...prev, tecnico])
+    form.setFieldValue('tecnico_id', String(tecnico.id))
+  }
+
   // Alta encadenada refacción → lote → proveedor: al terminar, la refacción
   // nueva entra ya capturada como un renglón más del mantenimiento.
   function handleRefaccionCreada(lote: LoteDisponible) {
@@ -1197,7 +1354,12 @@ export function MantenimientoForm({
         costo:             vals.costo !== '' ? Number(vals.costo) : 0,
         km_actual:         vals.km_actual !== '' ? Number(vals.km_actual) : 0,
         observaciones:     vals.observaciones.trim(),
-        pendiente_ids:     vals.pendiente_ids.map(Number),
+        // El fijo no vive en el selector: se agrega aquí para que el alta lo
+        // incluya sin que se haya podido quitar.
+        pendiente_ids: [
+          ...(pendienteFijo ? [pendienteFijo.id] : []),
+          ...vals.pendiente_ids.map(Number).filter(id => id !== pendienteFijo?.id),
+        ],
       },
       vals.piezas.map(p => ({
         lote_id:        Number(p.lote_id),
@@ -1239,10 +1401,16 @@ export function MantenimientoForm({
               placeholder="Selecciona un técnico"
               data={tecnicoOptions}
               searchable
-              nothingFoundMessage="Registra técnicos en Catálogos"
+              nothingFoundMessage='Sin coincidencias: usa "Nuevo técnico"'
               {...form.getInputProps('tecnico_id')}
               onChange={(v) => form.setFieldValue('tecnico_id', v ?? '')}
             />
+            <Button
+              variant="subtle" size="compact-xs" mt={4} leftSection={<IconPlus size={12} />}
+              onClick={() => setNuevoTecnicoOpen(true)}
+            >
+              Nuevo técnico
+            </Button>
           </Grid.Col>
           {tieneKilometraje && (
             <Grid.Col span={3}>
@@ -1271,16 +1439,49 @@ export function MantenimientoForm({
             />
           </Grid.Col>
           <Grid.Col span={12}>
-            <MultiSelect
-              label="Qué atiende este mantenimiento"
-              description="Requerimientos preventivos e incidencias que quedan cubiertos"
-              required
-              placeholder={hayPendientes ? 'Selecciona los pendientes…' : 'Esta unidad no tiene nada pendiente'}
-              data={pendienteGroups}
-              searchable
-              clearable
-              {...form.getInputProps('pendiente_ids')}
-            />
+            {pendienteFijo ? (
+              <Input.Wrapper
+                label="Qué atiende este mantenimiento"
+                description="Requerimientos preventivos e incidencias que quedan cubiertos"
+                error={form.errors.pendiente_ids as string}
+              >
+                <Stack gap={6} mt={4}>
+                  <Tooltip
+                    multiline w={260} withArrow
+                    label="Esta incidencia se marcó como atendida, así que este mantenimiento es el que la cierra: no se puede quitar."
+                  >
+                    <Pill
+                      // Difuminada y sin botón de quitar: es la razón de ser de
+                      // este mantenimiento, no una opción más.
+                      styles={{ root: { opacity: 0.65, cursor: 'not-allowed', alignSelf: 'flex-start' } }}
+                    >
+                      {pendienteFijo.nombre}
+                    </Pill>
+                  </Tooltip>
+                  <MultiSelect
+                    placeholder={hayPendientes
+                      ? 'Agrega otros pendientes que se hayan atendido…'
+                      : 'Esta unidad no tiene nada más pendiente'}
+                    data={pendienteGroups}
+                    searchable
+                    clearable
+                    {...form.getInputProps('pendiente_ids')}
+                    error={undefined}
+                  />
+                </Stack>
+              </Input.Wrapper>
+            ) : (
+              <MultiSelect
+                label="Qué atiende este mantenimiento"
+                description="Requerimientos preventivos e incidencias que quedan cubiertos"
+                required
+                placeholder={hayPendientes ? 'Selecciona los pendientes…' : 'Esta unidad no tiene nada pendiente'}
+                data={pendienteGroups}
+                searchable
+                clearable
+                {...form.getInputProps('pendiente_ids')}
+              />
+            )}
           </Grid.Col>
         </Grid>
 
@@ -1387,6 +1588,12 @@ export function MantenimientoForm({
       opened={nuevaRefOpen}
       onClose={() => setNuevaRefOpen(false)}
       onCreated={handleRefaccionCreada}
+    />
+
+    <NuevoTecnicoModal
+      opened={nuevoTecnicoOpen}
+      onClose={() => setNuevoTecnicoOpen(false)}
+      onCreated={handleTecnicoCreado}
     />
     </>
   )
@@ -2103,7 +2310,7 @@ function VehiculoDetalle({
       />
 
       {/* Incidencias reportadas */}
-      <IncidenciasSection vehiculoId={vehiculo.id} />
+      <IncidenciasSection vehiculoId={vehiculo.id} tipoVehiculo={vehiculo.tipo} />
 
       {/* Mantenimientos */}
       <MantenimientosSection vehiculoId={vehiculo.id} tipoVehiculo={vehiculo.tipo} />

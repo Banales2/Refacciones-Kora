@@ -24,6 +24,7 @@ import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import IncidenciaForm from '../components/IncidenciaForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import { MantenimientoForm } from './Vehiculos'
+import type { DeshacerAtencion } from './Vehiculos'
 import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
 
 function fmtFechaHora(fecha: string, hora: string | null) {
@@ -66,12 +67,16 @@ export default function Incidencias({ onNavigateVehiculo }: {
   const [detalle, setDetalle]         = useState<IncidenciaConVehiculo | null>(null)
   const [atendiendo, setAtendiendo]   = useState<IncidenciaConVehiculo | null>(null)
   const [mantError, setMantError]     = useState<string | null>(null)
+  // La incidencia quedó marcada como atendida: el mantenimiento que la cierra es
+  // obligatorio, y `deshacer` dice cómo revertir el cambio si se cancela.
+  const [deshacer, setDeshacer] = useState<DeshacerAtencion | null>(null)
   // Mantenimiento recién registrado cuyo detalle se abre cuando sus refacciones
   // no se pudieron guardar completas.
   const [detalleMttoId, setDetalleMttoId] = useState<number | null>(null)
 
   // Las mutaciones necesitan el id del vehículo para invalidar sus listas.
-  const vehiculoActivo = editando?.vehiculo_id ?? borrando?.vehiculo_id ?? Number(vehiculoNueva ?? 0)
+  const vehiculoActivo =
+    editando?.vehiculo_id ?? borrando?.vehiculo_id ?? atendiendo?.vehiculo_id ?? Number(vehiculoNueva ?? 0)
   const createMut = useCreateIncidencia(vehiculoActivo)
   const updateMut = useUpdateIncidencia(vehiculoActivo)
   const deleteMut = useDeleteIncidencia(vehiculoActivo)
@@ -97,10 +102,28 @@ export default function Incidencias({ onNavigateVehiculo }: {
     value: String(v.id), label: vehiculoLabel(v),
   }))
 
+  // Marcar una incidencia como atendida obliga a registrar el mantenimiento que
+  // la cerró: si no, quedaría cerrada sin nada que explique cómo (y de hecho la
+  // sincronización diaria la volvería a abrir). El cambio se guarda primero
+  // porque el mantenimiento la vincula por id; si no llega a registrarse, se
+  // deshace (ver `cancelarAtencion`).
   function handleCreate(payload: IncidenciaPayload) {
     setFormError(null)
     createMut.mutate(payload, {
-      onSuccess: () => { setCreateOpen(false); setVehiculoNueva(null) },
+      onSuccess: ({ data }) => {
+        setCreateOpen(false)
+        if (payload.status === 'completado') {
+          const v = (vehiculosData?.data ?? []).find((x) => x.id === data.vehiculo_id)
+          setMantError(null)
+          setDeshacer({ tipo: 'eliminar' })
+          setAtendiendo({
+            ...data,
+            vehiculo_nombre: v ? vehiculoLabel(v) : '',
+            vehiculo_tipo:   v?.tipo ?? '',
+          })
+        }
+        setVehiculoNueva(null)
+      },
       onError: (e) => setFormError((e as Error).message),
     })
   }
@@ -108,8 +131,16 @@ export default function Incidencias({ onNavigateVehiculo }: {
   function handleUpdate(payload: IncidenciaPayload) {
     if (!editando) return
     setFormError(null)
+    const { status: statusPrevio, vehiculo_nombre, vehiculo_tipo } = editando
     updateMut.mutate({ id: editando.id, payload }, {
-      onSuccess: () => setEditando(null),
+      onSuccess: ({ data }) => {
+        setEditando(null)
+        if (payload.status === 'completado' && statusPrevio !== 'completado') {
+          setMantError(null)
+          setDeshacer({ tipo: 'revertir', status: statusPrevio })
+          setAtendiendo({ ...data, vehiculo_nombre, vehiculo_tipo })
+        }
+      },
       onError: (e) => setFormError((e as Error).message),
     })
   }
@@ -121,14 +152,36 @@ export default function Incidencias({ onNavigateVehiculo }: {
   // servicio, por eso el selector de pendientes queda editable.
   function abrirAtender(i: IncidenciaConVehiculo) {
     setMantError(null)
+    setDeshacer(null)
     setDetalle(null)
     setAtendiendo(i)
+  }
+
+  // Cancelar el mantenimiento de una incidencia que seguía abierta solo cierra
+  // el modal. Si se acaba de cerrar la incidencia, se deshace ese cambio:
+  // borrarla si nació atendida o devolverle su status anterior si se editó.
+  function cancelarAtencion() {
+    if (!atendiendo || !deshacer) { setAtendiendo(null); return }
+    setMantError(null)
+    const cerrar = () => { setAtendiendo(null); setDeshacer(null) }
+    const onError = (e: unknown) =>
+      setMantError(`No se pudo deshacer el cambio en la incidencia: ${(e as Error).message}`)
+
+    if (deshacer.tipo === 'eliminar') {
+      deleteMut.mutate(atendiendo.id, { onSuccess: cerrar, onError })
+    } else {
+      updateMut.mutate(
+        { id: atendiendo.id, payload: { status: deshacer.status } },
+        { onSuccess: cerrar, onError },
+      )
+    }
   }
 
   function handleAtender(payload: MantenimientoPayload, piezas: DetalleMttoPayload[]) {
     setMantError(null)
     mantMut.mutate(payload, {
       onSuccess: (res) => {
+        setDeshacer(null)
         if (!piezas.length) { setAtendiendo(null); return }
         piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
           onSuccess: () => setAtendiendo(null),
@@ -405,24 +458,41 @@ export default function Incidencias({ onNavigateVehiculo }: {
 
       {/* ── Atender la incidencia con un mantenimiento ── */}
       <Modal
-        opened={atendiendo !== null} onClose={() => setAtendiendo(null)}
-        title={atendiendo ? `Atender — ${atendiendo.nombre}` : ''}
+        opened={atendiendo !== null} onClose={cancelarAtencion}
+        title={atendiendo
+          ? `${deshacer ? 'Registra el mantenimiento' : 'Atender'} — ${atendiendo.nombre}`
+          : ''}
         centered size="md" closeOnClickOutside={false}
+        withCloseButton={!deshacer}
       >
         {atendiendo && (
           <Stack gap="sm">
-            <Alert color="blue" variant="light">
-              Se registrará en <strong>{atendiendo.vehiculo_nombre}</strong> y cerrará esta
-              incidencia. Si el mismo servicio atendió más pendientes, agrégalos abajo.
-            </Alert>
+            {deshacer ? (
+              <Alert color="orange" variant="light" title="Falta el mantenimiento que la cierra">
+                Marcaste la incidencia como <strong>atendida</strong>, así que hay que registrar
+                el mantenimiento con el que se atendió en{' '}
+                <strong>{atendiendo.vehiculo_nombre}</strong>. Si cancelas,{' '}
+                {deshacer.tipo === 'revertir'
+                  ? 'la incidencia vuelve a como estaba.'
+                  : 'la incidencia se descarta y no queda registrada.'}
+              </Alert>
+            ) : (
+              <Alert color="blue" variant="light">
+                Se registrará en <strong>{atendiendo.vehiculo_nombre}</strong> y cerrará esta
+                incidencia. Si el mismo servicio atendió más pendientes, agrégalos abajo.
+              </Alert>
+            )}
             <MantenimientoForm
               vehiculoId={atendiendo.vehiculo_id}
               tipoVehiculo={atendiendo.vehiculo_tipo as TipoVehiculo}
-              prefillPendienteIds={[atendiendo.id]}
-              isPending={mantMut.isPending || piezasMut.isPending}
+              {...(deshacer
+                ? { pendienteFijo: { id: atendiendo.id, nombre: atendiendo.nombre } }
+                : { prefillPendienteIds: [atendiendo.id] })}
+              isPending={mantMut.isPending || piezasMut.isPending
+                || deleteMut.isPending || updateMut.isPending}
               error={mantError}
               onSubmit={handleAtender}
-              onCancel={() => setAtendiendo(null)}
+              onCancel={cancelarAtencion}
             />
           </Stack>
         )}
