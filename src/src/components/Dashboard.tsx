@@ -367,13 +367,13 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
 
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3, xl: 5 }} spacing="md">
         <StatCard
-          label="Mantenimientos del mes"
+          label="Mantenimientos (últimos 30 días)"
           value={loadingResumen ? '—' : String(resumen?.data.mantenimientos.count ?? 0)}
           sub={resumen ? formatMXN(resumen.data.mantenimientos.costo_total) : undefined}
           color="teal"
         />
         <StatCard
-          label="Refacciones compradas del mes"
+          label="Refacciones compradas (últimos 30 días)"
           value={loadingResumen ? '—' : String(resumen?.data.piezas.count ?? 0)}
           sub={resumen ? formatMXN(resumen.data.piezas.costo_total) : undefined}
           color="violet"
@@ -397,7 +397,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
           color={incidenciasGraves.length > 0 ? 'red' : 'yellow'}
         />
         <StatCard
-          label="Costo total del mes"
+          label="Costo total (últimos 30 días)"
           value={loadingResumen ? '—' : formatMXN(
             (resumen?.data.mantenimientos.costo_total ?? 0) + (resumen?.data.piezas.costo_total ?? 0)
           )}
@@ -524,13 +524,13 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
         )}
       </Card>
 
-      {/* ── Vehículos con mantenimiento este mes ── */}
+      {/* ── Vehículos con mantenimiento en los últimos 30 días ── */}
       <Card withBorder padding="lg" radius="md">
-        <Text fw={600} mb="xs">Vehículos con mantenimiento este mes</Text>
+        <Text fw={600} mb="xs">Vehículos con mantenimiento (últimos 30 días)</Text>
         {loadingResumen ? (
           <Center py="xl"><Loader size="sm" /></Center>
         ) : vehiculosChartData.length === 0 ? (
-          <Center py="xl"><Text c="dimmed" size="sm">Sin mantenimientos registrados este mes.</Text></Center>
+          <Center py="xl"><Text c="dimmed" size="sm">Sin mantenimientos registrados en los últimos 30 días.</Text></Center>
         ) : (
           <Stack gap="md">
             <BarChart
@@ -598,13 +598,13 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
         )}
       </Card>
 
-      {/* ── Piezas compradas este mes ── */}
+      {/* ── Piezas compradas en los últimos 30 días ── */}
       <Card withBorder padding="lg" radius="md">
-        <Text fw={600} mb="xs">Refacciones compradas este mes</Text>
+        <Text fw={600} mb="xs">Refacciones compradas (últimos 30 días)</Text>
         {loadingResumen ? (
           <Center py="xl"><Loader size="sm" /></Center>
         ) : (resumen?.data.piezas.lotes.length ?? 0) === 0 ? (
-          <Center py="xl"><Text c="dimmed" size="sm">Sin compras registradas este mes.</Text></Center>
+          <Center py="xl"><Text c="dimmed" size="sm">Sin compras registradas en los últimos 30 días.</Text></Center>
         ) : (
           <Table.ScrollContainer minWidth={560}>
             <Table striped withTableBorder>

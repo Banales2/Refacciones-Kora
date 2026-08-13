@@ -105,8 +105,16 @@ function rangoMesActual(): { start: string; end: string } {
   return { start: `${year}-${pad(month)}-01`, end: `${sig.year}-${pad(sig.month)}-01` }
 }
 
+// Ventana móvil de 30 días que termina hoy (incluido), como [start, end).
+// No es el mes calendario: el día 3 del mes el resumen seguiría mostrando
+// prácticamente nada, y lo que interesa es el gasto reciente de la flota.
+function rangoUltimos30Dias(): { start: string; end: string } {
+  const hoy = fechaMexico()
+  return { start: addDias(hoy, -29), end: addDias(hoy, 1) }
+}
+
 export async function getResumenMes() {
-  const { start, end } = rangoMesActual()
+  const { start, end } = rangoUltimos30Dias()
   const [mantenimientos, lotes] = await Promise.all([
     repo.findMantenimientosEnRango(start, end),
     repo.findLotesEnRango(start, end),

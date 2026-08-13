@@ -1,15 +1,23 @@
-// Exporta el resumen del mes del dashboard a un libro de Excel (exceljs):
+// Exporta el resumen de los últimos 30 días del dashboard a un libro de Excel (exceljs):
 // hoja de resumen de costos, mantenimientos por vehículo y lotes comprados.
 // exceljs se importa dinámicamente para no cargarlo en el bundle principal.
 import type { ResumenMes } from '../hooks/useDashboard'
 
+// `rango.end` es exclusivo: el último día cubierto es el anterior.
+function ultimoDia(resumen: ResumenMes) {
+  const fin = new Date(`${resumen.rango.end}T12:00:00`)
+  fin.setDate(fin.getDate() - 1)
+  return fin
+}
+
 function rangoLabel(resumen: ResumenMes) {
+  const fmt = (d: Date) => d.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })
   const inicio = new Date(`${resumen.rango.start}T12:00:00`)
-  return inicio.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
+  return `${fmt(inicio)} – ${fmt(ultimoDia(resumen))}`
 }
 
 function fileNameBase(resumen: ResumenMes) {
-  return `resumen-mensual-${resumen.rango.start.slice(0, 7)}`
+  return `resumen-30-dias-${resumen.rango.start}`
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -29,7 +37,7 @@ export async function exportResumenMesToExcel(resumen: ResumenMes) {
   wb.creator = 'Refacciones Kora'
   wb.created = new Date()
 
-  const costoTotalMes = resumen.mantenimientos.costo_total + resumen.piezas.costo_total
+  const costoTotalPeriodo = resumen.mantenimientos.costo_total + resumen.piezas.costo_total
 
   const wsResumen = wb.addWorksheet('Resumen')
   wsResumen.columns = [
@@ -43,7 +51,7 @@ export async function exportResumenMesToExcel(resumen: ResumenMes) {
     { concepto: 'Costo total mantenimientos', valor: resumen.mantenimientos.costo_total },
     { concepto: 'Refacciones compradas (lotes)', valor: resumen.piezas.count },
     { concepto: 'Costo total refacciones', valor: resumen.piezas.costo_total },
-    { concepto: 'Costo total del mes', valor: costoTotalMes },
+    { concepto: 'Costo total del periodo', valor: costoTotalPeriodo },
   ])
   for (const rowNum of [3, 5, 6]) {
     wsResumen.getCell(rowNum, 2).numFmt = '"$"#,##0.00'
