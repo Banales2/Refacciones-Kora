@@ -1575,8 +1575,11 @@ export function MantenimientoForm({
                 )}
               </Group>
 
-              <Group gap="xs" align="center">
-                <Text size="xs" c="dimmed">¿No aparece en el inventario?</Text>
+              {/* Etiquetas cortas y sin envolver: con los textos largos el
+                  segundo botón se iba al renglón de abajo. Los tooltips llevan
+                  la explicación completa. */}
+              <Group gap={6} align="center" wrap="nowrap">
+                <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>¿No aparece?</Text>
                 <Tooltip label="La refacción existe pero se quedó sin existencias: registra la compra que la surte">
                   <Button
                     variant="subtle" size="compact-xs" leftSection={<IconPlus size={12} />}
@@ -1590,7 +1593,7 @@ export function MantenimientoForm({
                     variant="subtle" size="compact-xs" leftSection={<IconPlus size={12} />}
                     onClick={() => setNuevaRefOpen(true)}
                   >
-                    Dar de alta refacción
+                    Dar de alta
                   </Button>
                 </Tooltip>
               </Group>
