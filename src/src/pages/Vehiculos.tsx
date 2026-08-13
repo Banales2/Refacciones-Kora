@@ -42,7 +42,7 @@ import type { OrigenPendiente } from '../hooks/usePendientes'
 import {
   useIncidenciasVehiculo, useCreateIncidencia, useUpdateIncidencia, useDeleteIncidencia,
 } from '../hooks/useIncidencias'
-import type { Incidencia, IncidenciaPayload } from '../hooks/useIncidencias'
+import type { Incidencia, IncidenciaPayload, StatusIncidencia } from '../hooks/useIncidencias'
 import IncidenciaForm from '../components/IncidenciaForm'
 import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
 import { llevaPermiso, llevaSeguro } from '../lib/tipoVehiculo'
