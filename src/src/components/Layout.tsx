@@ -13,6 +13,7 @@ import {
   Stack,
   Badge,
   Tooltip,
+  ScrollArea,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { useIsFetching, useQueryClient } from '@tanstack/react-query'
@@ -335,54 +336,59 @@ export default function Layout() {
       </AppShell.Header>
 
       {/* ── Sidebar ── */}
+      {/* Con el submenú de Catálogos abierto la barra ya no cabe en pantalla:
+          la sección scrolleable evita que las últimas entradas queden cortadas
+          contra el borde inferior. */}
       <AppShell.Navbar p="xs">
-        <Stack gap={1}>
-          <NavItem
-            label="Dashboard" description="Resumen de la flota" icon={IconLayoutDashboard}
-            active={section === 'dashboard'} onClick={() => navigate('dashboard')}
-          />
+        <AppShell.Section grow component={ScrollArea} type="auto" offsetScrollbars>
+          <Stack gap={1} pb="xs">
+            <NavItem
+              label="Dashboard" description="Resumen de la flota" icon={IconLayoutDashboard}
+              active={section === 'dashboard'} onClick={() => navigate('dashboard')}
+            />
 
-          {NAV_GROUPS.map((grupo) => (
-            <Stack key={grupo.titulo} gap={1} mt="sm">
-              <GrupoTitulo>{grupo.titulo}</GrupoTitulo>
-              {grupo.items.map((item) => (
-                item.section === 'sitios' ? (
-                  <CatalogosNavItem
-                    key={item.section}
-                    description={item.description}
-                    icon={item.icon}
-                    active={section === 'sitios'}
-                    opened={catalogosOpen}
-                    onToggle={() => setCatalogosOpen((o) => !o)}
-                    activeTab={section === 'sitios' ? sitiosTab : null}
-                    onSelectTab={navigateToCatalogo}
-                  />
-                ) : (
-                  <NavItem
-                    key={item.section}
-                    label={item.label} description={item.description} icon={item.icon}
-                    active={section === item.section}
-                    onClick={() => navigate(item.section)}
-                  />
-                )
-              ))}
-            </Stack>
-          ))}
+            {NAV_GROUPS.map((grupo) => (
+              <Stack key={grupo.titulo} gap={1} mt="sm">
+                <GrupoTitulo>{grupo.titulo}</GrupoTitulo>
+                {grupo.items.map((item) => (
+                  item.section === 'sitios' ? (
+                    <CatalogosNavItem
+                      key={item.section}
+                      description={item.description}
+                      icon={item.icon}
+                      active={section === 'sitios'}
+                      opened={catalogosOpen}
+                      onToggle={() => setCatalogosOpen((o) => !o)}
+                      activeTab={section === 'sitios' ? sitiosTab : null}
+                      onSelectTab={navigateToCatalogo}
+                    />
+                  ) : (
+                    <NavItem
+                      key={item.section}
+                      label={item.label} description={item.description} icon={item.icon}
+                      active={section === item.section}
+                      onClick={() => navigate(item.section)}
+                    />
+                  )
+                ))}
+              </Stack>
+            ))}
 
-          {/* La bitácora enseña la actividad de todo el mundo, con su correo.
-              Ocultarla no es la protección real —esa la da el allowedRoles de
-              staticwebapp.config.json, que devuelve 403 a quien no sea admin—,
-              pero evita ofrecer una pantalla que acabaría en un error. */}
-          {esAdmin && (
-            <Stack gap={1} mt="sm">
-              <GrupoTitulo>Administración</GrupoTitulo>
-              <NavItem
-                label="Registros" description="Quién creó, modificó o eliminó qué" icon={IconHistory}
-                active={section === 'registros'} onClick={() => navigate('registros')}
-              />
-            </Stack>
-          )}
-        </Stack>
+            {/* La bitácora enseña la actividad de todo el mundo, con su correo.
+                Ocultarla no es la protección real —esa la da el allowedRoles de
+                staticwebapp.config.json, que devuelve 403 a quien no sea admin—,
+                pero evita ofrecer una pantalla que acabaría en un error. */}
+            {esAdmin && (
+              <Stack gap={1} mt="sm">
+                <GrupoTitulo>Administración</GrupoTitulo>
+                <NavItem
+                  label="Registros" description="Quién creó, modificó o eliminó qué" icon={IconHistory}
+                  active={section === 'registros'} onClick={() => navigate('registros')}
+                />
+              </Stack>
+            )}
+          </Stack>
+        </AppShell.Section>
       </AppShell.Navbar>
 
       {/* ── Contenido ── */}

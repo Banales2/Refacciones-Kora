@@ -27,22 +27,19 @@ export default function Proveedores() {
   return (
     <>
       <Stack gap="md">
-        <Group justify="space-between" align="flex-end">
-          <div>
-            <Text size="xl" fw={600}>Proveedores</Text>
-            <Text size="sm" c="dimmed">Gestión de proveedores de refacciones</Text>
-          </div>
-          <Group gap="sm" align="flex-end">
-            {proveedores.length > 0 && (
-              <Text size="sm" c="dimmed">{proveedores.length} proveedores</Text>
-            )}
-            <Button
-              leftSection={<IconPlus size={16} />}
-              onClick={() => setCreateOpen(true)}
-            >
-              Nuevo proveedor
-            </Button>
-          </Group>
+        {/* El título lo pone Catálogos (SitiosYRutas); aquí sólo el conteo y el
+            alta, como en los demás paneles. */}
+        <Group justify="space-between">
+          {proveedores.length > 0 ? (
+            <Text size="sm" c="dimmed">{proveedores.length} proveedores</Text>
+          ) : <span />}
+          <Button
+            size="xs"
+            leftSection={<IconPlus size={14} />}
+            onClick={() => setCreateOpen(true)}
+          >
+            Nuevo proveedor
+          </Button>
         </Group>
 
         {isLoading ? (
