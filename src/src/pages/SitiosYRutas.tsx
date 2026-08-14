@@ -1234,16 +1234,28 @@ function PermisosPanel({
 
 // ── Página principal ──────────────────────────────────────────────────────────
 
+// Título de cada panel. Sin la barra de pestañas, este encabezado es lo único
+// que dice en qué catálogo estás; las claves son las de CATALOGOS_TABS (Layout).
+const TAB_LABELS: Record<string, string> = {
+  proveedores: 'Proveedores',
+  sucursales:  'Sucursales',
+  rutas:       'Translados',
+  gasolineras: 'Gasolineras',
+  conductores: 'Conductores',
+  tecnicos:    'Técnicos',
+  seguros:     'Seguros',
+  permisos:    'Permisos',
+}
+
 export default function SitiosYRutas({
-  onNavigateVehiculo, activeTab, onTabChange,
+  onNavigateVehiculo, activeTab,
   seguroDrawerId, onSeguroDrawerChange,
   permisoDrawerId, onPermisoDrawerChange,
 }: {
   onNavigateVehiculo?: (v: VehiculoRow) => void
-  // La pestaña activa vive en Layout para sobrevivir al saltar a un vehículo y
-  // volver: así se regresa exactamente a la pestaña desde la que se saltó.
+  // La pestaña activa vive en Layout: la elige el desplegable de Catálogos de la
+  // barra lateral y sobrevive al saltar a un vehículo y volver.
   activeTab?:    string | null
-  onTabChange?:  (value: string | null) => void
   // Id del seguro/permiso cuyo drawer de asignación está abierto (también en
   // Layout, para reabrirlo al regresar del detalle de un vehículo).
   seguroDrawerId?:        number | null
@@ -1254,47 +1266,38 @@ export default function SitiosYRutas({
   return (
     <Stack gap="md">
       <div>
-        <Text size="xl" fw={600}>Catálogos</Text>
-        <Text size="sm" c="dimmed">Proveedores, sucursales, translados, gasolineras, conductores, técnicos, seguros y permisos</Text>
+        <Text size="sm" c="dimmed">Catálogos</Text>
+        <Text size="xl" fw={600}>{TAB_LABELS[activeTab ?? 'proveedores'] ?? 'Catálogos'}</Text>
       </div>
 
-      <Tabs value={activeTab ?? 'proveedores'} onChange={onTabChange} keepMounted={false}>
-        <Tabs.List>
-          <Tabs.Tab value="proveedores">Proveedores</Tabs.Tab>
-          <Tabs.Tab value="sucursales">Sucursales</Tabs.Tab>
-          <Tabs.Tab value="rutas">Translados</Tabs.Tab>
-          <Tabs.Tab value="gasolineras">Gasolineras</Tabs.Tab>
-          <Tabs.Tab value="conductores">Conductores</Tabs.Tab>
-          <Tabs.Tab value="tecnicos">Técnicos</Tabs.Tab>
-          <Tabs.Tab value="seguros">Seguros</Tabs.Tab>
-          <Tabs.Tab value="permisos">Permisos</Tabs.Tab>
-        </Tabs.List>
-
-        <Tabs.Panel value="proveedores" pt="md">
+      {/* Sin Tabs.List: la pestaña se elige desde el desplegable de Catálogos en
+          la barra lateral, y Tabs sólo queda como conmutador de paneles. */}
+      <Tabs value={activeTab ?? 'proveedores'} keepMounted={false}>
+        <Tabs.Panel value="proveedores">
           <Proveedores />
         </Tabs.Panel>
 
-        <Tabs.Panel value="sucursales" pt="md">
+        <Tabs.Panel value="sucursales">
           <SucursalesPanel />
         </Tabs.Panel>
 
-        <Tabs.Panel value="rutas" pt="md">
+        <Tabs.Panel value="rutas">
           <RutasPanel />
         </Tabs.Panel>
 
-        <Tabs.Panel value="gasolineras" pt="md">
+        <Tabs.Panel value="gasolineras">
           <GasolinerasPanel />
         </Tabs.Panel>
 
-        <Tabs.Panel value="conductores" pt="md">
+        <Tabs.Panel value="conductores">
           <ConductoresPanel />
         </Tabs.Panel>
 
-        <Tabs.Panel value="tecnicos" pt="md">
+        <Tabs.Panel value="tecnicos">
           <TecnicosPanel />
         </Tabs.Panel>
 
-        <Tabs.Panel value="seguros" pt="md">
+        <Tabs.Panel value="seguros">
           <SegurosPanel
             onNavigateVehiculo={onNavigateVehiculo}
             openId={seguroDrawerId}
@@ -1302,7 +1305,7 @@ export default function SitiosYRutas({
           />
         </Tabs.Panel>
 
-        <Tabs.Panel value="permisos" pt="md">
+        <Tabs.Panel value="permisos">
           <PermisosPanel
             onNavigateVehiculo={onNavigateVehiculo}
             openId={permisoDrawerId}

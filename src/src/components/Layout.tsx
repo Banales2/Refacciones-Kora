@@ -414,7 +414,6 @@ export default function Layout() {
           <SitiosYRutas
             onNavigateVehiculo={navigateToVehiculo}
             activeTab={sitiosTab}
-            onTabChange={setSitiosTab}
             seguroDrawerId={seguroDrawerId}
             onSeguroDrawerChange={setSeguroDrawerId}
             permisoDrawerId={permisoDrawerId}
