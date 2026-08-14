@@ -85,6 +85,20 @@ const NAV_GROUPS: {
   },
 ]
 
+// Pestañas de Catálogos, replicadas aquí para poder entrar directo a cualquiera
+// desde la barra lateral. Los value deben coincidir con los <Tabs.Tab> de
+// SitiosYRutas.tsx, que es quien manda sobre la pestaña activa.
+const CATALOGOS_TABS: { value: string; label: string }[] = [
+  { value: 'proveedores', label: 'Proveedores' },
+  { value: 'sucursales',  label: 'Sucursales'  },
+  { value: 'rutas',       label: 'Translados'  },
+  { value: 'gasolineras', label: 'Gasolineras' },
+  { value: 'conductores', label: 'Conductores' },
+  { value: 'tecnicos',    label: 'Técnicos'    },
+  { value: 'seguros',     label: 'Seguros'     },
+  { value: 'permisos',    label: 'Permisos'    },
+]
+
 
 function GrupoTitulo({ children }: { children: string }) {
   return (
@@ -120,6 +134,52 @@ function NavItem({
   )
 }
 
+// Catálogos agrupa ocho pestañas; en vez de entrar siempre por Proveedores y
+// buscar la pestaña, el clic despliega la lista y lleva directo a una. El clic
+// en el padre sólo abre/cierra: navegar a ciegas a Proveedores era el problema.
+function CatalogosNavItem({
+  description, icon: IconComponent, active, opened, onToggle, activeTab, onSelectTab,
+}: {
+  description:  string
+  icon:         Icon
+  active:       boolean
+  opened:       boolean
+  onToggle:     () => void
+  activeTab:    string | null
+  onSelectTab:  (tab: string) => void
+}) {
+  return (
+    <Tooltip label={description} position="right" openDelay={500} withArrow>
+      <NavLink
+        label="Catálogos"
+        leftSection={<IconComponent size={17} stroke={1.6} />}
+        active={active}
+        opened={opened}
+        onClick={onToggle}
+        py={6}
+        childrenOffset={26}
+        style={{ borderRadius: 6 }}
+        styles={{ label: { fontSize: 13.5 } }}
+      >
+        {CATALOGOS_TABS.map((tab) => (
+          <NavLink
+            key={tab.value}
+            label={tab.label}
+            active={active && activeTab === tab.value}
+            onClick={(e) => {
+              e.stopPropagation()
+              onSelectTab(tab.value)
+            }}
+            py={4}
+            style={{ borderRadius: 6 }}
+            styles={{ label: { fontSize: 13 } }}
+          />
+        ))}
+      </NavLink>
+    </Tooltip>
+  )
+}
+
 export default function Layout() {
   const { user } = useAuth()
   const qc = useQueryClient()
@@ -135,6 +195,9 @@ export default function Layout() {
   // Pestaña activa de Catálogos; vive aquí para persistir al saltar a un
   // vehículo y regresar a la misma pestaña (Seguros, Permisos, etc.).
   const [sitiosTab, setSitiosTab] = useState<string | null>('proveedores')
+  // Catálogos es la única entrada con submenú: se despliega para saltar directo
+  // a una pestaña sin pasar por la de Proveedores.
+  const [catalogosOpen, setCatalogosOpen] = useState(false)
   // Seguro/permiso cuyo drawer de asignación estaba abierto, para reabrirlo al
   // regresar desde el detalle de un vehículo.
   const [seguroDrawerId, setSeguroDrawerId]   = useState<number | null>(null)
@@ -184,6 +247,11 @@ export default function Layout() {
     setSection(vehiculoOrigin)
     setVehiculoOrigin(null)
     if (mobileOpened) toggleMobile()
+  }
+
+  function navigateToCatalogo(tab: string) {
+    setSitiosTab(tab)
+    navigate('sitios')
   }
 
   function navigateToPiezaId(id: number) {
@@ -278,12 +346,25 @@ export default function Layout() {
             <Stack key={grupo.titulo} gap={1} mt="sm">
               <GrupoTitulo>{grupo.titulo}</GrupoTitulo>
               {grupo.items.map((item) => (
-                <NavItem
-                  key={item.section}
-                  label={item.label} description={item.description} icon={item.icon}
-                  active={section === item.section}
-                  onClick={() => navigate(item.section)}
-                />
+                item.section === 'sitios' ? (
+                  <CatalogosNavItem
+                    key={item.section}
+                    description={item.description}
+                    icon={item.icon}
+                    active={section === 'sitios'}
+                    opened={catalogosOpen}
+                    onToggle={() => setCatalogosOpen((o) => !o)}
+                    activeTab={section === 'sitios' ? sitiosTab : null}
+                    onSelectTab={navigateToCatalogo}
+                  />
+                ) : (
+                  <NavItem
+                    key={item.section}
+                    label={item.label} description={item.description} icon={item.icon}
+                    active={section === item.section}
+                    onClick={() => navigate(item.section)}
+                  />
+                )
               ))}
             </Stack>
           ))}
