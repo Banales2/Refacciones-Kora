@@ -978,7 +978,14 @@ export default function Modelos({
       })
     } else {
       createMut.mutate(payload, {
-        onSuccess: () => setFormOpen(false),
+        // Se abre la ficha del modelo recién creado: lo que toca después del
+        // alta es cargarle su plantilla y sus tipos de pieza, y eso solo se
+        // hace desde ahí. `selected` sale de la lista, así que el detalle
+        // aparece en cuanto llega el refetch que dispara la invalidación.
+        onSuccess: ({ data: modelo }) => {
+          setFormOpen(false)
+          onOpenIdChange?.(modelo.id)
+        },
         onError:   (e: Error) => setFormError(e.message),
       })
     }
