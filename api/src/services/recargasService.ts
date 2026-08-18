@@ -1,4 +1,5 @@
 import * as repo from '../repositories/recargasRepo'
+import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import type { RecargaConGasolinera } from '../repositories/recargasRepo'
 import type { RecargaCreate, RecargaUpdate } from '../schemas/recargaSchema'
 import { NotFoundError, ValidationError, ConflictError } from '../shared/errors'
@@ -23,10 +24,19 @@ export async function getByVehiculo(vehiculoId: number): Promise<RecargaConGasol
   return repo.findByVehiculo(vehiculoId)
 }
 
+// Cargar gasolina es, igual que un mantenimiento, una ocasión en que se lee el
+// odómetro: el kilometraje reportado pasa a ser el del vehículo.
+// `avanzarKilometraje` solo sube (una recarga capturada tarde, con un km menor
+// al ya registrado, no hace retroceder el odómetro) e ignora los tipos que no
+// llevan. Al frontend se le avisa antes de guardar: ver ConfirmarAvanceKm.
 export async function create(vehiculoId: number, data: RecargaCreate): Promise<RecargaConGasolinera> {
   if (!(await repo.vehiculoExists(vehiculoId))) throw new NotFoundError('Vehículo')
   await validarVale(data.vale_id, vehiculoId)
-  return repo.create(vehiculoId, data)
+  const recarga = await repo.create(vehiculoId, data)
+  if (data.kilometraje > 0) {
+    await vehiculosRepo.avanzarKilometraje(vehiculoId, data.kilometraje)
+  }
+  return recarga
 }
 
 export async function update(id: number, data: RecargaUpdate): Promise<RecargaConGasolinera> {

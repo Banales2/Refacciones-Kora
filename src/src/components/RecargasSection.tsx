@@ -22,6 +22,8 @@ import { useConductores } from '../hooks/useConductores'
 import { useValesGasolina } from '../hooks/useValesGasolina'
 import { KM_MAX, validarKm } from '../lib/validaciones'
 import { FechaInput } from './FechaInput'
+import ConfirmarAvanceKm from './ConfirmarAvanceKm'
+import { avanzaOdometro } from '../lib/odometro'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -154,9 +156,12 @@ type RecargaFormValues = {
 }
 
 function RecargaForm({
-  vehiculoId, valesUsados, initial, isPending, error, onSubmit, onCancel,
+  vehiculoId, kmVehiculo, valesUsados, initial, isPending, error, onSubmit, onCancel,
 }: {
   vehiculoId: number
+  // Odómetro actual del vehículo, o null si no tiene (o no lleva). Sirve para
+  // avisar cuando la lectura capturada lo va a hacer avanzar.
+  kmVehiculo: number | null
   // Vales ya consumidos por otras recargas; cada vale sirve una sola vez.
   valesUsados: Set<number>
   initial?: RecargaFormValues
@@ -214,18 +219,35 @@ function RecargaForm({
   const costo  = Number(form.values.costo)
   const precioLitro = litros > 0 && costo > 0 ? costo / litros : null
 
+  // Al registrar, el km capturado se vuelve el del vehículo si es mayor al que
+  // tiene. Eso no debe pasar de callado: se pide aceptar y hasta entonces se
+  // guarda. Al editar no aplica: la edición no toca el odómetro.
+  const [porConfirmar, setPorConfirmar] = useState<RecargaFormValues | null>(null)
+
+  function enviar(v: RecargaFormValues) {
+    onSubmit({
+      gasolinera_id: parseInt(v.gasolinera_id, 10),
+      conductor_id:  parseInt(v.conductor_id, 10),
+      vale_id:       parseInt(v.vale_id, 10),
+      fecha:  v.fecha,
+      litros: Number(v.litros),
+      costo:  Number(v.costo),
+      kilometraje: Number(v.kilometraje),
+    })
+  }
+
+  function handleSubmit(v: RecargaFormValues) {
+    const esAlta = initial === undefined
+    if (esAlta && avanzaOdometro(Number(v.kilometraje), kmVehiculo)) {
+      setPorConfirmar(v)
+      return
+    }
+    enviar(v)
+  }
+
   return (
-    <form
-      onSubmit={form.onSubmit((v) => onSubmit({
-        gasolinera_id: parseInt(v.gasolinera_id, 10),
-        conductor_id:  parseInt(v.conductor_id, 10),
-        vale_id:       parseInt(v.vale_id, 10),
-        fecha:  v.fecha,
-        litros: Number(v.litros),
-        costo:  Number(v.costo),
-        kilometraje: Number(v.kilometraje),
-      }))}
-    >
+    <>
+    <form onSubmit={form.onSubmit(handleSubmit)}>
       <Stack gap="sm">
         <Select
           label="Gasolinera"
@@ -288,7 +310,9 @@ function RecargaForm({
           label="Kilometraje" placeholder="0" required
           min={0} max={KM_MAX} step={1} suffix=" km" thousandSeparator=","
           allowDecimal={false} allowNegative={false} clampBehavior="strict"
-          description="Kilometraje del vehículo al momento de la recarga"
+          description={kmVehiculo != null
+            ? `Kilometraje al momento de la recarga. Actual: ${kmVehiculo.toLocaleString('es-MX')} km`
+            : 'Kilometraje del vehículo al momento de la recarga'}
           {...form.getInputProps('kilometraje')}
         />
         {precioLitro !== null && (
@@ -301,6 +325,21 @@ function RecargaForm({
         </Group>
       </Stack>
     </form>
+
+    {/* Fuera del <form>: sus botones no deben disparar el submit de arriba. */}
+    <ConfirmarAvanceKm
+      opened={porConfirmar !== null}
+      kmVehiculo={kmVehiculo}
+      kmNuevo={Number(porConfirmar?.kilometraje ?? 0)}
+      isPending={isPending}
+      onCancel={() => setPorConfirmar(null)}
+      onConfirm={() => {
+        const v = porConfirmar!
+        setPorConfirmar(null)
+        enviar(v)
+      }}
+    />
+    </>
   )
 }
 
@@ -410,7 +449,12 @@ function ResumenGrupo({
 
 // ── Sección ───────────────────────────────────────────────────────────────────
 
-export default function RecargasSection({ vehiculoId }: { vehiculoId: number }) {
+export default function RecargasSection({
+  vehiculoId, kmVehiculo,
+}: {
+  vehiculoId: number
+  kmVehiculo: number | null
+}) {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Recarga | null>(null)
   const [deleting, setDeleting]   = useState<Recarga | null>(null)
@@ -527,6 +571,7 @@ export default function RecargasSection({ vehiculoId }: { vehiculoId: number }) 
       >
         <RecargaForm
           vehiculoId={vehiculoId}
+          kmVehiculo={kmVehiculo}
           valesUsados={valesUsados}
           initial={editing ? {
             gasolinera_id: String(editing.gasolinera_id),

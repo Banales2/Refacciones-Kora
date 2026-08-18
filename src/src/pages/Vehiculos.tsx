@@ -49,6 +49,8 @@ import { llevaPermiso, llevaSeguro } from '../lib/tipoVehiculo'
 import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
+import ConfirmarAvanceKm from '../components/ConfirmarAvanceKm'
+import { avanzaOdometro } from '../lib/odometro'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 import type { LoteDisponible } from '../hooks/useLotesDisponibles'
 import NuevaRefaccionModal from '../components/NuevaRefaccionModal'
@@ -1359,7 +1361,23 @@ export function MantenimientoForm({
     (s, p) => s + (Number(p.cantidad) || 0) * (Number(p.costo_unitario) || 0), 0
   )
 
+  // Al registrar, el km capturado se vuelve el del vehículo si es mayor al que
+  // tiene (si es menor, el odómetro no se mueve). Se avisa y se pide aceptar
+  // antes de guardar. Al editar no aplica: la edición no toca el odómetro.
+  const [porConfirmarKm, setPorConfirmarKm] = useState<MantForm | null>(null)
+
   function handleSubmit(vals: MantForm) {
+    const km = vals.km_actual !== '' ? Number(vals.km_actual) : 0
+    // `vehiculoData` puede no haber llegado todavía; sin él no se sabe contra
+    // qué comparar, y avisar de un avance que quizá no ocurre sería peor.
+    if (!isEdit && tieneKilometraje && vehiculoData && avanzaOdometro(km, kmVehiculo)) {
+      setPorConfirmarKm(vals)
+      return
+    }
+    enviar(vals)
+  }
+
+  function enviar(vals: MantForm) {
     onSubmit(
       {
         fecha:             vals.fecha,
@@ -1651,6 +1669,19 @@ export function MantenimientoForm({
       opened={nuevoTecnicoOpen}
       onClose={() => setNuevoTecnicoOpen(false)}
       onCreated={handleTecnicoCreado}
+    />
+
+    <ConfirmarAvanceKm
+      opened={porConfirmarKm !== null}
+      kmVehiculo={kmVehiculo}
+      kmNuevo={Number(porConfirmarKm?.km_actual ?? 0)}
+      isPending={isPending}
+      onCancel={() => setPorConfirmarKm(null)}
+      onConfirm={() => {
+        const vals = porConfirmarKm!
+        setPorConfirmarKm(null)
+        enviar(vals)
+      }}
     />
     </>
   )
@@ -2631,7 +2662,7 @@ function VehiculoDetalle({
       <MantenimientosSection vehiculoId={vehiculo.id} tipoVehiculo={vehiculo.tipo} />
 
       {/* Recargas de combustible */}
-      <RecargasSection vehiculoId={vehiculo.id} />
+      <RecargasSection vehiculoId={vehiculo.id} kmVehiculo={vehiculo.kilometraje} />
     </Stack>
   )
 }

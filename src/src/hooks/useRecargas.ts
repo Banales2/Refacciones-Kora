@@ -43,7 +43,13 @@ export function useCreateRecarga(vehiculoId: number) {
   return useMutation({
     mutationFn: (payload: RecargaPayload) =>
       api.post<{ data: Recarga }>(`/vehiculos/${vehiculoId}/recargas`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['recargas', vehiculoId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recargas', vehiculoId] })
+      // Registrar la recarga avanza el odómetro del vehículo (solo si el km
+      // capturado es mayor al que ya tenía).
+      qc.invalidateQueries({ queryKey: ['vehiculos'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }
 
