@@ -1,11 +1,12 @@
-// Vales de gasolina: cada vale registra quién lo creó, el chofer al que se le
-// entregó, el vehículo y la fecha. `creado_por` lo asigna la API a partir del
+// Vales de gasolina: cada vale registra su folio impreso, quién lo creó, el
+// chofer al que se le entregó, el vehículo y la fecha. `creado_por` lo asigna la API a partir del
 // usuario de la sesión, por eso no viaja en el payload.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 export interface ValeGasolina {
   id:           number
+  folio:        string
   creado_por:   string
   conductor_id: number
   vehiculo_id:  number
@@ -18,6 +19,7 @@ export interface ValeGasolina {
 }
 
 export interface ValeGasolinaPayload {
+  folio:        string
   conductor_id: number
   vehiculo_id:  number
   fecha:        string

@@ -1,6 +1,7 @@
 // Página Vales de gasolina: alta, edición y baja de los vales entregados a los
-// choferes. Cada vale guarda quién lo creó (el usuario de la sesión, lo asigna
-// la API), el chofer al que se entregó, el vehículo y la fecha.
+// choferes. Cada vale guarda el folio impreso del papel, quién lo creó (el
+// usuario de la sesión, lo asigna la API), el chofer al que se entregó, el
+// vehículo y la fecha.
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert,
@@ -18,6 +19,7 @@ import type { Conductor } from '../hooks/useConductores'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import { useAuth } from '../hooks/useAuth'
 import { FechaInput } from '../components/FechaInput'
+import { CODIGO, limpiarCodigo } from '../lib/validaciones'
 import NuevoConductorModal from '../components/NuevoConductorModal'
 
 function todayIso() {
@@ -90,7 +92,10 @@ function agrupar(items: ValeGasolina[]): GrupoPersona[] {
 
 // ── Formulario ────────────────────────────────────────────────────────────────
 
+const FOLIO_MAX = 30
+
 type ValeFormValues = {
+  folio:        string
   conductor_id: string
   vehiculo_id:  string
   fecha:        string
@@ -130,8 +135,13 @@ function ValeForm({
     useState(initial?.vehiculo_label ?? '')
 
   const form = useForm<ValeFormValues>({
-    initialValues: initial ?? { conductor_id: '', vehiculo_id: '', fecha: hoy },
+    initialValues: initial ?? { folio: '', conductor_id: '', vehiculo_id: '', fecha: hoy },
     validate: {
+      folio: (v) => {
+        if (!v.trim()) return 'Folio requerido'
+        if (!CODIGO.test(v)) return 'Solo mayúsculas, números y guiones'
+        return null
+      },
       conductor_id: (v) => (!v ? 'Chofer requerido' : null),
       vehiculo_id:  (v) => (!v ? 'Vehículo requerido' : null),
       fecha: (v) => {
@@ -177,12 +187,23 @@ function ValeForm({
     <>
       <form
         onSubmit={form.onSubmit((v) => onSubmit({
+          folio:        v.folio.trim(),
           conductor_id: parseInt(v.conductor_id, 10),
           vehiculo_id:  parseInt(v.vehiculo_id, 10),
           fecha:        v.fecha,
         }))}
       >
         <Stack gap="sm">
+          {/* El folio es el número impreso en el vale de papel: se captura, no
+              se genera, y no se repite entre vales. */}
+          <TextInput
+            label="Folio"
+            placeholder="Número impreso en el vale"
+            required
+            value={form.values.folio}
+            onChange={(e) => form.setFieldValue('folio', limpiarCodigo(e.currentTarget.value, FOLIO_MAX))}
+            error={form.errors.folio as string}
+          />
           <TextInput
             label="Creado por"
             value={user?.userDetails ?? ''}
@@ -265,6 +286,7 @@ function ValesTabla({
     <Table highlightOnHover verticalSpacing="xs">
       <Table.Thead>
         <Table.Tr>
+          <Table.Th>Folio</Table.Th>
           <Table.Th>Fecha</Table.Th>
           <Table.Th>Chofer</Table.Th>
           <Table.Th style={{ width: 90 }} />
@@ -273,6 +295,7 @@ function ValesTabla({
       <Table.Tbody>
         {items.map((v) => (
           <Table.Tr key={v.id}>
+            <Table.Td fw={500}>{v.folio}</Table.Td>
             <Table.Td>{formatFecha(v.fecha)}</Table.Td>
             <Table.Td fw={500}>{v.conductor}</Table.Td>
             <Table.Td>
@@ -435,6 +458,7 @@ export default function ValesGasolina() {
         {editVale && (
           <ValeForm
             initial={{
+              folio:          editVale.folio,
               conductor_id:   String(editVale.conductor_id),
               vehiculo_id:    String(editVale.vehiculo_id),
               fecha:          editVale.fecha.split('T')[0],
@@ -463,7 +487,7 @@ export default function ValesGasolina() {
       >
         <Stack gap="md">
           <Text>
-            ¿Eliminar el vale del{' '}
+            ¿Eliminar el vale <strong>{deleteVale?.folio}</strong> del{' '}
             <strong>{deleteVale ? formatFecha(deleteVale.fecha) : ''}</strong> a nombre de{' '}
             <strong>{deleteVale?.conductor}</strong>? Esta acción no se puede deshacer.
           </Text>

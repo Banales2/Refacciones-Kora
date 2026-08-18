@@ -4,6 +4,7 @@ import { ValeGasolinaCreate, ValeGasolinaUpdate } from '../schemas/valeGasolinaS
 
 export interface ValeGasolina {
   id:           number
+  folio:        string
   creado_por:   string
   conductor_id: number
   vehiculo_id:  number
@@ -16,7 +17,7 @@ export interface ValeGasolina {
 }
 
 const SELECT_VALE = `
-  SELECT vg.id, vg.creado_por, vg.conductor_id, vg.vehiculo_id,
+  SELECT vg.id, vg.folio, vg.creado_por, vg.conductor_id, vg.vehiculo_id,
          CONVERT(char(10), vg.fecha, 23) AS fecha,
          c.nombre AS conductor,
          m.marca, m.nombre AS modelo, v.numero_serie AS serie, v.placas
@@ -44,14 +45,15 @@ export async function findById(id: number): Promise<ValeGasolina | null> {
 export async function create(data: ValeGasolinaCreate, creadoPor: string): Promise<ValeGasolina> {
   const pool = await getPool()
   const r = await pool.request()
+    .input('folio',        sql.NVarChar(30),  data.folio)
     .input('creado_por',   sql.NVarChar(120), creadoPor)
     .input('conductor_id', sql.Int,  data.conductor_id)
     .input('vehiculo_id',  sql.Int,  data.vehiculo_id)
     .input('fecha',        sql.Date, data.fecha)
     .query(`
-      INSERT INTO vales_gasolina (creado_por, conductor_id, vehiculo_id, fecha)
+      INSERT INTO vales_gasolina (folio, creado_por, conductor_id, vehiculo_id, fecha)
       OUTPUT INSERTED.id
-      VALUES (@creado_por, @conductor_id, @vehiculo_id, @fecha)
+      VALUES (@folio, @creado_por, @conductor_id, @vehiculo_id, @fecha)
     `)
   return findById(r.recordset[0].id) as Promise<ValeGasolina>
 }
@@ -62,6 +64,10 @@ export async function update(id: number, data: ValeGasolinaUpdate): Promise<Vale
   const sets: string[] = []
   const req = pool.request().input('id', sql.Int, id)
 
+  if (data.folio !== undefined) {
+    req.input('folio', sql.NVarChar(30), data.folio)
+    sets.push('folio = @folio')
+  }
   if (data.conductor_id !== undefined) {
     req.input('conductor_id', sql.Int, data.conductor_id)
     sets.push('conductor_id = @conductor_id')
@@ -88,6 +94,17 @@ export async function remove(id: number): Promise<boolean> {
   const r = await pool.request()
     .input('id', sql.Int, id)
     .query('DELETE FROM vales_gasolina OUTPUT DELETED.id WHERE id = @id')
+  return r.recordset.length > 0
+}
+
+// El folio identifica al papel: no se repite entre vales. `exceptId` deja fuera
+// al vale que se esta editando, que si conserva el suyo.
+export async function existsFolio(folio: string, exceptId?: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('folio',  sql.NVarChar(30), folio)
+    .input('except', sql.Int,          exceptId ?? null)
+    .query('SELECT TOP 1 id FROM vales_gasolina WHERE folio = @folio AND (@except IS NULL OR id <> @except)')
   return r.recordset.length > 0
 }
 

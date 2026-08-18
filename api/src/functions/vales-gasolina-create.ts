@@ -21,7 +21,10 @@ export async function valesGasolinaCreate(
       tabla: 'vales_gasolina',
       registroId: created.id,
       despues: await capturar('vales_gasolina', created.id),
-      detalles: { conductor: created.conductor, vehiculo: created.serie, fecha: created.fecha },
+      detalles: {
+        folio: created.folio, conductor: created.conductor,
+        vehiculo: created.serie, fecha: created.fecha,
+      },
       ipAddress: getClientIp(request),
     })
     return { status: 201, jsonBody: { data: created } }
