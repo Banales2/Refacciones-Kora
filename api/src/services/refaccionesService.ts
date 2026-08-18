@@ -68,6 +68,16 @@ export async function remove(id: number): Promise<void> {
       `Elimina primero esos mantenimientos.`
     )
   }
+  // Lo mismo con el historial de instalaciones: aunque la pieza ya no esté
+  // montada en ningún vehículo, los renglones cerrados registran qué se usó y
+  // cuánto duró. Borrarla los dejaría sin identificar.
+  const instalaciones = await repo.countInstalaciones(id)
+  if (instalaciones > 0) {
+    throw new ConflictError(
+      `Esta refacción tiene ${instalaciones} registro(s) en el historial de instalaciones ` +
+      `y no puede eliminarse.`
+    )
+  }
   const deleted = await repo.remove(id)
   if (!deleted) throw new NotFoundError('Refacción')
 }

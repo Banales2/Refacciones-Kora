@@ -54,7 +54,12 @@ import type { LoteDisponible } from '../hooks/useLotesDisponibles'
 import NuevaRefaccionModal from '../components/NuevaRefaccionModal'
 import NuevoLoteModal from '../components/NuevoLoteModal'
 import NuevoTecnicoModal from '../components/NuevoTecnicoModal'
-import { usePiezasVehiculo, useSetPiezaVehiculo, useRemovePiezaVehiculo } from '../hooks/usePiezasVehiculo'
+import {
+  usePiezasVehiculo, useSetPiezaVehiculo, useRemovePiezaVehiculo, useHistorialPiezas,
+} from '../hooks/usePiezasVehiculo'
+import type { PiezaDeVehiculo, DatosMontaje, DatosRetiro } from '../hooks/usePiezasVehiculo'
+import MontajePiezaModal from '../components/MontajePiezaModal'
+import type { ModoMontaje } from '../components/MontajePiezaModal'
 import { useAddTiposPiezaVehiculo, useRemoveTipoPiezaVehiculo } from '../hooks/useTiposPiezaVehiculo'
 import { useTiposPieza } from '../hooks/useTiposPieza'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
@@ -1915,7 +1920,19 @@ function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
 // tipos salen del modelo (se gestionan allá), más los que se agreguen aquí para
 // esta unidad sola. Lo que se decide en ambos casos es cuál refacción cubre cada
 // uno: dos unidades del mismo modelo pueden usar filtros de aire distintos.
-function PiezasVehiculoSection({ vehiculoId }: { vehiculoId: number }) {
+// Lo que el modal de montaje necesita saber para plantear el cambio. Vive en
+// estado en lugar de aplicarse de inmediato porque el lote de compra y el
+// motivo del retiro solo los sabe quien está haciendo el cambio, y una vez
+// guardado el renglón sin ellos ya no hay a quién preguntarle.
+type CambioPendiente = {
+  modo:            ModoMontaje
+  tipoId:          number
+  tipoNombre:      string
+  piezaEntranteId: number | null
+  salienteNombre:  string | null
+}
+
+function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number; kmVehiculo?: number | null }) {
   const { data, isLoading } = usePiezasVehiculo(vehiculoId)
   const { data: piezasData } = useTodasLasPiezas()
   const { data: tiposData } = useTiposPieza()
@@ -1925,6 +1942,7 @@ function PiezasVehiculoSection({ vehiculoId }: { vehiculoId: number }) {
   const quitaTipoMut = useRemoveTipoPiezaVehiculo()
 
   const [nuevoTipo, setNuevoTipo] = useState<string | null>(null)
+  const [cambio, setCambio] = useState<CambioPendiente | null>(null)
 
   const filas  = data?.data ?? []
   const piezas = piezasData?.data ?? []
@@ -1946,9 +1964,38 @@ function PiezasVehiculoSection({ vehiculoId }: { vehiculoId: number }) {
       .map((t) => ({ value: String(t.id), label: t.nombre }))
   }, [tiposData, filas])
 
-  function handleChange(tipoId: number, value: string | null) {
-    if (value) setMut.mutate({ vehiculoId, tipoId, piezaId: Number(value) })
-    else       removeMut.mutate({ vehiculoId, tipoId })
+  // No guarda todavía: abre el modal para capturar el lote y, si había pieza,
+  // el motivo con que sale la anterior.
+  function handleChange(fila: PiezaDeVehiculo, value: string | null) {
+    const saliente = fila.pieza_id != null
+      ? `${fila.numero_serie ?? ''} ${fila.descripcion ?? ''}`.trim()
+      : null
+    setCambio({
+      modo: value == null ? 'retiro' : saliente ? 'reemplazo' : 'montaje',
+      tipoId:          fila.tipo_pieza_id,
+      tipoNombre:      fila.tipo_nombre,
+      piezaEntranteId: value != null ? Number(value) : null,
+      salienteNombre:  saliente,
+    })
+  }
+
+  function confirmarCambio(datos: DatosMontaje & DatosRetiro) {
+    if (!cambio) return
+    const listo = { onSuccess: () => setCambio(null) }
+    if (cambio.piezaEntranteId != null) {
+      setMut.mutate(
+        { vehiculoId, tipoId: cambio.tipoId, piezaId: cambio.piezaEntranteId, datos },
+        listo,
+      )
+    } else {
+      removeMut.mutate({ vehiculoId, tipoId: cambio.tipoId, datos }, listo)
+    }
+  }
+
+  function cerrarModal() {
+    setCambio(null)
+    setMut.reset()
+    removeMut.reset()
   }
 
   function handleAgregarTipo() {
@@ -1969,8 +2016,9 @@ function PiezasVehiculoSection({ vehiculoId }: { vehiculoId: number }) {
       />
       <Text size="xs" c="dimmed">
         Qué refacción usa esta unidad para cada tipo que necesita. Los tipos del modelo se gestionan
-        desde el modelo; aquí puedes agregar los que solo requiera esta unidad. Es informativo: no
-        afecta el inventario.
+        desde el modelo; aquí puedes agregar los que solo requiera esta unidad. Al cambiar una pieza
+        se registra en el historial de qué lote salió y por qué se retiró la anterior. Elegir el lote
+        no descuenta existencias: eso sigue haciéndose al capturar el mantenimiento.
       </Text>
       {setMut.error       && <Alert color="red">{(setMut.error as Error).message}</Alert>}
       {removeMut.error    && <Alert color="red">{(removeMut.error as Error).message}</Alert>}
@@ -2053,7 +2101,7 @@ function PiezasVehiculoSection({ vehiculoId }: { vehiculoId: number }) {
                           }
                           data={opciones}
                           value={f.pieza_id != null ? String(f.pieza_id) : null}
-                          onChange={(v) => handleChange(f.tipo_pieza_id, v)}
+                          onChange={(v) => handleChange(f, v)}
                           nothingFoundMessage="Marca refacciones con este tipo desde el catálogo"
                         />
                       </Table.Td>
@@ -2082,6 +2130,139 @@ function PiezasVehiculoSection({ vehiculoId }: { vehiculoId: number }) {
             </Table>
           </Table.ScrollContainer>
         </>
+      )}
+
+      <HistorialPiezasSection vehiculoId={vehiculoId} />
+
+      {/* Se monta de cero en cada cambio: así el modal nace con los campos
+          limpios sin necesitar un efecto que los resetee. */}
+      {cambio && (
+      <MontajePiezaModal
+        key={`${cambio.tipoId}-${cambio.piezaEntranteId ?? 'quitar'}`}
+        opened
+        modo={cambio.modo}
+        tipoNombre={cambio.tipoNombre}
+        piezaEntranteId={cambio.piezaEntranteId}
+        piezaSalienteNombre={cambio.salienteNombre}
+        kmVehiculo={kmVehiculo}
+        isPending={setMut.isPending || removeMut.isPending}
+        error={
+          (setMut.error as Error | null)?.message ??
+          (removeMut.error as Error | null)?.message ??
+          null
+        }
+        onConfirm={confirmarCambio}
+        onClose={cerrarModal}
+      />
+      )}
+    </>
+  )
+}
+
+const ETIQUETA_MOTIVO: Record<string, string> = {
+  desgaste: 'Desgaste', falla: 'Falla', garantia: 'Garantía',
+  preventivo: 'Preventivo', siniestro: 'Siniestro', robo: 'Robo',
+}
+
+const ETIQUETA_DESTINO: Record<string, string> = {
+  desecho: 'Desecho', reacondicionar: 'A reacondicionar',
+  devolucion_proveedor: 'Devolución a proveedor', venta: 'Venta', stock: 'A almacén',
+}
+
+// Todo lo que la unidad ha traído montado, no solo lo vigente. Se carga
+// plegado: son datos de consulta ocasional (una garantía, un lote sospechoso) y
+// no vale la pena pagarlos en cada apertura del detalle.
+function HistorialPiezasSection({ vehiculoId }: { vehiculoId: number }) {
+  const [abierto, setAbierto] = useState(false)
+  const { data, isLoading } = useHistorialPiezas(vehiculoId, abierto)
+
+  const filas = data?.data ?? []
+
+  return (
+    <>
+      <Group justify="space-between" align="center" mt="xs">
+        <Text size="sm" fw={500}>Historial de piezas</Text>
+        <Button size="xs" variant="subtle" onClick={() => setAbierto((v) => !v)}>
+          {abierto ? 'Ocultar' : 'Ver historial'}
+        </Button>
+      </Group>
+
+      {abierto && (
+        isLoading ? (
+          <Center py="md"><Loader size="sm" /></Center>
+        ) : filas.length === 0 ? (
+          <Text c="dimmed" size="sm" py="sm">
+            Todavía no hay movimientos registrados para esta unidad.
+          </Text>
+        ) : (
+          <Table.ScrollContainer minWidth={760}>
+            <Table striped withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Tipo</Table.Th>
+                  <Table.Th>Refacción</Table.Th>
+                  <Table.Th>Compra</Table.Th>
+                  <Table.Th>Montada</Table.Th>
+                  <Table.Th>Retirada</Table.Th>
+                  <Table.Th>Duró</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {filas.map((h) => {
+                  const vigente = h.fecha_retiro == null
+                  // Solo cuando se capturaron los dos kilometrajes; si falta uno
+                  // la resta daría un número inventado.
+                  const duracion =
+                    h.km_instalacion != null && h.km_retiro != null
+                      ? `${(h.km_retiro - h.km_instalacion).toLocaleString('es-MX')} km`
+                      : '—'
+                  return (
+                    <Table.Tr key={h.id}>
+                      <Table.Td><Text size="sm">{h.tipo_nombre}</Text></Table.Td>
+                      <Table.Td>
+                        <Text size="sm">{h.numero_serie}</Text>
+                        <Text size="xs" c="dimmed">{h.descripcion}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        {h.lote_id == null ? (
+                          <Text size="xs" c="dimmed">Sin lote</Text>
+                        ) : (
+                          <>
+                            <Text size="xs">{h.proveedor ?? '—'}</Text>
+                            <Text size="xs" c="dimmed">
+                              {h.num_factura ? `Fact. ${h.num_factura}` : 'Sin factura'}
+                            </Text>
+                          </>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="xs">{h.fecha_instalacion ?? 'Sin fecha'}</Text>
+                        {h.km_instalacion != null && (
+                          <Text size="xs" c="dimmed">{h.km_instalacion.toLocaleString('es-MX')} km</Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        {vigente ? (
+                          <Badge size="xs" variant="light" color="green">Montada</Badge>
+                        ) : (
+                          <>
+                            <Text size="xs">{h.fecha_retiro}</Text>
+                            <Text size="xs" c="dimmed">
+                              {[h.motivo_retiro && ETIQUETA_MOTIVO[h.motivo_retiro],
+                                h.destino && ETIQUETA_DESTINO[h.destino]]
+                                .filter(Boolean).join(' · ') || 'Sin motivo'}
+                            </Text>
+                          </>
+                        )}
+                      </Table.Td>
+                      <Table.Td><Text size="xs">{vigente ? '—' : duracion}</Text></Table.Td>
+                    </Table.Tr>
+                  )
+                })}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )
       )}
     </>
   )
@@ -2331,7 +2512,7 @@ function VehiculoDetalle({
       </Paper>
 
       {/* Refacción que usa esta unidad por cada tipo que pide su modelo */}
-      <PiezasVehiculoSection vehiculoId={vehiculo.id} />
+      <PiezasVehiculoSection vehiculoId={vehiculo.id} kmVehiculo={vehiculo.kilometraje} />
 
       {/* Requerimientos preventivos */}
       <RequerimientosSection

@@ -146,6 +146,20 @@ export async function countConsumosEnMantenimientos(piezaId: number): Promise<nu
   return result.recordset[0].n as number
 }
 
+// Renglones de la bitácora que apuntan a esta pieza, incluidos los ya cerrados.
+// Impiden borrarla: el historial dice qué se montó en cada vehículo y cuánto
+// duró, y sin la pieza esos renglones no se pueden leer. El FK lo bloquearía de
+// todas formas; contarlo aquí permite responder con un mensaje en lugar de con
+// un error de SQL.
+export async function countInstalaciones(piezaId: number): Promise<number> {
+  const pool = await getPool()
+  const result = await pool
+    .request()
+    .input('id', sql.Int, piezaId)
+    .query('SELECT COUNT(*) AS n FROM instalaciones_pieza WHERE pieza_id = @id')
+  return result.recordset[0].n as number
+}
+
 // Arrastra los lotes de compra: son parte de la pieza, no registros propios, y
 // dejarlos sueltos no tendría sentido. Los que ya se usaron en un mantenimiento
 // se descartan antes, en el service.

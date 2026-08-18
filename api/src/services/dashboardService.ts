@@ -4,16 +4,7 @@ import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import * as pendientesRepo from '../repositories/pendientesRepo'
 import { getPool } from '../shared/db'
 import { parseVigencia, DIAS_ALERTA_LICENCIA } from '../shared/vigenciaLicencia'
-
-const MX_TZ = 'America/Mexico_City'
-
-// Azure Functions corre en UTC. Entre ~18:00 y 23:59 hora de México, en UTC ya
-// es "mañana" — usar new Date().toISOString() ahí adelanta el snapshot diario
-// (y por lo tanto la tendencia del dashboard) un día. Estas funciones anclan
-// "hoy" a la fecha calendario de México sin importar la zona horaria del server.
-function fechaMexico(d: Date = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: MX_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
-}
+import { fechaMexico } from '../shared/fechaMexico'
 
 function partesMexico(d: Date = new Date()): { year: number; month: number; day: number } {
   const [year, month, day] = fechaMexico(d).split('-').map(Number)
