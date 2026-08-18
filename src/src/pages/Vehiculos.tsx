@@ -174,7 +174,7 @@ const AVISO_DOCUMENTO: Record<AlertaDocumento, {
 }
 
 const ALERTA_DETALLE: Record<AlertaVehiculo, string> = {
-  sin_tenencia:            'Camiones de reparto, tractocamiones y utilitarios sin fecha de tenencia.',
+  sin_tenencia:            'Camiones de reparto y utilitarios sin fecha de tenencia.',
   sin_seguro:              'Unidades que se aseguran (todas menos las cajas de trailer) sin póliza asignada.',
   requerimientos_vencidos: 'Con al menos un requerimiento preventivo vencido por kilometraje o por tiempo.',
   permiso_por_vencer:      'Con permiso de circulación ya vencido o que vence dentro de 30 días.',
@@ -2563,13 +2563,8 @@ function VehiculoDetalle({
                 </>
               )}
               {/* Tenencia: fuera del bloque del tractocamión, que era donde
-                  vivía cuando solo él la llevaba. Ahora también la pagan las
-                  unidades de reparto y los utilitarios. */}
-              {vehiculo.tenencia && (
-                <Grid.Col span={{ base: 6, sm: 3 }}>
-                  <InfoItem label="Folio de tenencia" value={vehiculo.tenencia} />
-                </Grid.Col>
-              )}
+                  vivía cuando se creía que él la llevaba. La pagan las unidades
+                  de reparto y las utilitarias, y solo tiene fecha. */}
               {vehiculo.tenencia_expiracion && (
                 <Grid.Col span={{ base: 6, sm: 3 }}>
                   <InfoItem label="Tenencia expira" value={fmtShort(vehiculo.tenencia_expiracion)} />

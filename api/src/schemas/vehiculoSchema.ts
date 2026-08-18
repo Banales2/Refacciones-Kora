@@ -11,6 +11,12 @@ export type TipoVehiculo = typeof TIPOS_VEHICULO[number]
 export const TIPOS_CON_SEGURO: TipoVehiculo[]  = ['camion', 'tractocamion', 'utilitario', 'montacargas']
 export const TIPOS_CON_PERMISO: TipoVehiculo[] = ['camion', 'utilitario']
 
+// La tenencia la pagan nada más las unidades de reparto y las utilitarias. Los
+// tractocamiones y las cajas de trailer no, y los montacargas tampoco: lo suyo
+// no circula por el que la cobra. De la tenencia solo se guarda la fecha de
+// vencimiento — no trae folio.
+export const TIPOS_CON_TENENCIA: TipoVehiculo[] = ['camion', 'utilitario']
+
 // Motivos por los que una unidad necesita atención, para poder listarlas desde
 // la búsqueda. Los dos primeros son documentos que nunca se capturaron; los
 // otros dos, cosas que ya vencieron o están por vencer. Las unidades dadas de
@@ -53,8 +59,7 @@ export const VehiculoCreateSchema = z.object({
   // camion + montacargas
   ubicacion:   z.string().max(200).trim().nullable().optional(),
   sucursal_id: z.coerce.number().int().positive().optional(),
-  // camion + tractocamion + utilitario: los únicos que pagan tenencia.
-  tenencia:            z.string().max(50).trim().nullable().optional(),
+  // camion + utilitario: los únicos que pagan tenencia (TIPOS_CON_TENENCIA).
   tenencia_expiracion: z.string().date().nullable().optional(),
   // tractocamion
   tonelaje:    z.coerce.number().int().positive().optional(),
@@ -80,6 +85,9 @@ export const VehiculoCreateSchema = z.object({
     if (data.permiso_id != null && !TIPOS_CON_PERMISO.includes(data.tipo)) {
       ctx.addIssue({ code: 'custom', message: 'Este tipo de unidad no lleva permiso de circulación', path: ['permiso_id'] })
     }
+    if (data.tenencia_expiracion != null && !TIPOS_CON_TENENCIA.includes(data.tipo)) {
+      ctx.addIssue({ code: 'custom', message: 'Este tipo de unidad no paga tenencia', path: ['tenencia_expiracion'] })
+    }
   })
 
 export const VehiculoUpdateSchema = z.object({
@@ -104,7 +112,6 @@ export const VehiculoUpdateSchema = z.object({
   ubicacion:    z.string().max(200).trim().nullable().optional(),
   sucursal_id:  z.coerce.number().int().positive().optional(),
   tonelaje:     z.coerce.number().int().positive().optional(),
-  tenencia:            z.string().max(50).trim().nullable().optional(),
   tenencia_expiracion: z.string().date().nullable().optional(),
   ruta_id:      z.coerce.number().int().positive().optional(),
   pies:         z.coerce.number().int().positive().optional(),

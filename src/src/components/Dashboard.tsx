@@ -227,7 +227,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
     }))
     const tenencias = (doc?.tenencias ?? []).map((t) => ({
       key: `t-${t.vehiculo_id}`, tipo: 'Tenencia' as const, colorTipo: 'indigo', colorAviso: 'orange',
-      etiqueta: t.folio ? `${t.vehiculo} — folio ${t.folio}` : t.vehiculo,
+      etiqueta: t.vehiculo,
       fecha_expiracion: t.fecha_expiracion, dias_restantes: t.dias_restantes, vehiculos: null,
     }))
     return [...seguros, ...permisos, ...licencias, ...tenencias].sort((a, b) => a.dias_restantes - b.dias_restantes)
@@ -455,7 +455,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
         <Text fw={600} mb={2}>Vehículos sin documentos</Text>
         <Text size="xs" c="dimmed" mb="md">
           Unidades sin tenencia o sin seguro capturado. No aparecen arriba porque no tienen fecha
-          de vencimiento que vigilar. La tenencia solo aplica a reparto, tractocamiones y utilitarios.
+          de vencimiento que vigilar. La tenencia solo aplica a reparto y utilitarios.
         </Text>
         {loadingDocumentos ? (
           <Center py="xl"><Loader size="sm" /></Center>

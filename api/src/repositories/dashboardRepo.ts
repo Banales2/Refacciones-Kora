@@ -56,15 +56,15 @@ export async function findSegurosPorVencer(limite: string): Promise<SeguroPorVen
   return r.recordset
 }
 
-// Tenencias por vencer. Vive en las tres tablas hijas de los tipos que la
-// pagan (reparto, tractocamiones y utilitarios), así que se unen aquí; cajas de
-// trailer y montacargas no tienen esas columnas porque no la llevan.
+// Tenencias por vencer. Vive en las dos tablas hijas de los tipos que la pagan
+// (reparto y utilitarios), así que se unen aquí; tractocamiones, cajas de
+// trailer y montacargas no la llevan. No hay folio: la tenencia solo tiene
+// fecha de vencimiento.
 export interface TenenciaPorVencer {
   vehiculo_id:      number
   vehiculo:         string
   placas:           string | null
   tipo:             string
-  folio:            string | null
   fecha_expiracion: string
 }
 
@@ -74,15 +74,13 @@ export async function findTenenciasPorVencer(limite: string): Promise<TenenciaPo
     .input('limite', sql.Date, limite)
     .query(`
       WITH tenencias AS (
-        SELECT vehiculo_id, tenencia, tenencia_expiracion, status FROM camiones
+        SELECT vehiculo_id, tenencia_expiracion, status FROM camiones
         UNION ALL
-        SELECT vehiculo_id, tenencia, tenencia_expiracion, status FROM tractocamiones
-        UNION ALL
-        SELECT vehiculo_id, tenencia, tenencia_expiracion, status FROM vehiculos_utilitarios
+        SELECT vehiculo_id, tenencia_expiracion, status FROM vehiculos_utilitarios
       )
       SELECT v.id AS vehiculo_id,
              CONCAT(m.marca, ' ', m.nombre, ' — ', v.numero_serie) AS vehiculo,
-             v.placas, v.tipo, t.tenencia AS folio,
+             v.placas, v.tipo,
              CONVERT(char(10), t.tenencia_expiracion, 23) AS fecha_expiracion
       FROM tenencias t
       JOIN vehiculos v ON v.id = t.vehiculo_id

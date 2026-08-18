@@ -120,13 +120,13 @@ export interface LicenciaPorVencer {
   dias_restantes:   number
 }
 
-// Tenencia de un vehículo. Solo la pagan reparto, tractocamiones y utilitarios.
+// Tenencia de un vehículo. Solo la pagan reparto y utilitarios, y no trae folio:
+// lo único que se vigila es cuándo vence.
 export interface TenenciaPorVencer {
   vehiculo_id:      number
   vehiculo:         string
   placas:           string | null
   tipo:             string
-  folio:            string | null
   fecha_expiracion: string
   dias_restantes:   number
 }

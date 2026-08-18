@@ -7,7 +7,9 @@
 // Un vehículo es una fila en `vehiculos` más una fila en la tabla hija de su
 // tipo, y ahí es donde viven la tenencia, el seguro y el permiso: los llevan
 // nada más los tipos a los que les aplican.
-import { TIPOS_CON_PERMISO, TIPOS_CON_SEGURO, TipoVehiculo } from '../schemas/vehiculoSchema'
+import {
+  TIPOS_CON_PERMISO, TIPOS_CON_SEGURO, TIPOS_CON_TENENCIA, TipoVehiculo,
+} from '../schemas/vehiculoSchema'
 
 // Tabla hija de cada tipo. El vehículo siempre tiene exactamente una fila ahí.
 export const TABLA_POR_TIPO: Record<TipoVehiculo, string> = {
@@ -46,10 +48,10 @@ export const NO_DADO_DE_BAJA = `
 `
 
 // Sin tenencia = de los tipos que la pagan y sin fecha de vencimiento capturada.
-// El folio sin fecha no cuenta: es lo que ningún aviso alcanza a vigilar.
+// Los tractocamiones quedaron fuera: no la pagan, y reclamársela era ruido.
 export const SIN_TENENCIA = `
-  v.tipo IN ('camion','tractocamion','utilitario')
-  AND COALESCE(c.tenencia_expiracion, t.tenencia_expiracion, u.tenencia_expiracion) IS NULL
+  v.tipo IN (${TIPOS_CON_TENENCIA.map((t) => `'${t}'`).join(',')})
+  AND COALESCE(c.tenencia_expiracion, u.tenencia_expiracion) IS NULL
 `
 
 // Sin seguro = de los tipos que se aseguran y sin póliza asignada. Las cajas de

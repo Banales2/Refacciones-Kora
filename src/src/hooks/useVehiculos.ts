@@ -26,9 +26,8 @@ export interface VehiculoRow {
   sucursal_id:  number | null
   sucursal:     string | null
   tonelaje:     number | null
-  // Tenencia: solo reparto, tractocamiones y utilitarios. En los demás tipos
-  // llega null porque no la pagan.
-  tenencia:            string | null
+  // Tenencia: solo reparto y utilitarios. En los demás tipos llega null porque
+  // no la pagan. Es nada más la fecha de vencimiento: no tiene folio.
   tenencia_expiracion: string | null
   ruta_id:      number | null
   ruta:         string | null
@@ -56,7 +55,6 @@ export interface VehiculoCreatePayload {
   ubicacion?:    string | null
   sucursal_id?:  number
   tonelaje?:     number
-  tenencia?:            string | null
   tenencia_expiracion?: string | null
   ruta_id?:      number
   pies?:         number
@@ -77,8 +75,8 @@ export function vehiculoLabel(v: Pick<VehiculoRow, 'marca' | 'modelo' | 'serie'>
 }
 
 // Motivo por el que una unidad necesita atención, para listar justo esas. La
-// tenencia solo la pagan camiones, tractocamiones y utilitarios, así que ese
-// filtro deja fuera cajas de trailer y montacargas. Ninguno incluye unidades
+// tenencia solo la pagan camiones de reparto y utilitarios, así que ese filtro
+// deja fuera tractocamiones, cajas de trailer y montacargas. Ninguno incluye unidades
 // dadas de baja.
 export type AlertaVehiculo =
   'sin_tenencia' | 'sin_seguro' | 'requerimientos_vencidos' | 'permiso_por_vencer'
