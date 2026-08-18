@@ -1,18 +1,26 @@
 // Alta y edición de un precio cotizado con un proveedor.
 //
-// La refacción se elige del catálogo (solo se cotiza lo que ya existe) y solo
-// al registrar: cambiarla al editar convertiría el registro en otro, así que en
-// edición se muestra fija.
+// La refacción se elige del catálogo y solo al registrar: cambiarla al editar
+// convertiría el registro en otro, así que en edición se muestra fija. Si la
+// refacción todavía no está en el catálogo se da de alta desde aquí, sin salir
+// del formulario y sin registrar compra: cotizar no es comprar.
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Button, Select, NumberInput, Textarea, Alert, Loader, TextInput,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
+import { IconPlus } from '@tabler/icons-react'
 import { useRefacciones } from '../hooks/useRefacciones'
+import type { Pieza } from '../hooks/useRefacciones'
 import { TEXTO_LIBRE, limpiarTextoLibre } from '../lib/validaciones'
 import { FechaInput } from './FechaInput'
+import NuevaPiezaModal from './NuevaPiezaModal'
 import type { PrecioProveedorPayload } from '../hooks/usePreciosProveedor'
+
+function piezaLabel(p: Pick<Pieza, 'numero_serie' | 'descripcion'>) {
+  return `${p.numero_serie} — ${p.descripcion}`
+}
 
 function todayIso() {
   const d = new Date()
@@ -71,15 +79,54 @@ export default function PrecioProveedorForm({
     },
   })
 
-  const piezas = useMemo(
-    () => (piezasData?.data ?? []).map((p) => ({
+  // Refacciones dadas de alta desde este mismo formulario: se agregan a mano
+  // porque la búsqueda activa ya no las devuelve (el texto buscado suele ser
+  // otro) y sin esto el Select se quedaría en blanco justo después de crearlas.
+  const [nuevaPiezaOpen, setNuevaPiezaOpen] = useState(false)
+  const [piezasNuevas, setPiezasNuevas] = useState<Pieza[]>([])
+
+  // Al elegir una opción, Mantine copia su etiqueta al texto de búsqueda, lo que
+  // lanza otra consulta que ya no devuelve esa refacción (la etiqueta lleva
+  // serie y descripción juntas, y el LIKE es contra una o la otra). Por eso se
+  // guarda su etiqueta al seleccionarla: sin esto el campo acababa mostrando el
+  // id en vez del nombre.
+  const [etiquetaSeleccionada, setEtiquetaSeleccionada] = useState('')
+
+  const piezas = useMemo(() => {
+    const opts = (piezasData?.data ?? []).map((p) => ({
       value: String(p.id),
-      label: `${p.numero_serie} — ${p.descripcion}`,
-    })),
-    [piezasData]
-  )
+      label: piezaLabel(p),
+    }))
+    // Las creadas aquí van primero y sin duplicarse con los resultados.
+    for (const p of piezasNuevas) {
+      if (!opts.some((o) => o.value === String(p.id))) {
+        opts.unshift({ value: String(p.id), label: piezaLabel(p) })
+      }
+    }
+    const seleccionada = form.values.pieza_id
+    if (seleccionada && !opts.some((o) => o.value === seleccionada)) {
+      opts.unshift({ value: seleccionada, label: etiquetaSeleccionada })
+    }
+    return opts
+  }, [piezasData, piezasNuevas, form.values.pieza_id, etiquetaSeleccionada])
+
+  function seleccionarPieza(id: string | null) {
+    form.setFieldValue('pieza_id', id ?? '')
+    const elegida = [...(piezasData?.data ?? []), ...piezasNuevas]
+      .find((p) => String(p.id) === id)
+    setEtiquetaSeleccionada(elegida ? piezaLabel(elegida) : '')
+  }
+
+  // La refacción recién creada queda seleccionada, que es para lo que se abrió
+  // el alta desde aquí.
+  function piezaCreada(pieza: Pieza) {
+    setPiezasNuevas((prev) => [...prev, pieza])
+    form.setFieldValue('pieza_id', String(pieza.id))
+    setEtiquetaSeleccionada(piezaLabel(pieza))
+  }
 
   return (
+    <>
     <form
       onSubmit={form.onSubmit((v) => onSubmit({
         pieza_id: parseInt(v.pieza_id, 10),
@@ -92,18 +139,29 @@ export default function PrecioProveedorForm({
         {piezaFija ? (
           <TextInput label="Refacción" value={piezaFija.label} disabled />
         ) : (
-          <Select
-            label="Refacción"
-            placeholder="Busca por número de serie o descripción"
-            data={piezas}
-            searchable
-            required
-            searchValue={search}
-            onSearchChange={setSearch}
-            rightSection={cargandoPiezas ? <Loader size="xs" /> : undefined}
-            nothingFoundMessage={cargandoPiezas ? 'Buscando…' : 'Sin resultados'}
-            {...form.getInputProps('pieza_id')}
-          />
+          <div>
+            <Select
+              label="Refacción"
+              placeholder="Busca por número de serie o descripción"
+              data={piezas}
+              searchable
+              required
+              searchValue={search}
+              onSearchChange={setSearch}
+              rightSection={cargandoPiezas ? <Loader size="xs" /> : undefined}
+              nothingFoundMessage={
+                cargandoPiezas ? 'Buscando…' : 'Sin coincidencias: usa "Nueva refacción"'
+              }
+              {...form.getInputProps('pieza_id')}
+              onChange={seleccionarPieza}
+            />
+            <Button
+              variant="subtle" size="compact-xs" mt={4} leftSection={<IconPlus size={12} />}
+              onClick={() => setNuevaPiezaOpen(true)}
+            >
+              Nueva refacción
+            </Button>
+          </div>
         )}
         <NumberInput
           label="Precio unitario" placeholder="0.00" required
@@ -136,5 +194,14 @@ export default function PrecioProveedorForm({
         </Group>
       </Stack>
     </form>
+
+    {/* Fuera del <form>: el alta de la refacción es otro <form>, y anidarlos no
+        es HTML válido — el submit de adentro dispararía el de afuera. */}
+    <NuevaPiezaModal
+      opened={nuevaPiezaOpen}
+      onClose={() => setNuevaPiezaOpen(false)}
+      onCreated={piezaCreada}
+    />
+    </>
   )
 }
