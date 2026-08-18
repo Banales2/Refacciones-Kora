@@ -238,3 +238,120 @@ export interface ReporteFlota {
 export function fetchReporteFlota(periodo: PeriodoComparacion) {
   return api.get<{ data: ReporteFlota }>(`/dashboard/reporte-flota?periodo=${periodo}`)
 }
+
+// ─── Análisis de costos ──────────────────────────────────────────────────────
+// El resumen del mes dice cuánto se gastó; esto dice si estuvo bien gastado.
+// Todo se calcula en el backend (`costosService`) porque son cruces entre
+// recargas, mantenimientos y compras que no vale la pena bajar completos.
+
+export type VentanaCostos = 30 | 90 | 180 | 365
+
+export interface VehiculoCosto {
+  vehiculo_id:        number
+  vehiculo:           string
+  tipo:               string
+  modelo_id:          number
+  modelo:             string
+  km_recorridos:      number | null
+  combustible:        number
+  mano_obra:          number
+  refacciones:        number
+  total:              number
+  costo_por_km:       number | null
+  litros:             number
+  rendimiento:        number | null
+  rendimiento_modelo: number | null
+  desviacion_pct:     number | null
+  sobrecosto_anual:   number | null
+  mantenimientos:     number
+  recargas:           number
+}
+
+export interface GasolineraCosto {
+  gasolinera_id: number
+  gasolinera:    string
+  recargas:      number
+  litros:        number
+  costo:         number
+  precio_litro:  number | null
+  sobreprecio:   number
+}
+
+export type TipoAnomalia =
+  | 'rendimiento_bajo' | 'odometro_retrocede' | 'precio_alto'
+  | 'carga_duplicada'  | 'sin_vale'           | 'sin_odometro'
+
+export interface Anomalia {
+  key:         string
+  tipo:        TipoAnomalia
+  severidad:   'alta' | 'media'
+  vehiculo_id: number
+  vehiculo:    string
+  fecha:       string
+  detalle:     string
+  monto:       number | null
+}
+
+export interface Retrabajo {
+  vehiculo_id:  number
+  vehiculo:     string
+  tipo:         string
+  fecha_previa: string
+  fecha:        string
+  dias:         number
+  costo:        number
+}
+
+export interface OportunidadAhorro {
+  pieza_id:        number
+  numero_serie:    string
+  descripcion:     string
+  proveedor:       string
+  mejor_proveedor: string
+  pagado:          number
+  mejor_precio:    number
+  cantidad:        number
+  ahorro:          number
+}
+
+export interface GastoMes {
+  mes:         string
+  mano_obra:   number
+  refacciones: number
+  combustible: number
+}
+
+export interface AnalisisCostos {
+  rango: { start: string; end: string; dias: number }
+  totales: {
+    combustible:           number
+    mano_obra:             number
+    refacciones_compradas: number
+    refacciones_usadas:    number
+    total_caja:            number
+    total_operacion:       number
+    km_recorridos:         number
+    costo_por_km:          number | null
+    litros:                number
+    rendimiento:           number | null
+    precio_litro:          number | null
+    ahorro_refacciones:    number
+    ahorro_combustible:    number
+    ahorro_total:          number
+    vehiculos_analizados:  number
+  }
+  vehiculos:          VehiculoCosto[]
+  gasolineras:        GasolineraCosto[]
+  gasto_mensual:      GastoMes[]
+  ahorro_refacciones: OportunidadAhorro[]
+  anomalias:          Anomalia[]
+  anomalias_resumen:  { tipo: TipoAnomalia; cantidad: number; monto: number }[]
+  retrabajos:         Retrabajo[]
+}
+
+export function useAnalisisCostos(dias: VentanaCostos = 90) {
+  return useQuery({
+    queryKey: ['dashboard', 'analisis-costos', dias],
+    queryFn: () => api.get<{ data: AnalisisCostos }>(`/dashboard/analisis-costos?dias=${dias}`),
+  })
+}
