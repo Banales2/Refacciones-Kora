@@ -3,7 +3,7 @@ dist/
 build/
 .env
 .claude/
-migrations/
+db/
 .env.local
 local.settings.json
 .vscode/*
