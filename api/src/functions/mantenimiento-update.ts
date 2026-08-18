@@ -15,7 +15,9 @@ const Schema = z.object({
   km_actual:         z.coerce.number().int().min(0).max(KM_MAX, 'Máximo 9,999,999 km').optional(),
   observaciones:     z.string().trim().min(1, 'Observaciones requeridas').max(255, 'Máximo 255 caracteres')
                        .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos').optional(),
-  pendiente_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un requerimiento o incidencia').optional(),
+  // TEMPORAL — mantenimiento sin origen. Igual que en el alta: el .min(1) se
+  // suspendió para los mantenimientos antiguos y volverá a ponerse.
+  pendiente_ids: z.array(z.number().int().positive()).optional(),
 })
 
 export async function mantenimientoUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {

@@ -15,7 +15,11 @@ const Schema = z.object({
   km_actual:         z.coerce.number({ error: 'Kilometraje requerido' }).int().min(0).max(KM_MAX, 'Máximo 9,999,999 km'),
   observaciones:     z.string().trim().min(1, 'Observaciones requeridas').max(255, 'Máximo 255 caracteres')
                        .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos'),
-  pendiente_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un requerimiento o incidencia'),
+  // TEMPORAL — mantenimiento sin origen. El vínculo era obligatorio (.min(1)) y
+  // volverá a serlo: se suspendió para poder capturar mantenimientos antiguos
+  // cuya razón ya no se conserva. Para reactivarlo, devolver el .min(1) aquí y
+  // en los demás puntos marcados: `grep -rn "mantenimiento sin origen"`.
+  pendiente_ids: z.array(z.number().int().positive()),
 })
 
 export async function mantenimientoCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {

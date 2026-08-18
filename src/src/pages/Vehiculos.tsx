@@ -1287,10 +1287,12 @@ export function MantenimientoForm({
         !v.trim() ? 'Requerido' :
         v.length > 255 ? 'Máximo 255 caracteres' :
         !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
-      // Con un pendiente fijo el mantenimiento ya atiende algo, así que el
-      // selector puede quedarse vacío.
-      pendiente_ids:     (v) => !pendienteFijo && v.length === 0
-        ? 'Selecciona al menos un requerimiento o incidencia' : null,
+      // TEMPORAL — mantenimiento sin origen. Aquí se exigía al menos un
+      // pendiente cuando no había uno fijo; se suspendió para poder capturar
+      // mantenimientos antiguos cuya razón ya no se conserva, y volverá a ser
+      // obligatorio. Para reactivarlo, buscar los puntos marcados con
+      // `grep -rn "mantenimiento sin origen"`. Mientras tanto el formulario
+      // avisa en pantalla en vez de bloquear.
       piezas: {
         lote_id:  (v: string) => !v ? 'Selecciona la refacción' : null,
         cantidad: (v: number | string, vals: MantForm, path: string) => {
@@ -1484,16 +1486,30 @@ export function MantenimientoForm({
                 </Stack>
               </Input.Wrapper>
             ) : (
-              <MultiSelect
-                label="Qué atiende este mantenimiento"
-                description="Requerimientos preventivos e incidencias que quedan cubiertos"
-                required
-                placeholder={hayPendientes ? 'Selecciona los pendientes…' : 'Esta unidad no tiene nada pendiente'}
-                data={pendienteGroups}
-                searchable
-                clearable
-                {...form.getInputProps('pendiente_ids')}
-              />
+              <Stack gap={6}>
+                <MultiSelect
+                  label="Qué atiende este mantenimiento"
+                  description="Requerimientos preventivos e incidencias que quedan cubiertos"
+                  placeholder={hayPendientes ? 'Selecciona los pendientes…' : 'Esta unidad no tiene nada pendiente'}
+                  data={pendienteGroups}
+                  searchable
+                  clearable
+                  {...form.getInputProps('pendiente_ids')}
+                />
+                {/* TEMPORAL — mantenimiento sin origen. Dejarlo vacío se permite
+                    solo para capturar mantenimientos antiguos; el aviso está
+                    para que no se vuelva la costumbre mientras dure. Se quita
+                    junto con el resto de los puntos marcados. */}
+                {form.values.pendiente_ids.length === 0 && (
+                  <Alert color="yellow" variant="light" py={6}>
+                    <Text size="xs">
+                      Sin nada seleccionado el mantenimiento queda sin razón registrada. Déjalo así
+                      solo para mantenimientos antiguos cuyo motivo ya no se conserva: más adelante
+                      volverá a ser obligatorio vincularlos.
+                    </Text>
+                  </Alert>
+                )}
+              </Stack>
             )}
           </Grid.Col>
         </Grid>
