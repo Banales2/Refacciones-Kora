@@ -13,7 +13,12 @@ export interface DetalleMttoPieza {
   pieza_id:         number
   numero_serie:     string
   descripcion:      string
+  /** Lo que queda de ese lote en la sucursal de la que salió este consumo. */
   lote_disponible:  number
+  // De qué sucursal salió. Null en los consumos anteriores al inventario por
+  // sucursal que además pertenecen a un lote sin sucursal de recepción.
+  sucursal_id:      number | null
+  sucursal:         string | null
 }
 
 interface DetalleMttoResponse {
@@ -23,6 +28,9 @@ interface DetalleMttoResponse {
 
 export interface DetalleMttoPayload {
   lote_id:         number
+  // De qué sucursal se descuenta. Obligatoria al crear; al editar no se manda,
+  // porque el consumo se corrige donde se registró.
+  sucursal_id?:    number
   cantidad:        number
   costo_unitario?: number
 }

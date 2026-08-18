@@ -9,6 +9,7 @@ import {
 import { useForm } from '@mantine/form'
 import { IconPlus } from '@tabler/icons-react'
 import { useProveedores, useCreateProveedor } from '../hooks/useProveedores'
+import { useSucursales } from '../hooks/useSucursales'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { TEXTO_SIMPLE, limpiarTextoSimple } from '../lib/validaciones'
 import { FechaInput } from './FechaInput'
@@ -16,6 +17,10 @@ import ProveedorForm from './ProveedorForm'
 
 export type LoteFormValues = {
   proveedor_id: string
+  // Sucursal que recibe la compra: el lote entra completo ahí. Solo se captura
+  // al dar de alta; después, mover piezas a otra sucursal es un traspaso, no
+  // una corrección del lote.
+  sucursal_id: string
   fecha_compra: string
   costo_unitario: number | string
   cantidad_inicial: number | string
@@ -45,6 +50,9 @@ export function LoteForm({
   onCancel: () => void
 }) {
   const hoy = todayIso()
+  const esEdicion = initial !== undefined
+  const { data: sucData } = useSucursales()
+  const sucursales = (sucData?.data ?? []).map((s) => ({ value: String(s.id), label: s.nombre }))
   const { data: provData } = useProveedores()
   const proveedores = (provData?.data ?? []).map((p) => ({
     value: String(p.id),
@@ -63,6 +71,7 @@ export function LoteForm({
   const form = useForm<LoteFormValues>({
     initialValues: initial ?? {
       proveedor_id: '',
+      sucursal_id: '',
       fecha_compra: '',
       costo_unitario: '',
       cantidad_inicial: '',
@@ -71,6 +80,8 @@ export function LoteForm({
     },
     validate: {
       proveedor_id: (v) => (!v ? 'Proveedor requerido' : null),
+      // Al editar no se pide: la sucursal de recepción ya no cambia.
+      sucursal_id: (v) => (!esEdicion && !v ? 'Sucursal requerida' : null),
       fecha_compra: (v) => {
         if (!v) return 'Fecha requerida'
         if (v > hoy) return 'No puede ser una fecha futura'
@@ -125,6 +136,18 @@ export function LoteForm({
               </Button>
             </Group>
           </Stack>
+          {!esEdicion && (
+            <Select
+              label="Sucursal que recibe"
+              description="El lote entra completo aquí. Para repartirlo, haz un traspaso desde Inventario."
+              placeholder="Selecciona la sucursal"
+              data={sucursales}
+              searchable
+              required
+              nothingFoundMessage="Sin sucursales dadas de alta"
+              {...form.getInputProps('sucursal_id')}
+            />
+          )}
           <FechaInput
             label="Fecha de compra"
             required

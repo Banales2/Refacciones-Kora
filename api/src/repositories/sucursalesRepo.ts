@@ -52,6 +52,17 @@ export async function countCamiones(id: number): Promise<number> {
   return r.recordset[0].cnt
 }
 
+// Piezas guardadas en esta sucursal. Impiden borrarla: el FK de
+// `existencias_lote` lo bloquearía de todas formas, y contarlo aquí permite
+// responder con un mensaje en vez de con un error de SQL.
+export async function countExistencias(id: number): Promise<number> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query('SELECT COALESCE(SUM(cantidad), 0) AS cnt FROM existencias_lote WHERE sucursal_id = @id')
+  return r.recordset[0].cnt
+}
+
 export async function remove(id: number): Promise<boolean> {
   const pool = await getPool()
   const r = await pool.request()

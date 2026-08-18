@@ -19,13 +19,14 @@ import { useDisclosure } from '@mantine/hooks'
 import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import {
   IconRefresh, IconLayoutDashboard, IconTruck, IconCar, IconTool,
-  IconAlertTriangle, IconCalendar, IconGasStation, IconBox, IconSettings,
+  IconAlertTriangle, IconCalendar, IconGasStation, IconBox, IconBuildingStore, IconSettings,
   IconHistory,
 } from '@tabler/icons-react'
 import type { Icon } from '@tabler/icons-react'
 import { useAuth } from '../hooks/useAuth'
 import Dashboard from './Dashboard'
 import Piezas from '../pages/Piezas'
+import Inventario from '../pages/Inventario'
 import Vehiculos from '../pages/Vehiculos'
 import Incidencias from '../pages/Incidencias'
 import Modelos from '../pages/Modelos'
@@ -37,12 +38,13 @@ import Mantenimientos from '../pages/Mantenimientos'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 
 type Section =
-  | 'dashboard' | 'piezas' | 'modelos' | 'vehiculos' | 'incidencias'
+  | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
   | 'mantenimientos' | 'sitios' | 'calendario' | 'vales' | 'registros'
 
 const SECTION_LABELS: Record<Section, string> = {
   dashboard:      'Dashboard',
   piezas:         'Refacciones',
+  inventario:     'Inventario por sucursal',
   modelos:        'Modelos',
   vehiculos:      'Vehículos',
   incidencias:    'Incidencias',
@@ -80,7 +82,8 @@ const NAV_GROUPS: {
   {
     titulo: 'Inventario',
     items: [
-      { section: 'piezas', label: 'Refacciones', description: 'Catálogo e inventario',                    icon: IconBox      },
+      { section: 'piezas',     label: 'Refacciones', description: 'Catálogo de refacciones y sus compras',      icon: IconBox            },
+      { section: 'inventario', label: 'Inventario',  description: 'Qué hay en cada sucursal, mínimos y traspasos', icon: IconBuildingStore },
       { section: 'sitios', label: 'Catálogos',   description: 'Proveedores, sucursales, translados y más', icon: IconSettings },
     ],
   },
@@ -400,6 +403,7 @@ export default function Layout() {
           />
         )}
         {section === 'piezas'    && <Piezas initialPiezaId={pendingPiezaId ?? undefined} />}
+        {section === 'inventario' && <Inventario />}
         {section === 'modelos'   && (
           <Modelos
             onNavigateVehiculo={navigateToVehiculo}

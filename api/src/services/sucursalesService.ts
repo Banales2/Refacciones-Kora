@@ -17,6 +17,15 @@ export async function remove(id: number) {
   const count = await repo.countCamiones(id)
   if (count > 0)
     throw new ConflictError(`Esta sucursal tiene ${count} unidad(es) de reparto asignada(s) y no puede eliminarse`)
+  // Borrar una sucursal con piezas dentro no es un borrado: es perder de vista
+  // inventario. Hay que vaciarla con traspasos primero.
+  const piezas = await repo.countExistencias(id)
+  if (piezas > 0)
+    throw new ConflictError(
+      `Esta sucursal tiene ${piezas} pieza(s) en inventario y no puede eliminarse. ` +
+      `Traspásalas a otra sucursal primero.`
+    )
+
   const deleted = await repo.remove(id)
   if (!deleted) throw new NotFoundError('Sucursal')
 }

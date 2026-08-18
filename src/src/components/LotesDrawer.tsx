@@ -55,6 +55,9 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
   function toPayload(values: LoteFormValues): LotePayload {
     return {
       proveedor_id: parseInt(values.proveedor_id),
+      // Vacío al editar: el formulario no pide la sucursal en ese caso y la API
+      // no la acepta en el update.
+      sucursal_id: values.sucursal_id ? parseInt(values.sucursal_id) : undefined,
       fecha_compra: values.fecha_compra,
       costo_unitario: Number(values.costo_unitario),
       cantidad_inicial: Number(values.cantidad_inicial),
@@ -72,8 +75,12 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
 
   function handleUpdate(values: LoteFormValues) {
     if (!editLote) return
+    // La sucursal se queda fuera: la de recepción ya no cambia, y para mover
+    // piezas está el traspaso.
+    const { sucursal_id: _omitida, ...payload } = toPayload(values)
+    void _omitida
     updateMut.mutate(
-      { id: editLote.id, ...toPayload(values) },
+      { id: editLote.id, ...payload },
       { onSuccess: () => setEditLote(null) }
     )
   }
@@ -216,6 +223,9 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
           <LoteForm
             initial={{
               proveedor_id: String(editLote.proveedor_id),
+              // El formulario no muestra este campo al editar, pero el tipo lo
+              // pide; se conserva el valor original.
+              sucursal_id: editLote.sucursal_id != null ? String(editLote.sucursal_id) : '',
               fecha_compra: toDateInputValue(editLote.fecha_compra),
               costo_unitario: editLote.costo_unitario,
               cantidad_inicial: editLote.cantidad_inicial,

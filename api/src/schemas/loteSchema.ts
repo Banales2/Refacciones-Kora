@@ -24,6 +24,10 @@ const fechaCompra = z
 
 export const LoteCreateSchema = z.object({
   proveedor_id: z.coerce.number().int().min(1, 'Proveedor requerido'),
+  // La sucursal que recibe la compra. Obligatoria: toda pieza tiene que estar
+  // en algún lado, y un lote sin sucursal sería stock que no aparece en ningún
+  // inventario. Repartirlo entre sucursales es un traspaso posterior.
+  sucursal_id: z.coerce.number().int().min(1, 'Sucursal requerida'),
   fecha_compra: fechaCompra,
   costo_unitario: z.coerce
     .number()

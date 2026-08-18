@@ -47,9 +47,17 @@ function InfoItem({ label, value }: { label: string; value: ReactNode }) {
 
 type DetalleFormValues = {
   lote_id:        string
+  // De qué sucursal sale la pieza. El lote solo ya no basta: desde el
+  // inventario por sucursal, un mismo lote puede estar repartido.
+  sucursal_id:    string
   cantidad:       number | string
   costo_unitario: number | string
 }
+
+// El selector ofrece existencias, no lotes: la opción es la pareja
+// (lote, sucursal), así que su valor tiene que llevar las dos.
+const claveExistencia = (loteId: number | string, sucursalId: number | string) =>
+  `${loteId}:${sucursalId}`
 
 function DetalleForm({
   mode, lockedLabel, initial, maxCantidad: maxCantidadEdit, isPending, error, onSubmit, onCancel,
@@ -65,13 +73,13 @@ function DetalleForm({
 }) {
   const { data: lotesData } = useLotesDisponibles(mode === 'create')
   const loteOptions = (lotesData?.data ?? []).map((l) => ({
-    value: String(l.id),
-    label: `${l.numero_serie} — ${l.descripcion} (disp: ${l.cantidad_disponible}, ${formatMXN(l.costo_unitario)})`,
+    value: claveExistencia(l.id, l.sucursal_id),
+    label: `${l.numero_serie} — ${l.descripcion} · ${l.sucursal} (disp: ${l.cantidad_disponible}, ${formatMXN(l.costo_unitario)})`,
   }))
 
   const form = useForm<DetalleFormValues>({
     initialValues: initial ?? {
-      lote_id: '', cantidad: '', costo_unitario: '',
+      lote_id: '', sucursal_id: '', cantidad: '', costo_unitario: '',
     },
     validate: {
       lote_id:        (v) => (mode === 'create' && !v ? 'Refacción requerida' : null),
@@ -80,12 +88,20 @@ function DetalleForm({
     },
   })
 
-  const selectedLote = lotesData?.data.find((l) => String(l.id) === form.values.lote_id)
+  // El disponible es el de esa sucursal, no el del lote entero: que haya 10
+  // piezas repartidas no significa que se puedan sacar 10 de aquí.
+  const seleccion = form.values.lote_id
+    ? claveExistencia(form.values.lote_id, form.values.sucursal_id)
+    : null
+  const selectedLote = lotesData?.data.find((l) => claveExistencia(l.id, l.sucursal_id) === seleccion)
   const maxCantidad = mode === 'create' ? selectedLote?.cantidad_disponible : maxCantidadEdit
 
   function handleLoteChange(value: string | null) {
-    form.setFieldValue('lote_id', value ?? '')
-    const lote = lotesData?.data.find((l) => String(l.id) === value)
+    const [loteId = '', sucursalId = ''] = (value ?? '').split(':')
+    form.setFieldValue('lote_id', loteId)
+    form.setFieldValue('sucursal_id', sucursalId)
+
+    const lote = lotesData?.data.find((l) => claveExistencia(l.id, l.sucursal_id) === value)
     if (lote) {
       form.setFieldValue('costo_unitario', lote.costo_unitario)
       if (Number(form.values.cantidad) > lote.cantidad_disponible) {
@@ -108,12 +124,13 @@ function DetalleForm({
         {error && <Alert color="red" title="Error">{error}</Alert>}
         {mode === 'create' ? (
           <Select
-            label="Refacción / lote"
+            label="Refacción / lote / sucursal"
+            description="De qué sucursal sale la pieza. El stock se descuenta de ahí."
             placeholder="Selecciona la refacción usada"
             data={loteOptions}
             searchable
             required
-            value={form.values.lote_id || null}
+            value={seleccion}
             onChange={handleLoteChange}
             error={form.errors.lote_id as string}
           />
@@ -169,6 +186,7 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
   function toPayload(values: DetalleFormValues): DetalleMttoPayload {
     return {
       lote_id:        Number(values.lote_id),
+      sucursal_id:    values.sucursal_id ? Number(values.sucursal_id) : undefined,
       cantidad:        Number(values.cantidad),
       costo_unitario:  Number(values.costo_unitario),
     }
@@ -333,6 +351,7 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
             maxCantidad={editItem.cantidad + editItem.lote_disponible}
             initial={{
               lote_id:        String(editItem.lote_id),
+              sucursal_id:    editItem.sucursal_id != null ? String(editItem.sucursal_id) : '',
               cantidad:       editItem.cantidad,
               costo_unitario: editItem.costo_unitario,
             }}

@@ -2,6 +2,7 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { Pieza, PiezaConCantidad, LoteConProveedor } from '../types/domain'
 import { RefaccionCreate, RefaccionUpdate, SearchBy } from '../schemas/refaccionSchema'
+import { disponibleDelLote } from './inventarioSql'
 
 export async function findAll(params: {
   offset: number
@@ -34,10 +35,13 @@ export async function findAll(params: {
     SELECT
       p.id, p.numero_serie, p.descripcion,
       p.tipo_pieza_id, t.nombre AS tipo_pieza,
-      COALESCE(SUM(l.cantidad_disponible), 0) AS cantidad_total
+      COALESCE(SUM(ex.cantidad), 0) AS cantidad_total
     FROM piezas p
     LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id
     LEFT JOIN lotes_pieza l ON l.pieza_id = p.id
+    -- El stock sale de las existencias por sucursal, no de la columna del lote
+    -- (migración 002). Un lote sin existencias no suma nada.
+    LEFT JOIN existencias_lote ex ON ex.lote_id = l.id
     ${mainWhere}
     GROUP BY p.id, p.numero_serie, p.descripcion, p.tipo_pieza_id, t.nombre
     -- Las piezas sin tipo al final: el CASE evita que los NULL se ordenen
@@ -83,10 +87,11 @@ export async function findLotesByPiezaId(piezaId: number): Promise<LoteConProvee
     .query(`
       SELECT
         l.id, l.pieza_id, l.proveedor_id, l.fecha_compra, l.costo_unitario,
-        l.cantidad_inicial, l.cantidad_disponible,
-        l.num_factura, pr.nombre AS proveedor
+        l.cantidad_inicial, ${disponibleDelLote('l')} AS cantidad_disponible,
+        l.num_factura, l.sucursal_id, pr.nombre AS proveedor, s.nombre AS sucursal
       FROM lotes_pieza l
       JOIN proveedores pr ON pr.id = l.proveedor_id
+      LEFT JOIN sucursales s ON s.id = l.sucursal_id
       WHERE l.pieza_id = @piezaId
       ORDER BY l.fecha_compra DESC
     `)

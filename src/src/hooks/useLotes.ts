@@ -14,6 +14,10 @@ export interface Lote {
   cantidad_disponible: number
   num_factura: string | null
   proveedor: string
+  // Sucursal de recepción. `cantidad_disponible` es la suma de lo que queda del
+  // lote en todas las sucursales, no solo en esta.
+  sucursal_id: number | null
+  sucursal: string | null
   // Quién hizo la compra y quién la autorizó. El segundo lo pone la API con la
   // cuenta que registró el lote: no se manda ni se edita.
   comprado_por: string
@@ -27,6 +31,9 @@ interface LotesResponse {
 
 export interface LotePayload {
   proveedor_id: number
+  // Solo al crear: la sucursal que recibe el lote. Al editar no se manda —
+  // mover piezas a otra sucursal es un traspaso, no un cambio del lote.
+  sucursal_id?: number
   fecha_compra: string
   costo_unitario: number
   cantidad_inicial: number

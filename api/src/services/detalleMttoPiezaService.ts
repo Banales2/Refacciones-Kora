@@ -15,10 +15,14 @@ export async function getLotesDisponibles() {
 }
 
 export async function create(mantenimientoId: number, data: DetalleMttoPiezaCreate) {
-  const lote = await repo.getLoteInfo(data.lote_id)
+  // El stock se valida contra la sucursal elegida, no contra el total del lote:
+  // que haya 10 piezas repartidas no significa que haya 10 en Vallarta.
+  const lote = await repo.getLoteInfo(data.lote_id, data.sucursal_id)
   if (!lote) throw new NotFoundError('Lote')
   if (lote.cantidad_disponible < data.cantidad) {
-    throw new ValidationError(`Stock insuficiente: disponible ${lote.cantidad_disponible}, solicitado ${data.cantidad}`)
+    throw new ValidationError(
+      `Stock insuficiente en esa sucursal: disponible ${lote.cantidad_disponible}, solicitado ${data.cantidad}`
+    )
   }
   const costoUnitario = data.costo_unitario ?? lote.costo_unitario
   return repo.create(mantenimientoId, data, costoUnitario)
@@ -31,9 +35,15 @@ export async function update(id: number, data: DetalleMttoPiezaUpdate) {
     if (!raw) throw new NotFoundError('Detalle')
     cantidadDelta = data.cantidad - raw.cantidad
     if (cantidadDelta > 0) {
-      const lote = await repo.getLoteInfo(raw.lote_id)
+      if (raw.sucursal_id == null) {
+        throw new ValidationError(
+          'Este consumo no tiene sucursal registrada y no se puede aumentar. ' +
+          'Bórralo y captúralo de nuevo indicando de qué sucursal sale.'
+        )
+      }
+      const lote = await repo.getLoteInfo(raw.lote_id, raw.sucursal_id)
       if (!lote || lote.cantidad_disponible < cantidadDelta) {
-        throw new ValidationError('Stock insuficiente para aumentar la cantidad')
+        throw new ValidationError('Stock insuficiente en esa sucursal para aumentar la cantidad')
       }
     }
   }

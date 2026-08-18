@@ -47,6 +47,7 @@ export default function NuevaRefaccionModal({
       {
         piezaId:          pieza.id,
         proveedor_id:     Number(v.proveedor_id),
+        sucursal_id:      Number(v.sucursal_id),
         fecha_compra:     v.fecha_compra,
         costo_unitario:   Number(v.costo_unitario),
         cantidad_inicial: Number(v.cantidad_inicial),
@@ -65,6 +66,10 @@ export default function NuevaRefaccionModal({
             costo_unitario:      lote.costo_unitario,
             cantidad_disponible: lote.cantidad_disponible,
             fecha_compra:        lote.fecha_compra,
+            // El lote acaba de entrar completo en la sucursal que se eligió, así
+            // que esa es la única existencia que tiene.
+            sucursal_id:         Number(v.sucursal_id),
+            sucursal:            lote.sucursal ?? '',
           })
           cerrar()
         },
