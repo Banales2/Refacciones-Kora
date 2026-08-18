@@ -4,6 +4,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import * as service from '../services/piezasVehiculoService'
+import { EtiquetaPiezaSchema } from '../schemas/tipoPiezaSchema'
 
 // Fecha calendario, sin hora: es el día en que se montó la pieza.
 const Fecha = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (AAAA-MM-DD)')
@@ -14,6 +15,8 @@ const Fecha = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválid
 // una anterior.
 const Schema = z.object({
   pieza_id:          z.coerce.number().int().positive(),
+  // Cuál de los renglones de ese tipo se está montando ('' = el único que hay).
+  etiqueta:          EtiquetaPiezaSchema,
   lote_id:           z.coerce.number().int().positive().nullish(),
   fecha_instalacion: Fecha.nullish(),
   km_instalacion:    z.coerce.number().int().nonnegative().nullish(),
@@ -33,12 +36,12 @@ export async function vehiculoPiezasSet(
     const tipoId = parseInt(request.params.tipoId, 10)
     if (isNaN(id) || isNaN(tipoId)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 
-    const { pieza_id, ...datos } = Schema.parse(await request.json())
-    await service.setPieza(id, tipoId, pieza_id, datos)
+    const { pieza_id, etiqueta, ...datos } = Schema.parse(await request.json())
+    await service.setPieza(id, tipoId, etiqueta, pieza_id, datos)
 
     await audit({
       user, accion: 'EDITAR', tabla: 'piezas_vehiculo',
-      registroId: id, detalles: { tipo_pieza_id: tipoId, pieza_id, ...datos },
+      registroId: id, detalles: { tipo_pieza_id: tipoId, etiqueta, pieza_id, ...datos },
       ipAddress: getClientIp(request),
     })
 

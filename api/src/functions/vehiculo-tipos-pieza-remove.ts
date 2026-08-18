@@ -3,6 +3,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import * as service from '../services/tiposPiezaVehiculoService'
+import { EtiquetaPiezaSchema } from '../schemas/tipoPiezaSchema'
 
 export async function vehiculoTiposPiezaRemove(
   request: HttpRequest,
@@ -14,11 +15,15 @@ export async function vehiculoTiposPiezaRemove(
     const tipoId = parseInt(request.params.tipoId, 10)
     if (isNaN(id) || isNaN(tipoId)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 
-    await service.removeTipo(id, tipoId)
+    // Qué renglón del tipo se quita. Va por query string y no en la ruta porque
+    // la etiqueta vacía —el caso normal— no tiene representación en un segmento
+    // de URL.
+    const etiqueta = EtiquetaPiezaSchema.parse(request.query.get('etiqueta') ?? '')
+    await service.removeTipo(id, tipoId, etiqueta)
 
     await audit({
       user, accion: 'EDITAR', tabla: 'tipos_pieza_vehiculo',
-      registroId: id, detalles: { quitar_tipo: tipoId },
+      registroId: id, detalles: { quitar_tipo: tipoId, etiqueta },
       ipAddress: getClientIp(request),
     })
 

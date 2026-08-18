@@ -499,20 +499,31 @@ const CREAR_TIPO = '__crear__'
 function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
   const [seleccion, setSeleccion] = useState<string[]>([])
   const [busqueda, setBusqueda]   = useState('')
+  const [etiqueta, setEtiqueta]   = useState('')
   const { data, isLoading }       = useTiposPiezaModelo(modeloId)
   const { data: tiposData }       = useTiposPieza()
   const addMut    = useAddTiposPiezaModelo()
   const removeMut = useRemoveTipoPiezaModelo()
   const crearMut  = useCreateTipoPieza()
 
-  const asignados = data?.data ?? []
+  // Memoizado porque el `?? []` daría un arreglo nuevo en cada render y con él
+  // se recalcularían los useMemo que dependen de la lista.
+  const asignados = useMemo(() => data?.data ?? [], [data])
 
+  // Ningún tipo se filtra: el modelo puede pedir el mismo varias veces mientras
+  // cada renglón lleve una etiqueta distinta. Lo que ya está se marca en la
+  // opción para que se vea con qué etiquetas se pidió y no se repita una.
   const opciones = useMemo(() => {
     const todos = tiposData?.data ?? []
-    const yaAsignados = new Set((data?.data ?? []).map((t) => t.id))
-    const opts = todos
-      .filter((t) => !yaAsignados.has(t.id))
-      .map((t) => ({ value: String(t.id), label: t.nombre }))
+    const opts = todos.map((t) => {
+      const puestos = asignados
+        .filter((a) => a.id === t.id)
+        .map((a) => a.etiqueta || 'sin etiqueta')
+      return {
+        value: String(t.id),
+        label: puestos.length ? `${t.nombre} — ya: ${puestos.join(', ')}` : t.nombre,
+      }
+    })
 
     const nuevo = busqueda.trim()
     const yaExiste = todos.some((t) => t.nombre.toLowerCase() === nuevo.toLowerCase())
@@ -520,7 +531,20 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
       opts.unshift({ value: CREAR_TIPO, label: `+ Crear tipo "${nuevo}"` })
     }
     return opts
-  }, [tiposData, data, busqueda])
+  }, [tiposData, asignados, busqueda])
+
+  // Repetir un tipo exige etiqueta nueva: sin ella el backend rechaza el alta.
+  // Se avisa antes de mandarla para que el error no llegue después del clic.
+  const choque = useMemo(() => {
+    const et = etiqueta.trim()
+    const ya = asignados.find(
+      (a) => seleccion.includes(String(a.id)) && a.etiqueta === et
+    )
+    if (!ya) return null
+    return et === ''
+      ? `Este modelo ya pide ${ya.nombre}. Ponle una etiqueta para pedirlo otra vez.`
+      : `Este modelo ya pide ${ya.nombre} con la etiqueta "${et}".`
+  }, [asignados, seleccion, etiqueta])
 
   // Crear se resuelve al instante: el centinela no puede quedarse en la
   // selección porque no es un id que el backend pueda recibir.
@@ -537,8 +561,11 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
   }
 
   function handleAgregar() {
-    if (seleccion.length === 0) return
-    addMut.mutate({ modeloId, tipoIds: seleccion.map(Number) }, { onSuccess: () => setSeleccion([]) })
+    if (seleccion.length === 0 || choque) return
+    addMut.mutate(
+      { modeloId, tipoIds: seleccion.map(Number), etiqueta: etiqueta.trim() },
+      { onSuccess: () => { setSeleccion([]); setEtiqueta('') } },
+    )
   }
 
   return (
@@ -550,6 +577,8 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
       <Text size="xs" c="dimmed">
         Qué necesita este modelo, sin decir cuál: un filtro de aire, una batería… La refacción concreta
         que usa cada unidad se captura en el vehículo. Es informativo: no afecta el inventario.
+        Si el modelo lleva dos piezas del mismo tipo, agrégalo dos veces con una etiqueta distinta
+        (delantero / trasero): cada renglón lleva su propia refacción e historial en cada unidad.
       </Text>
 
       <Group align="flex-end" gap="sm" wrap="nowrap">
@@ -565,15 +594,24 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
           onSearchChange={(v) => setBusqueda(limpiarTextoSimple(v, 40))}
           nothingFoundMessage="Escribe para crear un tipo nuevo"
         />
+        <TextInput
+          w={200}
+          label="Etiqueta"
+          description="Opcional"
+          placeholder="Delantero, trasero…"
+          value={etiqueta}
+          onChange={(e) => setEtiqueta(limpiarTextoSimple(e.currentTarget.value, 40))}
+        />
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={handleAgregar}
           loading={addMut.isPending || crearMut.isPending}
-          disabled={seleccion.length === 0}
+          disabled={seleccion.length === 0 || choque !== null}
         >
           Agregar
         </Button>
       </Group>
+      {choque && <Alert color="yellow" variant="light">{choque}</Alert>}
       {crearMut.error && <Alert color="red">{(crearMut.error as Error).message}</Alert>}
       {addMut.error   && <Alert color="red">{(addMut.error   as Error).message}</Alert>}
       {removeMut.error && <Alert color="red">{(removeMut.error as Error).message}</Alert>}
@@ -588,19 +626,31 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Tipo de pieza</Table.Th>
+                <Table.Th style={{ width: 180 }}>Etiqueta</Table.Th>
                 <Table.Th style={{ width: 48 }} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
+              {/* La clave es el renglón, no el tipo: el mismo tipo puede aparecer
+                  varias veces con etiquetas distintas. */}
               {asignados.map((t) => (
-                <Table.Tr key={t.id}>
+                <Table.Tr key={`${t.id}|${t.etiqueta}`}>
                   <Table.Td fw={500}>{t.nombre}</Table.Td>
                   <Table.Td>
-                    <Tooltip label="Quitar del modelo (borra la refacción que sus vehículos tenían elegida para este tipo)">
+                    {t.etiqueta
+                      ? <Badge size="sm" variant="light">{t.etiqueta}</Badge>
+                      : <Text size="xs" c="dimmed">—</Text>}
+                  </Table.Td>
+                  <Table.Td>
+                    <Tooltip label="Quitar del modelo (borra la refacción que sus vehículos tenían elegida para este renglón)">
                       <ActionIcon
                         variant="subtle" color="red" size="sm"
-                        loading={removeMut.isPending && removeMut.variables?.tipoId === t.id}
-                        onClick={() => removeMut.mutate({ modeloId, tipoId: t.id })}
+                        loading={
+                          removeMut.isPending &&
+                          removeMut.variables?.tipoId === t.id &&
+                          removeMut.variables?.etiqueta === t.etiqueta
+                        }
+                        onClick={() => removeMut.mutate({ modeloId, tipoId: t.id, etiqueta: t.etiqueta })}
                       >
                         <IconTrash size={14} />
                       </ActionIcon>

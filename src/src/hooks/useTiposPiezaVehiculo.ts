@@ -8,8 +8,12 @@ import { api } from '../lib/api'
 export function useAddTiposPiezaVehiculo() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ vehiculoId, tipoIds }: { vehiculoId: number; tipoIds: number[] }) =>
-      api.post<void>(`/vehiculos/${vehiculoId}/tipos-pieza`, { tipo_pieza_ids: tipoIds }),
+    mutationFn: ({ vehiculoId, tipoIds, etiqueta }: {
+      vehiculoId: number; tipoIds: number[]; etiqueta?: string
+    }) =>
+      api.post<void>(`/vehiculos/${vehiculoId}/tipos-pieza`, {
+        tipo_pieza_ids: tipoIds, etiqueta: etiqueta ?? '',
+      }),
     onSuccess: (_d, { vehiculoId }) =>
       qc.invalidateQueries({ queryKey: ['piezas-vehiculo', vehiculoId] }),
   })
@@ -18,8 +22,13 @@ export function useAddTiposPiezaVehiculo() {
 export function useRemoveTipoPiezaVehiculo() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ vehiculoId, tipoId }: { vehiculoId: number; tipoId: number }) =>
-      api.delete<void>(`/vehiculos/${vehiculoId}/tipos-pieza/${tipoId}`),
+    // La etiqueta identifica CUÁL renglón del tipo se quita.
+    mutationFn: ({ vehiculoId, tipoId, etiqueta }: {
+      vehiculoId: number; tipoId: number; etiqueta?: string
+    }) =>
+      api.delete<void>(
+        `/vehiculos/${vehiculoId}/tipos-pieza/${tipoId}?etiqueta=${encodeURIComponent(etiqueta ?? '')}`
+      ),
     onSuccess: (_d, { vehiculoId }) =>
       qc.invalidateQueries({ queryKey: ['piezas-vehiculo', vehiculoId] }),
   })

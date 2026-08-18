@@ -4,6 +4,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import * as service from '../services/piezasVehiculoService'
+import { EtiquetaPiezaSchema } from '../schemas/tipoPiezaSchema'
 
 // Con qué se cierra el renglón de la bitácora. Todo opcional: quitar una pieza
 // sin explicar por qué sigue siendo válido, solo pierde el motivo.
@@ -27,17 +28,19 @@ export async function vehiculoPiezasRemove(
     // Los datos del retiro van por query string y no en el cuerpo: un DELETE
     // con body no lo manejan igual todos los clientes ni todos los proxies.
     const q = request.query
+    // Cuál de los renglones de ese tipo se está quitando ('' = el único que hay).
+    const etiqueta = EtiquetaPiezaSchema.parse(q.get('etiqueta') ?? '')
     const datos = Retiro.parse({
       fecha_retiro:  q.get('fecha_retiro')  ?? undefined,
       km_retiro:     q.get('km_retiro')     ?? undefined,
       motivo_retiro: q.get('motivo_retiro') ?? undefined,
       destino:       q.get('destino')       ?? undefined,
     })
-    await service.removePieza(id, tipoId, datos)
+    await service.removePieza(id, tipoId, etiqueta, datos)
 
     await audit({
       user, accion: 'EDITAR', tabla: 'piezas_vehiculo',
-      registroId: id, detalles: { quitar_tipo: tipoId, ...datos },
+      registroId: id, detalles: { quitar_tipo: tipoId, etiqueta, ...datos },
       ipAddress: getClientIp(request),
     })
 

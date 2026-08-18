@@ -8,6 +8,11 @@ import { api } from '../lib/api'
 export interface PiezaDeVehiculo {
   tipo_pieza_id: number
   tipo_nombre:   string
+  // Posición de esta pieza en la unidad ("delantero", "trasero"). El renglón es
+  // el par (tipo, etiqueta): con dos etiquetas distintas la unidad lleva dos
+  // piezas del mismo tipo, cada una con su refacción y su historial. '' = el
+  // tipo va una sola vez.
+  etiqueta:      string
   pieza_id:      number | null
   numero_serie:  string | null
   descripcion:   string | null
@@ -59,10 +64,12 @@ function invalidar(qc: ReturnType<typeof useQueryClient>, vehiculoId: number) {
 export function useSetPiezaVehiculo() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ vehiculoId, tipoId, piezaId, datos }: {
-      vehiculoId: number; tipoId: number; piezaId: number; datos?: DatosMontaje
+    mutationFn: ({ vehiculoId, tipoId, etiqueta, piezaId, datos }: {
+      vehiculoId: number; tipoId: number; etiqueta?: string; piezaId: number; datos?: DatosMontaje
     }) =>
-      api.put<void>(`/vehiculos/${vehiculoId}/piezas/${tipoId}`, { pieza_id: piezaId, ...datos }),
+      api.put<void>(`/vehiculos/${vehiculoId}/piezas/${tipoId}`, {
+        pieza_id: piezaId, etiqueta: etiqueta ?? '', ...datos,
+      }),
     onSuccess: (_d, { vehiculoId }) => invalidar(qc, vehiculoId),
   })
 }
@@ -70,17 +77,20 @@ export function useSetPiezaVehiculo() {
 export function useRemovePiezaVehiculo() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ vehiculoId, tipoId, datos }: {
-      vehiculoId: number; tipoId: number; datos?: DatosRetiro
+    mutationFn: ({ vehiculoId, tipoId, etiqueta, datos }: {
+      vehiculoId: number; tipoId: number; etiqueta?: string; datos?: DatosRetiro
     }) => {
       // Los datos del retiro van por query string: la API los recibe así porque
-      // un DELETE con cuerpo no lo manejan igual todos los proxies.
-      const qs = new URLSearchParams(
-        Object.entries(datos ?? {})
+      // un DELETE con cuerpo no lo manejan igual todos los proxies. La etiqueta
+      // viaja igual, y siempre: es la que dice cuál de los renglones del tipo se
+      // está quitando.
+      const qs = new URLSearchParams([
+        ['etiqueta', etiqueta ?? ''],
+        ...Object.entries(datos ?? {})
           .filter(([, v]) => v !== undefined && v !== '')
-          .map(([k, v]) => [k, String(v)])
-      ).toString()
-      return api.delete<void>(`/vehiculos/${vehiculoId}/piezas/${tipoId}${qs ? `?${qs}` : ''}`)
+          .map(([k, v]) => [k, String(v)] as [string, string]),
+      ]).toString()
+      return api.delete<void>(`/vehiculos/${vehiculoId}/piezas/${tipoId}?${qs}`)
     },
     onSuccess: (_d, { vehiculoId }) => invalidar(qc, vehiculoId),
   })
@@ -92,6 +102,7 @@ export interface InstalacionHistorial {
   id:                number
   tipo_pieza_id:     number
   tipo_nombre:       string
+  etiqueta:          string
   pieza_id:          number
   numero_serie:      string
   descripcion:       string

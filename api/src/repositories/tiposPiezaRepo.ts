@@ -59,7 +59,10 @@ export async function countReferencias(id: number): Promise<{ modelos: number; v
     .input('id', sql.Int, id)
     .query(`
       SELECT
-        (SELECT COUNT(*) FROM tipos_pieza_modelo WHERE tipo_pieza_id = @id) AS modelos,
+        -- DISTINCT porque un modelo puede pedir el mismo tipo varias veces (dos
+        -- filtros de aire con etiquetas distintas) y aquí se cuentan modelos, no
+        -- renglones: "lo usan 3 modelos" tiene que decir 3 y no 5.
+        (SELECT COUNT(DISTINCT modelo_id) FROM tipos_pieza_modelo WHERE tipo_pieza_id = @id) AS modelos,
         -- Un vehículo puede requerir el tipo sin haber elegido pieza todavía, y
         -- ambas tablas lo referencian: el UNION lo cuenta una sola vez.
         (SELECT COUNT(*) FROM (

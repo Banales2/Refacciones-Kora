@@ -2,12 +2,18 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { fechaMexico } from '../shared/fechaMexico'
 
-// Un tipo que necesita el vehículo, junto con la pieza que usa para cubrirlo.
-// pieza_id es null mientras nadie la haya elegido: el tipo se sigue listando
-// para que se vea que falta capturarla.
+// Un renglón que necesita el vehículo, junto con la pieza que usa para
+// cubrirlo. pieza_id es null mientras nadie la haya elegido: el renglón se sigue
+// listando para que se vea que falta capturarla.
+//
+// El renglón NO es el tipo: es el par (tipo, etiqueta). Una unidad que lleva dos
+// filtros de aire trae dos renglones del mismo tipo con etiquetas distintas
+// ("delantero", "trasero"), cada uno con su refacción, su lote y su historial.
+// La etiqueta vacía es el caso normal de un tipo que va una sola vez.
 export interface PiezaDeVehiculo {
   tipo_pieza_id: number
   tipo_nombre:   string
+  etiqueta:      string
   pieza_id:      number | null
   numero_serie:  string | null
   descripcion:   string | null
@@ -28,49 +34,60 @@ export async function findByVehiculo(vehiculoId: number): Promise<PiezaDeVehicul
     .input('vehiculoId', sql.Int, vehiculoId)
     .query(`
       WITH requeridos AS (
-        SELECT tpm.tipo_pieza_id, 1 AS del_modelo
+        SELECT tpm.tipo_pieza_id, tpm.etiqueta, 1 AS del_modelo
         FROM vehiculos v
         JOIN tipos_pieza_modelo tpm ON tpm.modelo_id = v.modelo_id
         WHERE v.id = @vehiculoId
         UNION ALL
-        SELECT tpv.tipo_pieza_id, 0
+        SELECT tpv.tipo_pieza_id, tpv.etiqueta, 0
         FROM tipos_pieza_vehiculo tpv
         WHERE tpv.vehiculo_id = @vehiculoId
       )
       SELECT
-        t.id     AS tipo_pieza_id,
-        t.nombre AS tipo_nombre,
-        p.id     AS pieza_id,
+        t.id       AS tipo_pieza_id,
+        t.nombre   AS tipo_nombre,
+        r.etiqueta,
+        p.id       AS pieza_id,
         p.numero_serie,
         p.descripcion,
-        -- Un tipo puede estar en las dos listas; ahí gana 'modelo', porque es
+        -- Un renglón puede estar en las dos listas; ahí gana 'modelo', porque es
         -- el modelo el que manda y quitarlo del vehículo no lo sacaría.
         CASE WHEN MAX(r.del_modelo) = 1 THEN 'modelo' ELSE 'vehiculo' END AS origen,
         i.fecha_instalacion,
         i.km_instalacion
       FROM requeridos r
       JOIN tipos_pieza t ON t.id = r.tipo_pieza_id
-      LEFT JOIN piezas_vehiculo pv ON pv.vehiculo_id = @vehiculoId AND pv.tipo_pieza_id = t.id
+      -- Todo se empata por (tipo, etiqueta): dos filtros de aire con etiquetas
+      -- distintas son dos renglones independientes y cada uno trae lo suyo.
+      LEFT JOIN piezas_vehiculo pv ON pv.vehiculo_id = @vehiculoId
+                                  AND pv.tipo_pieza_id = t.id
+                                  AND pv.etiqueta      = r.etiqueta
       LEFT JOIN piezas p           ON p.id = pv.pieza_id
       -- El renglón vigente de la bitácora, para saber desde cuándo trae puesta
       -- esa pieza. El índice único filtrado garantiza que hay a lo sumo uno,
       -- así que agruparlo por sus columnas no puede multiplicar filas.
       LEFT JOIN instalaciones_pieza i
              ON i.vehiculo_id = @vehiculoId AND i.tipo_pieza_id = t.id
+            AND i.etiqueta = r.etiqueta
             AND i.fecha_retiro IS NULL
-      GROUP BY t.id, t.nombre, p.id, p.numero_serie, p.descripcion,
+      GROUP BY t.id, t.nombre, r.etiqueta, p.id, p.numero_serie, p.descripcion,
                i.fecha_instalacion, i.km_instalacion
-      ORDER BY t.nombre`)
+      ORDER BY t.nombre, r.etiqueta`)
   return r.recordset
 }
 
-// ¿El vehículo necesita este tipo, ya sea por su modelo o por sí mismo? Solo a
-// esos tipos se les puede asignar una pieza.
-export async function vehiculoRequiereTipo(vehiculoId: number, tipoId: number): Promise<boolean> {
+// ¿El vehículo necesita este renglón (tipo + etiqueta), ya sea por su modelo o
+// por sí mismo? Solo a esos renglones se les puede asignar una pieza. La
+// etiqueta entra en la pregunta: pedir "filtro de aire delantero" no autoriza a
+// montar un "filtro de aire trasero" que nadie pidió.
+export async function vehiculoRequiereTipo(
+  vehiculoId: number, tipoId: number, etiqueta: string,
+): Promise<boolean> {
   const pool = await getPool()
   const r = await pool.request()
     .input('vehiculoId', sql.Int, vehiculoId)
     .input('tipoId',     sql.Int, tipoId)
+    .input('etiqueta',   sql.NVarChar(40), etiqueta)
     .query(`
       SELECT TOP 1 v.id
       FROM vehiculos v
@@ -78,11 +95,15 @@ export async function vehiculoRequiereTipo(vehiculoId: number, tipoId: number): 
         AND (
           EXISTS (
             SELECT 1 FROM tipos_pieza_modelo tpm
-            WHERE tpm.modelo_id = v.modelo_id AND tpm.tipo_pieza_id = @tipoId
+            WHERE tpm.modelo_id = v.modelo_id
+              AND tpm.tipo_pieza_id = @tipoId
+              AND tpm.etiqueta      = @etiqueta
           )
           OR EXISTS (
             SELECT 1 FROM tipos_pieza_vehiculo tpv
-            WHERE tpv.vehiculo_id = v.id AND tpv.tipo_pieza_id = @tipoId
+            WHERE tpv.vehiculo_id = v.id
+              AND tpv.tipo_pieza_id = @tipoId
+              AND tpv.etiqueta      = @etiqueta
           )
         )`)
   return r.recordset.length > 0
@@ -113,7 +134,9 @@ const SUCURSAL_DEL_VEHICULO = `
    LEFT JOIN montacargas mc ON mc.vehiculo_id = v.id
    WHERE v.id = @vehiculoId)`
 
-// Una pieza por (vehículo, tipo): volver a asignar reemplaza la anterior.
+// Una pieza por (vehículo, tipo, etiqueta): volver a asignar reemplaza la
+// anterior. Los otros renglones del mismo tipo no se enteran: cambiar el filtro
+// delantero no toca al trasero.
 //
 // Además del estado actual en `piezas_vehiculo`, escribe la bitácora: cierra el
 // renglón de la pieza que sale y abre uno para la que entra. Va en transacción
@@ -124,7 +147,8 @@ const SUCURSAL_DEL_VEHICULO = `
 // nuevo, solo corrige los datos del que ya está abierto. Tratarlo como cambio
 // fabricaría una sustitución que nunca ocurrió y ensuciaría la vida útil.
 export async function setPieza(
-  vehiculoId: number, tipoId: number, piezaId: number, datos: DatosMontaje = {},
+  vehiculoId: number, tipoId: number, etiqueta: string, piezaId: number,
+  datos: DatosMontaje = {},
 ): Promise<void> {
   const pool = await getPool()
   const tx = pool.transaction()
@@ -133,31 +157,35 @@ export async function setPieza(
     const actual = await tx.request()
       .input('vehiculoId', sql.Int, vehiculoId)
       .input('tipoId',     sql.Int, tipoId)
+      .input('etiqueta',   sql.NVarChar(40), etiqueta)
       .query(`
         SELECT pieza_id FROM piezas_vehiculo
-        WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId`)
+        WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+          AND etiqueta = @etiqueta`)
     const anterior: number | null = actual.recordset[0]?.pieza_id ?? null
     const esCambioDePieza = anterior !== piezaId
 
     await tx.request()
       .input('vehiculoId', sql.Int, vehiculoId)
       .input('tipoId',     sql.Int, tipoId)
+      .input('etiqueta',   sql.NVarChar(40), etiqueta)
       .input('piezaId',    sql.Int, piezaId)
       .input('loteId',     sql.Int, datos.lote_id ?? null)
       .query(`
         UPDATE piezas_vehiculo SET pieza_id = @piezaId, lote_id = @loteId
-        WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId;
+        WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+          AND etiqueta = @etiqueta;
 
         IF @@ROWCOUNT = 0
-          INSERT INTO piezas_vehiculo (vehiculo_id, tipo_pieza_id, pieza_id, lote_id)
-          VALUES (@vehiculoId, @tipoId, @piezaId, @loteId);`)
+          INSERT INTO piezas_vehiculo (vehiculo_id, tipo_pieza_id, etiqueta, pieza_id, lote_id)
+          VALUES (@vehiculoId, @tipoId, @etiqueta, @piezaId, @loteId);`)
 
     if (esCambioDePieza) {
       // Se llama aunque no hubiera pieza anterior: si por lo que sea quedó un
       // renglón abierto sin su fila en `piezas_vehiculo`, cerrarlo aquí evita
       // que el INSERT de abajo choque contra el índice único. Sin renglón
       // abierto no hace nada.
-      await cerrarRenglon(tx, vehiculoId, tipoId, {
+      await cerrarRenglon(tx, vehiculoId, tipoId, etiqueta, {
         fecha_retiro:  datos.fecha_instalacion ?? null,
         km_retiro:     datos.km_retiro ?? datos.km_instalacion ?? null,
         motivo_retiro: datos.motivo_retiro ?? null,
@@ -166,6 +194,7 @@ export async function setPieza(
       await tx.request()
         .input('vehiculoId', sql.Int,          vehiculoId)
         .input('tipoId',     sql.Int,          tipoId)
+        .input('etiqueta',   sql.NVarChar(40), etiqueta)
         .input('piezaId',    sql.Int,          piezaId)
         .input('loteId',     sql.Int,          datos.lote_id ?? null)
         .input('mttoId',     sql.Int,          datos.mantenimiento_id ?? null)
@@ -173,10 +202,10 @@ export async function setPieza(
         .input('km',         sql.Int,          datos.km_instalacion ?? null)
         .query(`
           INSERT INTO instalaciones_pieza
-            (vehiculo_id, tipo_pieza_id, pieza_id, lote_id, sucursal_id,
+            (vehiculo_id, tipo_pieza_id, etiqueta, pieza_id, lote_id, sucursal_id,
              mantenimiento_id, fecha_instalacion, km_instalacion)
           VALUES
-            (@vehiculoId, @tipoId, @piezaId, @loteId, ${SUCURSAL_DEL_VEHICULO},
+            (@vehiculoId, @tipoId, @etiqueta, @piezaId, @loteId, ${SUCURSAL_DEL_VEHICULO},
              @mttoId, @fecha, @km)`)
     } else {
       // Misma pieza: es una corrección de datos, no un cambio. Solo se pisan
@@ -184,6 +213,7 @@ export async function setPieza(
       await tx.request()
         .input('vehiculoId', sql.Int,  vehiculoId)
         .input('tipoId',     sql.Int,  tipoId)
+        .input('etiqueta',   sql.NVarChar(40), etiqueta)
         .input('loteId',     sql.Int,  datos.lote_id ?? null)
         .input('mttoId',     sql.Int,  datos.mantenimiento_id ?? null)
         .input('fecha',      sql.Date, datos.fecha_instalacion ?? null)
@@ -195,6 +225,7 @@ export async function setPieza(
             fecha_instalacion = COALESCE(@fecha,  fecha_instalacion),
             km_instalacion    = COALESCE(@km,     km_instalacion)
           WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+            AND etiqueta = @etiqueta
             AND fecha_retiro IS NULL`)
     }
 
@@ -212,15 +243,17 @@ interface DatosRetiro {
   destino?:       string | null
 }
 
-// Cierra el renglón vigente de (vehículo, tipo). El índice único filtrado
-// garantiza que hay a lo sumo uno. Sin fecha explícita se usa la de hoy en
-// México, no la del server: en UTC ya es mañana desde las 18:00.
+// Cierra el renglón vigente de (vehículo, tipo, etiqueta). El índice único
+// filtrado garantiza que hay a lo sumo uno. Sin fecha explícita se usa la de hoy
+// en México, no la del server: en UTC ya es mañana desde las 18:00.
 async function cerrarRenglon(
-  tx: sql.Transaction, vehiculoId: number, tipoId: number, datos: DatosRetiro,
+  tx: sql.Transaction, vehiculoId: number, tipoId: number, etiqueta: string,
+  datos: DatosRetiro,
 ): Promise<void> {
   await tx.request()
     .input('vehiculoId', sql.Int,          vehiculoId)
     .input('tipoId',     sql.Int,          tipoId)
+    .input('etiqueta',   sql.NVarChar(40), etiqueta)
     .input('fecha',      sql.Date,         datos.fecha_retiro ?? null)
     .input('km',         sql.Int,          datos.km_retiro ?? null)
     .input('motivo',     sql.NVarChar(30), datos.motivo_retiro ?? null)
@@ -233,6 +266,7 @@ async function cerrarRenglon(
         motivo_retiro = @motivo,
         destino       = @destino
       WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+        AND etiqueta = @etiqueta
         AND fecha_retiro IS NULL`)
 }
 
@@ -240,6 +274,7 @@ export interface InstalacionHistorial {
   id:                number
   tipo_pieza_id:     number
   tipo_nombre:       string
+  etiqueta:          string
   pieza_id:          number
   numero_serie:      string
   descripcion:       string
@@ -270,7 +305,7 @@ export async function findHistorial(vehiculoId: number): Promise<InstalacionHist
     .input('vehiculoId', sql.Int, vehiculoId)
     .query(`
       SELECT
-        i.id, i.tipo_pieza_id, t.nombre AS tipo_nombre,
+        i.id, i.tipo_pieza_id, t.nombre AS tipo_nombre, i.etiqueta,
         i.pieza_id, p.numero_serie, p.descripcion,
         i.lote_id, l.num_factura, pr.nombre AS proveedor,
         l.costo_unitario, l.fecha_compra,
@@ -328,7 +363,7 @@ export async function removeAsignacionesFueraDeTipo(piezaId: number): Promise<vo
 // Quitar la pieza sin poner otra. Borra el estado actual y cierra el renglón:
 // el vehículo deja de traerla, pero que la trajo no se borra.
 export async function removePieza(
-  vehiculoId: number, tipoId: number, datos: DatosRetiro = {},
+  vehiculoId: number, tipoId: number, etiqueta: string, datos: DatosRetiro = {},
 ): Promise<boolean> {
   const pool = await getPool()
   const tx = pool.transaction()
@@ -337,12 +372,14 @@ export async function removePieza(
     const r = await tx.request()
       .input('vehiculoId', sql.Int, vehiculoId)
       .input('tipoId',     sql.Int, tipoId)
+      .input('etiqueta',   sql.NVarChar(40), etiqueta)
       .query(`
         DELETE FROM piezas_vehiculo
         OUTPUT DELETED.id
-        WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId`)
+        WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+          AND etiqueta = @etiqueta`)
     const habia = r.recordset.length > 0
-    if (habia) await cerrarRenglon(tx, vehiculoId, tipoId, datos)
+    if (habia) await cerrarRenglon(tx, vehiculoId, tipoId, etiqueta, datos)
     await tx.commit()
     return habia
   } catch (err) {

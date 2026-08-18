@@ -20,7 +20,8 @@ export async function getHistorial(vehiculoId: number): Promise<InstalacionHisto
 }
 
 export async function setPieza(
-  vehiculoId: number, tipoId: number, piezaId: number, datos: DatosMontaje = {},
+  vehiculoId: number, tipoId: number, etiqueta: string, piezaId: number,
+  datos: DatosMontaje = {},
 ): Promise<void> {
   const vehiculo = await vehiculosRepo.findById(vehiculoId)
   if (!vehiculo) throw new NotFoundError('Vehículo')
@@ -28,8 +29,12 @@ export async function setPieza(
   const tipo = await tiposRepo.findById(tipoId)
   if (!tipo) throw new NotFoundError('Tipo de pieza')
 
-  if (!(await repo.vehiculoRequiereTipo(vehiculoId, tipoId))) {
-    throw new ValidationError(`Este vehículo no requiere ${tipo.nombre}`)
+  // Se pregunta por el renglón completo (tipo + etiqueta): montar en una
+  // posición que nadie pidió dejaría una pieza fuera de la lista del vehículo.
+  if (!(await repo.vehiculoRequiereTipo(vehiculoId, tipoId, etiqueta))) {
+    throw new ValidationError(
+      `Este vehículo no requiere ${tipo.nombre}${etiqueta ? ` (${etiqueta})` : ''}`
+    )
   }
 
   const pieza = await refaccionesRepo.findById(piezaId)
@@ -59,16 +64,16 @@ export async function setPieza(
 
   // Sin fecha explícita, hoy en México. Se resuelve aquí y no en SQL porque el
   // server corre en UTC y por la tarde ya está en el día siguiente.
-  await repo.setPieza(vehiculoId, tipoId, piezaId, {
+  await repo.setPieza(vehiculoId, tipoId, etiqueta, piezaId, {
     ...datos,
     fecha_instalacion: datos.fecha_instalacion ?? fechaMexico(),
   })
 }
 
 export async function removePieza(
-  vehiculoId: number, tipoId: number,
+  vehiculoId: number, tipoId: number, etiqueta: string,
   datos: { fecha_retiro?: string; km_retiro?: number; motivo_retiro?: string; destino?: string } = {},
 ): Promise<void> {
-  const ok = await repo.removePieza(vehiculoId, tipoId, datos)
+  const ok = await repo.removePieza(vehiculoId, tipoId, etiqueta, datos)
   if (!ok) throw new NotFoundError('Pieza asignada a este vehículo')
 }

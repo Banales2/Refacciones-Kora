@@ -1928,9 +1928,19 @@ function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
 type CambioPendiente = {
   modo:            ModoMontaje
   tipoId:          number
+  // Qué renglón de ese tipo se está tocando: una unidad puede llevar dos filtros
+  // de aire y el cambio es de uno solo.
+  etiqueta:        string
   tipoNombre:      string
   piezaEntranteId: number | null
   salienteNombre:  string | null
+}
+
+// Cómo se nombra un renglón cuando hay que decirlo en una frase (el modal de
+// montaje, un aria-label): "Filtro de aire (delantero)". Sin etiqueta —el caso
+// de siempre— queda solo el tipo.
+function nombreDeFila(f: { tipo_nombre: string; etiqueta: string }): string {
+  return f.etiqueta ? `${f.tipo_nombre} (${f.etiqueta})` : f.tipo_nombre
 }
 
 function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number; kmVehiculo?: number | null }) {
@@ -1943,9 +1953,12 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
   const quitaTipoMut = useRemoveTipoPiezaVehiculo()
 
   const [nuevoTipo, setNuevoTipo] = useState<string | null>(null)
+  const [nuevaEtiqueta, setNuevaEtiqueta] = useState('')
   const [cambio, setCambio] = useState<CambioPendiente | null>(null)
 
-  const filas  = data?.data ?? []
+  // Memoizado porque el `?? []` daría un arreglo nuevo en cada render y con él
+  // se recalcularían los useMemo que dependen de la lista.
+  const filas  = useMemo(() => data?.data ?? [], [data])
   const piezas = piezasData?.data ?? []
 
   // Solo se ofrecen refacciones marcadas con ese tipo en el catálogo: el backend
@@ -1956,14 +1969,31 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
       .map((p) => ({ value: String(p.id), label: `${p.numero_serie} · ${p.descripcion}` }))
   }
 
-  // Los tipos que el vehículo ya necesita no se vuelven a ofrecer, vengan del
-  // modelo o de la propia unidad.
+  // Ningún tipo se filtra: la unidad puede necesitar dos piezas del mismo tipo
+  // mientras cada renglón lleve etiqueta distinta, incluso si su modelo ya lo
+  // pide. Lo que ya está se marca en la opción para no repetir una etiqueta.
   const tipoOptions = useMemo(() => {
-    const yaEstan = new Set(filas.map((f) => f.tipo_pieza_id))
-    return (tiposData?.data ?? [])
-      .filter((t) => !yaEstan.has(t.id))
-      .map((t) => ({ value: String(t.id), label: t.nombre }))
+    return (tiposData?.data ?? []).map((t) => {
+      const puestos = filas
+        .filter((f) => f.tipo_pieza_id === t.id)
+        .map((f) => f.etiqueta || 'sin etiqueta')
+      return {
+        value: String(t.id),
+        label: puestos.length ? `${t.nombre} — ya: ${puestos.join(', ')}` : t.nombre,
+      }
+    })
   }, [tiposData, filas])
+
+  // Repetir un tipo exige etiqueta nueva: sin ella el backend rechaza el alta.
+  const choque = useMemo(() => {
+    if (!nuevoTipo) return null
+    const et = nuevaEtiqueta.trim()
+    const ya = filas.find((f) => String(f.tipo_pieza_id) === nuevoTipo && f.etiqueta === et)
+    if (!ya) return null
+    return et === ''
+      ? `Este vehículo ya necesita ${ya.tipo_nombre}. Ponle una etiqueta para agregarlo otra vez.`
+      : `Este vehículo ya necesita ${ya.tipo_nombre} con la etiqueta "${et}".`
+  }, [filas, nuevoTipo, nuevaEtiqueta])
 
   // No guarda todavía: abre el modal para capturar el lote y, si había pieza,
   // el motivo con que sale la anterior.
@@ -1974,7 +2004,8 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
     setCambio({
       modo: value == null ? 'retiro' : saliente ? 'reemplazo' : 'montaje',
       tipoId:          fila.tipo_pieza_id,
-      tipoNombre:      fila.tipo_nombre,
+      etiqueta:        fila.etiqueta,
+      tipoNombre:      nombreDeFila(fila),
       piezaEntranteId: value != null ? Number(value) : null,
       salienteNombre:  saliente,
     })
@@ -1983,13 +2014,11 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
   function confirmarCambio(datos: DatosMontaje & DatosRetiro) {
     if (!cambio) return
     const listo = { onSuccess: () => setCambio(null) }
+    const renglon = { vehiculoId, tipoId: cambio.tipoId, etiqueta: cambio.etiqueta }
     if (cambio.piezaEntranteId != null) {
-      setMut.mutate(
-        { vehiculoId, tipoId: cambio.tipoId, piezaId: cambio.piezaEntranteId, datos },
-        listo,
-      )
+      setMut.mutate({ ...renglon, piezaId: cambio.piezaEntranteId, datos }, listo)
     } else {
-      removeMut.mutate({ vehiculoId, tipoId: cambio.tipoId, datos }, listo)
+      removeMut.mutate({ ...renglon, datos }, listo)
     }
   }
 
@@ -2000,10 +2029,10 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
   }
 
   function handleAgregarTipo() {
-    if (!nuevoTipo) return
+    if (!nuevoTipo || choque) return
     addTipoMut.mutate(
-      { vehiculoId, tipoIds: [Number(nuevoTipo)] },
-      { onSuccess: () => setNuevoTipo(null) }
+      { vehiculoId, tipoIds: [Number(nuevoTipo)], etiqueta: nuevaEtiqueta.trim() },
+      { onSuccess: () => { setNuevoTipo(null); setNuevaEtiqueta('') } }
     )
   }
 
@@ -2016,8 +2045,10 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
         labelPosition="left"
       />
       <Text size="xs" c="dimmed">
-        Qué refacción usa esta unidad para cada tipo que necesita. Los tipos del modelo se gestionan
-        desde el modelo; aquí puedes agregar los que solo requiera esta unidad. Al cambiar una pieza
+        Qué refacción usa esta unidad para cada pieza que necesita. Los renglones del modelo se
+        gestionan desde el modelo; aquí puedes agregar los que solo requiera esta unidad, incluso
+        otro del mismo tipo: dale una etiqueta distinta (delantero / trasero) y cada uno lleva su
+        refacción, su lote y su historial por separado. Al cambiar una pieza
         se registra en el historial de qué lote salió y por qué se retiró la anterior. Elegir el lote
         no descuenta existencias: eso sigue haciéndose al capturar el mantenimiento.
       </Text>
@@ -2031,24 +2062,33 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
           size="xs"
           style={{ flex: 1 }}
           searchable
-          placeholder="Agrega un tipo que solo necesita este vehículo"
+          placeholder="Agrega una pieza que solo necesita este vehículo"
           data={tipoOptions}
           value={nuevoTipo}
           onChange={setNuevoTipo}
           disabled={addTipoMut.isPending}
           nothingFoundMessage="No hay más tipos en el catálogo"
         />
+        <TextInput
+          size="xs"
+          w={180}
+          placeholder="Etiqueta (opcional)"
+          value={nuevaEtiqueta}
+          onChange={(e) => setNuevaEtiqueta(limpiarTextoSimple(e.currentTarget.value, 40))}
+          disabled={addTipoMut.isPending}
+        />
         <Button
           size="xs"
           variant="light"
           leftSection={<IconPlus size={14} />}
-          disabled={!nuevoTipo}
+          disabled={!nuevoTipo || choque !== null}
           loading={addTipoMut.isPending}
           onClick={handleAgregarTipo}
         >
           Agregar
         </Button>
       </Group>
+      {choque && <Alert color="yellow" variant="light">{choque}</Alert>}
 
       {isLoading ? (
         <Center py="md"><Loader size="sm" /></Center>
@@ -2061,31 +2101,38 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
         <>
           {sinCapturar > 0 && (
             <Text size="xs" c="dimmed">
-              {sinCapturar} tipo(s) sin refacción asignada.
+              {sinCapturar} pieza(s) sin refacción asignada.
             </Text>
           )}
           <Table.ScrollContainer minWidth={640}>
             <Table striped withTableBorder>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th style={{ width: '28%' }}>Tipo de pieza</Table.Th>
+                  <Table.Th style={{ width: '28%' }}>Pieza que necesita</Table.Th>
                   <Table.Th>Refacción que usa</Table.Th>
                   <Table.Th style={{ width: 130 }}>Montada desde</Table.Th>
                   <Table.Th style={{ width: 40 }} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
+                {/* La clave es el renglón (tipo + etiqueta), no el tipo: la unidad
+                    puede llevar dos piezas del mismo tipo en renglones distintos. */}
                 {filas.map((f) => {
                   const opciones = opcionesDeTipo(f.tipo_pieza_id)
                   const propio   = f.origen === 'vehiculo'
+                  const esteRenglon = (v?: { tipoId: number; etiqueta?: string }) =>
+                    v?.tipoId === f.tipo_pieza_id && (v?.etiqueta ?? '') === f.etiqueta
                   const pendiente =
-                    (setMut.isPending    && setMut.variables?.tipoId    === f.tipo_pieza_id) ||
-                    (removeMut.isPending && removeMut.variables?.tipoId === f.tipo_pieza_id)
+                    (setMut.isPending    && esteRenglon(setMut.variables)) ||
+                    (removeMut.isPending && esteRenglon(removeMut.variables))
                   return (
-                    <Table.Tr key={f.tipo_pieza_id}>
+                    <Table.Tr key={`${f.tipo_pieza_id}|${f.etiqueta}`}>
                       <Table.Td>
                         <Group gap={6} wrap="nowrap">
                           <Text size="sm" fw={500}>{f.tipo_nombre}</Text>
+                          {f.etiqueta && (
+                            <Badge size="xs" variant="light" color="gray">{f.etiqueta}</Badge>
+                          )}
                           {propio && (
                             <Badge size="xs" variant="light" color="teal">Solo este vehículo</Badge>
                           )}
@@ -2131,12 +2178,14 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
                           <ActionIcon
                             variant="subtle"
                             color="red"
-                            aria-label={`Quitar ${f.tipo_nombre} de este vehículo`}
+                            aria-label={`Quitar ${nombreDeFila(f)} de este vehículo`}
                             loading={
                               quitaTipoMut.isPending &&
-                              quitaTipoMut.variables?.tipoId === f.tipo_pieza_id
+                              esteRenglon(quitaTipoMut.variables)
                             }
-                            onClick={() => quitaTipoMut.mutate({ vehiculoId, tipoId: f.tipo_pieza_id })}
+                            onClick={() => quitaTipoMut.mutate({
+                              vehiculoId, tipoId: f.tipo_pieza_id, etiqueta: f.etiqueta,
+                            })}
                           >
                             <IconTrash size={14} />
                           </ActionIcon>
@@ -2157,7 +2206,7 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
           limpios sin necesitar un efecto que los resetee. */}
       {cambio && (
       <MontajePiezaModal
-        key={`${cambio.tipoId}-${cambio.piezaEntranteId ?? 'quitar'}`}
+        key={`${cambio.tipoId}|${cambio.etiqueta}-${cambio.piezaEntranteId ?? 'quitar'}`}
         opened
         modo={cambio.modo}
         tipoNombre={cambio.tipoNombre}
@@ -2237,7 +2286,12 @@ function HistorialPiezasSection({ vehiculoId }: { vehiculoId: number }) {
                       : '—'
                   return (
                     <Table.Tr key={h.id}>
-                      <Table.Td><Text size="sm">{h.tipo_nombre}</Text></Table.Td>
+                      <Table.Td>
+                        <Text size="sm">{h.tipo_nombre}</Text>
+                        {/* Sin la etiqueta, dos filtros de aire dan renglones
+                            idénticos y no se sabe cuál se cambió. */}
+                        {h.etiqueta && <Text size="xs" c="dimmed">{h.etiqueta}</Text>}
+                      </Table.Td>
                       <Table.Td>
                         <Text size="sm">{h.numero_serie}</Text>
                         <Text size="xs" c="dimmed">{h.descripcion}</Text>
