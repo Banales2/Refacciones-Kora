@@ -14,6 +14,11 @@ export interface PiezaDeVehiculo {
   // 'modelo': lo pide el modelo y se gestiona allá. 'vehiculo': es propio de
   // esta unidad y solo desde aquí se quita.
   origen:        'modelo' | 'vehiculo'
+  // Del renglón abierto de la bitácora. Vienen null cuando la pieza se asignó
+  // antes de que existiera el historial (renglones sembrados en la migración)
+  // o cuando no se capturaron.
+  fecha_instalacion: string | null
+  km_instalacion:    number | null
 }
 
 // Los tipos del modelo más los propios del vehículo.
@@ -40,12 +45,21 @@ export async function findByVehiculo(vehiculoId: number): Promise<PiezaDeVehicul
         p.descripcion,
         -- Un tipo puede estar en las dos listas; ahí gana 'modelo', porque es
         -- el modelo el que manda y quitarlo del vehículo no lo sacaría.
-        CASE WHEN MAX(r.del_modelo) = 1 THEN 'modelo' ELSE 'vehiculo' END AS origen
+        CASE WHEN MAX(r.del_modelo) = 1 THEN 'modelo' ELSE 'vehiculo' END AS origen,
+        i.fecha_instalacion,
+        i.km_instalacion
       FROM requeridos r
       JOIN tipos_pieza t ON t.id = r.tipo_pieza_id
       LEFT JOIN piezas_vehiculo pv ON pv.vehiculo_id = @vehiculoId AND pv.tipo_pieza_id = t.id
       LEFT JOIN piezas p           ON p.id = pv.pieza_id
-      GROUP BY t.id, t.nombre, p.id, p.numero_serie, p.descripcion
+      -- El renglón vigente de la bitácora, para saber desde cuándo trae puesta
+      -- esa pieza. El índice único filtrado garantiza que hay a lo sumo uno,
+      -- así que agruparlo por sus columnas no puede multiplicar filas.
+      LEFT JOIN instalaciones_pieza i
+             ON i.vehiculo_id = @vehiculoId AND i.tipo_pieza_id = t.id
+            AND i.fecha_retiro IS NULL
+      GROUP BY t.id, t.nombre, p.id, p.numero_serie, p.descripcion,
+               i.fecha_instalacion, i.km_instalacion
       ORDER BY t.nombre`)
   return r.recordset
 }

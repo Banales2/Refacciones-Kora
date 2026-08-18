@@ -14,6 +14,10 @@ export interface PiezaDeVehiculo {
   // 'modelo': lo pide el modelo y se quita desde allá. 'vehiculo': es propio de
   // esta unidad y se quita aquí.
   origen:        'modelo' | 'vehiculo'
+  // Desde cuándo trae puesta esta pieza. Null en las que se asignaron antes de
+  // que existiera el historial, o cuando no se capturó el dato.
+  fecha_instalacion: string | null
+  km_instalacion:    number | null
 }
 
 export function usePiezasVehiculo(vehiculoId?: number) {

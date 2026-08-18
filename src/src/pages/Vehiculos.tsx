@@ -58,6 +58,7 @@ import {
   usePiezasVehiculo, useSetPiezaVehiculo, useRemovePiezaVehiculo, useHistorialPiezas,
 } from '../hooks/usePiezasVehiculo'
 import type { PiezaDeVehiculo, DatosMontaje, DatosRetiro } from '../hooks/usePiezasVehiculo'
+import { formatearFecha } from '../lib/fechas'
 import MontajePiezaModal from '../components/MontajePiezaModal'
 import type { ModoMontaje } from '../components/MontajePiezaModal'
 import { useAddTiposPiezaVehiculo, useRemoveTipoPiezaVehiculo } from '../hooks/useTiposPiezaVehiculo'
@@ -2063,12 +2064,13 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
               {sinCapturar} tipo(s) sin refacción asignada.
             </Text>
           )}
-          <Table.ScrollContainer minWidth={520}>
+          <Table.ScrollContainer minWidth={640}>
             <Table striped withTableBorder>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th style={{ width: '35%' }}>Tipo de pieza</Table.Th>
+                  <Table.Th style={{ width: '28%' }}>Tipo de pieza</Table.Th>
                   <Table.Th>Refacción que usa</Table.Th>
+                  <Table.Th style={{ width: 130 }}>Montada desde</Table.Th>
                   <Table.Th style={{ width: 40 }} />
                 </Table.Tr>
               </Table.Thead>
@@ -2104,6 +2106,23 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
                           onChange={(v) => handleChange(f, v)}
                           nothingFoundMessage="Marca refacciones con este tipo desde el catálogo"
                         />
+                      </Table.Td>
+                      <Table.Td>
+                        {f.pieza_id == null ? null : f.fecha_instalacion == null ? (
+                          // Las piezas que ya estaban asignadas cuando se
+                          // empezó a llevar el historial no tienen fecha, y
+                          // ya no hay de dónde sacarla.
+                          <Text size="xs" c="dimmed">Sin registrar</Text>
+                        ) : (
+                          <>
+                            <Text size="xs">{formatearFecha(f.fecha_instalacion)}</Text>
+                            {f.km_instalacion != null && (
+                              <Text size="xs" c="dimmed">
+                                {f.km_instalacion.toLocaleString('es-MX')} km
+                              </Text>
+                            )}
+                          </>
+                        )}
                       </Table.Td>
                       <Table.Td>
                         {/* Los tipos del modelo se quitan desde el modelo: hacerlo
@@ -2236,7 +2255,9 @@ function HistorialPiezasSection({ vehiculoId }: { vehiculoId: number }) {
                         )}
                       </Table.Td>
                       <Table.Td>
-                        <Text size="xs">{h.fecha_instalacion ?? 'Sin fecha'}</Text>
+                        <Text size="xs">
+                          {h.fecha_instalacion ? formatearFecha(h.fecha_instalacion) : 'Sin fecha'}
+                        </Text>
                         {h.km_instalacion != null && (
                           <Text size="xs" c="dimmed">{h.km_instalacion.toLocaleString('es-MX')} km</Text>
                         )}
@@ -2246,7 +2267,7 @@ function HistorialPiezasSection({ vehiculoId }: { vehiculoId: number }) {
                           <Badge size="xs" variant="light" color="green">Montada</Badge>
                         ) : (
                           <>
-                            <Text size="xs">{h.fecha_retiro}</Text>
+                            <Text size="xs">{formatearFecha(h.fecha_retiro!)}</Text>
                             <Text size="xs" c="dimmed">
                               {[h.motivo_retiro && ETIQUETA_MOTIVO[h.motivo_retiro],
                                 h.destino && ETIQUETA_DESTINO[h.destino]]
