@@ -191,7 +191,7 @@ function RecargaForm({
     .filter((v) => !valesUsados.has(v.id) || String(v.id) === initial?.vale_id)
     .map((v) => ({
       value: String(v.id),
-      label: `Vale #${v.id} — ${formatFecha(v.fecha)} — ${v.conductor}`,
+      label: `Vale ${v.folio} — ${formatFecha(v.fecha)} — ${v.conductor}`,
     }))
 
   const form = useForm<RecargaFormValues>({
@@ -385,7 +385,9 @@ function RecargasTabla({
               <Table.Td>
                 {r.vale_id != null ? (
                   <>
-                    <Text size="sm">Vale #{r.vale_id}</Text>
+                    {/* El folio es el número impreso en el papel; el id interno
+                        no le dice nada a quien coteja contra el talonario. */}
+                    <Text size="sm">Vale {r.vale_folio ?? `#${r.vale_id}`}</Text>
                     {r.vale_fecha && (
                       <Text size="xs" c="dimmed">{formatDiaMes(r.vale_fecha)}</Text>
                     )}

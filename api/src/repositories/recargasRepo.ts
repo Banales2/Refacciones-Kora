@@ -15,6 +15,7 @@ export interface RecargaConGasolinera {
   gasolinera:    string
   ubicacion:     string
   conductor:     string
+  vale_folio:    string | null
   vale_fecha:    string | null
 }
 
@@ -25,6 +26,7 @@ const SELECT_RECARGA = `
          r.litros, r.costo, r.kilometraje,
          g.nombre AS gasolinera, g.ubicacion,
          c.nombre AS conductor,
+         vg.folio AS vale_folio,
          CONVERT(char(10), vg.fecha, 23) AS vale_fecha
   FROM recargas_combustible r
   JOIN gasolineras g       ON g.id = r.gasolinera_id

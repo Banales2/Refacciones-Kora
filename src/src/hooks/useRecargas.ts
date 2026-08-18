@@ -17,6 +17,8 @@ export interface Recarga {
   gasolinera:    string
   ubicacion:     string
   conductor:     string
+  // Folio impreso del vale. Null solo en las recargas que se quedaron sin vale.
+  vale_folio:    string | null
   vale_fecha:    string | null
 }
 
