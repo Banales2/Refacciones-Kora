@@ -1,5 +1,10 @@
-// Página Proveedores: catálogo simple de proveedores de refacciones (CRUD).
+// Página Proveedores: catálogo de proveedores de refacciones (CRUD).
 // Se muestra como pestaña dentro de Catálogos (SitiosYRutas).
+//
+// El clic en un renglón abre el detalle del proveedor (ProveedorDetalle), que
+// es donde se registran y comparan los precios que da por cada refacción. El
+// detalle sustituye a la lista en la misma pestaña, con su propio "volver": la
+// navegación de la app es por estado, no por rutas.
 import { useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert,
@@ -11,11 +16,14 @@ import {
 } from '../hooks/useProveedores'
 import type { Proveedor } from '../hooks/useProveedores'
 import ProveedorForm from '../components/ProveedorForm'
+import ProveedorDetalle from './ProveedorDetalle'
 
 export default function Proveedores() {
   const [createOpen, setCreateOpen]       = useState(false)
   const [editProveedor, setEditProveedor] = useState<Proveedor | null>(null)
   const [deleteProveedor, setDeleteProveedor] = useState<Proveedor | null>(null)
+  // Proveedor cuyo detalle está abierto; null = la lista.
+  const [detalleId, setDetalleId] = useState<number | null>(null)
 
   const { data, isLoading, isError } = useProveedores()
   const createMut = useCreateProveedor()
@@ -24,6 +32,13 @@ export default function Proveedores() {
 
   const proveedores = data?.data ?? []
 
+  // Se busca en la lista en vez de guardar el objeto: así el detalle refleja
+  // una edición del proveedor sin tener que cerrarlo y volver a abrirlo.
+  const detalle = proveedores.find((p) => p.id === detalleId) ?? null
+  if (detalle) {
+    return <ProveedorDetalle proveedor={detalle} onBack={() => setDetalleId(null)} />
+  }
+
   return (
     <>
       <Stack gap="md">
@@ -31,7 +46,9 @@ export default function Proveedores() {
             alta, como en los demás paneles. */}
         <Group justify="space-between">
           {proveedores.length > 0 ? (
-            <Text size="sm" c="dimmed">{proveedores.length} proveedores</Text>
+            <Text size="sm" c="dimmed">
+              {proveedores.length} proveedores · abre uno para ver y comparar sus precios
+            </Text>
           ) : <span />}
           <Button
             size="xs"
@@ -65,7 +82,11 @@ export default function Proveedores() {
               </Table.Thead>
               <Table.Tbody>
                 {proveedores.map((p) => (
-                  <Table.Tr key={p.id}>
+                  <Table.Tr
+                    key={p.id}
+                    onClick={() => setDetalleId(p.id)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <Table.Td fw={500}>{p.nombre}</Table.Td>
                     <Table.Td c={p.contacto ? undefined : 'dimmed'}>
                       {p.contacto ?? '—'}
@@ -79,7 +100,7 @@ export default function Proveedores() {
                           variant="subtle"
                           color="blue"
                           aria-label="Editar"
-                          onClick={() => setEditProveedor(p)}
+                          onClick={(e) => { e.stopPropagation(); setEditProveedor(p) }}
                         >
                           <IconPencil size={16} />
                         </ActionIcon>
@@ -87,7 +108,7 @@ export default function Proveedores() {
                           variant="subtle"
                           color="red"
                           aria-label="Eliminar"
-                          onClick={() => setDeleteProveedor(p)}
+                          onClick={(e) => { e.stopPropagation(); setDeleteProveedor(p) }}
                         >
                           <IconTrash size={16} />
                         </ActionIcon>

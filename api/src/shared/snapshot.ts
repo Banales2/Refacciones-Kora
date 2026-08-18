@@ -110,6 +110,14 @@ const CONSULTAS: Record<string, string> = {
     LEFT JOIN modelos m ON m.id = pl.modelo_id
     WHERE pl.id = @id`,
 
+  precios_proveedor: `
+    SELECT pp.*, pr.nombre AS proveedor,
+           p.numero_serie AS pieza_serie, p.descripcion AS pieza
+    FROM precios_proveedor pp
+    LEFT JOIN proveedores pr ON pr.id = pp.proveedor_id
+    LEFT JOIN piezas      p  ON p.id = pp.pieza_id
+    WHERE pp.id = @id`,
+
   recargas_combustible: `
     SELECT rc.*, v.numero_serie AS vehiculo_serie, v.placas AS vehiculo_placas,
            c.nombre AS conductor, g.nombre AS gasolinera
