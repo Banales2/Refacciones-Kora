@@ -14,9 +14,11 @@ import {
 } from '../hooks/useValesGasolina'
 import type { ValeGasolina, ValeGasolinaPayload } from '../hooks/useValesGasolina'
 import { useConductores } from '../hooks/useConductores'
+import type { Conductor } from '../hooks/useConductores'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import { useAuth } from '../hooks/useAuth'
 import { FechaInput } from '../components/FechaInput'
+import NuevoConductorModal from '../components/NuevoConductorModal'
 
 function todayIso() {
   const d = new Date()
@@ -109,6 +111,10 @@ function ValeForm({
   const { user } = useAuth()
   const { data: conData } = useConductores()
 
+  // Alta de chofer sin salir de aquí: el catálogo está en otra pantalla y salir
+  // a darlo de alta costaba perder el vale a medio capturar.
+  const [nuevoChoferOpen, setNuevoChoferOpen] = useState(false)
+
   // La flota puede pasar de los 100 vehículos que devuelve una página, así que
   // el Select busca contra la API en vez de filtrar una lista completa.
   const [vehiculoSearch, setVehiculoSearch] = useState('')
@@ -161,66 +167,86 @@ function ValeForm({
     setEtiquetaSeleccionado(elegido ? vehiculoLabel(elegido) : '')
   }
 
+  // El chofer recién dado de alta queda seleccionado, que es para lo que se
+  // abrió el alta desde aquí.
+  function choferCreado(conductor: Conductor) {
+    form.setFieldValue('conductor_id', String(conductor.id))
+  }
+
   return (
-    <form
-      onSubmit={form.onSubmit((v) => onSubmit({
-        conductor_id: parseInt(v.conductor_id, 10),
-        vehiculo_id:  parseInt(v.vehiculo_id, 10),
-        fecha:        v.fecha,
-      }))}
-    >
-      <Stack gap="sm">
-        <TextInput
-          label="Creado por"
-          value={user?.userDetails ?? ''}
-          disabled
-          description="Se registra automáticamente con tu usuario"
-        />
-        <Select
-          label="Chofer"
-          placeholder={conductores.length ? 'Selecciona un chofer' : 'No hay choferes registrados'}
-          data={conductores}
-          searchable
-          required
-          {...form.getInputProps('conductor_id')}
-        />
-        {conductores.length === 0 && (
-          <Text size="xs" c="dimmed">
-            Da de alta los choferes en Catálogos → Conductores.
-          </Text>
-        )}
-        <Select
-          label="Vehículo"
-          placeholder="Busca por marca, modelo, serie o placas"
-          data={vehiculos}
-          searchable
-          required
-          searchValue={vehiculoSearch}
-          onSearchChange={setVehiculoSearch}
-          rightSection={loadingVehiculos ? <Loader size="xs" /> : undefined}
-          nothingFoundMessage={loadingVehiculos ? 'Buscando…' : 'Sin resultados'}
-          {...form.getInputProps('vehiculo_id')}
-          onChange={seleccionarVehiculo}
-        />
-        <FechaInput
-          label="Fecha"
-          required
-          maxDate={hoy}
-          value={form.values.fecha}
-          onChange={(d) => form.setFieldValue('fecha', d)}
-          error={form.errors.fecha as string}
-        />
-        {error && <Alert color="red" title="Error">{error}</Alert>}
-        <Group justify="flex-end" mt="xs">
-          <Button variant="default" onClick={onCancel} disabled={isPending}>
-            Cancelar
-          </Button>
-          <Button type="submit" loading={isPending}>
-            Guardar
-          </Button>
-        </Group>
-      </Stack>
-    </form>
+    <>
+      <form
+        onSubmit={form.onSubmit((v) => onSubmit({
+          conductor_id: parseInt(v.conductor_id, 10),
+          vehiculo_id:  parseInt(v.vehiculo_id, 10),
+          fecha:        v.fecha,
+        }))}
+      >
+        <Stack gap="sm">
+          <TextInput
+            label="Creado por"
+            value={user?.userDetails ?? ''}
+            disabled
+            description="Se registra automáticamente con tu usuario"
+          />
+          <div>
+            <Select
+              label="Chofer"
+              placeholder={conductores.length ? 'Selecciona un chofer' : 'No hay choferes registrados'}
+              data={conductores}
+              searchable
+              required
+              nothingFoundMessage='Sin coincidencias: usa "Nuevo chofer"'
+              {...form.getInputProps('conductor_id')}
+            />
+            <Button
+              variant="subtle" size="compact-xs" mt={4} leftSection={<IconPlus size={12} />}
+              onClick={() => setNuevoChoferOpen(true)}
+            >
+              Nuevo chofer
+            </Button>
+          </div>
+          <Select
+            label="Vehículo"
+            placeholder="Busca por marca, modelo, serie o placas"
+            data={vehiculos}
+            searchable
+            required
+            searchValue={vehiculoSearch}
+            onSearchChange={setVehiculoSearch}
+            rightSection={loadingVehiculos ? <Loader size="xs" /> : undefined}
+            nothingFoundMessage={loadingVehiculos ? 'Buscando…' : 'Sin resultados'}
+            {...form.getInputProps('vehiculo_id')}
+            onChange={seleccionarVehiculo}
+          />
+          <FechaInput
+            label="Fecha"
+            required
+            maxDate={hoy}
+            value={form.values.fecha}
+            onChange={(d) => form.setFieldValue('fecha', d)}
+            error={form.errors.fecha as string}
+          />
+          {error && <Alert color="red" title="Error">{error}</Alert>}
+          <Group justify="flex-end" mt="xs">
+            <Button variant="default" onClick={onCancel} disabled={isPending}>
+              Cancelar
+            </Button>
+            <Button type="submit" loading={isPending}>
+              Guardar
+            </Button>
+          </Group>
+        </Stack>
+      </form>
+
+      {/* Fuera del <form>: el formulario del chofer es otro <form>, y anidarlos
+          no es HTML válido — el submit de adentro dispararía el de afuera. */}
+      <NuevoConductorModal
+        opened={nuevoChoferOpen}
+        onClose={() => setNuevoChoferOpen(false)}
+        onCreated={choferCreado}
+      />
+    </>
   )
 }
 
