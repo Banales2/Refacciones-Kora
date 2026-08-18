@@ -58,6 +58,82 @@ export async function addTipos(modeloId: number, renglones: RenglonTipo[]): Prom
     )`)
 }
 
+// ¿Algún vehículo de este modelo tiene ya un renglón propio con este tipo y esta
+// etiqueta? Es lo que impide renombrar hacia ella: la unidad acabaría con dos
+// renglones idénticos y la clave única lo rechazaría a media operación.
+export async function unidadesConEtiquetaPropia(
+  modeloId: number, tipoId: number, etiqueta: string,
+): Promise<number> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('modeloId', sql.Int, modeloId)
+    .input('tipoId',   sql.Int, tipoId)
+    .input('etiqueta', sql.NVarChar(40), etiqueta)
+    .query(`
+      SELECT COUNT(DISTINCT v.id) AS n
+      FROM vehiculos v
+      JOIN tipos_pieza_vehiculo tpv ON tpv.vehiculo_id = v.id
+      WHERE v.modelo_id = @modeloId
+        AND tpv.tipo_pieza_id = @tipoId
+        AND tpv.etiqueta      = @etiqueta`)
+  return r.recordset[0].n
+}
+
+// Renombra la etiqueta de un renglón de la plantilla. Es un cambio de nombre de
+// la MISMA posición, no un renglón nuevo: por eso arrastra consigo lo que los
+// vehículos del modelo tienen colgado de ella —la refacción montada y la
+// bitácora completa, incluidos los renglones ya cerrados— en vez de dejarlo
+// huérfano como haría un quitar-y-volver-a-agregar.
+//
+// Va en transacción porque una plantilla renombrada con las piezas apuntando al
+// nombre viejo dejaría a esos vehículos sin refacción en el renglón nuevo y con
+// una asignación que ya no corresponde a nada.
+export async function renameEtiqueta(
+  modeloId: number, tipoId: number, actual: string, nueva: string,
+): Promise<boolean> {
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    const args = (r: sql.Request) => r
+      .input('modeloId', sql.Int, modeloId)
+      .input('tipoId',   sql.Int, tipoId)
+      .input('actual',   sql.NVarChar(40), actual)
+      .input('nueva',    sql.NVarChar(40), nueva)
+
+    const r = await args(tx.request()).query(`
+      UPDATE tipos_pieza_modelo SET etiqueta = @nueva
+      WHERE modelo_id = @modeloId AND tipo_pieza_id = @tipoId AND etiqueta = @actual`)
+
+    if (r.rowsAffected[0] === 0) {
+      await tx.rollback()
+      return false
+    }
+
+    await args(tx.request()).query(`
+      UPDATE pv SET pv.etiqueta = @nueva
+      FROM piezas_vehiculo pv
+      JOIN vehiculos v ON v.id = pv.vehiculo_id
+      WHERE v.modelo_id = @modeloId
+        AND pv.tipo_pieza_id = @tipoId
+        AND pv.etiqueta      = @actual`)
+
+    await args(tx.request()).query(`
+      UPDATE i SET i.etiqueta = @nueva
+      FROM instalaciones_pieza i
+      JOIN vehiculos v ON v.id = i.vehiculo_id
+      WHERE v.modelo_id = @modeloId
+        AND i.tipo_pieza_id = @tipoId
+        AND i.etiqueta      = @actual`)
+
+    await tx.commit()
+    return true
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+}
+
 // Al quitar el renglón del modelo se borran también las piezas que los vehículos
 // de ese modelo habían elegido para él: sin el renglón, la elección queda
 // huérfana. Se borra solo la de esa etiqueta; los otros renglones del mismo tipo

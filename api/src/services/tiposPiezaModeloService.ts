@@ -40,6 +40,42 @@ export async function addTipos(
   await repo.addTipos(modeloId, tipoIds.map((id) => ({ tipo_pieza_id: id, etiqueta })))
 }
 
+// Renombrar la posición de un renglón ("delantero" → "izquierdo"). La refacción
+// montada y el historial de cada unidad viajan con ella: es la misma posición
+// con otro nombre.
+export async function renameEtiqueta(
+  modeloId: number, tipoId: number, actual: string, nueva: string,
+): Promise<void> {
+  if (nueva === actual) return
+
+  const renglones = await repo.findByModelo(modeloId)
+  const renglon = renglones.find((t) => t.id === tipoId && t.etiqueta === actual)
+  if (!renglon) throw new NotFoundError('Tipo de pieza en este modelo')
+
+  if (renglones.some((t) => t.id === tipoId && t.etiqueta === nueva)) {
+    throw new ValidationError(
+      nueva === ''
+        ? `Este modelo ya pide ${renglon.nombre} sin etiqueta. Ponle una que lo distinga.`
+        : `Este modelo ya pide ${renglon.nombre} con la etiqueta "${nueva}". Usa otra.`
+    )
+  }
+
+  // La etiqueta destino puede estar ocupada en una unidad suelta, por un renglón
+  // que esa unidad agregó por su cuenta. Se avisa antes de tocar nada: a media
+  // operación el choque saldría como error de clave única, sin decir dónde.
+  const unidades = await repo.unidadesConEtiquetaPropia(modeloId, tipoId, nueva)
+  if (unidades > 0) {
+    throw new ValidationError(
+      `${unidades} vehículo(s) de este modelo ya piden ${renglon.nombre} ` +
+      `${nueva === '' ? 'sin etiqueta' : `con la etiqueta "${nueva}"`} por su cuenta. ` +
+      'Quita ese renglón en esas unidades o usa otra etiqueta.'
+    )
+  }
+
+  const ok = await repo.renameEtiqueta(modeloId, tipoId, actual, nueva)
+  if (!ok) throw new NotFoundError('Tipo de pieza en este modelo')
+}
+
 export async function removeTipo(
   modeloId: number, tipoId: number, etiqueta = '',
 ): Promise<void> {

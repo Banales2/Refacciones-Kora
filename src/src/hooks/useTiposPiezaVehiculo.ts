@@ -19,6 +19,24 @@ export function useAddTiposPiezaVehiculo() {
   })
 }
 
+// Cambiar el nombre de la posición de un renglón propio de la unidad. Arrastra
+// la refacción montada y el historial, por eso se invalidan los dos.
+export function useRenameEtiquetaVehiculo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ vehiculoId, tipoId, etiqueta, etiquetaNueva }: {
+      vehiculoId: number; tipoId: number; etiqueta: string; etiquetaNueva: string
+    }) =>
+      api.put<void>(`/vehiculos/${vehiculoId}/tipos-pieza/${tipoId}`, {
+        etiqueta, etiqueta_nueva: etiquetaNueva,
+      }),
+    onSuccess: (_d, { vehiculoId }) => {
+      qc.invalidateQueries({ queryKey: ['piezas-vehiculo', vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['piezas-historial', vehiculoId] })
+    },
+  })
+}
+
 export function useRemoveTipoPiezaVehiculo() {
   const qc = useQueryClient()
   return useMutation({

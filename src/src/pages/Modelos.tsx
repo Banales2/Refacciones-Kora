@@ -21,7 +21,9 @@ import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
 import { useVehiculos, useCreateVehiculo, useDeleteVehiculo, vehiculoLabel } from '../hooks/useVehiculos'
 import {
   useTiposPiezaModelo, useAddTiposPiezaModelo, useRemoveTipoPiezaModelo,
+  useRenameEtiquetaModelo,
 } from '../hooks/useTiposPiezaModelo'
+import EtiquetaEditable from '../components/EtiquetaEditable'
 import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
 import type { Modelo, ModeloPayload } from '../hooks/useModelos'
 import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode } from '../hooks/usePlantilla'
@@ -504,6 +506,7 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
   const { data: tiposData }       = useTiposPieza()
   const addMut    = useAddTiposPiezaModelo()
   const removeMut = useRemoveTipoPiezaModelo()
+  const renameMut = useRenameEtiquetaModelo()
   const crearMut  = useCreateTipoPieza()
 
   // Memoizado porque el `?? []` daría un arreglo nuevo en cada render y con él
@@ -615,6 +618,7 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
       {crearMut.error && <Alert color="red">{(crearMut.error as Error).message}</Alert>}
       {addMut.error   && <Alert color="red">{(addMut.error   as Error).message}</Alert>}
       {removeMut.error && <Alert color="red">{(removeMut.error as Error).message}</Alert>}
+      {renameMut.error && <Alert color="red">{(renameMut.error as Error).message}</Alert>}
 
       {isLoading ? (
         <Center py="md"><Loader size="sm" /></Center>
@@ -637,9 +641,17 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
                 <Table.Tr key={`${t.id}|${t.etiqueta}`}>
                   <Table.Td fw={500}>{t.nombre}</Table.Td>
                   <Table.Td>
-                    {t.etiqueta
-                      ? <Badge size="sm" variant="light">{t.etiqueta}</Badge>
-                      : <Text size="xs" c="dimmed">—</Text>}
+                    <EtiquetaEditable
+                      etiqueta={t.etiqueta}
+                      isPending={
+                        renameMut.isPending &&
+                        renameMut.variables?.tipoId === t.id &&
+                        renameMut.variables?.etiqueta === t.etiqueta
+                      }
+                      onGuardar={(etiquetaNueva) => renameMut.mutate({
+                        modeloId, tipoId: t.id, etiqueta: t.etiqueta, etiquetaNueva,
+                      })}
+                    />
                   </Table.Td>
                   <Table.Td>
                     <Tooltip label="Quitar del modelo (borra la refacción que sus vehículos tenían elegida para este renglón)">

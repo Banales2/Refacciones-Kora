@@ -37,6 +37,26 @@ export function useAddTiposPiezaModelo() {
   })
 }
 
+// Cambiar el nombre de la posición ("delantero" → "izquierdo"). La refacción que
+// cada vehículo tiene montada en ese renglón y su historial se van con ella, así
+// que hay que invalidar también la lista de piezas.
+export function useRenameEtiquetaModelo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ modeloId, tipoId, etiqueta, etiquetaNueva }: {
+      modeloId: number; tipoId: number; etiqueta: string; etiquetaNueva: string
+    }) =>
+      api.put<void>(`/modelos/${modeloId}/tipos-pieza/${tipoId}`, {
+        etiqueta, etiqueta_nueva: etiquetaNueva,
+      }),
+    onSuccess: (_d, { modeloId }) => {
+      qc.invalidateQueries({ queryKey: ['tipos-pieza-modelo', modeloId] })
+      qc.invalidateQueries({ queryKey: ['piezas-vehiculo'] })
+      qc.invalidateQueries({ queryKey: ['piezas-historial'] })
+    },
+  })
+}
+
 export function useRemoveTipoPiezaModelo() {
   const qc = useQueryClient()
   return useMutation({

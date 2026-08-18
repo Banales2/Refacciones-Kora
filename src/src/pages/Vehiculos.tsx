@@ -61,7 +61,10 @@ import type { PiezaDeVehiculo, DatosMontaje, DatosRetiro } from '../hooks/usePie
 import { formatearFecha } from '../lib/fechas'
 import MontajePiezaModal from '../components/MontajePiezaModal'
 import type { ModoMontaje } from '../components/MontajePiezaModal'
-import { useAddTiposPiezaVehiculo, useRemoveTipoPiezaVehiculo } from '../hooks/useTiposPiezaVehiculo'
+import {
+  useAddTiposPiezaVehiculo, useRemoveTipoPiezaVehiculo, useRenameEtiquetaVehiculo,
+} from '../hooks/useTiposPiezaVehiculo'
+import EtiquetaEditable from '../components/EtiquetaEditable'
 import { useTiposPieza } from '../hooks/useTiposPieza'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
 import { useTecnicos } from '../hooks/useTecnicos'
@@ -1951,6 +1954,7 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
   const removeMut    = useRemovePiezaVehiculo()
   const addTipoMut   = useAddTiposPiezaVehiculo()
   const quitaTipoMut = useRemoveTipoPiezaVehiculo()
+  const renameMut    = useRenameEtiquetaVehiculo()
 
   const [nuevoTipo, setNuevoTipo] = useState<string | null>(null)
   const [nuevaEtiqueta, setNuevaEtiqueta] = useState('')
@@ -2056,6 +2060,7 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
       {removeMut.error    && <Alert color="red">{(removeMut.error as Error).message}</Alert>}
       {addTipoMut.error   && <Alert color="red">{(addTipoMut.error as Error).message}</Alert>}
       {quitaTipoMut.error && <Alert color="red">{(quitaTipoMut.error as Error).message}</Alert>}
+      {renameMut.error    && <Alert color="red">{(renameMut.error    as Error).message}</Alert>}
 
       <Group gap="xs" align="flex-end">
         <Select
@@ -2104,11 +2109,12 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
               {sinCapturar} pieza(s) sin refacción asignada.
             </Text>
           )}
-          <Table.ScrollContainer minWidth={640}>
+          <Table.ScrollContainer minWidth={800}>
             <Table striped withTableBorder>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th style={{ width: '28%' }}>Pieza que necesita</Table.Th>
+                  <Table.Th style={{ width: '24%' }}>Pieza que necesita</Table.Th>
+                  <Table.Th style={{ width: 170 }}>Etiqueta</Table.Th>
                   <Table.Th>Refacción que usa</Table.Th>
                   <Table.Th style={{ width: 130 }}>Montada desde</Table.Th>
                   <Table.Th style={{ width: 40 }} />
@@ -2130,13 +2136,23 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
                       <Table.Td>
                         <Group gap={6} wrap="nowrap">
                           <Text size="sm" fw={500}>{f.tipo_nombre}</Text>
-                          {f.etiqueta && (
-                            <Badge size="xs" variant="light" color="gray">{f.etiqueta}</Badge>
-                          )}
                           {propio && (
                             <Badge size="xs" variant="light" color="teal">Solo este vehículo</Badge>
                           )}
                         </Group>
+                      </Table.Td>
+                      <Table.Td>
+                        {/* Los renglones del modelo se renombran desde el modelo:
+                            hacerlo aquí sacaría a esta unidad de la plantilla que
+                            comparte con las demás del mismo modelo. */}
+                        <EtiquetaEditable
+                          etiqueta={f.etiqueta}
+                          motivoBloqueo={propio ? undefined : 'La etiqueta de un renglón del modelo se cambia desde el modelo'}
+                          isPending={renameMut.isPending && esteRenglon(renameMut.variables)}
+                          onGuardar={(etiquetaNueva) => renameMut.mutate({
+                            vehiculoId, tipoId: f.tipo_pieza_id, etiqueta: f.etiqueta, etiquetaNueva,
+                          })}
+                        />
                       </Table.Td>
                       <Table.Td>
                         <Select
