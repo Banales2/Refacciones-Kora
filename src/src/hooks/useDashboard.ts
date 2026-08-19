@@ -228,8 +228,11 @@ export interface ReporteFlota {
   comparacion: {
     rango_actual:                          { start: string; end: string }
     rango_anterior:                        { start: string; end: string }
-    vencidos_actual:                       number
+    /** `null` cuando el periodo ya cerró y no hay snapshot histórico de esa fecha. */
+    vencidos_actual:                       number | null
     vencidos_anterior:                     number | null
+    /** `vivo` = conteo de hoy (el periodo sigue abierto); `historico` = al cierre. */
+    origen_actual:                         'vivo' | 'historico'
   }
   vehiculos: VehiculoReporte[]
 }

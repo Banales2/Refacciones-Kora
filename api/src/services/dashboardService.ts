@@ -38,6 +38,38 @@ function inicioSemanaMexico(d: Date = new Date()): string {
   return addDias(hoy, -diffToMonday)
 }
 
+// La ventana inmediatamente anterior a `r`: contra un año se compara el año
+// previo, contra una quincena la quincena previa.
+//
+// Los años y los meses se detectan aparte en vez de restar días, porque no
+// todos duran lo mismo: 2024 tiene 366 días, así que "los 365 días antes de
+// 2025" arrancaría el 2 de enero de 2024 y la comparación quedaría corrida un
+// día. Un año se compara contra el año, no contra una cantidad de días.
+function ventanaPrevia(r: Rango): Rango {
+  const [ai, mi, di] = r.start.split('-').map(Number)
+  const [af, mf, df] = r.end.split('-').map(Number)
+
+  // Año calendario exacto: del 1 de enero al 1 de enero siguiente.
+  if (di === 1 && mi === 1 && df === 1 && mf === 1 && af === ai + 1) {
+    return { start: `${ai - 1}-01-01`, end: `${ai}-01-01` }
+  }
+
+  // Mes calendario exacto: del día 1 al día 1 del mes siguiente.
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (di === 1 && df === 1 && ai * 12 + mi + 1 === af * 12 + mf) {
+    const previo = sumarMeses(ai, mi, -1)
+    return {
+      start: `${previo.year}-${pad(previo.month)}-01`,
+      end:   `${ai}-${pad(mi)}-01`,
+    }
+  }
+
+  const dias = Math.round(
+    (new Date(`${r.end}T12:00:00`).getTime() - new Date(`${r.start}T12:00:00`).getTime()) / 86_400_000
+  )
+  return { start: addDias(r.start, -dias), end: r.start }
+}
+
 // Rango actual y anterior según el periodo elegido, ambos como [start, end).
 function rangoActualYAnterior(periodo: 'mes' | 'semana'): { actual: Rango; anterior: Rango } {
   if (periodo === 'semana') {
@@ -450,8 +482,15 @@ export interface ReporteFlota {
   comparacion: {
     rango_actual:                          Rango
     rango_anterior:                        Rango
-    vencidos_actual:                       number
+    /** `null` cuando el periodo ya cerró y no hay snapshot de esa fecha. */
+    vencidos_actual:                       number | null
     vencidos_anterior:                     number | null
+    /**
+     * De dónde salió `vencidos_actual`: `vivo` es el conteo de hoy —el periodo
+     * sigue abierto—, `historico` el snapshot al cierre del periodo. El reporte
+     * lo dice, porque no es lo mismo "hoy hay 12" que "al cierre había 12".
+     */
+    origen_actual:                         'vivo' | 'historico'
   }
   vehiculos: VehiculoReporte[]
 }
@@ -498,11 +537,30 @@ export async function getReporteFlota(
   const piezasUsadas     = costosPorVehiculo.reduce((s, c) => s + c.costo_piezas, 0)
   const piezasCompradas  = lotes.reduce((s, l) => s + l.cantidad_inicial * l.costo_unitario, 0)
 
-  const { actual, anterior } = rangoActualYAnterior(periodo)
-  // Último día cubierto por el periodo anterior: la referencia contra la que
-  // comparamos el snapshot histórico de vencidos.
+  // La comparación se mide sobre el mismo periodo que los costos. Antes eran
+  // dos ventanas independientes —los costos del mes y los vencidos contra la
+  // semana pasada—, lo que ya se leía raro; con un rango elegido a mano se
+  // volvía absurdo: un reporte de todo 2025 comparándose contra el mes pasado.
+  // `periodo` ('mes'/'semana') sigue mandando solo cuando no se pidió rango,
+  // que es el caso para el que se hizo.
+  const { actual, anterior } = rango
+    ? { actual: rango, anterior: ventanaPrevia(rango) }
+    : rangoActualYAnterior(periodo)
+
+  // Último día cubierto por cada ventana: la referencia contra la que se busca
+  // el snapshot histórico de vencidos.
+  const finActual   = addDias(actual.end, -1)
   const fechaRefAnterior = addDias(anterior.end, -1)
-  const snapshotAnterior = await repo.findHistorialCercano(fechaRefAnterior)
+
+  // Un periodo que ya cerró no se puede medir con el conteo de hoy: los
+  // vencidos de 2025 son los que había al 31 de diciembre, no los de esta
+  // mañana. Para esos se lee el snapshot diario; para un periodo que todavía
+  // incluye hoy, el conteo en vivo es el dato bueno.
+  const cerrado = finActual < fechaMexico()
+  const [snapshotActual, snapshotAnterior] = await Promise.all([
+    cerrado ? repo.findHistorialCercano(finActual) : Promise.resolve(null),
+    repo.findHistorialCercano(fechaRefAnterior),
+  ])
 
   return {
     periodo,
@@ -519,8 +577,9 @@ export async function getReporteFlota(
     comparacion: {
       rango_actual:   actual,
       rango_anterior: anterior,
-      vencidos_actual:                       clasificacion.vencidos.length,
+      vencidos_actual:                       cerrado ? (snapshotActual?.vencidos ?? null) : clasificacion.vencidos.length,
       vencidos_anterior:                     snapshotAnterior?.vencidos ?? null,
+      origen_actual:                         cerrado ? 'historico' : 'vivo',
     },
     vehiculos,
   }

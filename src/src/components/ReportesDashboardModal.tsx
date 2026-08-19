@@ -264,7 +264,11 @@ export default function ReportesDashboardModal({
               ]}
               value={periodo}
               onChange={(v) => setPeriodo((v as PeriodoComparacion) ?? 'mes')}
-              disabled={ocupado !== null || filtroActual.modo !== 'toda'}
+              // Con un periodo elegido la comparación sale de él —2025 contra
+              // 2024, una quincena contra la anterior—, así que este control
+              // dejaría de significar nada: es el atajo del caso por omisión.
+              disabled={ocupado !== null || filtroActual.modo !== 'toda' || rangoFlota.modo !== 'default'}
+              description={rangoFlota.modo !== 'default' ? 'Lo define el periodo' : undefined}
               comboboxProps={{ withinPortal: true }}
             />
           </Group>
@@ -275,6 +279,17 @@ export default function ReportesDashboardModal({
             etiquetaDefault="Mes en curso"
             disabled={ocupado !== null}
           />
+
+          {rangoFlota.modo !== 'default' && (
+            <Alert color="gray" variant="light" p="xs">
+              <Text size="xs">
+                La comparación de requerimientos vencidos se mide contra el periodo inmediato
+                anterior del mismo largo — un año contra el año previo, una quincena contra la
+                quincena previa. Si el periodo ya cerró, el conteo es el que se registró al cierre y
+                no el de hoy; el reporte lo indica.
+              </Text>
+            </Alert>
+          )}
 
           {filtroActual.modo !== 'toda' && (
             <Alert color="gray" variant="light" p="xs">

@@ -6,7 +6,7 @@
 // demás; lo mismo el que solo quería ver los utilitarios. El filtro se aplica
 // **antes** de sumar los costos, no solo al listado: un reporte de una sucursal
 // cuyo total fuera el de la empresa entera sería peor que no tenerlo.
-import type { ReporteFlota, VehiculoReporte, PeriodoComparacion } from '../../hooks/useDashboard'
+import type { ReporteFlota, VehiculoReporte } from '../../hooks/useDashboard'
 import type { Sucursal } from '../../hooks/useSucursales'
 import { agruparVehiculosPorUbicacion } from '../agruparVehiculosReporte'
 import { crearReportePdf, COLOR, type CellHookData } from './pdfDoc'
@@ -86,23 +86,33 @@ function rangoMesLabel(rango: { start: string; end: string }): string {
   return `${fmt(inicio)} – ${fmt(finIncl)}`
 }
 
+// Lleva el año cuando la ventana no cabe en uno solo o no es el actual: sin él,
+// la comparación de un reporte de 2025 se leía "01 ene – 31 dic" contra
+// "01 ene – 31 dic", dos veces lo mismo.
 function rangoCortoLabel(rango: { start: string; end: string }): string {
   const inicio = new Date(`${rango.start}T12:00:00`)
   const finIncl = new Date(`${rango.end}T12:00:00`)
   finIncl.setDate(finIncl.getDate() - 1)
-  const fmt = (d: Date) => d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
+  const conAnio = inicio.getFullYear() !== finIncl.getFullYear() ||
+                  inicio.getFullYear() !== new Date().getFullYear()
+  const fmt = (d: Date) => d.toLocaleDateString('es-MX',
+    conAnio ? { day: '2-digit', month: 'short', year: 'numeric' } : { day: '2-digit', month: 'short' })
   return `${fmt(inicio)} – ${fmt(finIncl)}`
 }
 
-function deltaLabel(actual: number, anterior: number | null): string {
-  if (anterior === null) return '(sin historial suficiente para comparar)'
+function deltaLabel(actual: number | null, anterior: number | null): string {
+  if (actual === null || anterior === null) return '(sin historial suficiente para comparar)'
   const delta = actual - anterior
   if (delta === 0) return '(sin cambio vs periodo anterior)'
   return `(${delta > 0 ? '+' : ''}${delta} vs periodo anterior)`
 }
 
-function periodoLabel(periodo: PeriodoComparacion): string {
-  return periodo === 'semana' ? 'la semana' : 'el mes'
+// Cómo se llama la ventana comparada. Con un rango elegido a mano ya no es "el
+// mes" ni "la semana", así que se nombra genérico y las fechas exactas van en
+// el renglón de abajo, que es donde se pueden leer sin ambigüedad.
+function tituloComparacion(reporte: ReporteFlota, conRango: boolean): string {
+  if (conRango) return 'Comparación contra el periodo anterior'
+  return `Comparación vs ${reporte.periodo === 'semana' ? 'la semana' : 'el mes'} anterior`
 }
 
 function nombreBase(reporte: ReporteFlota, filtro: FiltroFlota): string {
@@ -156,9 +166,14 @@ export async function exportReporteFlotaPdf(
     pdf.nota(NOTA_COSTOS)
   }
 
-  pdf.seccion(`Comparación vs ${periodoLabel(reporte.periodo)} anterior`)
+  // El periodo de la comparación es el mismo de los costos cuando se pidió un
+  // rango; con eso el reporte deja de mezclar dos ventanas distintas.
+  const comp = reporte.comparacion
+  const conRango = comp.rango_actual.start === reporte.rango_costos.start &&
+                   comp.rango_actual.end   === reporte.rango_costos.end
+  pdf.seccion(tituloComparacion(reporte, conRango))
   pdf.nota(
-    `${rangoCortoLabel(reporte.comparacion.rango_actual)}  vs  ${rangoCortoLabel(reporte.comparacion.rango_anterior)}`
+    `${rangoCortoLabel(comp.rango_actual)}  vs  ${rangoCortoLabel(comp.rango_anterior)}`
   )
   if (parcial) {
     // La comparación del backend es de la flota entera; con filtro se reporta
@@ -174,9 +189,22 @@ export async function exportReporteFlotaPdf(
     )
   } else {
     pdf.datos([[
-      'Requerimientos vencidos',
-      `${reporte.comparacion.vencidos_actual} ${deltaLabel(reporte.comparacion.vencidos_actual, reporte.comparacion.vencidos_anterior)}`,
+      comp.origen_actual === 'historico'
+        ? 'Requerimientos vencidos al cierre del periodo'
+        : 'Requerimientos vencidos hoy',
+      comp.vencidos_actual === null
+        ? 'sin dato'
+        : `${comp.vencidos_actual} ${deltaLabel(comp.vencidos_actual, comp.vencidos_anterior)}`,
     ]])
+    if (comp.origen_actual === 'historico') {
+      pdf.nota(
+        comp.vencidos_actual === null
+          ? 'El periodo ya cerró y no hay registro diario de vencidos de esas fechas: el conteo ' +
+            'empezó a guardarse después. Los costos de arriba sí son del periodo completo.'
+          : 'El periodo ya cerró, así que el conteo es el que se registró al cierre y no el de hoy: ' +
+            'los vencidos de entonces ya se atendieron o siguen abiertos, pero son otro número.'
+      )
+    }
   }
 
   // ── Detalle por vehículo ──
