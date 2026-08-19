@@ -21,7 +21,7 @@ import {
 import DiaDetalleDrawer from '../components/DiaDetalleDrawer'
 import { useActividadMes } from '../hooks/useActividadDia'
 import type { ActividadDia, Vencimiento } from '../hooks/useActividadDia'
-import { VENCIMIENTO_META, urgencia } from '../lib/vencimientoMeta'
+import { VENCIMIENTO_META, urgencia, diasRestantes } from '../lib/vencimientoMeta'
 import { formatMXN, formatNum } from '../lib/formato'
 import {
   useRequerimientosVencidos, useRequerimientosPorVencer,
@@ -146,6 +146,13 @@ const MARCAS: { key: ClaveConteo; color: string; label: string }[] = [
   { key: 'recargas',             color: 'grape',  label: 'Combustible' },
   { key: 'compras',              color: 'indigo', label: 'Compra de refacciones' },
 ]
+
+// Color con el que se marca un día que tiene vencimientos. Cian es "vence un
+// documento"; en rojo cuando la fecha ya pasó o es hoy, que es cuando deja de
+// ser un aviso y pasa a ser un problema.
+function colorUrgencia(dia: string): string {
+  return diasRestantes(dia) <= 0 ? 'red' : 'cyan'
+}
 
 // Resumen textual del día para el tooltip nativo del cuadro: es lo que evita
 // tener que abrir el detalle solo para saber si vale la pena abrirlo.
@@ -462,6 +469,11 @@ export default function Calendario({
     return map
   }, [vencimientosMes])
 
+  // Cuántos del mes ya pasaron de fecha: decide si la tarjeta avisa en rojo.
+  const vencidosDelMes = useMemo(
+    () => vencimientosMes.filter(v => diasRestantes(v.fecha_expiracion) < 0).length,
+    [vencimientosMes])
+
   // Totales del mes visible, para la tira de resumen sobre el calendario.
   const totalesMes = useMemo(() => {
     let manoObra = 0, refacciones = 0, combustible = 0
@@ -673,7 +685,7 @@ export default function Calendario({
       </SimpleGrid>
 
       {/* ── Resumen del mes visible ── */}
-      <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+      <SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }} spacing="sm">
         <ResumenMesCard
           label={`Gasto de ${nombreMes(mesVisible)}`} icon={IconCoin} color="teal"
           valor={formatMXN(totalesMes.total)}
@@ -698,6 +710,15 @@ export default function Calendario({
           detalle={`${formatNum(totalesMes.compras)} compra${totalesMes.compras !== 1 ? 's' : ''}`}
           cargando={loadingActividad}
         />
+        <ResumenMesCard
+          label="Documentos que vencen" icon={IconFileCertificate}
+          color={vencidosDelMes > 0 ? 'red' : 'cyan'}
+          valor={formatNum(vencimientosMes.length)}
+          detalle={vencidosDelMes > 0
+            ? `${vencidosDelMes} ya vencido${vencidosDelMes !== 1 ? 's' : ''}`
+            : 'Seguros, permisos, tenencias y licencias'}
+          cargando={loadingActividad}
+        />
       </SimpleGrid>
 
       <Grid align="stretch">
@@ -711,9 +732,9 @@ export default function Calendario({
                   <Calendar
                     size="md"
                     highlightToday
-                    // El cuadro del día crece para que la fila de puntos quepa
-                    // bajo el número sin encimarse ni recortarse.
-                    styles={{ day: { height: 44 } }}
+                    // El cuadro del día crece para que quepan la fila de puntos
+                    // bajo el número y el sello de vencimiento en la esquina.
+                    styles={{ day: { height: 46, width: 46, overflow: 'visible' } }}
                     // Mes controlado: es lo que dice qué resumen pedir, y lo que
                     // permite que el panel de detalle arrastre al calendario
                     // cuando se navega de día en día hasta salirse del mes.
@@ -724,6 +745,11 @@ export default function Calendario({
                       const agendaCount = agendaCountPorDia.get(dateStr) ?? 0
                       const traslape    = agendaCount > 1
                       const act         = actividadPorDia.get(dateStr)
+                      const vencen      = vencimientosPorDia.get(dateStr) ?? []
+                      // Un vencimiento marca el cuadro entero — borde grueso y
+                      // fondo — en vez de un punto: es la fecha límite de un
+                      // trámite, tiene que saltar a la vista sin buscarla.
+                      const colorVence  = vencen.length === 0 ? null : colorUrgencia(dateStr)
                       // Todos los días abren, tengan o no algo registrado: el
                       // panel se navega con flechas de día en día, y que unos
                       // cuadros respondieran al clic y otros no volvería
@@ -733,12 +759,24 @@ export default function Calendario({
                         firstInRange: enRango && !fechasConAgenda.has(addDaysIso(dateStr, -1)),
                         lastInRange:  enRango && !fechasConAgenda.has(addDaysIso(dateStr, 1)),
                         onClick: () => abrirDia(dateStr),
-                        title:   resumenDia(act, agendaCount, vencimientosPorDia.get(dateStr)?.length ?? 0),
+                        title:   resumenDia(act, agendaCount, vencen.length),
                         style: {
                           cursor: 'pointer',
                           // A más agendas el mismo día, más opaco el naranja.
                           ...(traslape
                             ? { backgroundColor: `rgba(${TRASLAPE_RGB}, ${overlapAlpha(agendaCount)})` }
+                            : {}),
+                          ...(colorVence
+                            ? {
+                                // El borde va siempre; el fondo solo si el día no
+                                // está ya pintado por una agenda, para no tapar el
+                                // rango naranja cuando coinciden.
+                                border: `2px solid var(--mantine-color-${colorVence}-6)`,
+                                fontWeight: 700,
+                                ...(enRango || traslape
+                                  ? {}
+                                  : { backgroundColor: `var(--mantine-color-${colorVence}-0)` }),
+                              }
                             : {}),
                         },
                       }
@@ -747,36 +785,36 @@ export default function Calendario({
                       const act = actividadPorDia.get(dateStr)
                       const dia = Number(String(dateStr).slice(8, 10))
                       const marcas = MARCAS.filter(m => (act?.[m.key] ?? 0) > 0)
-                      // Los vencimientos no vienen del resumen por día, así que
-                      // su punto se añade aparte. Va siempre al final para que la
-                      // fila no cambie de orden según lo que traiga el día.
+                      // Los vencimientos no vienen del resumen por día: se
+                      // marcan con un sello sobre el número, no con un punto en
+                      // la fila de abajo, que se perdía entre los demás.
                       const vencenHoy = vencimientosPorDia.get(dateStr)?.length ?? 0
                       return (
-                        <Stack gap={0} align="center" justify="center" style={{ lineHeight: 1 }}>
+                        <Stack gap={0} align="center" justify="center" style={{ lineHeight: 1, position: 'relative' }}>
+                          {vencenHoy > 0 && (
+                            <ThemeIcon
+                              color={colorUrgencia(dateStr)} variant="filled" size={14} radius="xl"
+                              style={{ position: 'absolute', top: -7, right: -11 }}
+                            >
+                              <IconFileCertificate size={9} />
+                            </ThemeIcon>
+                          )}
                           <span>{dia}</span>
                           {/* La fila de puntos siempre ocupa su alto, tenga o no
                               marcas: si apareciera y desapareciera, los números
                               de los días bailarían de una semana a otra. */}
-                          <Group gap={2} justify="center" style={{ height: 5, marginTop: 2 }}>
+                          <Group gap={3} justify="center" style={{ height: 6, marginTop: 3 }}>
                             {marcas.map(m => (
                               <span
                                 key={m.key}
                                 style={{
-                                  width: 4, height: 4, borderRadius: '50%',
+                                  width: 5, height: 5, borderRadius: '50%',
                                   backgroundColor: `var(--mantine-color-${m.color}-6)`,
                                   display: 'inline-block',
                                 }}
                               />
                             ))}
-                            {vencenHoy > 0 && (
-                              <span
-                                style={{
-                                  width: 4, height: 4, borderRadius: '50%',
-                                  backgroundColor: 'var(--mantine-color-cyan-6)',
-                                  display: 'inline-block',
-                                }}
-                              />
-                            )}
+
                           </Group>
                         </Stack>
                       )
@@ -796,13 +834,7 @@ export default function Calendario({
                       <Text size="xs" c="dimmed">{m.label}</Text>
                     </Group>
                   ))}
-                  <Group gap={5}>
-                    <span style={{
-                      width: 7, height: 7, borderRadius: '50%',
-                      backgroundColor: 'var(--mantine-color-cyan-6)', display: 'inline-block',
-                    }} />
-                    <Text size="xs" c="dimmed">Vence un documento</Text>
-                  </Group>
+
                 </Group>
                 <Group gap="md" justify="center">
                   <Group gap={6}>
@@ -812,6 +844,14 @@ export default function Calendario({
                   <Group gap={6}>
                     <span style={{ width: 22, height: 14, borderRadius: 4, backgroundColor: `rgba(${TRASLAPE_RGB}, ${overlapAlpha(4)})`, display: 'inline-block' }} />
                     <Text size="xs" c="dimmed">Traslape</Text>
+                  </Group>
+                  <Group gap={6}>
+                    <span style={{
+                      width: 22, height: 14, borderRadius: 4,
+                      backgroundColor: 'var(--mantine-color-cyan-0)',
+                      border: '2px solid var(--mantine-color-cyan-6)', display: 'inline-block',
+                    }} />
+                    <Text size="xs" c="dimmed">Vence un documento</Text>
                   </Group>
                 </Group>
               </Stack>
