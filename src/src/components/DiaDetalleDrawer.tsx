@@ -2,7 +2,9 @@
 // solo panel. Antes el calendario solo abría un modal con los mantenimientos y
 // las agendas del día; el resto de la actividad (combustible, vales,
 // incidencias, compras, traspasos) había que ir a buscarla pantalla por
-// pantalla.
+// pantalla. También muestra los documentos que expiran ese día — seguros,
+// permisos, tenencias y licencias — que son la razón principal para abrir un
+// día futuro.
 //
 // Las secciones vacías no se dibujan: un día con tres recargas y nada más se lee
 // de un vistazo en vez de obligar a recorrer siete encabezados en cero.
@@ -14,14 +16,15 @@ import {
 import {
   IconTool, IconGasStation, IconTicket, IconAlertTriangle, IconCircleCheck,
   IconShoppingCart, IconArrowsExchange, IconCalendarEvent, IconChevronLeft,
-  IconChevronRight, IconCoin, IconCalendarOff,
+  IconChevronRight, IconCoin, IconCalendarOff, IconFileCertificate,
 } from '@tabler/icons-react'
 import type { Icon } from '@tabler/icons-react'
 import { useActividadDia } from '../hooks/useActividadDia'
 import type {
   MantenimientoDia, RecargaDia, ValeDia, IncidenciaDia, IncidenciaCerradaDia,
-  CompraDia, TraspasoDia,
+  CompraDia, TraspasoDia, Vencimiento,
 } from '../hooks/useActividadDia'
+import { VENCIMIENTO_META, urgencia } from '../lib/vencimientoMeta'
 import type { AgendaConVehiculo } from '../hooks/useAgendasMantenimiento'
 import { formatMXN, formatNum, formatFecha } from '../lib/formato'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
@@ -125,12 +128,13 @@ export default function DiaDetalleDrawer({
   const incCerradas:     IncidenciaCerradaDia[]  = act?.incidencias_cerradas ?? []
   const compras:         CompraDia[]             = act?.compras ?? []
   const traspasos:       TraspasoDia[]           = act?.traspasos ?? []
+  const vencimientos:    Vencimiento[]           = act?.vencimientos ?? []
 
   const sinActividad =
     !isLoading && !error &&
     mantenimientos.length === 0 && recargas.length === 0 && vales.length === 0 &&
     incAbiertas.length === 0 && incCerradas.length === 0 && compras.length === 0 &&
-    traspasos.length === 0 && agendasDelDia.length === 0
+    traspasos.length === 0 && agendasDelDia.length === 0 && vencimientos.length === 0
 
   const valesSinUsar = vales.filter(v => !v.usado).length
 
@@ -219,6 +223,42 @@ export default function DiaDetalleDrawer({
               </ThemeIcon>
               <Text c="dimmed" size="sm">Sin actividad registrada este día.</Text>
             </Center>
+          )}
+
+          {/* ── Documentos que expiran ── */}
+          {vencimientos.length > 0 && (
+            <Seccion
+              titulo="Documentos que vencen" icon={IconFileCertificate} color="cyan"
+              count={vencimientos.length}
+            >
+              <Stack gap={6}>
+                {vencimientos.map(v => {
+                  const meta = VENCIMIENTO_META[v.tipo]
+                  const urg  = urgencia(v.fecha_expiracion)
+                  return (
+                    <Fila key={v.key}>
+                      <Group justify="space-between" wrap="nowrap" align="flex-start">
+                        <div style={{ minWidth: 0 }}>
+                          <Group gap={6} wrap="nowrap">
+                            <Badge size="xs" variant="light" color={meta.color}>{meta.label}</Badge>
+                            {v.vehiculo_id != null && onNavigateVehiculo ? (
+                              <VehiculoNombre
+                                nombre={v.titulo} vehiculoId={v.vehiculo_id}
+                                onNavigate={onNavigateVehiculo}
+                              />
+                            ) : (
+                              <Text size="sm" fw={500} truncate>{v.titulo}</Text>
+                            )}
+                          </Group>
+                          <Text size="xs" c="dimmed">{v.detalle}</Text>
+                        </div>
+                        <Badge size="xs" variant="light" color={urg.color}>{urg.texto}</Badge>
+                      </Group>
+                    </Fila>
+                  )
+                })}
+              </Stack>
+            </Seccion>
           )}
 
           {/* ── Agendado ── */}

@@ -16,11 +16,12 @@ import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
   IconChevronRight, IconAlertTriangle, IconCalendarEvent, IconPlus, IconArrowLeft, IconCheck, IconX,
-  IconTool, IconGasStation, IconShoppingCart, IconCoin,
+  IconTool, IconGasStation, IconShoppingCart, IconCoin, IconFileCertificate,
 } from '@tabler/icons-react'
 import DiaDetalleDrawer from '../components/DiaDetalleDrawer'
 import { useActividadMes } from '../hooks/useActividadDia'
-import type { ActividadDia } from '../hooks/useActividadDia'
+import type { ActividadDia, Vencimiento } from '../hooks/useActividadDia'
+import { VENCIMIENTO_META, urgencia } from '../lib/vencimientoMeta'
 import { formatMXN, formatNum } from '../lib/formato'
 import {
   useRequerimientosVencidos, useRequerimientosPorVencer,
@@ -148,8 +149,9 @@ const MARCAS: { key: ClaveConteo; color: string; label: string }[] = [
 
 // Resumen textual del día para el tooltip nativo del cuadro: es lo que evita
 // tener que abrir el detalle solo para saber si vale la pena abrirlo.
-function resumenDia(a: ActividadDia | undefined, agendas: number): string | undefined {
+function resumenDia(a: ActividadDia | undefined, agendas: number, vencen: number): string | undefined {
   const partes: string[] = []
+  if (vencen > 0)                partes.push(`${vencen} documento${vencen !== 1 ? 's' : ''} vence${vencen !== 1 ? 'n' : ''}`)
   if (agendas > 0)               partes.push(`${agendas} agendado${agendas !== 1 ? 's' : ''}`)
   if (!a) return partes.length ? partes.join(' · ') : undefined
   if (a.mantenimientos > 0)       partes.push(`${a.mantenimientos} mantenimiento${a.mantenimientos !== 1 ? 's' : ''}`)
@@ -167,6 +169,14 @@ function resumenDia(a: ActividadDia | undefined, agendas: number): string | unde
 // 'YYYY-MM' del mes al que pertenece una fecha ISO.
 function mesDe(iso: string): string {
   return iso.slice(0, 7)
+}
+
+// '2026-07' → 'julio 2026'. Las tarjetas de resumen lo llevan en la etiqueta:
+// decían solo "del mes" y, en un mes con un único día de gasto, la cifra es
+// idéntica a la de ese día y no había forma de saber cuál de las dos era.
+function nombreMes(mes: string): string {
+  const [anio, m] = mes.split('-').map(Number)
+  return new Date(anio, m - 1, 15).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
 }
 
 // ─── Tarjeta de alerta (vencidos / por vencer) ────────────────────────────────
@@ -438,6 +448,20 @@ export default function Calendario({
     return map
   }, [actividadMesData])
 
+  // Los vencimientos del mes llegan completos (no agregados por día): se
+  // agrupan aquí para marcar el cuadro y, más abajo, listarlos por fecha.
+  const vencimientosMes = useMemo<Vencimiento[]>(
+    () => actividadMesData?.data.vencimientos ?? [], [actividadMesData])
+  const vencimientosPorDia = useMemo(() => {
+    const map = new Map<string, Vencimiento[]>()
+    for (const v of vencimientosMes) {
+      const arr = map.get(v.fecha_expiracion)
+      if (arr) arr.push(v)
+      else map.set(v.fecha_expiracion, [v])
+    }
+    return map
+  }, [vencimientosMes])
+
   // Totales del mes visible, para la tira de resumen sobre el calendario.
   const totalesMes = useMemo(() => {
     let manoObra = 0, refacciones = 0, combustible = 0
@@ -651,25 +675,25 @@ export default function Calendario({
       {/* ── Resumen del mes visible ── */}
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
         <ResumenMesCard
-          label="Gasto del mes" icon={IconCoin} color="teal"
+          label={`Gasto de ${nombreMes(mesVisible)}`} icon={IconCoin} color="teal"
           valor={formatMXN(totalesMes.total)}
           detalle={`${formatMXN(totalesMes.manoObra)} mano de obra`}
           cargando={loadingActividad}
         />
         <ResumenMesCard
-          label="Mantenimientos" icon={IconTool} color="blue"
+          label={`Mantenimientos de ${nombreMes(mesVisible)}`} icon={IconTool} color="blue"
           valor={formatNum(totalesMes.mantenimientos)}
           detalle={`${totalesMes.incidencias} incidencia${totalesMes.incidencias !== 1 ? 's' : ''} reportada${totalesMes.incidencias !== 1 ? 's' : ''}`}
           cargando={loadingActividad}
         />
         <ResumenMesCard
-          label="Combustible" icon={IconGasStation} color="grape"
+          label={`Combustible de ${nombreMes(mesVisible)}`} icon={IconGasStation} color="grape"
           valor={formatMXN(totalesMes.combustible)}
           detalle={`${formatNum(totalesMes.recargas)} recarga${totalesMes.recargas !== 1 ? 's' : ''}`}
           cargando={loadingActividad}
         />
         <ResumenMesCard
-          label="Refacciones" icon={IconShoppingCart} color="indigo"
+          label={`Refacciones de ${nombreMes(mesVisible)}`} icon={IconShoppingCart} color="indigo"
           valor={formatMXN(totalesMes.refacciones)}
           detalle={`${formatNum(totalesMes.compras)} compra${totalesMes.compras !== 1 ? 's' : ''}`}
           cargando={loadingActividad}
@@ -709,7 +733,7 @@ export default function Calendario({
                         firstInRange: enRango && !fechasConAgenda.has(addDaysIso(dateStr, -1)),
                         lastInRange:  enRango && !fechasConAgenda.has(addDaysIso(dateStr, 1)),
                         onClick: () => abrirDia(dateStr),
-                        title:   resumenDia(act, agendaCount),
+                        title:   resumenDia(act, agendaCount, vencimientosPorDia.get(dateStr)?.length ?? 0),
                         style: {
                           cursor: 'pointer',
                           // A más agendas el mismo día, más opaco el naranja.
@@ -723,6 +747,10 @@ export default function Calendario({
                       const act = actividadPorDia.get(dateStr)
                       const dia = Number(String(dateStr).slice(8, 10))
                       const marcas = MARCAS.filter(m => (act?.[m.key] ?? 0) > 0)
+                      // Los vencimientos no vienen del resumen por día, así que
+                      // su punto se añade aparte. Va siempre al final para que la
+                      // fila no cambie de orden según lo que traiga el día.
+                      const vencenHoy = vencimientosPorDia.get(dateStr)?.length ?? 0
                       return (
                         <Stack gap={0} align="center" justify="center" style={{ lineHeight: 1 }}>
                           <span>{dia}</span>
@@ -740,6 +768,15 @@ export default function Calendario({
                                 }}
                               />
                             ))}
+                            {vencenHoy > 0 && (
+                              <span
+                                style={{
+                                  width: 4, height: 4, borderRadius: '50%',
+                                  backgroundColor: 'var(--mantine-color-cyan-6)',
+                                  display: 'inline-block',
+                                }}
+                              />
+                            )}
                           </Group>
                         </Stack>
                       )
@@ -759,6 +796,13 @@ export default function Calendario({
                       <Text size="xs" c="dimmed">{m.label}</Text>
                     </Group>
                   ))}
+                  <Group gap={5}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: '50%',
+                      backgroundColor: 'var(--mantine-color-cyan-6)', display: 'inline-block',
+                    }} />
+                    <Text size="xs" c="dimmed">Vence un documento</Text>
+                  </Group>
                 </Group>
                 <Group gap="md" justify="center">
                   <Group gap={6}>
@@ -856,6 +900,57 @@ export default function Calendario({
       </Grid>
 
       {/* ── Detalle del día ── */}
+      {/* ── Documentos que vencen en el mes visible ── */}
+      <Card withBorder padding="lg" radius="md">
+        <Group justify="space-between" align="center" mb="sm" wrap="nowrap">
+          <Group gap={8} wrap="nowrap">
+            <ThemeIcon color="cyan" variant="light" size="sm" radius="sm">
+              <IconFileCertificate size={14} />
+            </ThemeIcon>
+            <Text fw={600} tt="capitalize">Documentos que vencen en {nombreMes(mesVisible)}</Text>
+            <Badge size="xs" variant="light" color="cyan" circle>{vencimientosMes.length}</Badge>
+          </Group>
+        </Group>
+        {loadingActividad ? (
+          <Center py="md"><Loader size="sm" /></Center>
+        ) : vencimientosMes.length === 0 ? (
+          <Text c="dimmed" size="sm">
+            Ningún seguro, permiso, tenencia ni licencia vence este mes.
+          </Text>
+        ) : (
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="xs">
+            {vencimientosMes.map(v => {
+              const meta = VENCIMIENTO_META[v.tipo]
+              const urg  = urgencia(v.fecha_expiracion)
+              return (
+                <Card
+                  key={v.key} withBorder padding="xs" radius="sm"
+                  style={{
+                    borderLeft: `3px solid var(--mantine-color-${meta.color}-6)`,
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => abrirDia(v.fecha_expiracion)}
+                >
+                  <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
+                    <div style={{ minWidth: 0 }}>
+                      <Group gap={6} wrap="nowrap">
+                        <Badge size="xs" variant="light" color={meta.color}>{meta.label}</Badge>
+                        <Text size="sm" fw={500} truncate>{v.titulo}</Text>
+                      </Group>
+                      <Text size="xs" c="dimmed" truncate>{v.detalle}</Text>
+                    </div>
+                    <Stack gap={0} align="flex-end" style={{ flexShrink: 0 }}>
+                      <Text size="xs" fw={600}>{fmtFecha(v.fecha_expiracion)}</Text>
+                      <Text size="xs" c={urg.color === 'gray' ? 'dimmed' : urg.color}>{urg.texto}</Text>
+                    </Stack>
+                  </Group>
+                </Card>
+              )
+            })}
+          </SimpleGrid>
+        )}
+      </Card>
+
       <DiaDetalleDrawer
         fecha={selectedDate}
         agendasDelDia={agendasDelDia}

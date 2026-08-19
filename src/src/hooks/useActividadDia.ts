@@ -82,6 +82,19 @@ export interface TraspasoDia {
   usuario_email: string | null
 }
 
+export type TipoVencimiento = 'seguro' | 'permiso' | 'tenencia' | 'licencia'
+
+/** Documento que expira: seguro, permiso de circulación, tenencia o licencia. */
+export interface Vencimiento {
+  key:              string
+  tipo:             TipoVencimiento
+  fecha_expiracion: string
+  titulo:           string
+  detalle:          string
+  vehiculo_id:      number | null
+  conductor_id:     number | null
+}
+
 export interface TotalesDia {
   mano_obra:     number
   refacciones:   number
@@ -103,6 +116,7 @@ export interface ActividadDelDia {
   incidencias_cerradas: IncidenciaCerradaDia[]
   compras:              CompraDia[]
   traspasos:            TraspasoDia[]
+  vencimientos:         Vencimiento[]
 }
 
 // Solo consulta cuando hay un día seleccionado: el detalle se abre al hacer
@@ -130,9 +144,11 @@ export interface ActividadDia {
 }
 
 export interface ActividadDelMes {
-  mes:   string
-  rango: { start: string; end: string }
-  dias:  ActividadDia[]
+  mes:          string
+  rango:        { start: string; end: string }
+  dias:         ActividadDia[]
+  /** Documentos que expiran en el mes, completos (no agregados por día). */
+  vencimientos: Vencimiento[]
 }
 
 /** @param mes 'YYYY-MM' */
