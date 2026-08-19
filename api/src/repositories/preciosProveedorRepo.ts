@@ -182,3 +182,63 @@ export async function existsMismoDia(
     `)
   return r.recordset.length > 0
 }
+
+// ─── Comparativa global ─────────────────────────────────────────────────────
+
+/** El precio vigente de una refacción con un proveedor, para cruzar a lo ancho. */
+export interface PrecioVigente {
+  pieza_id:      number
+  numero_serie:  string
+  descripcion:   string
+  tipo_pieza:    string | null
+  proveedor_id:  number
+  proveedor:     string
+  precio:        number
+  fecha:         string
+  observaciones: string | null
+  /** Lo que se pagó la última vez que se compró esa refacción, venga de quien venga. */
+  ultimo_pagado:      number | null
+  ultimo_proveedor:   string | null
+  ultima_compra:      string | null
+}
+
+// La comparativa de un proveedor contra los demás ya existe (findByProveedor);
+// esto es la tabla completa: una fila por (refacción, proveedor) con el precio
+// que está vigente hoy. Se devuelve larga y no pivoteada porque el número de
+// proveedores no se sabe de antemano — pivotearla es trabajo del servicio.
+//
+// Se trae además la última compra real de cada refacción: el precio cotizado
+// dice a cuánto la venden, pero la decisión se toma comparándolo contra lo que
+// de hecho se pagó la última vez.
+export async function findVigentesGlobal(): Promise<PrecioVigente[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    WITH vigentes AS (
+      SELECT pp.id, pp.proveedor_id, pp.pieza_id, pp.precio, pp.fecha, pp.observaciones,
+             ROW_NUMBER() OVER (PARTITION BY pp.proveedor_id, pp.pieza_id
+                                ORDER BY pp.fecha DESC, pp.id DESC) AS rn
+      FROM precios_proveedor pp
+    ),
+    ultima_compra AS (
+      SELECT l.pieza_id, l.costo_unitario, l.fecha_compra, l.proveedor_id,
+             ROW_NUMBER() OVER (PARTITION BY l.pieza_id
+                                ORDER BY l.fecha_compra DESC, l.id DESC) AS rn
+      FROM lotes_pieza l
+    )
+    SELECT v.pieza_id, p.numero_serie, p.descripcion, tp.nombre AS tipo_pieza,
+           v.proveedor_id, pr.nombre AS proveedor,
+           v.precio, CONVERT(char(10), v.fecha, 23) AS fecha, v.observaciones,
+           uc.costo_unitario                        AS ultimo_pagado,
+           pru.nombre                               AS ultimo_proveedor,
+           CONVERT(char(10), uc.fecha_compra, 23)   AS ultima_compra
+    FROM vigentes v
+    JOIN piezas      p  ON p.id  = v.pieza_id
+    JOIN proveedores pr ON pr.id = v.proveedor_id
+    LEFT JOIN tipos_pieza  tp  ON tp.id = p.tipo_pieza_id
+    LEFT JOIN ultima_compra uc ON uc.pieza_id = v.pieza_id AND uc.rn = 1
+    LEFT JOIN proveedores  pru ON pru.id = uc.proveedor_id
+    WHERE v.rn = 1
+    ORDER BY p.descripcion, p.numero_serie, v.precio
+  `)
+  return r.recordset
+}

@@ -9,37 +9,28 @@
 import { Fragment, useMemo, useState } from 'react'
 import {
   SimpleGrid, Card, Text, Group, Stack, Loader, Center, Table, Divider, Badge, ActionIcon,
-  Collapse, Button, SegmentedControl, Alert, Tabs, Menu,
+  Collapse, Button, Alert, Tabs,
 } from '@mantine/core'
 import { BarChart, LineChart } from '@mantine/charts'
 import {
-  IconChevronRight, IconFileSpreadsheet, IconFileTypePdf, IconAlertTriangle, IconTool,
+  IconChevronRight, IconAlertTriangle, IconTool,
   IconShoppingCart, IconClockExclamation, IconExclamationCircle, IconCashBanknote,
   IconLayoutDashboard, IconDiscount2, IconCalendarExclamation, IconClipboardList,
-  IconDownload,
+  IconReportAnalytics,
 } from '@tabler/icons-react'
 import {
   useResumenMes, useRequerimientosVencidos, useRequerimientosPorVencer, useRequerimientosHistorial,
-  useDocumentosPorVencer, useIncidenciasAbiertas,
-  fetchReporteFlota, type RequerimientoVencido, type ResumenMes, type PeriodoComparacion,
+  useDocumentosPorVencer, useIncidenciasAbiertas, useAnalisisCostos,
+  type RequerimientoVencido, type VentanaCostos,
 } from '../hooks/useDashboard'
 import { SEVERIDAD_META } from '../lib/incidenciaMeta'
 import { useSucursales } from '../hooks/useSucursales'
-import { exportResumenMesToExcel } from '../lib/exportResumenMes'
-import { exportReporteFlotaToPdf } from '../lib/exportReporteFlota'
+import { unificarDocumentos, agruparSinDocumento, estadoVencimiento } from '../lib/documentosDashboard'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
 import { formatMXN, formatFecha, formatFechaCorta } from '../lib/formato'
 import { StatCard } from './StatCard'
 import DashboardCostos from './DashboardCostos'
-
-// Etiqueta y color del estado de vencimiento de un documento. Lo ya vencido va
-// en rojo; lo que está por vencer, en el color de aviso que use cada documento
-// (las licencias de conductor se marcan en amarillo).
-function estadoVencimiento(dias: number, colorAviso = 'orange'): { label: string; color: string } {
-  if (dias < 0)   return { label: `Vencido hace ${Math.abs(dias)} día${Math.abs(dias) !== 1 ? 's' : ''}`, color: 'red' }
-  if (dias === 0) return { label: 'Vence hoy', color: 'red' }
-  return { label: `Vence en ${dias} día${dias !== 1 ? 's' : ''}`, color: colorAviso }
-}
+import ReportesDashboardModal from './ReportesDashboardModal'
 
 // ─── Piezas compartidas ──────────────────────────────────────────────────────
 
@@ -197,80 +188,39 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
   const { data: documentosData, isLoading: loadingDocumentos } = useDocumentosPorVencer()
   const { data: incidenciasData, isLoading: loadingIncidencias } = useIncidenciasAbiertas()
   const { data: sucursalesData } = useSucursales()
-  const [exportando, setExportando] = useState<'excel' | 'pdf' | null>(null)
-  const [periodoComparacion, setPeriodoComparacion] = useState<PeriodoComparacion>('mes')
   const [tab, setTab] = useState<string | null>('resumen')
+  const [reportesAbierto, setReportesAbierto] = useState(false)
+  // La ventana del análisis de costos vive aquí y no dentro de la pestaña
+  // porque el reporte —que se pide desde la cabecera— tiene que salir del mismo
+  // periodo que se está viendo. React Query deduplica la consulta entre ambos.
+  const [ventanaCostos, setVentanaCostos] = useState<VentanaCostos>(90)
+  const { data: analisisData } = useAnalisisCostos(ventanaCostos)
 
   const vencidos = vencidosData?.data ?? []
   const porVencer = porVencerData?.data ?? []
   const incidencias = incidenciasData?.data ?? []
   const incidenciasGraves = incidencias.filter((i) => i.severidad === 'grave')
 
-  // Seguros + permisos + licencias de conductor por vencer, unificados y
-  // ordenados por urgencia. `vehiculos` es null en las licencias: no aplican a
-  // una unidad sino a la persona.
-  const documentosPorVencer = useMemo(() => {
-    const doc = documentosData?.data
-    const seguros = (doc?.seguros ?? []).map((s) => ({
-      key: `s-${s.id}`, tipo: 'Seguro' as const, colorTipo: 'blue', colorAviso: 'orange',
-      etiqueta: `${s.poliza} — ${s.compania}`,
-      fecha_expiracion: s.fecha_expiracion, dias_restantes: s.dias_restantes, vehiculos: s.vehiculos as number | null,
-    }))
-    const permisos = (doc?.permisos ?? []).map((p) => ({
-      key: `p-${p.id}`, tipo: 'Permiso' as const, colorTipo: 'grape', colorAviso: 'orange',
-      etiqueta: p.zona_circulacion,
-      fecha_expiracion: p.fecha_expiracion, dias_restantes: p.dias_restantes, vehiculos: p.vehiculos as number | null,
-    }))
-    const licencias = (doc?.licencias ?? []).map((l) => ({
-      key: `l-${l.conductor_id}-${l.tipo}`,
-      tipo: l.tipo === 'estatal'    ? ('Licencia estatal'   as const)
-          : l.tipo === 'expediente' ? ('Expediente federal' as const)
-          :                           ('Licencia federal'   as const),
-      colorTipo: 'teal', colorAviso: 'yellow',
-      etiqueta: l.numero ? `${l.conductor} — ${l.numero}` : l.conductor,
-      fecha_expiracion: l.fecha_expiracion, dias_restantes: l.dias_restantes, vehiculos: null,
-    }))
-    const tenencias = (doc?.tenencias ?? []).map((t) => ({
-      key: `t-${t.vehiculo_id}`, tipo: 'Tenencia' as const, colorTipo: 'indigo', colorAviso: 'orange',
-      etiqueta: t.vehiculo,
-      fecha_expiracion: t.fecha_expiracion, dias_restantes: t.dias_restantes, vehiculos: null,
-    }))
-    return [...seguros, ...permisos, ...licencias, ...tenencias].sort((a, b) => a.dias_restantes - b.dias_restantes)
-  }, [documentosData])
-
-  // Unidades sin tenencia o sin seguro. Van aparte de la lista de arriba: no
-  // tienen fecha, así que no hay "días restantes" con los cuales ordenarlas ni
-  // aparecer entre los vencimientos. Se juntan por vehículo porque a más de una
-  // le falta lo mismo… y a algunas les faltan las dos.
-  const sinDocumento = useMemo(() => {
-    const doc = documentosData?.data
-    const porVehiculo = new Map<number, {
-      vehiculo_id: number; vehiculo: string; placas: string | null; tipo: string
-      tenencia: boolean; seguro: boolean
-    }>()
-    const registrar = (
-      lista: { vehiculo_id: number; vehiculo: string; placas: string | null; tipo: string }[],
-      falta: 'tenencia' | 'seguro',
-    ) => {
-      for (const v of lista) {
-        const prev = porVehiculo.get(v.vehiculo_id) ?? { ...v, tenencia: false, seguro: false }
-        prev[falta] = true
-        porVehiculo.set(v.vehiculo_id, prev)
-      }
-    }
-    registrar(doc?.sin_tenencia ?? [], 'tenencia')
-    registrar(doc?.sin_seguro   ?? [], 'seguro')
-    // Primero a las que les falta todo.
-    return [...porVehiculo.values()].sort((a, b) =>
-      Number(b.tenencia) + Number(b.seguro) - (Number(a.tenencia) + Number(a.seguro)) ||
-      a.vehiculo.localeCompare(b.vehiculo, 'es-MX'))
-  }, [documentosData])
+  // La unificación de las cuatro listas y el agrupado de las unidades sin
+  // documento viven en lib/documentosDashboard: los reportes de esta pestaña
+  // usan exactamente lo mismo, y así la hoja impresa no puede decir otra cosa
+  // que la pantalla.
+  const documentosPorVencer = useMemo(() => unificarDocumentos(documentosData?.data), [documentosData])
+  const sinDocumento        = useMemo(() => agruparSinDocumento(documentosData?.data), [documentosData])
 
   const totalSinTenencia = documentosData?.data.sin_tenencia.length ?? 0
   const totalSinSeguro   = documentosData?.data.sin_seguro.length   ?? 0
 
   const licenciasPorVencer = documentosData?.data.licencias ?? []
   const historial = (historialData?.data ?? []).map(h => ({ ...h, fechaLabel: formatFechaCorta(h.fecha) }))
+
+  // Lo que el reporte de la pestaña Pendientes necesita, en un solo objeto. Sin
+  // useMemo a propósito: las tres listas ya se rearman en cada render por el
+  // `?? []`, así que memorizarlo no evitaría nada y solo lo haría parecer
+  // estable. Su único consumidor es el modal de reportes, que lo lee al pulsar.
+  const datosPendientes = {
+    vencidos, porVencer, incidencias, historial: historialData?.data ?? [],
+  }
 
   // Lo que reclama acción en cada pestaña, para el contador de la etiqueta.
   const nVencimientos = documentosPorVencer.length + sinDocumento.length
@@ -286,29 +236,6 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
     (resumen?.data.mantenimientos.por_vehiculo ?? []).map(v => v.vehiculo_tipo)
   )].filter(t => TIPO_COLORS[t])
 
-  async function handleExportExcel(data: ResumenMes) {
-    setExportando('excel')
-    try {
-      await exportResumenMesToExcel(data)
-    } catch (e) {
-      alert((e as Error).message)
-    } finally {
-      setExportando(null)
-    }
-  }
-
-  async function handleExportPdf() {
-    setExportando('pdf')
-    try {
-      const reporte = await fetchReporteFlota(periodoComparacion)
-      await exportReporteFlotaToPdf(reporte.data, sucursalesData?.data ?? [])
-    } catch (e) {
-      alert((e as Error).message)
-    } finally {
-      setExportando(null)
-    }
-  }
-
   return (
     <Stack gap="lg">
       <Group justify="space-between" align="flex-end" wrap="wrap">
@@ -316,53 +243,16 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
           <Text size="xl" fw={600}>Resumen general</Text>
           <Text c="dimmed" size="sm">Vista general del sistema</Text>
         </div>
-        {/* Las dos exportaciones y el comparador ocupaban media cabecera y solo
-            se usan al cerrar el mes: ahora viven detrás de un botón. */}
-        <Menu shadow="md" width={280} position="bottom-end">
-          <Menu.Target>
-            <Button
-              variant="default" size="xs"
-              leftSection={<IconDownload size={16} />}
-              loading={exportando !== null}
-            >
-              Exportar
-            </Button>
-          </Menu.Target>
-          <Menu.Dropdown>
-            <Menu.Label>Resumen del periodo</Menu.Label>
-            <Menu.Item
-              leftSection={<IconFileSpreadsheet size={16} />}
-              disabled={!resumen || exportando !== null}
-              onClick={() => resumen && handleExportExcel(resumen.data)}
-            >
-              Excel — costos de los últimos 30 días
-            </Menu.Item>
-            <Menu.Divider />
-            <Menu.Label>Reporte de flota completo</Menu.Label>
-            <Menu.Item component="div" closeMenuOnClick={false}>
-              <Stack gap={6}>
-                <Text size="xs" c="dimmed">Comparar contra:</Text>
-                <SegmentedControl
-                  size="xs" fullWidth
-                  value={periodoComparacion}
-                  onChange={(v) => setPeriodoComparacion(v as PeriodoComparacion)}
-                  disabled={exportando !== null}
-                  data={[
-                    { label: 'Mes pasado',    value: 'mes' },
-                    { label: 'Semana pasada', value: 'semana' },
-                  ]}
-                />
-              </Stack>
-            </Menu.Item>
-            <Menu.Item
-              leftSection={<IconFileTypePdf size={16} />}
-              disabled={exportando !== null}
-              onClick={handleExportPdf}
-            >
-              PDF — reporte de flota
-            </Menu.Item>
-          </Menu.Dropdown>
-        </Menu>
+        {/* Los dos botones sueltos de Excel y PDF sacaban siempre lo mismo sin
+            importar la pestaña. Ahora es un solo punto de entrada y la elección
+            —qué se reporta y de qué parte de la flota— se hace adentro. */}
+        <Button
+          variant="default" size="sm"
+          leftSection={<IconReportAnalytics size={16} />}
+          onClick={() => setReportesAbierto(true)}
+        >
+          Reportes
+        </Button>
       </Group>
 
       {/* Aviso arriba de todo, fuera de las pestañas: una licencia —o el
@@ -571,6 +461,8 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
         {/* ══ Costos y ahorro ══ */}
         <Tabs.Panel value="costos" pt="lg">
           <DashboardCostos
+            ventana={ventanaCostos}
+            onVentanaChange={setVentanaCostos}
             onNavigateVehiculo={onNavigateVehiculo}
             onNavigatePieza={onNavigatePieza}
           />
@@ -798,6 +690,17 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
           </Stack>
         </Tabs.Panel>
       </Tabs>
+
+      <ReportesDashboardModal
+        opened={reportesAbierto}
+        onClose={() => setReportesAbierto(false)}
+        tab={tab ?? 'resumen'}
+        resumen={resumen?.data}
+        documentos={documentosData?.data}
+        pendientes={datosPendientes}
+        analisis={analisisData?.data}
+        sucursales={sucursalesData?.data ?? []}
+      />
     </Stack>
   )
 }

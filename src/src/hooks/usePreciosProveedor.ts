@@ -78,3 +78,52 @@ export function useDeletePrecioProveedor() {
     onSuccess: () => invalidar(qc),
   })
 }
+
+// ─── Comparativa global ──────────────────────────────────────────────────────
+// La lista de arriba es lo que cotiza *un* proveedor. Esto es la tabla completa
+// —cada refacción con el precio vigente de todos los que la cotizan— que es lo
+// que se necesita para decidir a quién comprarle y para el reporte de compras.
+
+export interface PrecioDeProveedor {
+  proveedor_id: number
+  proveedor:    string
+  precio:       number
+  fecha:        string
+  /** Cuánto más caro es que el mejor precio de esa refacción, en porcentaje. */
+  sobre_mejor:  number
+}
+
+export interface FilaComparativa {
+  pieza_id:         number
+  numero_serie:     string
+  descripcion:      string
+  tipo_pieza:       string | null
+  precios:          PrecioDeProveedor[]
+  mejor_precio:     number
+  mejor_proveedor:  string
+  peor_precio:      number
+  peor_proveedor:   string
+  diferencia:       number
+  diferencia_pct:   number
+  ultimo_pagado:    number | null
+  ultimo_proveedor: string | null
+  ultima_compra:    string | null
+  ahorro_unitario:  number | null
+}
+
+export interface ComparativaPrecios {
+  proveedores: { id: number; nombre: string }[]
+  piezas:      FilaComparativa[]
+  totales: {
+    refacciones:           number
+    comparables:           number
+    ahorro_unitario_total: number
+  }
+}
+
+export function useComparativaPrecios() {
+  return useQuery({
+    queryKey: ['precios-proveedor', 'comparativa'],
+    queryFn: () => api.get<{ data: ComparativaPrecios }>('/precios-proveedor/comparativa'),
+  })
+}

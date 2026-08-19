@@ -8,15 +8,21 @@
 import { useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert,
-  Button, ActionIcon, Modal,
+  Button, ActionIcon, Modal, Menu, Tooltip,
 } from '@mantine/core'
-import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
+import {
+  IconPencil, IconTrash, IconPlus, IconFileTypePdf, IconFileSpreadsheet, IconScale,
+} from '@tabler/icons-react'
 import {
   useProveedores, useCreateProveedor, useUpdateProveedor, useDeleteProveedor,
 } from '../hooks/useProveedores'
 import type { Proveedor } from '../hooks/useProveedores'
 import ProveedorForm from '../components/ProveedorForm'
 import ProveedorDetalle from './ProveedorDetalle'
+import { useComparativaPrecios } from '../hooks/usePreciosProveedor'
+import {
+  exportComparativaPreciosPdf, exportComparativaPreciosExcel,
+} from '../lib/reportes/comparativaPrecios'
 
 export default function Proveedores() {
   const [createOpen, setCreateOpen]       = useState(false)
@@ -26,6 +32,24 @@ export default function Proveedores() {
   const [detalleId, setDetalleId] = useState<number | null>(null)
 
   const { data, isLoading, isError } = useProveedores()
+  // La comparativa cruza todas las refacciones contra todos los proveedores. Se
+  // carga aqui —y no dentro del detalle de uno— porque la pregunta que contesta
+  // es de compras en general: "de todo lo que compramos, que conviene mover".
+  const { data: comparativa } = useComparativaPrecios()
+  const [generando, setGenerando] = useState<'pdf' | 'excel' | null>(null)
+
+  async function generarComparativa(formato: 'pdf' | 'excel') {
+    if (!comparativa) return
+    setGenerando(formato)
+    try {
+      await (formato === 'pdf' ? exportComparativaPreciosPdf : exportComparativaPreciosExcel)(comparativa.data)
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setGenerando(null)
+    }
+  }
+
   const createMut = useCreateProveedor()
   const updateMut = useUpdateProveedor()
   const deleteMut = useDeleteProveedor()
@@ -50,13 +74,55 @@ export default function Proveedores() {
               {proveedores.length} proveedores · abre uno para ver y comparar sus precios
             </Text>
           ) : <span />}
-          <Button
-            size="xs"
-            leftSection={<IconPlus size={14} />}
-            onClick={() => setCreateOpen(true)}
-          >
-            Nuevo proveedor
-          </Button>
+          <Group gap="xs">
+            {/* La comparativa vive junto al catalogo de proveedores y no dentro
+                de uno: comparar precios es justamente mirar a todos a la vez. */}
+            <Menu shadow="md" position="bottom-end" width={300}>
+              <Menu.Target>
+                <Tooltip
+                  label={comparativa && comparativa.data.piezas.length === 0
+                    ? 'Todavia no hay precios capturados que comparar'
+                    : 'Cada refaccion con el precio vigente de todos los proveedores'}
+                >
+                  <Button
+                    size="xs" variant="default"
+                    leftSection={<IconScale size={14} />}
+                    loading={generando !== null}
+                    disabled={!comparativa}
+                  >
+                    Comparativa de precios
+                  </Button>
+                </Tooltip>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>
+                  {comparativa
+                    ? `${comparativa.data.totales.refacciones} refacciones · ` +
+                      `${comparativa.data.totales.comparables} comparables`
+                    : 'Cargando…'}
+                </Menu.Label>
+                <Menu.Item
+                  leftSection={<IconFileTypePdf size={16} />}
+                  onClick={() => generarComparativa('pdf')}
+                >
+                  PDF — para negociar
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconFileSpreadsheet size={16} />}
+                  onClick={() => generarComparativa('excel')}
+                >
+                  Excel — tabla por proveedor
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+            <Button
+              size="xs"
+              leftSection={<IconPlus size={14} />}
+              onClick={() => setCreateOpen(true)}
+            >
+              Nuevo proveedor
+            </Button>
+          </Group>
         </Group>
 
         {isLoading ? (

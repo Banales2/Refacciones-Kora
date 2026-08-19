@@ -5,7 +5,6 @@
 // una comparación contra una referencia —el mismo modelo, la otra gasolinera,
 // el otro proveedor, el servicio anterior— y termina en pesos, porque un
 // porcentaje no autoriza una decisión y una cifra en pesos sí.
-import { useState } from 'react'
 import {
   Alert, Badge, Card, Center, Group, Loader, Progress, SegmentedControl, SimpleGrid,
   Stack, Table, Text, Tooltip,
@@ -93,18 +92,23 @@ const ANOMALIA_META: Record<TipoAnomalia, { label: string; color: string; ayuda:
 
 // ─── Pestaña ────────────────────────────────────────────────────────────────
 
-export default function DashboardCostos({ onNavigateVehiculo, onNavigatePieza }: {
+// La ventana la manda el Dashboard y no se guarda aqui: el boton de reportes
+// vive en la cabecera y tiene que exportar el mismo periodo que se esta viendo.
+export default function DashboardCostos({
+  ventana, onVentanaChange, onNavigateVehiculo, onNavigatePieza,
+}: {
+  ventana:          VentanaCostos
+  onVentanaChange:  (v: VentanaCostos) => void
   onNavigateVehiculo?: (vehiculoId: number) => void
   onNavigatePieza?:    (piezaId: number) => void
 }) {
-  const [ventana, setVentana] = useState<VentanaCostos>(90)
   const { data, isLoading } = useAnalisisCostos(ventana)
 
   const selector = (
     <SegmentedControl
       size="xs"
       value={String(ventana)}
-      onChange={(v) => setVentana(Number(v) as VentanaCostos)}
+      onChange={(v) => onVentanaChange(Number(v) as VentanaCostos)}
       data={[
         { label: '30 días', value: '30' },
         { label: '90 días', value: '90' },

@@ -6,15 +6,20 @@
 import { useState, useMemo } from 'react'
 import {
   Stack, Group, Text, TextInput, Table, Badge, Select, Paper,
-  Alert, Loader, Center, Button, ActionIcon, Modal, Anchor, Tooltip,
+  Alert, Loader, Center, Button, ActionIcon, Modal, Anchor, Tooltip, Menu,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconTrash, IconSearch } from '@tabler/icons-react'
+import {
+  IconTrash, IconSearch, IconFileTypePdf, IconFileSpreadsheet, IconReportAnalytics,
+} from '@tabler/icons-react'
 import {
   useTodosLosMantenimientos, useDeleteMantenimiento,
 } from '../hooks/useMantenimientos'
 import type { MantenimientoDeFlota } from '../hooks/useMantenimientos'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
+import {
+  exportMantenimientosPdf, exportMantenimientosExcel,
+} from '../lib/reportes/mantenimientos'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -58,6 +63,7 @@ export default function Mantenimientos({
   const [anio, setAnio] = useState<string | null>(null)
   const [detalleId, setDetalleId] = useState<number | null>(null)
   const [aEliminar, setAEliminar] = useState<MantenimientoDeFlota | null>(null)
+  const [generando, setGenerando] = useState<'pdf' | 'excel' | null>(null)
 
   const { data, isLoading, isError } = useTodosLosMantenimientos()
   const deleteMut = useDeleteMantenimiento()
@@ -94,6 +100,22 @@ export default function Mantenimientos({
 
   const hayFiltros = !!(debouncedSearch.trim() || tipo || anio)
 
+  // El reporte sale con lo que se esta viendo, filtros incluidos: quien acota a
+  // "Correctivo 2026" y exporta espera eso en el archivo, no el historico
+  // completo. Los filtros se imprimen en la portada para que el documento diga
+  // de que es.
+  async function generarReporte(formato: 'pdf' | 'excel') {
+    setGenerando(formato)
+    try {
+      const filtros = { busqueda: debouncedSearch, tipo, anio }
+      await (formato === 'pdf' ? exportMantenimientosPdf : exportMantenimientosExcel)(filtrados, filtros)
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setGenerando(null)
+    }
+  }
+
   function handleDelete() {
     if (!aEliminar) return
     deleteMut.mutate(aEliminar.id, {
@@ -113,6 +135,37 @@ export default function Mantenimientos({
             <Text size="xl" fw={600}>Mantenimientos</Text>
             <Text size="sm" c="dimmed">Historial de servicios de toda la flota</Text>
           </div>
+          <Menu shadow="md" position="bottom-end" width={280}>
+            <Menu.Target>
+              <Button
+                variant="default" size="sm"
+                leftSection={<IconReportAnalytics size={16} />}
+                loading={generando !== null}
+                disabled={isLoading}
+              >
+                Reporte
+              </Button>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Label>
+                {hayFiltros
+                  ? `${filtrados.length} servicio${filtrados.length !== 1 ? 's' : ''} filtrado${filtrados.length !== 1 ? 's' : ''}`
+                  : `Historial completo (${filtrados.length})`}
+              </Menu.Label>
+              <Menu.Item
+                leftSection={<IconFileTypePdf size={16} />}
+                onClick={() => generarReporte('pdf')}
+              >
+                PDF — totales por unidad y por tipo
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconFileSpreadsheet size={16} />}
+                onClick={() => generarReporte('excel')}
+              >
+                Excel — detalle y agrupados
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
         </Group>
 
         {/* Resumen de lo que se está viendo, no del total histórico: cambia con

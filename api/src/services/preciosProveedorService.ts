@@ -42,3 +42,121 @@ export async function remove(id: number): Promise<void> {
   const deleted = await repo.remove(id)
   if (!deleted) throw new NotFoundError('Precio')
 }
+
+// ─── Comparativa global de precios ──────────────────────────────────────────
+
+export interface PrecioDeProveedor {
+  proveedor_id: number
+  proveedor:    string
+  precio:       number
+  fecha:        string
+  /** Cuánto más caro es que el mejor precio de esa refacción, en porcentaje. */
+  sobre_mejor:  number
+}
+
+export interface FilaComparativa {
+  pieza_id:        number
+  numero_serie:    string
+  descripcion:     string
+  tipo_pieza:      string | null
+  /** Ordenados del más barato al más caro. */
+  precios:         PrecioDeProveedor[]
+  mejor_precio:    number
+  mejor_proveedor: string
+  peor_precio:     number
+  peor_proveedor:  string
+  /** Diferencia entre el más caro y el más barato: el margen que hay para negociar. */
+  diferencia:      number
+  diferencia_pct:  number
+  /** Última compra real, para contrastar la cotización contra lo que se pagó. */
+  ultimo_pagado:    number | null
+  ultimo_proveedor: string | null
+  ultima_compra:    string | null
+  /** Lo que se paga de más hoy contra el mejor precio cotizado, por unidad. */
+  ahorro_unitario:  number | null
+}
+
+export interface ComparativaPrecios {
+  /** Proveedores que aparecen en al menos una refacción, para armar las columnas. */
+  proveedores: { id: number; nombre: string }[]
+  piezas:      FilaComparativa[]
+  totales: {
+    refacciones:          number
+    /** Cuántas tienen precio de dos o más proveedores: las únicas comparables. */
+    comparables:          number
+    /** Suma del ahorro por unidad de las que hoy se compran más caro de lo necesario. */
+    ahorro_unitario_total: number
+  }
+}
+
+// Pivotea los precios vigentes: de una fila por (refacción, proveedor) a una
+// fila por refacción con todos sus precios ordenados. Se hace aquí y no en SQL
+// porque el número de proveedores es variable y un PIVOT tendría que armarse
+// con SQL dinámico.
+export async function getComparativa(): Promise<ComparativaPrecios> {
+  const vigentes = await repo.findVigentesGlobal()
+
+  const porPieza = new Map<number, FilaComparativa>()
+  const proveedores = new Map<number, string>()
+
+  for (const v of vigentes) {
+    proveedores.set(v.proveedor_id, v.proveedor)
+    const fila = porPieza.get(v.pieza_id) ?? {
+      pieza_id: v.pieza_id, numero_serie: v.numero_serie, descripcion: v.descripcion,
+      tipo_pieza: v.tipo_pieza, precios: [],
+      mejor_precio: 0, mejor_proveedor: '', peor_precio: 0, peor_proveedor: '',
+      diferencia: 0, diferencia_pct: 0,
+      ultimo_pagado: v.ultimo_pagado, ultimo_proveedor: v.ultimo_proveedor,
+      ultima_compra: v.ultima_compra, ahorro_unitario: null,
+    }
+    fila.precios.push({
+      proveedor_id: v.proveedor_id, proveedor: v.proveedor,
+      precio: v.precio, fecha: v.fecha, sobre_mejor: 0,
+    })
+    porPieza.set(v.pieza_id, fila)
+  }
+
+  const piezas = [...porPieza.values()]
+  for (const fila of piezas) {
+    fila.precios.sort((a, b) => a.precio - b.precio || a.proveedor.localeCompare(b.proveedor, 'es-MX'))
+    const mejor = fila.precios[0]
+    const peor  = fila.precios[fila.precios.length - 1]
+    fila.mejor_precio    = mejor.precio
+    fila.mejor_proveedor = mejor.proveedor
+    fila.peor_precio     = peor.precio
+    fila.peor_proveedor  = peor.proveedor
+    fila.diferencia      = Math.round((peor.precio - mejor.precio) * 100) / 100
+    fila.diferencia_pct  = mejor.precio > 0
+      ? Math.round(((peor.precio - mejor.precio) / mejor.precio) * 1000) / 10
+      : 0
+    for (const p of fila.precios) {
+      p.sobre_mejor = mejor.precio > 0
+        ? Math.round(((p.precio - mejor.precio) / mejor.precio) * 1000) / 10
+        : 0
+    }
+    // Solo cuenta como ahorro si lo último que se pagó fue de verdad más caro
+    // que la mejor cotización vigente.
+    fila.ahorro_unitario = fila.ultimo_pagado != null && fila.ultimo_pagado > mejor.precio
+      ? Math.round((fila.ultimo_pagado - mejor.precio) * 100) / 100
+      : null
+  }
+
+  // Primero lo que más margen tiene: es donde una llamada al proveedor rinde más.
+  piezas.sort((a, b) =>
+    (b.ahorro_unitario ?? 0) - (a.ahorro_unitario ?? 0) ||
+    b.diferencia - a.diferencia ||
+    a.descripcion.localeCompare(b.descripcion, 'es-MX'))
+
+  return {
+    proveedores: [...proveedores.entries()]
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es-MX')),
+    piezas,
+    totales: {
+      refacciones: piezas.length,
+      comparables: piezas.filter((p) => p.precios.length > 1).length,
+      ahorro_unitario_total: Math.round(
+        piezas.reduce((s, p) => s + (p.ahorro_unitario ?? 0), 0) * 100) / 100,
+    },
+  }
+}

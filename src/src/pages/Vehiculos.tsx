@@ -10,11 +10,14 @@ import {
   Stack, Group, Text, TextInput, Textarea, Table, Badge, Pill,
   Pagination, Loader, Center, Alert, Button, Select, MultiSelect,
   Modal, ActionIcon, Tooltip, NumberInput, Input,
-  Divider, Grid, Paper, SegmentedControl, Accordion, Drawer,
+  Divider, Grid, Paper, SegmentedControl, Accordion, Drawer, Menu,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight, IconAlertTriangle, IconFileTypePdf } from '@tabler/icons-react'
+import {
+  IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight, IconAlertTriangle,
+  IconFileTypePdf, IconFileSpreadsheet, IconReportAnalytics,
+} from '@tabler/icons-react'
 import {
   useVehiculos, useVehiculo, useCreateVehiculo, useUpdateVehiculo, useDeleteVehiculo, vehiculoLabel,
   fetchTodosLosVehiculos,
@@ -22,6 +25,8 @@ import {
 import { useSucursales } from '../hooks/useSucursales'
 import type { Sucursal } from '../hooks/useSucursales'
 import { exportVehiculosReporteToPdf } from '../lib/exportVehiculosReporte'
+import { exportVehiculoPdf, exportVehiculoExcel } from '../lib/reportes/vehiculo'
+import { useRecargas } from '../hooks/useRecargas'
 import {
   TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre, KM_MAX, validarKm,
 } from '../lib/validaciones'
@@ -2422,6 +2427,12 @@ function VehiculoDetalle({
 
   const { data: reqData  } = useRequerimientos(vehiculo.id)
   const { data: mantData } = useMantenimientos(vehiculo.id)
+  // Las secciones de abajo ya piden estas tres listas; React Query las comparte
+  // por clave, asi que pedirlas aqui para el expediente no agrega peticiones.
+  const { data: incidData }   = useIncidenciasVehiculo(vehiculo.id)
+  const { data: piezasData }  = usePiezasVehiculo(vehiculo.id)
+  const { data: recargasData } = useRecargas(vehiculo.id)
+  const [generando, setGenerando] = useState<'pdf' | 'excel' | null>(null)
 
   const updateKmMut = useUpdateVehiculo()
   const [editingKm, setEditingKm] = useState(false)
@@ -2438,6 +2449,29 @@ function VehiculoDetalle({
       onSuccess: (res) => { setEditingKm(false); onVehiculoUpdate(res.data) },
       onError:   () => setEditingKm(false),
     })
+  }
+
+  // El expediente sale con lo que ya esta en pantalla: si algo sigue cargando,
+  // esa seccion sale vacia en vez de bloquear el boton.
+  async function generarExpediente(formato: 'pdf' | 'excel') {
+    setGenerando(formato)
+    try {
+      const datos = {
+        vehiculo,
+        requerimientos: reqData?.data ?? [],
+        overdueIds,
+        warnIds,
+        mantenimientos: mantData?.data ?? [],
+        incidencias:    incidData?.data ?? [],
+        piezas:         piezasData?.data ?? [],
+        recargas:       recargasData?.data ?? [],
+      }
+      await (formato === 'pdf' ? exportVehiculoPdf : exportVehiculoExcel)(datos)
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setGenerando(null)
+    }
   }
 
   const { overdueIds, warnIds } = useMemo(() => {
@@ -2629,6 +2663,35 @@ function VehiculoDetalle({
             </Grid>
           </Stack>
           <Group gap="xs" wrap="nowrap">
+            {/* El expediente completo de la unidad: todo lo que esta en esta
+                pantalla mas el consumo y el costo por kilometro, que es lo que
+                se necesita para decidir si conviene seguir reparandola. */}
+            <Menu shadow="md" position="bottom-end">
+              <Menu.Target>
+                <Button
+                  variant="light" size="xs"
+                  leftSection={<IconReportAnalytics size={16} />}
+                  loading={generando !== null}
+                >
+                  Expediente
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>Expediente de esta unidad</Menu.Label>
+                <Menu.Item
+                  leftSection={<IconFileTypePdf size={16} />}
+                  onClick={() => generarExpediente('pdf')}
+                >
+                  PDF
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconFileSpreadsheet size={16} />}
+                  onClick={() => generarExpediente('excel')}
+                >
+                  Excel
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
             <Tooltip label="Editar vehículo">
               <ActionIcon variant="light" color="blue" size="lg" onClick={() => onEdit(vehiculo)}>
                 <IconPencil size={16} />
