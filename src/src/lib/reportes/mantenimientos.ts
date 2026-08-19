@@ -15,12 +15,27 @@ export interface FiltrosMantenimientos {
   busqueda?: string
   tipo?:     string | null
   anio?:     string | null
+  /** Rango a mano, ambas inclusive. Manda sobre `anio` cuando viene. */
+  desde?:    string | null
+  hasta?:    string | null
+}
+
+// El periodo se describe con las fechas completas y no como "año 2025" cuando
+// se pidió a mano: el documento se archiva, y dentro de seis meses el único que
+// puede decir qué abarcó es el propio papel.
+function descripcionPeriodo(f: FiltrosMantenimientos): string | null {
+  if (f.desde && f.hasta) return `del ${formatFecha(f.desde)} al ${formatFecha(f.hasta)}`
+  if (f.desde)            return `desde el ${formatFecha(f.desde)}`
+  if (f.hasta)            return `hasta el ${formatFecha(f.hasta)}`
+  if (f.anio)             return `año ${f.anio}`
+  return null
 }
 
 function descripcionFiltros(f: FiltrosMantenimientos): string {
   const partes: string[] = []
   if (f.tipo)                partes.push(`tipo ${f.tipo}`)
-  if (f.anio)                partes.push(`año ${f.anio}`)
+  const periodo = descripcionPeriodo(f)
+  if (periodo)               partes.push(periodo)
   if (f.busqueda?.trim())    partes.push(`búsqueda "${f.busqueda.trim()}"`)
   return partes.length ? `Filtrado por ${partes.join(', ')}` : 'Historial completo'
 }
@@ -90,7 +105,8 @@ function ordenarPorFecha(items: MantenimientoDeFlota[]): MantenimientoDeFlota[] 
 }
 
 function nombreBase(f: FiltrosMantenimientos): string {
-  const sufijo = [f.tipo?.toLowerCase(), f.anio].filter(Boolean).join('-')
+  const periodo = f.desde || f.hasta ? [f.desde, f.hasta].filter(Boolean).join('_') : f.anio
+  const sufijo = [f.tipo?.toLowerCase(), periodo].filter(Boolean).join('-')
   return `mantenimientos${sufijo ? `-${sufijo}` : ''}-${hoyISO()}`
 }
 

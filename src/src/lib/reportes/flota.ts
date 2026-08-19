@@ -62,9 +62,28 @@ function totalesDe(vehiculos: VehiculoReporte[]): Totales {
   }), { mano_obra: 0, piezas: 0, total: 0, mantenimientos: 0, vencidos: 0, por_vencer: 0 })
 }
 
-function rangoMesLabel(rango: { start: string }): string {
-  return new Date(`${rango.start}T12:00:00`)
-    .toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
+// El rango de costos ya no es siempre el mes en curso: puede ser un año o dos
+// fechas elegidas a mano. Cuando cubre un mes calendario exacto se sigue
+// nombrando "agosto de 2026", que es como se dice; en cualquier otro caso se
+// imprimen las dos fechas, porque "agosto" sería mentira.
+function rangoMesLabel(rango: { start: string; end: string }): string {
+  const inicio = new Date(`${rango.start}T12:00:00`)
+  const fin    = new Date(`${rango.end}T12:00:00`)
+  const finIncl = new Date(fin)
+  finIncl.setDate(finIncl.getDate() - 1)
+
+  const mesExacto = inicio.getDate() === 1 && fin.getDate() === 1 &&
+    (fin.getMonth() !== inicio.getMonth() || fin.getFullYear() !== inicio.getFullYear()) &&
+    finIncl.getMonth() === inicio.getMonth() && finIncl.getFullYear() === inicio.getFullYear()
+  if (mesExacto) return inicio.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
+
+  const anioExacto = inicio.getMonth() === 0 && inicio.getDate() === 1 &&
+    finIncl.getMonth() === 11 && finIncl.getDate() === 31 &&
+    finIncl.getFullYear() === inicio.getFullYear()
+  if (anioExacto) return String(inicio.getFullYear())
+
+  const fmt = (d: Date) => d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
+  return `${fmt(inicio)} – ${fmt(finIncl)}`
 }
 
 function rangoCortoLabel(rango: { start: string; end: string }): string {
@@ -90,7 +109,7 @@ function nombreBase(reporte: ReporteFlota, filtro: FiltroFlota): string {
   const sufijo = filtro.modo === 'toda' ? 'completa'
     : filtro.modo === 'tipo' ? filtro.tipo
     : `sucursal-${filtro.sucursalId}`
-  return `reporte-flota-${sufijo}-${reporte.rango_costos.start.slice(0, 7)}`
+  return `reporte-flota-${sufijo}-${reporte.rango_costos.start}`
 }
 
 const NOTA_COSTOS =

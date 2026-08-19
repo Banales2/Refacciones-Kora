@@ -19,6 +19,7 @@ import { crearLibroExcel } from './excelDoc'
 import { formatMXN, formatNum, formatFecha } from '../formato'
 import { TIPO_LABELS } from '../tipoVehiculo'
 import { SEVERIDAD_META } from '../incidenciaMeta'
+import { type Periodo, etiquetaPeriodo, sufijoPeriodo } from './periodo'
 
 export interface DatosVehiculo {
   vehiculo:       VehiculoRow
@@ -30,6 +31,12 @@ export interface DatosVehiculo {
   incidencias:    Incidencia[]
   piezas:         PiezaDeVehiculo[]
   recargas:       Recarga[]
+  /**
+   * Periodo que se pidió. Las listas ya llegan filtradas por él desde la
+   * pantalla; aquí solo sirve para decirlo en la portada, que es lo que evita
+   * que un expediente de un año se lea como si fuera toda la vida de la unidad.
+   */
+  periodo?:       Periodo
 }
 
 /** Salto de odómetro entre dos cargas que ya no es creíble: es captura errónea. */
@@ -39,9 +46,10 @@ function etiqueta(v: VehiculoRow): string {
   return `${v.marca} ${v.modelo} — ${v.serie}`
 }
 
-function nombreBase(v: VehiculoRow): string {
+function nombreBase(v: VehiculoRow, periodo?: Periodo): string {
   // La serie puede traer caracteres que no van en un nombre de archivo.
-  return `vehiculo-${v.serie.replace(/[^\w-]+/g, '')}-${hoyISO()}`
+  const sufijo = periodo ? sufijoPeriodo(periodo) : ''
+  return `vehiculo-${v.serie.replace(/[^\w-]+/g, '')}-${sufijo || hoyISO()}`
 }
 
 interface Consumo {
@@ -141,9 +149,10 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
   const v = d.vehiculo
   const r = resumir(d)
 
+  const periodoTxt = etiquetaPeriodo(d.periodo ?? { modo: 'default' }, 'Historial completo')
   const pdf = await crearReportePdf({
     titulo: `Expediente de unidad — ${etiqueta(v)}`,
-    subtitulo: `${TIPO_LABELS[v.tipo] ?? v.tipo}${v.placas ? ` · Placas ${v.placas}` : ''}`,
+    subtitulo: `${TIPO_LABELS[v.tipo] ?? v.tipo}${v.placas ? ` · Placas ${v.placas}` : ''} · ${periodoTxt}`,
   })
 
   // ── Identificación ──
@@ -182,7 +191,10 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
   // ── Costo de operación ──
   pdf.seccion(
     'Costo de operación acumulado',
-    'Todo lo registrado de esta unidad en el sistema, desde el primer movimiento capturado.',
+    d.periodo && d.periodo.modo !== 'default'
+      ? `Movimientos de esta unidad registrados en el periodo (${periodoTxt}). Lo anterior a esa ` +
+        'fecha no entra en estas sumas.'
+      : 'Todo lo registrado de esta unidad en el sistema, desde el primer movimiento capturado.',
   )
   pdf.datos([
     ['Mano de obra en mantenimientos', formatMXN(r.manoObra)],
@@ -367,7 +379,7 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
     })
   }
 
-  pdf.guardar(nombreBase(v))
+  pdf.guardar(nombreBase(v, d.periodo))
 }
 
 // ─── Excel ──────────────────────────────────────────────────────────────────
@@ -379,6 +391,10 @@ export async function exportVehiculoExcel(d: DatosVehiculo) {
 
   wb.hojaResumen('Ficha', [
     ['Unidad', etiqueta(v)],
+    // Va arriba de todo lo demás: sin esto, un expediente de un año se lee
+    // como si fuera toda la vida de la unidad. Los índices de `moneda` de
+    // abajo cuentan desde aquí, así que mueven junto con este renglón.
+    ['Periodo', etiquetaPeriodo(d.periodo ?? { modo: 'default' }, 'Historial completo')],
     ['Tipo', TIPO_LABELS[v.tipo] ?? v.tipo],
     ['Marca y modelo', `${v.marca} ${v.modelo}${v.modelo_anio ? ` (${v.modelo_anio})` : ''}`],
     ['Número de serie', v.serie],
@@ -407,7 +423,7 @@ export async function exportVehiculoExcel(d: DatosVehiculo) {
     ['Rendimiento (km/L)', r.consumo.rendimiento ?? 0],
     ['Cargas sin kilometraje', r.consumo.sinOdometro],
     ['Cargas sin vale', r.consumo.sinVale],
-  ], { moneda: [15, 16, 17, 18, 20, 25] })
+  ], { moneda: [16, 17, 18, 19, 21, 26] })
 
   wb.hoja('Mantenimientos', [
     { header: 'Fecha',         width: 13, formato: 'fecha',
@@ -472,5 +488,5 @@ export async function exportVehiculoExcel(d: DatosVehiculo) {
     { header: 'Origen',            width: 12, valor: (p) => p.origen },
   ], d.piezas, { vacio: 'El modelo de esta unidad no tiene tipos de refacción configurados.' })
 
-  await wb.guardar(nombreBase(v))
+  await wb.guardar(nombreBase(v, d.periodo))
 }

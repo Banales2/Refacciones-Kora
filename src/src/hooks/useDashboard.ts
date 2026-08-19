@@ -3,6 +3,7 @@
 // calendario y el reporte de flota completo (este último bajo demanda).
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import { conPeriodo, type Periodo } from '../lib/reportes/periodo'
 
 export interface VehiculoConMantenimiento {
   vehiculo_id:     number
@@ -235,8 +236,29 @@ export interface ReporteFlota {
 
 // Se pide bajo demanda (al exportar el PDF) en vez de precargarse con un hook,
 // porque agrega la flota completa y solo hace falta en ese momento.
-export function fetchReporteFlota(periodo: PeriodoComparacion) {
-  return api.get<{ data: ReporteFlota }>(`/dashboard/reporte-flota?periodo=${periodo}`)
+export function fetchReporteFlota(periodo: PeriodoComparacion, rango: Periodo = { modo: 'default' }) {
+  return api.get<{ data: ReporteFlota }>(
+    conPeriodo(`/dashboard/reporte-flota?periodo=${periodo}`, rango))
+}
+
+// ─── Consultas bajo demanda para los reportes ────────────────────────────────
+// El tablero ya trae estos datos por su ventana de siempre; cuando el reporte
+// se pide por un año o por dos fechas hay que volver a preguntar, porque lo que
+// está en pantalla es de otro periodo. Se piden al momento de exportar y no con
+// un hook para no dejar en caché un corte que se usó una sola vez.
+
+export function fetchResumen(rango: Periodo) {
+  return api.get<{ data: ResumenMes }>(conPeriodo('/dashboard/resumen-mes', rango))
+}
+
+export function fetchAnalisisCostos(rango: Periodo, dias: VentanaCostos = 90) {
+  return api.get<{ data: AnalisisCostos }>(
+    conPeriodo(`/dashboard/analisis-costos?dias=${dias}`, rango))
+}
+
+export function fetchDocumentosPorVencer(rango: Periodo) {
+  return api.get<{ data: DocumentosPorVencer }>(
+    conPeriodo('/dashboard/documentos-por-vencer', rango))
 }
 
 // ─── Análisis de costos ──────────────────────────────────────────────────────

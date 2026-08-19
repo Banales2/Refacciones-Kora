@@ -11,31 +11,48 @@ import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
 import { formatFecha } from '../formato'
 import { TIPO_LABELS } from '../tipoVehiculo'
+import { type Periodo, etiquetaPeriodo, sufijoPeriodo } from './periodo'
 
-function nombreBase(): string {
-  return `vencimientos-${hoyISO()}`
+const VENTANA_DEFAULT =
+  'Seguros, permisos y tenencias ya vencidos o que vencen dentro de 30 días; licencias de conductor ' +
+  'con vigencia dentro de 2 meses.'
+
+function nombreBase(periodo: Periodo): string {
+  const sufijo = sufijoPeriodo(periodo)
+  return `vencimientos-${sufijo || hoyISO()}`
+}
+
+// Con periodo el reporte deja de ser "lo que urge" para ser el calendario de
+// trámites de ese lapso, y la descripción tiene que decirlo: es lo único que
+// distingue una hoja de la otra una vez impresas.
+function alcance(periodo: Periodo): string {
+  if (periodo.modo === 'default') return VENTANA_DEFAULT
+  return `Documentos cuya vigencia termina en el periodo seleccionado (${etiquetaPeriodo(periodo)}), ` +
+         'sin importar cuánto falte para esa fecha.'
 }
 
 function faltantes(v: { tenencia: boolean; seguro: boolean }): string {
   return [v.tenencia && 'Tenencia', v.seguro && 'Seguro'].filter(Boolean).join(' y ')
 }
 
-export async function exportVencimientosPdf(doc: DocumentosPorVencer | undefined) {
+export async function exportVencimientosPdf(
+  doc: DocumentosPorVencer | undefined, periodo: Periodo = { modo: 'default' },
+) {
   const documentos = unificarDocumentos(doc)
   const sinDoc     = agruparSinDocumento(doc)
   const vencidos   = documentos.filter((d) => d.dias_restantes < 0)
 
   const pdf = await crearReportePdf({
     titulo: 'Documentos por vencer',
-    subtitulo: `${documentos.length} documento${documentos.length !== 1 ? 's' : ''} en la lista · ` +
+    subtitulo: `${etiquetaPeriodo(periodo, 'Próximos a vencer')} · ` +
+               `${documentos.length} documento${documentos.length !== 1 ? 's' : ''} en la lista · ` +
                `${vencidos.length} ya vencido${vencidos.length !== 1 ? 's' : ''}`,
     orientacion: 'landscape',
   })
 
   pdf.seccion(
     'Seguros, permisos, licencias y tenencias',
-    'Seguros, permisos y tenencias ya vencidos o que vencen dentro de 30 días; licencias de conductor ' +
-    'con vigencia dentro de 2 meses. Ordenados de lo más urgente a lo menos.',
+    `${alcance(periodo)} Ordenados de lo más urgente a lo menos.`,
   )
   if (documentos.length === 0) {
     pdf.vacio('Ningún documento por vencer. Todo en regla.')
@@ -81,10 +98,12 @@ export async function exportVencimientosPdf(doc: DocumentosPorVencer | undefined
     })
   }
 
-  pdf.guardar(nombreBase())
+  pdf.guardar(nombreBase(periodo))
 }
 
-export async function exportVencimientosExcel(doc: DocumentosPorVencer | undefined) {
+export async function exportVencimientosExcel(
+  doc: DocumentosPorVencer | undefined, periodo: Periodo = { modo: 'default' },
+) {
   const documentos = unificarDocumentos(doc)
   const sinDoc     = agruparSinDocumento(doc)
   const wb = await crearLibroExcel()
@@ -107,5 +126,5 @@ export async function exportVencimientosExcel(doc: DocumentosPorVencer | undefin
     { header: 'Le falta', width: 22, valor: (v) => faltantes(v) },
   ], sinDoc, { vacio: 'Todas las unidades tienen tenencia y seguro.' })
 
-  await wb.guardar(nombreBase())
+  await wb.guardar(nombreBase(periodo))
 }

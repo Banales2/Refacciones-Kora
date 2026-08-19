@@ -2,12 +2,13 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import * as service from '../services/dashboardService'
+import { parseRango } from '../shared/rangoReporte'
 
 export async function dashboardReporteFlota(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
     requireRole(req, 'admin', 'editor', 'viewer', 'lector')
     const periodo = req.query.get('periodo') === 'semana' ? 'semana' : 'mes'
-    const data = await service.getReporteFlota(periodo)
+    const data = await service.getReporteFlota(periodo, parseRango(req.query))
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
 }

@@ -5,7 +5,7 @@
 // operativo después. El orden de la pantalla se respeta para que quien lo
 // reciba pueda seguirlo en el sistema renglón por renglón.
 import type { AnalisisCostos, TipoAnomalia } from '../../hooks/useDashboard'
-import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
+import { crearReportePdf, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
 import { formatMXN, formatNum, formatFecha, formatMes } from '../formato'
 import { TIPO_LABELS } from '../tipoVehiculo'
@@ -19,12 +19,22 @@ const ANOMALIA_LABEL: Record<TipoAnomalia, string> = {
   sin_odometro:       'Carga sin kilometraje',
 }
 
+// `rango.end` es exclusivo: el último día que entró al análisis es el anterior.
+function ultimoDia(a: AnalisisCostos): string {
+  const d = new Date(`${a.rango.end}T12:00:00`)
+  d.setDate(d.getDate() - 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Se nombra el periodo por sus dos fechas y no como "últimos N días", porque
+// ahora puede ser un año cerrado o un rango elegido a mano: en un documento que
+// se archiva, "últimos 90 días" deja de querer decir nada al mes siguiente.
 function subtitulo(a: AnalisisCostos): string {
-  return `Últimos ${a.rango.dias} días · desde el ${formatFecha(a.rango.start)}`
+  return `Del ${formatFecha(a.rango.start)} al ${formatFecha(ultimoDia(a))} · ${a.rango.dias} días`
 }
 
 function nombreBase(a: AnalisisCostos): string {
-  return `costos-y-ahorro-${a.rango.dias}d-${hoyISO()}`
+  return `costos-y-ahorro-${a.rango.start}_${ultimoDia(a)}`
 }
 
 function km(v: number | null): string {
@@ -245,7 +255,7 @@ export async function exportCostosExcel(a: AnalisisCostos) {
   const wb = await crearLibroExcel()
 
   wb.hojaResumen('Resumen', [
-    ['Periodo analizado', `${a.rango.dias} días, desde el ${formatFecha(a.rango.start)}`],
+    ['Periodo analizado', `Del ${formatFecha(a.rango.start)} al ${formatFecha(ultimoDia(a))} (${a.rango.dias} días)`],
     ['Unidades con movimiento', t.vehiculos_analizados],
     ['', ''],
     ['AHORRO IDENTIFICADO', ''],

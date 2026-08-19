@@ -20,6 +20,7 @@ import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer
 import {
   exportMantenimientosPdf, exportMantenimientosExcel,
 } from '../lib/reportes/mantenimientos'
+import { FechaInput } from '../components/FechaInput'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -61,6 +62,11 @@ export default function Mantenimientos({
   const [debouncedSearch] = useDebouncedValue(search, 300)
   const [tipo, setTipo] = useState<string | null>(null)
   const [anio, setAnio] = useState<string | null>(null)
+  // Rango a mano, para cuando el año no basta: cuadrar contra una factura o
+  // sacar el corte de una quincena. Manda sobre el año, que se deshabilita
+  // mientras haya rango para que no se contradigan en silencio.
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
   const [detalleId, setDetalleId] = useState<number | null>(null)
   const [aEliminar, setAEliminar] = useState<MantenimientoDeFlota | null>(null)
   const [generando, setGenerando] = useState<'pdf' | 'excel' | null>(null)
@@ -79,16 +85,25 @@ export default function Mantenimientos({
     return [...anios].sort().reverse().map((a) => ({ value: a, label: a }))
   }, [todos])
 
+  const hayRango = !!(desde || hasta)
+
   const filtrados = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase()
     return todos.filter((m) => {
       if (tipo && m.tipo !== tipo) return false
-      if (anio && anioDe(m.fecha) !== anio) return false
+      if (!hayRango && anio && anioDe(m.fecha) !== anio) return false
+      if (hayRango) {
+        const dia = m.fecha?.split('T')[0]
+        // Sin fecha no se puede afirmar que cae en el rango: se deja fuera.
+        if (!dia) return false
+        if (desde && dia < desde) return false
+        if (hasta && dia > hasta) return false
+      }
       if (!q) return true
       return [m.vehiculo_serie, m.vehiculo_placas, m.tecnico, m.observaciones, m.tipo]
         .some((campo) => campo?.toLowerCase().includes(q))
     })
-  }, [todos, debouncedSearch, tipo, anio])
+  }, [todos, debouncedSearch, tipo, anio, desde, hasta, hayRango])
 
   const totales = useMemo(() => filtrados.reduce(
     (acc, m) => ({
@@ -98,7 +113,7 @@ export default function Mantenimientos({
     { mano: 0, piezas: 0 },
   ), [filtrados])
 
-  const hayFiltros = !!(debouncedSearch.trim() || tipo || anio)
+  const hayFiltros = !!(debouncedSearch.trim() || tipo || (!hayRango && anio) || hayRango)
 
   // El reporte sale con lo que se esta viendo, filtros incluidos: quien acota a
   // "Correctivo 2026" y exporta espera eso en el archivo, no el historico
@@ -107,7 +122,11 @@ export default function Mantenimientos({
   async function generarReporte(formato: 'pdf' | 'excel') {
     setGenerando(formato)
     try {
-      const filtros = { busqueda: debouncedSearch, tipo, anio }
+      const filtros = {
+        busqueda: debouncedSearch, tipo,
+        anio: hayRango ? null : anio,
+        desde: desde || null, hasta: hasta || null,
+      }
       await (formato === 'pdf' ? exportMantenimientosPdf : exportMantenimientosExcel)(filtrados, filtros)
     } catch (e) {
       alert((e as Error).message)
@@ -202,6 +221,23 @@ export default function Mantenimientos({
             data={anioOptions}
             value={anio}
             onChange={setAnio}
+            disabled={hayRango}
+            clearable
+          />
+          <FechaInput
+            w={150}
+            placeholder="Desde"
+            value={desde}
+            onChange={setDesde}
+            maxDate={hasta || undefined}
+            clearable
+          />
+          <FechaInput
+            w={150}
+            placeholder="Hasta"
+            value={hasta}
+            onChange={setHasta}
+            minDate={desde || undefined}
             clearable
           />
         </Group>

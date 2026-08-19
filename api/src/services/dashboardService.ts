@@ -5,6 +5,7 @@ import * as pendientesRepo from '../repositories/pendientesRepo'
 import { getPool } from '../shared/db'
 import { parseVigencia, DIAS_ALERTA_LICENCIA } from '../shared/vigenciaLicencia'
 import { fechaMexico } from '../shared/fechaMexico'
+import type { Rango } from '../shared/rangoReporte'
 
 function partesMexico(d: Date = new Date()): { year: number; month: number; day: number } {
   const [year, month, day] = fechaMexico(d).split('-').map(Number)
@@ -36,8 +37,6 @@ function inicioSemanaMexico(d: Date = new Date()): string {
   const diffToMonday = (dow + 6) % 7
   return addDias(hoy, -diffToMonday)
 }
-
-interface Rango { start: string; end: string }
 
 // Rango actual y anterior según el periodo elegido, ambos como [start, end).
 function rangoActualYAnterior(periodo: 'mes' | 'semana'): { actual: Rango; anterior: Rango } {
@@ -104,8 +103,12 @@ function rangoUltimos30Dias(): { start: string; end: string } {
   return { start: addDias(hoy, -29), end: addDias(hoy, 1) }
 }
 
-export async function getResumenMes() {
-  const { start, end } = rangoUltimos30Dias()
+// `rango` llega cuando el reporte se pidió por un año o por fechas elegidas a
+// mano; sin él se conserva la ventana móvil de 30 días con la que se lee el
+// tablero. El rango efectivo va de regreso en la respuesta para que el PDF
+// imprima el periodo que realmente se sumó, no el que alguien creyó pedir.
+export async function getResumenMes(rango?: Rango | null) {
+  const { start, end } = rango ?? rangoUltimos30Dias()
   const [mantenimientos, lotes] = await Promise.all([
     repo.findMantenimientosEnRango(start, end),
     repo.findLotesEnRango(start, end),
@@ -323,9 +326,16 @@ export interface DocumentosPorVencer {
   sin_seguro:   repo.VehiculoSinDocumento[]
 }
 
-export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
+// Con `rango` el reporte contesta otra pregunta: no "qué vence pronto" sino
+// "qué vence entre estas dos fechas" — que es como se arma el calendario de
+// trámites de un año. El límite superior pasa a ser el fin del rango, y lo que
+// vence antes del inicio se descarta (ya se tramitó o ya se dejó pasar).
+export async function getDocumentosPorVencer(rango?: Rango | null): Promise<DocumentosPorVencer> {
   const hoy = fechaMexico()
-  const limite = addDias(hoy, DIAS_ALERTA_DOCUMENTOS)
+  // `end` es exclusivo: el último día que cuenta es el anterior.
+  const limite = rango ? addDias(rango.end, -1) : addDias(hoy, DIAS_ALERTA_DOCUMENTOS)
+  const piso   = rango ? rango.start : null
+  const dentro = (fecha: string) => (piso ? fecha >= piso : true)
   const hoyDate = new Date(`${hoy}T12:00:00`)
   const dias = (fecha: string) => diffDias(hoyDate, new Date(`${fecha}T12:00:00`))
 
@@ -354,7 +364,9 @@ export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
       const fecha = parseVigencia(lic.vigencia)
       if (!fecha) continue
       const restantes = dias(fecha)
-      if (restantes > DIAS_ALERTA_LICENCIA) continue
+      // Sin rango se conserva la alerta de siempre (2 meses); con rango manda
+      // el rango, que puede mirar mucho más lejos o hacia atrás.
+      if (rango ? !(dentro(fecha) && fecha <= limite) : restantes > DIAS_ALERTA_LICENCIA) continue
       licencias.push({
         conductor_id: c.id, conductor: c.nombre,
         tipo: lic.tipo, numero: lic.numero,
@@ -365,10 +377,10 @@ export async function getDocumentosPorVencer(): Promise<DocumentosPorVencer> {
   licencias.sort((a, b) => a.dias_restantes - b.dias_restantes)
 
   return {
-    seguros:  seguros.map((s)  => ({ ...s,  dias_restantes: dias(s.fecha_expiracion) })),
-    permisos: permisos.map((p) => ({ ...p, dias_restantes: dias(p.fecha_expiracion) })),
+    seguros:  seguros.filter((s)  => dentro(s.fecha_expiracion)).map((s)  => ({ ...s,  dias_restantes: dias(s.fecha_expiracion) })),
+    permisos: permisos.filter((p) => dentro(p.fecha_expiracion)).map((p) => ({ ...p, dias_restantes: dias(p.fecha_expiracion) })),
     licencias,
-    tenencias: tenencias.map((t) => ({ ...t, dias_restantes: dias(t.fecha_expiracion) })),
+    tenencias: tenencias.filter((t) => dentro(t.fecha_expiracion)).map((t) => ({ ...t, dias_restantes: dias(t.fecha_expiracion) })),
     sin_tenencia: sinTenencia,
     sin_seguro:   sinSeguro,
   }
@@ -444,10 +456,15 @@ export interface ReporteFlota {
   vehiculos: VehiculoReporte[]
 }
 
-export async function getReporteFlota(periodo: 'mes' | 'semana' = 'mes'): Promise<ReporteFlota> {
+// `rango` acota los costos (mantenimientos y lotes) a un periodo elegido; el
+// inventario de unidades y los pendientes siempre son del día, porque son un
+// estado actual y no algo que ocurrió entre dos fechas.
+export async function getReporteFlota(
+  periodo: 'mes' | 'semana' = 'mes', rango?: Rango | null,
+): Promise<ReporteFlota> {
   await ensureDailySync()
 
-  const rangoMes = rangoMesActual()
+  const rangoMes = rango ?? rangoMesActual()
   const [vehiculosBase, costosPorVehiculo, lotes, clasificacion] = await Promise.all([
     vehiculosRepo.findAllParaReporte(),
     repo.findCostosPorVehiculoEnRango(rangoMes.start, rangoMes.end),

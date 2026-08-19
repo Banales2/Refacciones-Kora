@@ -18,7 +18,9 @@ import {
 import type {
   ResumenMes, DocumentosPorVencer, AnalisisCostos, PeriodoComparacion,
 } from '../hooks/useDashboard'
-import { fetchReporteFlota } from '../hooks/useDashboard'
+import {
+  fetchReporteFlota, fetchResumen, fetchAnalisisCostos, fetchDocumentosPorVencer,
+} from '../hooks/useDashboard'
 import type { Sucursal } from '../hooks/useSucursales'
 import { exportResumenPdf, exportResumenExcel } from '../lib/reportes/resumen'
 import { exportCostosPdf, exportCostosExcel } from '../lib/reportes/costos'
@@ -28,28 +30,45 @@ import {
   exportReporteFlotaPdf, exportReporteFlotaExcel, etiquetaFiltro, type FiltroFlota,
 } from '../lib/reportes/flota'
 import { TIPO_LABELS } from '../lib/tipoVehiculo'
+import SelectorPeriodoReporte from './SelectorPeriodoReporte'
+import { type Periodo, periodoValido, PERIODO_DEFAULT } from '../lib/reportes/periodo'
 
 type Formato = 'pdf' | 'excel'
 
 // Etiquetas de cada pestaña dentro del modal. Se nombra lo que contiene el
 // reporte, no la pestaña: quien lo abre desde "Pendientes" ya sabe dónde está,
 // lo que necesita saber es qué se va a llevar.
-const PESTANA: Record<string, { titulo: string; descripcion: string }> = {
+// `default` nombra la ventana de siempre de cada reporte —la que se ve en el
+// tablero— para que la opción por omisión del selector diga qué trae, en vez de
+// un "Predeterminado" que no explica nada. `fechable` marca los reportes que
+// admiten periodo: los pendientes no, porque son el estado de hoy y no algo que
+// ocurrió entre dos fechas.
+const PESTANA: Record<string, {
+  titulo: string; descripcion: string; default: string; fechable: boolean
+}> = {
   resumen: {
     titulo: 'Resumen de costos',
-    descripcion: 'Costos de los últimos 30 días, mantenimientos por vehículo y refacciones compradas.',
+    descripcion: 'Costos del periodo, mantenimientos por vehículo y refacciones compradas.',
+    default: 'Últimos 30 días (lo que ves en el tablero)',
+    fechable: true,
   },
   costos: {
     titulo: 'Costos y ahorro',
     descripcion: 'Ahorro identificado, costo por kilómetro, rendimiento por unidad, retrabajos y cargas a revisar.',
+    default: 'Ventana del tablero',
+    fechable: true,
   },
   vencimientos: {
     titulo: 'Vencimientos',
     descripcion: 'Seguros, permisos, licencias y tenencias por vencer, y unidades sin documentos.',
+    default: 'Lo que urge (30 días; licencias, 2 meses)',
+    fechable: true,
   },
   pendientes: {
     titulo: 'Pendientes de mantenimiento',
     descripcion: 'Requerimientos vencidos y por vencer agrupados por unidad, e incidencias sin atender.',
+    default: 'Estado de hoy',
+    fechable: false,
   },
 }
 
@@ -80,16 +99,24 @@ export default function ReportesDashboardModal({
   const [error, setError]     = useState<string | null>(null)
   const [alcance, setAlcance] = useState<string>(VALOR_TODA)
   const [periodo, setPeriodo] = useState<PeriodoComparacion>('mes')
+  // Cada bloque lleva su propio periodo: el de la pestaña y el de la flota son
+  // reportes distintos y casi nunca se piden por el mismo corte.
+  const [rangoTab, setRangoTab]     = useState<Periodo>(PERIODO_DEFAULT)
+  const [rangoFlota, setRangoFlota] = useState<Periodo>(PERIODO_DEFAULT)
 
   const meta = PESTANA[tab] ?? PESTANA.resumen
 
   // Un reporte de una pestaña cuyos datos no han llegado saldría en blanco: se
   // deshabilita hasta que hay algo que imprimir.
-  const datosListos =
+  // Con un periodo elegido los datos se vuelven a pedir a la API, así que no
+  // depende de lo que ya cargó el tablero; sin él, un reporte de una pestaña
+  // que aún no llega saldría en blanco.
+  const rangoPropio = rangoTab.modo !== 'default'
+  const datosListos = rangoPropio || (
     tab === 'resumen'      ? !!resumen
     : tab === 'costos'     ? !!analisis
     : tab === 'vencimientos' ? !!documentos
-    : true
+    : true)
 
   async function correr(clave: string, fn: () => Promise<void>) {
     setOcupado(clave)
@@ -107,17 +134,25 @@ export default function ReportesDashboardModal({
     return correr(`tab-${formato}`, async () => {
       const pdf = formato === 'pdf'
       switch (tab) {
-        case 'costos':
-          if (analisis) await (pdf ? exportCostosPdf : exportCostosExcel)(analisis)
+        case 'costos': {
+          // Con periodo propio se vuelve a consultar; sin él se usa lo que el
+          // tablero ya tiene y no se gasta otra petición.
+          const datos = rangoPropio ? (await fetchAnalisisCostos(rangoTab)).data : analisis
+          if (datos) await (pdf ? exportCostosPdf : exportCostosExcel)(datos)
           break
-        case 'vencimientos':
-          await (pdf ? exportVencimientosPdf : exportVencimientosExcel)(documentos)
+        }
+        case 'vencimientos': {
+          const datos = rangoPropio ? (await fetchDocumentosPorVencer(rangoTab)).data : documentos
+          await (pdf ? exportVencimientosPdf : exportVencimientosExcel)(datos, rangoTab)
           break
+        }
         case 'pendientes':
           await (pdf ? exportPendientesPdf : exportPendientesExcel)(pendientes)
           break
-        default:
-          if (resumen) await (pdf ? exportResumenPdf : exportResumenExcel)(resumen)
+        default: {
+          const datos = rangoPropio ? (await fetchResumen(rangoTab)).data : resumen
+          if (datos) await (pdf ? exportResumenPdf : exportResumenExcel)(datos)
+        }
       }
     })
   }
@@ -125,7 +160,7 @@ export default function ReportesDashboardModal({
   function reporteFlota(formato: Formato) {
     return correr(`flota-${formato}`, async () => {
       // Se pide al momento: agrega la flota completa y solo hace falta aquí.
-      const reporte = await fetchReporteFlota(periodo)
+      const reporte = await fetchReporteFlota(periodo, rangoFlota)
       const filtro = decodificarAlcance(alcance)
       const fn = formato === 'pdf' ? exportReporteFlotaPdf : exportReporteFlotaExcel
       await fn(reporte.data, sucursales, filtro)
@@ -139,6 +174,11 @@ export default function ReportesDashboardModal({
   ]
 
   const filtroActual = decodificarAlcance(alcance)
+
+  // Un rango a medio escribir no se puede pedir: el botón espera a que estén
+  // las dos fechas en vez de mandar una petición que la API va a rechazar.
+  const tabListo    = datosListos && periodoValido(rangoTab)
+  const flotaLista  = periodoValido(rangoFlota)
 
   return (
     <Modal opened={opened} onClose={onClose} title="Generar reporte" size="lg" centered>
@@ -158,17 +198,32 @@ export default function ReportesDashboardModal({
           {!datosListos && (
             <Text size="xs" c="dimmed">Todavía se están cargando los datos de esta pestaña…</Text>
           )}
+
+          {meta.fechable ? (
+            <SelectorPeriodoReporte
+              value={rangoTab}
+              onChange={setRangoTab}
+              etiquetaDefault={meta.default}
+              disabled={ocupado !== null}
+            />
+          ) : (
+            <Text size="xs" c="dimmed">
+              Este reporte no lleva periodo: es el estado de la flota hoy —lo que está vencido y lo
+              que sigue abierto—, no lo que pasó entre dos fechas.
+            </Text>
+          )}
+
           <Group gap="xs">
             <Button
               variant="light" leftSection={<IconFileTypePdf size={16} />}
-              loading={ocupado === 'tab-pdf'} disabled={!datosListos || ocupado !== null}
+              loading={ocupado === 'tab-pdf'} disabled={!tabListo || ocupado !== null}
               onClick={() => reportePestana('pdf')}
             >
               PDF
             </Button>
             <Button
               variant="light" color="green" leftSection={<IconFileSpreadsheet size={16} />}
-              loading={ocupado === 'tab-excel'} disabled={!datosListos || ocupado !== null}
+              loading={ocupado === 'tab-excel'} disabled={!tabListo || ocupado !== null}
               onClick={() => reportePestana('excel')}
             >
               Excel
@@ -214,6 +269,13 @@ export default function ReportesDashboardModal({
             />
           </Group>
 
+          <SelectorPeriodoReporte
+            value={rangoFlota}
+            onChange={setRangoFlota}
+            etiquetaDefault="Mes en curso"
+            disabled={ocupado !== null}
+          />
+
           {filtroActual.modo !== 'toda' && (
             <Alert color="gray" variant="light" p="xs">
               <Text size="xs">
@@ -228,14 +290,14 @@ export default function ReportesDashboardModal({
           <Group gap="xs">
             <Button
               variant="light" leftSection={<IconFileTypePdf size={16} />}
-              loading={ocupado === 'flota-pdf'} disabled={ocupado !== null}
+              loading={ocupado === 'flota-pdf'} disabled={!flotaLista || ocupado !== null}
               onClick={() => reporteFlota('pdf')}
             >
               PDF
             </Button>
             <Button
               variant="light" color="green" leftSection={<IconFileSpreadsheet size={16} />}
-              loading={ocupado === 'flota-excel'} disabled={ocupado !== null}
+              loading={ocupado === 'flota-excel'} disabled={!flotaLista || ocupado !== null}
               onClick={() => reporteFlota('excel')}
             >
               Excel

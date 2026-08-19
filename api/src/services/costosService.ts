@@ -190,12 +190,19 @@ interface Acumulado {
   tramos:      number
 }
 
-export async function getAnalisisCostos(dias: number): Promise<AnalisisCostos> {
+/**
+ * `rango` es semiabierto [start, end). Puede ser la ventana móvil que arma el
+ * endpoint a partir de `?dias=`, o el año / las fechas que alguien eligió para
+ * un reporte. Todo lo de adentro se calcula sobre él —incluido el sobrecosto
+ * anualizado, que se extrapola con los días que realmente abarca— salvo la
+ * gráfica de tendencia, que siempre cierra en el día de hoy porque es el
+ * contexto contra el que se leen los números, no parte del corte.
+ */
+export async function getAnalisisCostos(rango: { start: string; end: string }): Promise<AnalisisCostos> {
   const hoy   = fechaMexico()
-  const start = addDias(hoy, -(dias - 1))
-  const end   = addDias(hoy, 1)
-  // La gráfica de tendencia siempre trae 12 meses, sin importar la ventana de
-  // análisis: es el contexto contra el que se lee todo lo demás.
+  const start = rango.start
+  const end   = rango.end
+  const dias  = Math.max(1, diasEntre(start, end))
   const desdeGasto = addDias(hoy, -30 * MESES_GASTO)
 
   const [recargas, mantenimientos, compras, gastoMensual, flota] = await Promise.all([
