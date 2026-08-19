@@ -1,8 +1,9 @@
-// Página Calendario: vista mensual con los mantenimientos realizados (azul)
-// y las agendas programadas (naranja, marcando traslapes), alertas de
-// requerimientos vencidos y por vencer, y el flujo de agendar un
-// mantenimiento futuro para cualquier vehículo (que al completarse genera el
-// mantenimiento real).
+// Página Calendario: vista mensual de toda la actividad de la flota. Cada día
+// marca con puntos de color qué ocurrió (mantenimientos, incidencias,
+// combustible, compras) y las agendas programadas se pintan como un rango
+// naranja, marcando traslapes. Al hacer clic en un día se abre su bitácora
+// completa; arriba viven las alertas de requerimientos y el flujo de agendar un
+// mantenimiento futuro (que al completarse genera el mantenimiento real).
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
@@ -15,10 +16,15 @@ import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
   IconChevronRight, IconAlertTriangle, IconCalendarEvent, IconPlus, IconArrowLeft, IconCheck, IconX,
+  IconTool, IconGasStation, IconShoppingCart, IconCoin,
 } from '@tabler/icons-react'
+import DiaDetalleDrawer from '../components/DiaDetalleDrawer'
+import { useActividadMes } from '../hooks/useActividadDia'
+import type { ActividadDia } from '../hooks/useActividadDia'
+import { formatMXN, formatNum } from '../lib/formato'
 import {
-  useMantenimientosCalendario, useRequerimientosVencidos, useRequerimientosPorVencer,
-  type RequerimientoVencido, type MantenimientoCalendario,
+  useRequerimientosVencidos, useRequerimientosPorVencer,
+  type RequerimientoVencido,
 } from '../hooks/useDashboard'
 import {
   useAgendasCalendario, useCreateAgenda, useCancelarAgenda, useCompletarAgenda,
@@ -114,11 +120,53 @@ function addDaysIso(dateStr: string, delta: number): string {
   return d.toISOString().split('T')[0]
 }
 
-// Entre más eventos caen el mismo día, más opaco se pinta el color del cuadro.
+// Entre más agendas caen el mismo día, más opaco se pinta el naranja del cuadro.
 const TRASLAPE_RGB   = '253, 126, 20' // mantine orange-6 (agendas traslapadas)
-const REALIZADO_RGB  = '34, 139, 230' // mantine blue-6 (mantenimientos realizados)
 function overlapAlpha(count: number): number {
   return Math.min(0.28 + (count - 1) * 0.18, 0.95)
+}
+
+// Qué se marca bajo el número de cada día. El fondo del cuadro ya lo ocupan las
+// agendas (rango naranja), así que lo ocurrido se señala con puntos: cabe más
+// de un tipo por día sin que un color tape al otro.
+//
+// Son cuatro y no siete a propósito: con más, la fila de puntos no cabe en el
+// cuadro y deja de leerse. Los vales van con las recargas (son el mismo gasto
+// visto desde el papel) y los traspasos no se marcan — mueven inventario entre
+// sucursales pero no son actividad de la flota.
+//
+// `dia` queda fuera del tipo de la clave: es el único campo de texto del
+// resumen y aquí solo se comparan conteos contra cero.
+type ClaveConteo = Exclude<keyof ActividadDia, 'dia'>
+
+const MARCAS: { key: ClaveConteo; color: string; label: string }[] = [
+  { key: 'mantenimientos',       color: 'blue',   label: 'Mantenimiento' },
+  { key: 'incidencias_abiertas', color: 'red',    label: 'Incidencia reportada' },
+  { key: 'recargas',             color: 'grape',  label: 'Combustible' },
+  { key: 'compras',              color: 'indigo', label: 'Compra de refacciones' },
+]
+
+// Resumen textual del día para el tooltip nativo del cuadro: es lo que evita
+// tener que abrir el detalle solo para saber si vale la pena abrirlo.
+function resumenDia(a: ActividadDia | undefined, agendas: number): string | undefined {
+  const partes: string[] = []
+  if (agendas > 0)               partes.push(`${agendas} agendado${agendas !== 1 ? 's' : ''}`)
+  if (!a) return partes.length ? partes.join(' · ') : undefined
+  if (a.mantenimientos > 0)       partes.push(`${a.mantenimientos} mantenimiento${a.mantenimientos !== 1 ? 's' : ''}`)
+  if (a.incidencias_abiertas > 0) partes.push(`${a.incidencias_abiertas} incidencia${a.incidencias_abiertas !== 1 ? 's' : ''}`)
+  if (a.incidencias_cerradas > 0) partes.push(`${a.incidencias_cerradas} cerrada${a.incidencias_cerradas !== 1 ? 's' : ''}`)
+  if (a.recargas > 0)             partes.push(`${a.recargas} recarga${a.recargas !== 1 ? 's' : ''}`)
+  if (a.vales > 0)                partes.push(`${a.vales} vale${a.vales !== 1 ? 's' : ''}`)
+  if (a.compras > 0)              partes.push(`${a.compras} compra${a.compras !== 1 ? 's' : ''}`)
+  if (a.traspasos > 0)            partes.push(`${a.traspasos} traspaso${a.traspasos !== 1 ? 's' : ''}`)
+  const gasto = a.mano_obra + a.refacciones + a.combustible
+  if (gasto > 0) partes.push(formatMXN(gasto))
+  return partes.length ? partes.join(' · ') : undefined
+}
+
+// 'YYYY-MM' del mes al que pertenece una fecha ISO.
+function mesDe(iso: string): string {
+  return iso.slice(0, 7)
 }
 
 // ─── Tarjeta de alerta (vencidos / por vencer) ────────────────────────────────
@@ -144,6 +192,40 @@ function AlertaStat({
         </Stack>
         <ThemeIcon color={color} variant="light" size="lg" radius="md">
           <IconAlertTriangle size={20} />
+        </ThemeIcon>
+      </Group>
+    </Card>
+  )
+}
+
+// ─── Tarjeta de resumen del mes visible ──────────────────────────────────────
+
+// Deliberadamente no reusa StatCard: esa trae delta contra el periodo anterior
+// y tooltip de ayuda, y aquí sobran — estas cuatro solo resumen el mes que el
+// calendario está mostrando y cambian al pasar de mes.
+function ResumenMesCard({
+  label, valor, detalle, color, icon: Icono, cargando,
+}: {
+  label: string; valor: string; detalle: string; color: string; icon: typeof IconCoin; cargando: boolean
+}) {
+  return (
+    <Card withBorder padding="sm" radius="md" style={{ borderLeft: `3px solid var(--mantine-color-${color}-6)` }}>
+      <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+        <Stack gap={2} style={{ minWidth: 0 }}>
+          <Text size="xs" c="dimmed" fw={600} tt="uppercase" lts={0.3} lineClamp={1}>{label}</Text>
+          {cargando ? (
+            <Loader size="xs" mt={4} />
+          ) : (
+            <>
+              <Text fz="1.25rem" fw={700} lh={1.15} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {valor}
+              </Text>
+              <Text size="xs" c="dimmed" lineClamp={1}>{detalle}</Text>
+            </>
+          )}
+        </Stack>
+        <ThemeIcon color={color} variant="light" size={32} radius="md">
+          <Icono size={18} />
         </ThemeIcon>
       </Group>
     </Card>
@@ -335,20 +417,51 @@ export default function Calendario({
 }: {
   onNavigateVehiculo?: (vehiculoId: number) => void
 }) {
-  const { data: mantData, isLoading } = useMantenimientosCalendario()
   const { data: agendasData } = useAgendasCalendario()
   const { data: vencidosData } = useRequerimientosVencidos()
   const { data: porVencerData } = useRequerimientosPorVencer()
   const [detalleId, setDetalleId] = useState<number | null>(null)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [alertaAbierta, setAlertaAbierta] = useState<'vencidos' | 'porVencer' | null>(null)
+
   const [cancelarAgenda, setCancelarAgenda] = useState<AgendaConVehiculo | null>(null)
   const [completarAgenda, setCompletarAgenda] = useState<AgendaConVehiculo | null>(null)
+
+  // El mes que se está viendo. El resumen de actividad se pide por mes en vez de
+  // traer la flota entera: es lo único que el calendario pinta a la vez, y así
+  // cambiar de mes cuesta una consulta acotada.
+  const [mesVisible, setMesVisible] = useState(() => mesDe(todayIso()))
+  const { data: actividadMesData, isLoading: loadingActividad } = useActividadMes(mesVisible)
+  const actividadPorDia = useMemo(() => {
+    const map = new Map<string, ActividadDia>()
+    for (const d of actividadMesData?.data.dias ?? []) map.set(d.dia, d)
+    return map
+  }, [actividadMesData])
+
+  // Totales del mes visible, para la tira de resumen sobre el calendario.
+  const totalesMes = useMemo(() => {
+    let manoObra = 0, refacciones = 0, combustible = 0
+    let mantenimientos = 0, recargas = 0, incidencias = 0, compras = 0
+    for (const d of actividadMesData?.data.dias ?? []) {
+      manoObra       += d.mano_obra
+      refacciones    += d.refacciones
+      combustible    += d.combustible
+      mantenimientos += d.mantenimientos
+      recargas       += d.recargas
+      incidencias    += d.incidencias_abiertas
+      compras        += d.compras
+    }
+    return {
+      manoObra, refacciones, combustible,
+      total: manoObra + refacciones + combustible,
+      mantenimientos, recargas, incidencias, compras,
+    }
+  }, [actividadMesData])
+
 
   // Memorizados para que conserven identidad entre renders: varios useMemo
   // de abajo dependen de ellos y se recalcularían en cada render si fueran
   // expresiones nuevas (`x?.data ?? []` crea un array distinto cada vez).
-  const mantenimientos = useMemo(() => mantData?.data ?? [], [mantData])
   const agendas = useMemo(() => agendasData?.data ?? [], [agendasData])
   const agendasPendientes = useMemo(() => agendas.filter(a => a.status === 'pendiente'), [agendas])
 
@@ -455,17 +568,6 @@ export default function Calendario({
   const vehiculosPorVencer = useMemo(() => agruparPorVehiculoOrdenado(porVencer), [porVencer])
   const vehiculosAlerta = alertaAbierta === 'vencidos' ? vehiculosVencidos : vehiculosPorVencer
 
-  // Cuenta cuántos mantenimientos se realizaron cada día, para graduar la
-  // opacidad del azul igual que se hace con el naranja de las agendas.
-  const mantenimientoCountPorDia = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const m of mantenimientos) {
-      const d = m.fecha.split('T')[0]
-      map.set(d, (map.get(d) ?? 0) + 1)
-    }
-    return map
-  }, [mantenimientos])
-
   // Cuenta cuántas agendas pendientes cubren cada día, para detectar traslapes
   // (2+ vehículos agendados el mismo día).
   const agendaCountPorDia = useMemo(() => {
@@ -494,13 +596,6 @@ export default function Calendario({
     return ids
   }, [agendasPendientes])
 
-  const mantenimientosDelDia = useMemo(() => {
-    if (!selectedDate) return [] as MantenimientoCalendario[]
-    return mantenimientos
-      .filter(m => m.fecha.split('T')[0] === selectedDate)
-      .sort((a, b) => a.vehiculo_nombre.localeCompare(b.vehiculo_nombre))
-  }, [mantenimientos, selectedDate])
-
   const agendasDelDia = useMemo(() => {
     if (!selectedDate) return [] as AgendaConVehiculo[]
     return agendasPendientes
@@ -514,12 +609,22 @@ export default function Calendario({
 
   const hoy = todayIso()
 
+  // Abrir un día desde las flechas del detalle puede cruzar el borde del mes;
+  // el calendario tiene que seguir al día abierto o la vista quedaría mostrando
+  // un mes distinto al del panel.
+  function abrirDia(fecha: string) {
+    setSelectedDate(fecha)
+    if (mesDe(fecha) !== mesVisible) setMesVisible(mesDe(fecha))
+  }
+
   return (
     <Stack gap="md">
       <Group justify="space-between" align="flex-end">
         <div>
           <Text size="xl" fw={600}>Calendario</Text>
-          <Text size="sm" c="dimmed">Fechas de mantenimiento de toda la flotilla</Text>
+          <Text size="sm" c="dimmed">
+            Toda la actividad de la flota, día por día — haz clic en un día para ver su detalle
+          </Text>
         </div>
         <Button leftSection={<IconPlus size={16} />} onClick={() => setAgendarOpen(true)}>
           Agendar mantenimiento
@@ -543,10 +648,35 @@ export default function Calendario({
         />
       </SimpleGrid>
 
-      {isLoading ? (
-        <Center py="xl"><Loader /></Center>
-      ) : (
-        <Grid align="stretch">
+      {/* ── Resumen del mes visible ── */}
+      <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+        <ResumenMesCard
+          label="Gasto del mes" icon={IconCoin} color="teal"
+          valor={formatMXN(totalesMes.total)}
+          detalle={`${formatMXN(totalesMes.manoObra)} mano de obra`}
+          cargando={loadingActividad}
+        />
+        <ResumenMesCard
+          label="Mantenimientos" icon={IconTool} color="blue"
+          valor={formatNum(totalesMes.mantenimientos)}
+          detalle={`${totalesMes.incidencias} incidencia${totalesMes.incidencias !== 1 ? 's' : ''} reportada${totalesMes.incidencias !== 1 ? 's' : ''}`}
+          cargando={loadingActividad}
+        />
+        <ResumenMesCard
+          label="Combustible" icon={IconGasStation} color="grape"
+          valor={formatMXN(totalesMes.combustible)}
+          detalle={`${formatNum(totalesMes.recargas)} recarga${totalesMes.recargas !== 1 ? 's' : ''}`}
+          cargando={loadingActividad}
+        />
+        <ResumenMesCard
+          label="Refacciones" icon={IconShoppingCart} color="indigo"
+          valor={formatMXN(totalesMes.refacciones)}
+          detalle={`${formatNum(totalesMes.compras)} compra${totalesMes.compras !== 1 ? 's' : ''}`}
+          cargando={loadingActividad}
+        />
+      </SimpleGrid>
+
+      <Grid align="stretch">
           <Grid.Col span={{ base: 12, md: 5 }}>
             <Card withBorder padding="lg" radius="md" h="100%">
               <Center>
@@ -557,51 +687,90 @@ export default function Calendario({
                   <Calendar
                     size="md"
                     highlightToday
+                    // El cuadro del día crece para que la fila de puntos quepa
+                    // bajo el número sin encimarse ni recortarse.
+                    styles={{ day: { height: 44 } }}
+                    // Mes controlado: es lo que dice qué resumen pedir, y lo que
+                    // permite que el panel de detalle arrastre al calendario
+                    // cuando se navega de día en día hasta salirse del mes.
+                    date={`${mesVisible}-01`}
+                    onDateChange={(d) => setMesVisible(mesDe(String(d)))}
                     getDayProps={(dateStr) => {
-                      const enRango       = fechasConAgenda.has(dateStr)
-                      const mantCount     = mantenimientoCountPorDia.get(dateStr) ?? 0
-                      const realizado     = mantCount > 0
-                      const clickable     = enRango || realizado
-                      const agendaCount   = agendaCountPorDia.get(dateStr) ?? 0
-                      const traslape      = agendaCount > 1
-                      const titulo = realizado
-                        ? `${mantCount} mantenimiento${mantCount !== 1 ? 's' : ''} este día`
-                        : traslape ? `${agendaCount} vehículos agendados este día` : undefined
+                      const enRango     = fechasConAgenda.has(dateStr)
+                      const agendaCount = agendaCountPorDia.get(dateStr) ?? 0
+                      const traslape    = agendaCount > 1
+                      const act         = actividadPorDia.get(dateStr)
+                      // Todos los días abren, tengan o no algo registrado: el
+                      // panel se navega con flechas de día en día, y que unos
+                      // cuadros respondieran al clic y otros no volvería
+                      // impredecible dónde se puede entrar.
                       return {
                         inRange:      enRango,
                         firstInRange: enRango && !fechasConAgenda.has(addDaysIso(dateStr, -1)),
                         lastInRange:  enRango && !fechasConAgenda.has(addDaysIso(dateStr, 1)),
-                        onClick: clickable ? () => setSelectedDate(dateStr) : undefined,
-                        title:   titulo,
+                        onClick: () => abrirDia(dateStr),
+                        title:   resumenDia(act, agendaCount),
                         style: {
-                          cursor: clickable ? 'pointer' : 'default',
-                          // A más eventos el mismo día, más opaco el color del cuadro.
-                          ...(mantCount > 1
-                            ? { backgroundColor: `rgba(${REALIZADO_RGB}, ${overlapAlpha(mantCount)})`, color: 'var(--mantine-color-white)' }
-                            : realizado
-                              ? { backgroundColor: 'var(--mantine-color-blue-1)', border: '1px solid var(--mantine-color-blue-4)' }
-                              : traslape ? { backgroundColor: `rgba(${TRASLAPE_RGB}, ${overlapAlpha(agendaCount)})` } : {}),
+                          cursor: 'pointer',
+                          // A más agendas el mismo día, más opaco el naranja.
+                          ...(traslape
+                            ? { backgroundColor: `rgba(${TRASLAPE_RGB}, ${overlapAlpha(agendaCount)})` }
+                            : {}),
                         },
                       }
+                    }}
+                    renderDay={(dateStr) => {
+                      const act = actividadPorDia.get(dateStr)
+                      const dia = Number(String(dateStr).slice(8, 10))
+                      const marcas = MARCAS.filter(m => (act?.[m.key] ?? 0) > 0)
+                      return (
+                        <Stack gap={0} align="center" justify="center" style={{ lineHeight: 1 }}>
+                          <span>{dia}</span>
+                          {/* La fila de puntos siempre ocupa su alto, tenga o no
+                              marcas: si apareciera y desapareciera, los números
+                              de los días bailarían de una semana a otra. */}
+                          <Group gap={2} justify="center" style={{ height: 5, marginTop: 2 }}>
+                            {marcas.map(m => (
+                              <span
+                                key={m.key}
+                                style={{
+                                  width: 4, height: 4, borderRadius: '50%',
+                                  backgroundColor: `var(--mantine-color-${m.color}-6)`,
+                                  display: 'inline-block',
+                                }}
+                              />
+                            ))}
+                          </Group>
+                        </Stack>
+                      )
                     }}
                   />
                 </div>
               </Center>
               <Divider my="sm" />
-              <Group gap="lg" justify="center">
-                <Group gap={6}>
-                  <span style={{ width: 22, height: 14, borderRadius: 4, backgroundColor: 'var(--mantine-color-blue-1)', border: '1px solid var(--mantine-color-blue-4)', display: 'inline-block' }} />
-                  <Text size="xs" c="dimmed">Realizado</Text>
+              <Stack gap={6}>
+                <Group gap="md" justify="center">
+                  {MARCAS.map(m => (
+                    <Group gap={5} key={m.key}>
+                      <span style={{
+                        width: 7, height: 7, borderRadius: '50%',
+                        backgroundColor: `var(--mantine-color-${m.color}-6)`, display: 'inline-block',
+                      }} />
+                      <Text size="xs" c="dimmed">{m.label}</Text>
+                    </Group>
+                  ))}
                 </Group>
-                <Group gap={6}>
-                  <span style={{ width: 22, height: 14, borderRadius: 4, backgroundColor: 'var(--mantine-color-orange-1)', border: '1px solid var(--mantine-color-orange-4)', display: 'inline-block' }} />
-                  <Text size="xs" c="dimmed">Agendado (rango)</Text>
+                <Group gap="md" justify="center">
+                  <Group gap={6}>
+                    <span style={{ width: 22, height: 14, borderRadius: 4, backgroundColor: 'var(--mantine-color-orange-1)', border: '1px solid var(--mantine-color-orange-4)', display: 'inline-block' }} />
+                    <Text size="xs" c="dimmed">Agendado (rango)</Text>
+                  </Group>
+                  <Group gap={6}>
+                    <span style={{ width: 22, height: 14, borderRadius: 4, backgroundColor: `rgba(${TRASLAPE_RGB}, ${overlapAlpha(4)})`, display: 'inline-block' }} />
+                    <Text size="xs" c="dimmed">Traslape</Text>
+                  </Group>
                 </Group>
-                <Group gap={6}>
-                  <span style={{ width: 22, height: 14, borderRadius: 4, backgroundColor: `rgba(${TRASLAPE_RGB}, ${overlapAlpha(4)})`, display: 'inline-block' }} />
-                  <Text size="xs" c="dimmed">Traslape</Text>
-                </Group>
-              </Group>
+              </Stack>
             </Card>
           </Grid.Col>
 
@@ -684,73 +853,17 @@ export default function Calendario({
               )}
             </Card>
           </Grid.Col>
-        </Grid>
-      )}
+      </Grid>
 
       {/* ── Detalle del día ── */}
-      <Modal
-        opened={selectedDate !== null}
+      <DiaDetalleDrawer
+        fecha={selectedDate}
+        agendasDelDia={agendasDelDia}
         onClose={() => setSelectedDate(null)}
-        title={selectedDate ? `Actividad del ${fmtFecha(selectedDate)}` : ''}
-        size="md"
-      >
-        <Stack gap="md">
-          {agendasDelDia.length > 0 && (
-            <div>
-              <Text size="xs" fw={600} c="dimmed" tt="uppercase" mb={4}>
-                Agendado{agendasDelDia.length > 1 ? ` (${agendasDelDia.length})` : ''}
-              </Text>
-              {agendasDelDia.length > 1 && (
-                <Alert color="red" variant="light" mb="xs" icon={<IconAlertTriangle size={16} />}>
-                  {agendasDelDia.length} vehículos agendados el mismo día — revisa disponibilidad de técnicos y refacciones.
-                </Alert>
-              )}
-              <Stack gap="xs">
-                {agendasDelDia.map(a => (
-                  <Card key={a.id} withBorder padding="sm" radius="sm">
-                    <Group justify="space-between" wrap="nowrap">
-                      <Group gap={6} wrap="nowrap">
-                        <Badge size="xs" variant="light" color={TIPO_COLORS[a.vehiculo_tipo] ?? 'gray'}>
-                          {TIPO_LABELS[a.vehiculo_tipo] ?? a.vehiculo_tipo}
-                        </Badge>
-                        <Text size="sm" fw={500}>{a.vehiculo_nombre}</Text>
-                      </Group>
-                      <Text size="sm" c="dimmed">{a.tipo ?? '—'}</Text>
-                    </Group>
-                  </Card>
-                ))}
-              </Stack>
-            </div>
-          )}
-          {mantenimientosDelDia.length > 0 && (
-            <div>
-              <Text size="xs" fw={600} c="dimmed" tt="uppercase" mb={4}>Realizado</Text>
-              <Stack gap="xs">
-                {mantenimientosDelDia.map(m => (
-                  <Card
-                    key={m.id} withBorder padding="sm" radius="sm"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => { setSelectedDate(null); setDetalleId(m.id) }}
-                  >
-                    <Group justify="space-between" wrap="nowrap">
-                      <Group gap={6} wrap="nowrap">
-                        <Badge size="xs" variant="light" color={TIPO_COLORS[m.vehiculo_tipo] ?? 'gray'}>
-                          {TIPO_LABELS[m.vehiculo_tipo] ?? m.vehiculo_tipo}
-                        </Badge>
-                        <Text size="sm" fw={500}>{m.vehiculo_nombre}</Text>
-                      </Group>
-                      <Text size="sm" c="dimmed">{m.tipo ?? '—'}</Text>
-                    </Group>
-                  </Card>
-                ))}
-              </Stack>
-            </div>
-          )}
-          {agendasDelDia.length === 0 && mantenimientosDelDia.length === 0 && (
-            <Text c="dimmed" size="sm">Sin actividad este día.</Text>
-          )}
-        </Stack>
-      </Modal>
+        onSelectFecha={abrirDia}
+        onNavigateVehiculo={onNavigateVehiculo}
+        onVerMantenimiento={(id) => { setSelectedDate(null); setDetalleId(id) }}
+      />
 
       {/* ── Vehículos vencidos / por vencer ── */}
       <Modal
