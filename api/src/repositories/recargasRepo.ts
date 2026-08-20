@@ -58,7 +58,7 @@ export async function create(vehiculoId: number, data: RecargaCreate): Promise<R
     .input('conductor_id',  sql.Int, data.conductor_id)
     .input('vale_id',       sql.Int, data.vale_id)
     .input('fecha',         sql.Date, data.fecha)
-    .input('litros',        sql.Decimal(10, 2), data.litros)
+    .input('litros',        sql.Decimal(10, 3), data.litros)
     .input('costo',         sql.Decimal(18, 2), data.costo)
     .input('kilometraje',   sql.Int, data.kilometraje)
     .query(`
@@ -91,7 +91,7 @@ export async function update(id: number, data: RecargaUpdate): Promise<RecargaCo
     sets.push('fecha = @fecha')
   }
   if (data.litros !== undefined) {
-    req.input('litros', sql.Decimal(10, 2), data.litros)
+    req.input('litros', sql.Decimal(10, 3), data.litros)
     sets.push('litros = @litros')
   }
   if (data.costo !== undefined) {

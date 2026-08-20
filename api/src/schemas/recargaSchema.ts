@@ -7,6 +7,15 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// La bomba despacha con milésimas de litro y el ticket las imprime así; la
+// columna guarda DECIMAL(10,3), así que un cuarto decimal se redondearía en
+// silencio y lo capturado dejaría de cuadrar con el papel: se rechaza.
+const litros = z.coerce
+  .number()
+  .positive('Debe ser mayor a 0')
+  // El margen absorbe la representación binaria (45.678 * 1000 = 45677.999…).
+  .refine((v) => Math.abs(v * 1000 - Math.round(v * 1000)) < 1e-6, 'Máximo 3 decimales')
+
 const fecha = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato inválido (YYYY-MM-DD)')
@@ -19,7 +28,7 @@ export const RecargaCreateSchema = z.object({
   // quedaron sin vale y por eso la columna sigue siendo NULL-able en la tabla.
   vale_id: z.coerce.number().int().min(1, 'Vale requerido'),
   fecha,
-  litros: z.coerce.number().positive('Debe ser mayor a 0'),
+  litros,
   costo:  z.coerce.number().min(0, 'No puede ser negativo'),
   kilometraje: z.coerce.number().int().min(0, 'No puede ser negativo').max(KM_MAX, 'Máximo 9,999,999 km'),
 })
@@ -29,7 +38,7 @@ export const RecargaUpdateSchema = z.object({
   conductor_id:  z.coerce.number().int().min(1).optional(),
   vale_id:       z.coerce.number().int().min(1, 'Vale requerido').optional(),
   fecha:  fecha.optional(),
-  litros: z.coerce.number().positive('Debe ser mayor a 0').optional(),
+  litros: litros.optional(),
   costo:  z.coerce.number().min(0, 'No puede ser negativo').optional(),
   kilometraje: z.coerce.number().int().min(0, 'No puede ser negativo').max(KM_MAX, 'Máximo 9,999,999 km').optional(),
 })

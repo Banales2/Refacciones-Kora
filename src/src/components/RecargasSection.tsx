@@ -29,8 +29,10 @@ function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
 }
 
+// Hasta tres decimales, los que despacha la bomba: 45.678 L se muestra
+// completo y 45.5 no se rellena con ceros de más allá de los dos de siempre.
 function formatLitros(n: number) {
-  return `${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`
+  return `${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} L`
 }
 
 function formatKm(n: number) {
@@ -297,8 +299,8 @@ function RecargaForm({
           error={form.errors.fecha as string}
         />
         <NumberInput
-          label="Litros" placeholder="0.00" required
-          min={0} decimalScale={2} step={0.01} suffix=" L"
+          label="Litros" placeholder="0.000" required
+          min={0} decimalScale={3} step={0.001} suffix=" L"
           {...form.getInputProps('litros')}
         />
         <NumberInput
