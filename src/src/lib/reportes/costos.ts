@@ -7,7 +7,7 @@
 import type { AnalisisCostos, TipoAnomalia } from '../../hooks/useDashboard'
 import { crearReportePdf, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
-import { formatMXN, formatNum, formatFecha, formatMes } from '../formato'
+import { formatMXN, formatNum, formatLitros, formatFecha, formatMes } from '../formato'
 import { TIPO_LABELS } from '../tipoVehiculo'
 
 const ANOMALIA_LABEL: Record<TipoAnomalia, string> = {
@@ -71,7 +71,7 @@ export async function exportCostosPdf(a: AnalisisCostos) {
   pdf.datos([
     ['Kilómetros recorridos', km(t.km_recorridos)],
     ['Costo por kilómetro', t.costo_por_km != null ? formatMXN(t.costo_por_km) : '—'],
-    ['Litros cargados', `${formatNum(t.litros, 1)} L`],
+    ['Litros cargados', `${formatLitros(t.litros)} L`],
     ['Rendimiento de la flota', t.rendimiento != null ? `${t.rendimiento.toFixed(2)} km/L` : '—'],
     ['Precio por litro (promedio ponderado)', t.precio_litro != null ? `$${t.precio_litro.toFixed(2)}` : '—'],
   ])
@@ -110,7 +110,7 @@ export async function exportCostosPdf(a: AnalisisCostos) {
       head: ['Gasolinera', 'Cargas', 'Litros', 'Gasto', '$/L', 'Sobreprecio'],
       body: [
         ...a.gasolineras.map((g) => [
-          g.gasolinera, String(g.recargas), formatNum(g.litros, 1), formatMXN(g.costo),
+          g.gasolinera, String(g.recargas), formatLitros(g.litros), formatMXN(g.costo),
           g.precio_litro != null ? `$${g.precio_litro.toFixed(2)}` : '—',
           g.sobreprecio > 0 ? formatMXN(g.sobreprecio) : 'la más barata',
         ]),
@@ -302,7 +302,7 @@ export async function exportCostosExcel(a: AnalisisCostos) {
   wb.hoja('Gasolineras', [
     { header: 'Gasolinera',  width: 30, valor: (g) => g.gasolinera },
     { header: 'Cargas',      width: 10, formato: 'numero',  valor: (g) => g.recargas },
-    { header: 'Litros',      width: 12, formato: 'decimal', valor: (g) => g.litros },
+    { header: 'Litros',      width: 12, formato: 'litros', valor: (g) => g.litros },
     { header: 'Gasto',       width: 15, formato: 'moneda',  valor: (g) => g.costo },
     { header: 'Precio/litro',width: 13, formato: 'moneda',  valor: (g) => g.precio_litro ?? 0 },
     { header: 'Sobreprecio', width: 15, formato: 'moneda',  valor: (g) => g.sobreprecio },
@@ -321,7 +321,7 @@ export async function exportCostosExcel(a: AnalisisCostos) {
     { header: 'Refacciones usadas',  width: 16, formato: 'moneda',  valor: (v) => v.refacciones },
     { header: 'Total',               width: 14, formato: 'moneda',  valor: (v) => v.total },
     { header: 'Costo por km',        width: 13, formato: 'moneda',  valor: (v) => v.costo_por_km ?? 0 },
-    { header: 'Litros',              width: 11, formato: 'decimal', valor: (v) => v.litros },
+    { header: 'Litros',              width: 11, formato: 'litros', valor: (v) => v.litros },
     { header: 'km/L',                width: 10, formato: 'decimal', valor: (v) => v.rendimiento ?? 0 },
     { header: 'km/L del modelo',     width: 15, formato: 'decimal', valor: (v) => v.rendimiento_modelo ?? 0 },
     { header: 'Diferencia %',        width: 13, formato: 'porcentaje', valor: (v) => v.desviacion_pct ?? 0 },

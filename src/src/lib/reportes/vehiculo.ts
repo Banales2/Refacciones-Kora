@@ -16,7 +16,7 @@ import type { PiezaDeVehiculo } from '../../hooks/usePiezasVehiculo'
 import type { Recarga } from '../../hooks/useRecargas'
 import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
-import { formatMXN, formatNum, formatFecha } from '../formato'
+import { formatMXN, formatNum, formatLitros, formatFecha } from '../formato'
 import { TIPO_LABELS } from '../tipoVehiculo'
 import { SEVERIDAD_META } from '../incidenciaMeta'
 import { type Periodo, etiquetaPeriodo, sufijoPeriodo } from './periodo'
@@ -220,7 +220,7 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
   } else {
     pdf.datos([
       ['Cargas registradas',   String(d.recargas.length)],
-      ['Litros cargados',      `${formatNum(r.consumo.litros, 1)} L`],
+      ['Litros cargados',      `${formatLitros(r.consumo.litros)} L`],
       ['Gasto en combustible', formatMXN(r.consumo.costo)],
       ['Precio promedio por litro', r.consumo.precioLitro != null ? `$${r.consumo.precioLitro.toFixed(2)}` : '—'],
       ['Rendimiento', r.consumo.rendimiento != null
@@ -243,7 +243,7 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
       head: ['Fecha', 'Gasolinera', 'Conductor', 'Vale', 'Litros', 'Costo', '$/L', 'Odómetro'],
       body: recientes.map((rc) => [
         formatFecha(rc.fecha), rc.gasolinera, rc.conductor, rc.vale_folio ?? 'sin vale',
-        formatNum(rc.litros, 1), formatMXN(rc.costo),
+        formatLitros(rc.litros), formatMXN(rc.costo),
         rc.litros > 0 ? `$${(rc.costo / rc.litros).toFixed(2)}` : '—',
         rc.kilometraje != null ? formatNum(rc.kilometraje) : '—',
       ]),
@@ -449,7 +449,7 @@ export async function exportVehiculoExcel(d: DatosVehiculo) {
     { header: 'Ubicación',  width: 24, valor: (rc) => rc.ubicacion },
     { header: 'Conductor',  width: 26, valor: (rc) => rc.conductor },
     { header: 'Vale',       width: 16, valor: (rc) => rc.vale_folio ?? 'sin vale' },
-    { header: 'Litros',     width: 11, formato: 'decimal', valor: (rc) => rc.litros },
+    { header: 'Litros',     width: 11, formato: 'litros', valor: (rc) => rc.litros },
     { header: 'Costo',      width: 14, formato: 'moneda',  valor: (rc) => rc.costo },
     { header: 'Precio/litro', width: 13, formato: 'moneda', valor: (rc) => rc.litros > 0 ? rc.costo / rc.litros : 0 },
     { header: 'Odómetro',   width: 13, formato: 'numero',  valor: (rc) => rc.kilometraje ?? 0 },

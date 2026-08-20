@@ -24,15 +24,14 @@ import { KM_MAX, validarKm } from '../lib/validaciones'
 import { FechaInput } from './FechaInput'
 import ConfirmarAvanceKm from './ConfirmarAvanceKm'
 import { avanzaOdometro } from '../lib/odometro'
+import { formatLitros as fmtLitros } from '../lib/formato'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
 }
 
-// Hasta tres decimales, los que despacha la bomba: 45.678 L se muestra
-// completo y 45.5 no se rellena con ceros de más allá de los dos de siempre.
 function formatLitros(n: number) {
-  return `${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} L`
+  return `${fmtLitros(n)} L`
 }
 
 function formatKm(n: number) {

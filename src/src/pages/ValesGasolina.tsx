@@ -2,10 +2,13 @@
 // choferes. Cada vale guarda el folio impreso del papel, quién lo creó (el
 // usuario de la sesión, lo asigna la API), el chofer al que se entregó, el
 // vehículo y la fecha.
+//
+// El vehículo del grupo y el chofer de cada renglón llevan a su ficha: al
+// detalle del vehículo y a la pestaña Conductores de Catálogos.
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert,
-  Button, ActionIcon, Modal, TextInput, Select, Accordion, Badge,
+  Button, ActionIcon, Modal, TextInput, Select, Accordion, Badge, Anchor,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
@@ -40,10 +43,11 @@ function valeVehiculoLabel(v: ValeGasolina) {
 // ── Agrupado persona → vehículo ───────────────────────────────────────────────
 
 type GrupoVehiculo = {
-  key:    string
-  label:  string
-  placas: string | null
-  items:  ValeGasolina[]
+  key:        string
+  vehiculoId: number
+  label:      string
+  placas:     string | null
+  items:      ValeGasolina[]
 }
 
 type GrupoPersona = {
@@ -72,10 +76,11 @@ function agrupar(items: ValeGasolina[]): GrupoPersona[] {
     .map(([persona, vehiculosMap]) => {
       const vehiculos: GrupoVehiculo[] = [...vehiculosMap.entries()]
         .map(([vehiculoId, vales]) => ({
-          key:    `${persona}|${vehiculoId}`,
-          label:  valeVehiculoLabel(vales[0]),
-          placas: vales[0].placas,
-          items:  [...vales].sort((a, b) =>
+          key:        `${persona}|${vehiculoId}`,
+          vehiculoId,
+          label:      valeVehiculoLabel(vales[0]),
+          placas:     vales[0].placas,
+          items:      [...vales].sort((a, b) =>
             a.fecha === b.fecha ? b.id - a.id : b.fecha.localeCompare(a.fecha)
           ),
         }))
@@ -276,11 +281,12 @@ function ValeForm({
 // Ni la persona ni el vehículo se repiten como columnas: ya los dice el
 // encabezado del grupo que contiene esta tabla.
 function ValesTabla({
-  items, onEdit, onDelete,
+  items, onEdit, onDelete, onNavigateConductor,
 }: {
   items: ValeGasolina[]
   onEdit: (v: ValeGasolina) => void
   onDelete: (v: ValeGasolina) => void
+  onNavigateConductor?: (id: number) => void
 }) {
   return (
     <Table highlightOnHover verticalSpacing="xs">
@@ -297,7 +303,16 @@ function ValesTabla({
           <Table.Tr key={v.id}>
             <Table.Td fw={500}>{v.folio}</Table.Td>
             <Table.Td>{formatFecha(v.fecha)}</Table.Td>
-            <Table.Td fw={500}>{v.conductor}</Table.Td>
+            <Table.Td fw={500}>
+              {onNavigateConductor ? (
+                // Botón y no <a>: la navegación es por estado, no hay URL a la
+                // que apuntar, y así entra en el orden de tabulación.
+                <Anchor component="button" type="button" size="sm" fw={500}
+                  onClick={() => onNavigateConductor(v.conductor_id)}>
+                  {v.conductor}
+                </Anchor>
+              ) : v.conductor}
+            </Table.Td>
             <Table.Td>
               <Group gap={4} justify="flex-end" wrap="nowrap">
                 <ActionIcon variant="subtle" color="blue" size="sm"
@@ -319,17 +334,28 @@ function ValesTabla({
 
 // Encabezado de un grupo: nombre a la izquierda, conteo de vales a la derecha.
 function ResumenGrupo({
-  label, detalle, total, fw,
+  label, detalle, total, fw, onLabelClick,
 }: {
   label:   string
   detalle: string
   total:   number
   fw:      number
+  // Cuando se pasa, el nombre del grupo lleva a su ficha. El click no debe
+  // llegar al Accordion.Control que lo contiene: ahí abriría o cerraría el
+  // grupo además de navegar.
+  onLabelClick?: () => void
 }) {
   return (
     <Group justify="space-between" wrap="nowrap" pr="sm">
       <div>
-        <Text size="sm" fw={fw}>{label}</Text>
+        {onLabelClick ? (
+          <Anchor component="button" type="button" size="sm" fw={fw}
+            onClick={(e) => { e.stopPropagation(); onLabelClick() }}>
+            {label}
+          </Anchor>
+        ) : (
+          <Text size="sm" fw={fw}>{label}</Text>
+        )}
         <Text size="xs" c="dimmed">{detalle}</Text>
       </div>
       <Badge variant="light" color="gray">
@@ -341,7 +367,12 @@ function ResumenGrupo({
 
 // ── Página ────────────────────────────────────────────────────────────────────
 
-export default function ValesGasolina() {
+export default function ValesGasolina({
+  onNavigateVehiculo, onNavigateConductor,
+}: {
+  onNavigateVehiculo?: (id: number) => void
+  onNavigateConductor?: (id: number) => void
+}) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editVale, setEditVale]     = useState<ValeGasolina | null>(null)
   const [deleteVale, setDeleteVale] = useState<ValeGasolina | null>(null)
@@ -414,10 +445,18 @@ export default function ValesGasolina() {
                             detalle={g.placas ?? 'Sin placas'}
                             total={g.items.length}
                             fw={500}
+                            onLabelClick={onNavigateVehiculo
+                              ? () => onNavigateVehiculo(g.vehiculoId)
+                              : undefined}
                           />
                         </Accordion.Control>
                         <Accordion.Panel>
-                          <ValesTabla items={g.items} onEdit={setEditVale} onDelete={setDeleteVale} />
+                          <ValesTabla
+                            items={g.items}
+                            onEdit={setEditVale}
+                            onDelete={setDeleteVale}
+                            onNavigateConductor={onNavigateConductor}
+                          />
                         </Accordion.Panel>
                       </Accordion.Item>
                     ))}

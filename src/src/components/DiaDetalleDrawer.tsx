@@ -26,7 +26,7 @@ import type {
 } from '../hooks/useActividadDia'
 import { VENCIMIENTO_META, urgencia } from '../lib/vencimientoMeta'
 import type { AgendaConVehiculo } from '../hooks/useAgendasMantenimiento'
-import { formatMXN, formatNum, formatFecha } from '../lib/formato'
+import { formatMXN, formatNum, formatLitros, formatFecha } from '../lib/formato'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
 import { SEVERIDAD_META } from '../lib/incidenciaMeta'
 
@@ -202,7 +202,7 @@ export default function DiaDetalleDrawer({
                   <Text size="sm" fw={500}>
                     {formatMXN(totales.combustible)}
                     {totales.litros > 0 && (
-                      <Text component="span" size="xs" c="dimmed"> · {formatNum(totales.litros, 1)} L</Text>
+                      <Text component="span" size="xs" c="dimmed"> · {formatLitros(totales.litros)} L</Text>
                     )}
                   </Text>
                 </div>
@@ -396,7 +396,7 @@ export default function DiaDetalleDrawer({
               titulo="Recargas de combustible" icon={IconGasStation} color="grape" count={recargas.length}
               extra={
                 <Text size="xs" c="dimmed">
-                  {formatNum(recargas.reduce((s, r) => s + r.litros, 0), 1)} L ·{' '}
+                  {formatLitros(recargas.reduce((s, r) => s + r.litros, 0))} L ·{' '}
                   {formatMXN(recargas.reduce((s, r) => s + r.costo, 0))}
                 </Text>
               }
@@ -424,7 +424,7 @@ export default function DiaDetalleDrawer({
                         </Table.Td>
                         <Table.Td>{r.gasolinera}</Table.Td>
                         <Table.Td>{r.conductor}</Table.Td>
-                        <Table.Td ta="right">{formatNum(r.litros, 1)}</Table.Td>
+                        <Table.Td ta="right">{formatLitros(r.litros)}</Table.Td>
                         <Table.Td ta="right">{formatMXN(r.costo)}</Table.Td>
                         <Table.Td>
                           {r.vale_folio ?? <Text c="dimmed" size="xs">sin vale</Text>}

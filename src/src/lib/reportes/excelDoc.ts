@@ -6,7 +6,7 @@
 //
 // exceljs se importa dinámicamente: pesa ~900 kB y solo hace falta al exportar.
 
-export type FormatoColumna = 'texto' | 'moneda' | 'numero' | 'decimal' | 'fecha' | 'porcentaje'
+export type FormatoColumna = 'texto' | 'moneda' | 'numero' | 'decimal' | 'litros' | 'fecha' | 'porcentaje'
 
 export interface Columna<T> {
   header:   string
@@ -20,6 +20,9 @@ const NUM_FMT: Record<FormatoColumna, string | undefined> = {
   moneda:     '"$"#,##0.00',
   numero:     '#,##0',
   decimal:    '#,##0.00',
+  // Dos decimales siempre y el tercero solo si lo hay: la bomba despacha en
+  // milésimas, pero las cargas redondas no se ven con un cero de sobra.
+  litros:     '#,##0.00#',
   fecha:      'dd/mm/yyyy',
   porcentaje: '0.0"%"',
 }

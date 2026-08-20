@@ -409,7 +409,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       refacciones: redondear(a.refacciones, 2)!,
       total:       redondear(total, 2)!,
       costo_por_km: redondear(kmRecorridos ? ratio(total, kmRecorridos) : null),
-      litros:       redondear(a.litros, 2)!,
+      litros:       redondear(a.litros, 3)!,
       rendimiento:  redondear(rendimiento),
       rendimiento_modelo: redondear(rendModelo),
       desviacion_pct:     redondear(desviacion, 1),
@@ -453,7 +453,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   }
   gasolineras.sort((a, b) => (b.precio_litro ?? 0) - (a.precio_litro ?? 0))
   for (const g of gasolineras) {
-    g.litros = redondear(g.litros, 2)!
+    g.litros = redondear(g.litros, 3)!
     g.costo  = redondear(g.costo, 2)!
   }
 
@@ -524,7 +524,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       total_operacion:       redondear(totalOperacion, 2)!,
       km_recorridos:         kmFlota,
       costo_por_km:          redondear(ratio(totalOperacion, kmFlota)),
-      litros:                redondear(litrosTotales, 2)!,
+      litros:                redondear(litrosTotales, 3)!,
       rendimiento:           redondear(rendimientoFlota),
       precio_litro:          redondear(precioLitroFlota),
       ahorro_refacciones:    redondear(totalAhorroRefacciones, 2)!,

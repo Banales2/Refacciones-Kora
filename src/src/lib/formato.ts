@@ -18,6 +18,14 @@ export function formatNum(n: number, decimales = 0): string {
   return n.toLocaleString('es-MX', { minimumFractionDigits: decimales, maximumFractionDigits: decimales })
 }
 
+// Los litros se capturan con hasta tres decimales, que es como despacha la
+// bomba y como los imprime el ticket. Se muestran completos, sin rellenar de
+// ceros más allá de los dos de siempre: 45.678, 45.5 → "45.50". Sin la unidad,
+// porque en las tablas va en el encabezado.
+export function formatLitros(n: number): string {
+  return n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
+}
+
 // Las fechas de la API vienen como 'YYYY-MM-DD'. Se anclan a mediodía porque
 // interpretarlas como medianoche UTC las corre un día hacia atrás en México.
 function aDate(iso: string): Date {

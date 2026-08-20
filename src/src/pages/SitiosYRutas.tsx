@@ -1,7 +1,7 @@
 // Página Catálogos: agrupa en pestañas la administración de sucursales,
 // rutas, modelos y proveedores. Sucursales y rutas comparten el mismo
 // formulario genérico (nombre + ubicación) con CRUD.
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Stack, Group, Text, TextInput, Select, Table, Tabs,
   Loader, Center, Alert, Button, ActionIcon,
@@ -445,7 +445,7 @@ function CeldaDocumento({ numero, vigencia }: { numero: string | null; vigencia:
   )
 }
 
-function ConductoresPanel() {
+function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Conductor | null>(null)
   const [deleting, setDeleting]   = useState<Conductor | null>(null)
@@ -457,6 +457,15 @@ function ConductoresPanel() {
   const deleteMut = useDeleteConductor()
   const items = data?.data ?? []
   const isPending = createMut.isPending || updateMut.isPending
+
+  // Al llegar desde otra pantalla (el chofer de un vale) la lista puede ser
+  // larga y el buscado quedar fuera de la vista: se trae al centro. El
+  // resaltado en la fila dice cuál es.
+  const filaDestacada = useRef<HTMLTableRowElement>(null)
+  useEffect(() => {
+    if (destacadoId == null) return
+    filaDestacada.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [destacadoId, items.length])
 
   // Documentos (licencia estatal, federal y expediente) que ya vencieron o
   // vencen dentro de 2 meses, para el aviso de arriba de la tabla.
@@ -520,7 +529,11 @@ function ConductoresPanel() {
               </Table.Thead>
               <Table.Tbody>
                 {items.map((c) => (
-                  <Table.Tr key={c.id}>
+                  <Table.Tr
+                    key={c.id}
+                    ref={c.id === destacadoId ? filaDestacada : undefined}
+                    bg={c.id === destacadoId ? 'var(--mantine-color-yellow-light)' : undefined}
+                  >
                     <Table.Td fw={500}>{c.nombre}</Table.Td>
                     <Table.Td>{c.ubicacion ?? <SinDato />}</Table.Td>
                     <Table.Td>
@@ -1096,7 +1109,7 @@ const TAB_LABELS: Record<string, string> = {
 }
 
 export default function SitiosYRutas({
-  onNavigateVehiculo, activeTab,
+  onNavigateVehiculo, activeTab, conductorDestacadoId,
   seguroDrawerId, onSeguroDrawerChange,
   permisoDrawerId, onPermisoDrawerChange,
 }: {
@@ -1104,6 +1117,8 @@ export default function SitiosYRutas({
   // La pestaña activa vive en Layout: la elige el desplegable de Catálogos de la
   // barra lateral y sobrevive al saltar a un vehículo y volver.
   activeTab?:    string | null
+  // Chofer al que se saltó desde Vales: se resalta en la pestaña Conductores.
+  conductorDestacadoId?: number | null
   // Id del seguro/permiso cuyo drawer de asignación está abierto (también en
   // Layout, para reabrirlo al regresar del detalle de un vehículo).
   seguroDrawerId?:        number | null
@@ -1138,7 +1153,7 @@ export default function SitiosYRutas({
         </Tabs.Panel>
 
         <Tabs.Panel value="conductores">
-          <ConductoresPanel />
+          <ConductoresPanel destacadoId={conductorDestacadoId} />
         </Tabs.Panel>
 
         <Tabs.Panel value="tecnicos">

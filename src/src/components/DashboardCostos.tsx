@@ -18,7 +18,7 @@ import {
   useAnalisisCostos, type AnalisisCostos, type TipoAnomalia, type VentanaCostos,
 } from '../hooks/useDashboard'
 import { StatCard } from './StatCard'
-import { formatMXN, formatMXNCorto, formatMes, formatNum, formatFecha } from '../lib/formato'
+import { formatMXN, formatMXNCorto, formatMes, formatNum, formatLitros, formatFecha } from '../lib/formato'
 import { TIPO_LABELS } from '../lib/tipoVehiculo'
 
 // ─── Piezas de presentación ─────────────────────────────────────────────────
@@ -207,7 +207,7 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
         <StatCard
           label="Rendimiento de la flota"
           value={t.rendimiento != null ? `${t.rendimiento.toFixed(2)} km/L` : '—'}
-          sub={`${formatNum(t.litros)} L cargados`}
+          sub={`${formatLitros(t.litros)} L cargados`}
           color="blue" icon={IconDroplet}
           ayuda="Kilómetros recorridos entre litros cargados, midiendo de una carga a la siguiente. Solo entran las unidades con al menos tres tramos completos."
         />
@@ -354,7 +354,7 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
                     <Table.Tr key={g.gasolinera_id}>
                       <Table.Td fw={500}>{g.gasolinera}</Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>{g.recargas}</Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}>{formatNum(g.litros, 1)}</Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>{formatLitros(g.litros)}</Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>{formatMXN(g.costo)}</Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
                         {g.precio_litro != null ? `$${g.precio_litro.toFixed(2)}` : <Guion />}

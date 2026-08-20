@@ -206,6 +206,9 @@ export default function Layout() {
   // regresar desde el detalle de un vehículo.
   const [seguroDrawerId, setSeguroDrawerId]   = useState<number | null>(null)
   const [permisoDrawerId, setPermisoDrawerId] = useState<number | null>(null)
+  // Chofer al que se saltó desde otra pantalla (Vales): la pestaña Conductores
+  // lo resalta y lo trae a la vista.
+  const [conductorDestacado, setConductorDestacado] = useState<number | null>(null)
   // Modelo cuyo detalle está abierto; se conserva al saltar a un vehículo para
   // poder regresar al mismo modelo (no solo a la lista de modelos).
   const [modeloDetalleId, setModeloDetalleId] = useState<number | null>(null)
@@ -219,6 +222,7 @@ export default function Layout() {
       setPendingVehiculoId(null)
     }
     if (s !== 'piezas') setPendingPiezaId(null)
+    setConductorDestacado(null)
     setVehiculoOrigin(null)
     // Navegación explícita por el menú: el detalle de Modelos vuelve a la lista.
     setModeloDetalleId(null)
@@ -250,6 +254,15 @@ export default function Layout() {
     setPendingVehiculoId(null)
     setSection(vehiculoOrigin)
     setVehiculoOrigin(null)
+    if (mobileOpened) toggleMobile()
+  }
+
+  // Salto al chofer desde Vales. No pasa por navigate() porque ese limpia el
+  // destacado, que es justo lo que aquí se quiere conservar.
+  function navigateToConductor(id: number) {
+    setConductorDestacado(id)
+    setSitiosTab('conductores')
+    setSection('sitios')
     if (mobileOpened) toggleMobile()
   }
 
@@ -424,6 +437,7 @@ export default function Layout() {
           <SitiosYRutas
             onNavigateVehiculo={navigateToVehiculo}
             activeTab={sitiosTab}
+            conductorDestacadoId={conductorDestacado}
             seguroDrawerId={seguroDrawerId}
             onSeguroDrawerChange={setSeguroDrawerId}
             permisoDrawerId={permisoDrawerId}
@@ -434,7 +448,12 @@ export default function Layout() {
           <Mantenimientos onNavigateVehiculo={navigateToVehiculoId} />
         )}
         {section === 'calendario' && <Calendario onNavigateVehiculo={navigateToVehiculoId} />}
-        {section === 'vales'      && <ValesGasolina />}
+        {section === 'vales'      && (
+          <ValesGasolina
+            onNavigateVehiculo={navigateToVehiculoId}
+            onNavigateConductor={navigateToConductor}
+          />
+        )}
         {section === 'registros' && esAdmin && <RegistrosCambios />}
       </AppShell.Main>
     </AppShell>
