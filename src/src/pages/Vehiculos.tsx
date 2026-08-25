@@ -2279,6 +2279,7 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
         key={`${cambio.tipoId}|${cambio.etiqueta}-${cambio.piezaEntranteId ?? 'quitar'}`}
         opened
         modo={cambio.modo}
+        vehiculoId={vehiculoId}
         tipoNombre={cambio.tipoNombre}
         piezaEntranteId={cambio.piezaEntranteId}
         piezaSalienteNombre={cambio.salienteNombre}

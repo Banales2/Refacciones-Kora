@@ -18,6 +18,12 @@ const Schema = z.object({
   // Cuál de los renglones de ese tipo se está montando ('' = el único que hay).
   etiqueta:          EtiquetaPiezaSchema,
   lote_id:           z.coerce.number().int().positive().nullish(),
+  // De qué sucursal sale la pieza. Su presencia es lo que dice "esto descuenta
+  // del almacén"; sin ella el montaje solo registra, como antes de la 008.
+  sucursal_id:       z.coerce.number().int().positive().nullish(),
+  // El consumo del mantenimiento que ya descontó esta pieza. Ligarse a él es
+  // lo que evita descontarla dos veces.
+  detalle_mtto_pieza_id: z.coerce.number().int().positive().nullish(),
   fecha_instalacion: Fecha.nullish(),
   km_instalacion:    z.coerce.number().int().nonnegative().nullish(),
   mantenimiento_id:  z.coerce.number().int().positive().nullish(),

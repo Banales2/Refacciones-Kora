@@ -1,5 +1,6 @@
 import * as repo from '../repositories/detalleMttoPiezaRepo'
 import * as mantenimientoRepo from '../repositories/mantenimientoRepo'
+import * as piezasVehiculoRepo from '../repositories/piezasVehiculoRepo'
 import { DetalleMttoPiezaCreate, DetalleMttoPiezaUpdate } from '../schemas/detalleMttoPiezaSchema'
 import { NotFoundError, ValidationError } from '../shared/errors'
 
@@ -53,6 +54,18 @@ export async function update(id: number, data: DetalleMttoPiezaUpdate) {
 }
 
 export async function remove(id: number) {
+  // Borrar el consumo devuelve su cantidad al almacén. Si esas piezas ya se
+  // montaron en la unidad, devolverlas las dejaría contadas en el estante y en
+  // el carro a la vez — el descuadre exacto que la migración 008 cierra. El FK
+  // ya lo impide en la base; esto es para que el mensaje diga qué hacer en vez
+  // de reventar con un error de constraint.
+  const montadas = await piezasVehiculoRepo.countMontadasDeConsumo(id)
+  if (montadas > 0) {
+    throw new ValidationError(
+      `Este consumo respalda ${montadas} pieza(s) montadas en la unidad. ` +
+      'Quítalas del vehículo (o desliga el montaje) antes de borrar el consumo.'
+    )
+  }
   const deleted = await repo.remove(id)
   if (!deleted) throw new NotFoundError('Detalle')
 }

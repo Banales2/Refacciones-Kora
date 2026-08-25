@@ -1,6 +1,7 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { fechaMexico } from '../shared/fechaMexico'
+import { moverExistencia } from './inventarioSql'
 
 // Un renglón que necesita el vehículo, junto con la pieza que usa para
 // cubrirlo. pieza_id es null mientras nadie la haya elegido: el renglón se sigue
@@ -115,6 +116,13 @@ export async function vehiculoRequiereTipo(
 // existiera la bitácora.
 export interface DatosMontaje {
   lote_id?:           number | null
+  // De qué sucursal sale la pieza. Con ella (y sin consumo ligado) el montaje
+  // descuenta 1 del almacén; sin ella no se descuenta nada, que es el caso de
+  // la captura retroactiva de una pieza que ya estaba puesta.
+  sucursal_id?:       number | null
+  // El renglón de consumo del mantenimiento que YA descontó esta pieza. Si
+  // viene, el montaje no vuelve a descontar: solo se cuelga de él.
+  detalle_mtto_pieza_id?: number | null
   fecha_instalacion?: string | null
   km_instalacion?:    number | null
   mantenimiento_id?:  number | null
@@ -181,6 +189,17 @@ export async function setPieza(
           VALUES (@vehiculoId, @tipoId, @etiqueta, @piezaId, @loteId);`)
 
     if (esCambioDePieza) {
+      // De dónde salió la que se va, por si regresa al almacén. Se lee antes de
+      // cerrar el renglón porque el filtro es `fecha_retiro IS NULL`.
+      const saliente = await tx.request()
+        .input('vehiculoId', sql.Int, vehiculoId)
+        .input('tipoId',     sql.Int, tipoId)
+        .input('etiqueta',   sql.NVarChar(40), etiqueta)
+        .query(`
+          SELECT lote_id, sucursal_id FROM instalaciones_pieza
+          WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+            AND etiqueta = @etiqueta AND fecha_retiro IS NULL`)
+
       // Se llama aunque no hubiera pieza anterior: si por lo que sea quedó un
       // renglón abierto sin su fila en `piezas_vehiculo`, cerrarlo aquí evita
       // que el INSERT de abajo choque contra el índice único. Sin renglón
@@ -191,6 +210,15 @@ export async function setPieza(
         motivo_retiro: datos.motivo_retiro ?? null,
         destino:       datos.destino ?? null,
       })
+
+      // La que sale vuelve al estante: se devuelve a su lote y su sucursal. Es
+      // la contraparte del descuento de más abajo, y en un reemplazo las dos
+      // cosas pasan en la misma transacción.
+      const sal = saliente.recordset[0]
+      if (datos.destino === 'stock' && sal?.lote_id != null && sal?.sucursal_id != null) {
+        await moverExistencia(tx, sal.lote_id, sal.sucursal_id, 1)
+      }
+
       await tx.request()
         .input('vehiculoId', sql.Int,          vehiculoId)
         .input('tipoId',     sql.Int,          tipoId)
@@ -198,15 +226,29 @@ export async function setPieza(
         .input('piezaId',    sql.Int,          piezaId)
         .input('loteId',     sql.Int,          datos.lote_id ?? null)
         .input('mttoId',     sql.Int,          datos.mantenimiento_id ?? null)
+        .input('detId',      sql.Int,          datos.detalle_mtto_pieza_id ?? null)
+        // De dónde salió la pieza. Cuando se eligió una existencia concreta esa
+        // manda; si no, se cae a la sucursal del vehículo, que es lo que se
+        // guardaba antes de que el montaje moviera inventario.
+        .input('sucId',      sql.Int,          datos.sucursal_id ?? null)
         .input('fecha',      sql.Date,         datos.fecha_instalacion ?? null)
         .input('km',         sql.Int,          datos.km_instalacion ?? null)
         .query(`
           INSERT INTO instalaciones_pieza
             (vehiculo_id, tipo_pieza_id, etiqueta, pieza_id, lote_id, sucursal_id,
-             mantenimiento_id, fecha_instalacion, km_instalacion)
+             mantenimiento_id, detalle_mtto_pieza_id, fecha_instalacion, km_instalacion)
           VALUES
-            (@vehiculoId, @tipoId, @etiqueta, @piezaId, @loteId, ${SUCURSAL_DEL_VEHICULO},
-             @mttoId, @fecha, @km)`)
+            (@vehiculoId, @tipoId, @etiqueta, @piezaId, @loteId,
+             COALESCE(@sucId, ${SUCURSAL_DEL_VEHICULO}),
+             @mttoId, @detId, @fecha, @km)`)
+
+      // La pieza sale del almacén aquí y ahora: se descuenta. Si viene ligada a
+      // un consumo de mantenimiento no se toca nada — ese renglón ya la
+      // descontó, y hacerlo otra vez es contar dos veces la misma unidad.
+      if (datos.detalle_mtto_pieza_id == null &&
+          datos.lote_id != null && datos.sucursal_id != null) {
+        await moverExistencia(tx, datos.lote_id, datos.sucursal_id, -1)
+      }
     } else {
       // Misma pieza: es una corrección de datos, no un cambio. Solo se pisan
       // los campos que vinieron; los que no, se quedan como estaban.
@@ -216,14 +258,16 @@ export async function setPieza(
         .input('etiqueta',   sql.NVarChar(40), etiqueta)
         .input('loteId',     sql.Int,  datos.lote_id ?? null)
         .input('mttoId',     sql.Int,  datos.mantenimiento_id ?? null)
+        .input('detId',      sql.Int,  datos.detalle_mtto_pieza_id ?? null)
         .input('fecha',      sql.Date, datos.fecha_instalacion ?? null)
         .input('km',         sql.Int,  datos.km_instalacion ?? null)
         .query(`
           UPDATE instalaciones_pieza SET
-            lote_id           = COALESCE(@loteId, lote_id),
-            mantenimiento_id  = COALESCE(@mttoId, mantenimiento_id),
-            fecha_instalacion = COALESCE(@fecha,  fecha_instalacion),
-            km_instalacion    = COALESCE(@km,     km_instalacion)
+            lote_id               = COALESCE(@loteId, lote_id),
+            mantenimiento_id      = COALESCE(@mttoId, mantenimiento_id),
+            detalle_mtto_pieza_id = COALESCE(@detId,  detalle_mtto_pieza_id),
+            fecha_instalacion     = COALESCE(@fecha,  fecha_instalacion),
+            km_instalacion        = COALESCE(@km,     km_instalacion)
           WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
             AND etiqueta = @etiqueta
             AND fecha_retiro IS NULL`)
@@ -285,6 +329,9 @@ export interface InstalacionHistorial {
   fecha_compra:      string | null
   sucursal:          string | null
   mantenimiento_id:  number | null
+  // Cuando no es null, esta pieza se descontó del almacén como consumo del
+  // mantenimiento y el montaje solo se colgó de ese renglón.
+  detalle_mtto_pieza_id: number | null
   fecha_instalacion: string | null
   km_instalacion:    number | null
   fecha_retiro:      string | null
@@ -310,7 +357,7 @@ export async function findHistorial(vehiculoId: number): Promise<InstalacionHist
         i.lote_id, l.num_factura, pr.nombre AS proveedor,
         l.costo_unitario, l.fecha_compra,
         s.nombre AS sucursal,
-        i.mantenimiento_id,
+        i.mantenimiento_id, i.detalle_mtto_pieza_id,
         i.fecha_instalacion, i.km_instalacion,
         i.fecha_retiro, i.km_retiro, i.motivo_retiro, i.destino
       FROM instalaciones_pieza i
@@ -379,11 +426,171 @@ export async function removePieza(
         WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
           AND etiqueta = @etiqueta`)
     const habia = r.recordset.length > 0
-    if (habia) await cerrarRenglon(tx, vehiculoId, tipoId, etiqueta, datos)
+    if (habia) {
+      // Antes de cerrarlo hay que leer de dónde salió: el renglón cerrado sigue
+      // ahí, pero la devolución necesita el par (lote, sucursal) y es más claro
+      // resolverlo en un solo lugar.
+      const origen = await tx.request()
+        .input('vehiculoId', sql.Int, vehiculoId)
+        .input('tipoId',     sql.Int, tipoId)
+        .input('etiqueta',   sql.NVarChar(40), etiqueta)
+        .query(`
+          SELECT lote_id, sucursal_id FROM instalaciones_pieza
+          WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+            AND etiqueta = @etiqueta AND fecha_retiro IS NULL`)
+      const fila = origen.recordset[0]
+
+      await cerrarRenglon(tx, vehiculoId, tipoId, etiqueta, datos)
+
+      // La pieza vuelve al almacén: se devuelve al lote y a la sucursal de los
+      // que salió. Vale igual si el montaje la descontó o si la descontó el
+      // consumo del mantenimiento — en los dos casos la unidad ya no estaba
+      // contada, y ahora está de vuelta en el estante.
+      //
+      // Los demás destinos (desecho, venta, devolución al proveedor) no
+      // devuelven nada: la pieza no regresa al inventario.
+      if (datos.destino === 'stock' && fila?.lote_id != null && fila?.sucursal_id != null) {
+        await moverExistencia(tx, fila.lote_id, fila.sucursal_id, 1)
+      }
+    }
     await tx.commit()
     return habia
   } catch (err) {
     await tx.rollback()
     throw err
   }
+}
+
+// ---------------------------------------------------------------------------
+// Consumos de mantenimiento pendientes de montar (migración 008)
+// ---------------------------------------------------------------------------
+
+// La sucursal de la que salió un consumo. Los anteriores al inventario por
+// sucursal la tienen en NULL; para ellos vale la de recepción del lote, que es
+// donde la migración 002 puso todo el stock. Es la misma regla que usa
+// `detalleMttoPiezaRepo`, y tiene que serlo: si aquí se devolviera una sucursal
+// distinta, la liga apuntaría a una existencia que nunca se movió.
+const SUCURSAL_DEL_CONSUMO = 'COALESCE(d.sucursal_id, l.sucursal_id)'
+
+// Cuántas piezas de un consumo ya se colgaron de él. Un consumo de 4 balatas
+// respalda 4 montajes, no uno.
+const YA_MONTADAS = `
+  (SELECT COUNT(*) FROM instalaciones_pieza ip
+   WHERE ip.detalle_mtto_pieza_id = d.id)`
+
+export interface ConsumoSinMontar {
+  id:                  number
+  mantenimiento_id:    number
+  fecha_mantenimiento: string
+  tipo_mantenimiento:  string | null
+  lote_id:             number
+  sucursal_id:         number | null
+  sucursal:            string | null
+  costo_unitario:      number
+  num_factura:         string | null
+  proveedor:           string | null
+  fecha_compra:        string | null
+  cantidad:            number
+  /** De ese consumo, cuántas piezas siguen sin montarse en ninguna unidad. */
+  sin_montar:          number
+}
+
+// Piezas de esta refacción que ya se descontaron del almacén en un
+// mantenimiento DE ESTE VEHÍCULO y que todavía no se han montado. Son las
+// candidatas a ligar: montarlas no debe volver a descontar.
+//
+// Se limita al vehículo del mantenimiento a propósito. Una pieza consumida en
+// el mantenimiento de otra unidad no tiene por qué aparecer aquí: si de verdad
+// terminó en esta, lo que está mal es el consumo, y corregirlo allá es lo
+// honesto.
+export async function findConsumosSinMontar(
+  vehiculoId: number, piezaId: number,
+): Promise<ConsumoSinMontar[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('vehiculoId', sql.Int, vehiculoId)
+    .input('piezaId',    sql.Int, piezaId)
+    .query(`
+      SELECT d.id, d.mantenimiento_id, m.fecha AS fecha_mantenimiento,
+             m.tipo AS tipo_mantenimiento,
+             d.lote_id, ${SUCURSAL_DEL_CONSUMO} AS sucursal_id,
+             s.nombre AS sucursal, d.costo_unitario,
+             l.num_factura, pr.nombre AS proveedor, l.fecha_compra,
+             d.cantidad, d.cantidad - ${YA_MONTADAS} AS sin_montar
+      FROM detalle_mtto_pieza d
+      JOIN mantenimiento m     ON m.id  = d.mantenimiento_id
+      JOIN lotes_pieza l       ON l.id  = d.lote_id
+      LEFT JOIN proveedores pr ON pr.id = l.proveedor_id
+      LEFT JOIN sucursales s   ON s.id  = ${SUCURSAL_DEL_CONSUMO}
+      WHERE m.vehiculo_id = @vehiculoId
+        AND l.pieza_id    = @piezaId
+        AND d.cantidad - ${YA_MONTADAS} > 0
+      ORDER BY m.fecha DESC, d.id DESC`)
+  return r.recordset
+}
+
+// Lo necesario para validar una liga: de qué refacción y de qué vehículo es el
+// consumo, y si le queda cupo. Null si el renglón no existe.
+export async function findConsumoParaLigar(detalleId: number): Promise<{
+  pieza_id: number; lote_id: number; sucursal_id: number | null
+  vehiculo_id: number; mantenimiento_id: number
+  cantidad: number; ya_montadas: number
+} | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, detalleId)
+    .query(`
+      SELECT l.pieza_id, d.lote_id, ${SUCURSAL_DEL_CONSUMO} AS sucursal_id,
+             m.vehiculo_id, d.mantenimiento_id,
+             d.cantidad, ${YA_MONTADAS} AS ya_montadas
+      FROM detalle_mtto_pieza d
+      JOIN mantenimiento m ON m.id = d.mantenimiento_id
+      JOIN lotes_pieza l   ON l.id = d.lote_id
+      WHERE d.id = @id`)
+  return r.recordset[0] ?? null
+}
+
+// Cuántas piezas montadas dependen de este consumo. Se pregunta antes de
+// borrarlo: el borrado devuelve stock al almacén, y hacerlo con la pieza aún
+// puesta en el carro la dejaría contada en los dos lados.
+export async function countMontadasDeConsumo(detalleId: number): Promise<number> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, detalleId)
+    .query(`SELECT COUNT(*) AS n FROM instalaciones_pieza WHERE detalle_mtto_pieza_id = @id`)
+  return r.recordset[0]?.n ?? 0
+}
+
+// Lo que queda de un lote en una sucursal. El montaje lo pregunta antes de
+// descontar para poder fallar con un mensaje entendible en vez de reventar
+// contra el CHECK que impide existencias negativas.
+export async function disponibleDeLoteEnSucursal(
+  loteId: number, sucursalId: number,
+): Promise<number> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('lid', sql.Int, loteId)
+    .input('suc', sql.Int, sucursalId)
+    .query(`
+      SELECT COALESCE((SELECT ex.cantidad FROM existencias_lote ex
+                       WHERE ex.lote_id = @lid AND ex.sucursal_id = @suc), 0) AS n`)
+  return r.recordset[0]?.n ?? 0
+}
+
+// Qué refacción trae ahora mismo ese renglón, o null si está vacío. Se usa para
+// distinguir un montaje real de una corrección de datos sobre la pieza que ya
+// estaba puesta: solo el primero mueve inventario.
+export async function piezaVigente(
+  vehiculoId: number, tipoId: number, etiqueta: string,
+): Promise<number | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('vehiculoId', sql.Int, vehiculoId)
+    .input('tipoId',     sql.Int, tipoId)
+    .input('etiqueta',   sql.NVarChar(40), etiqueta)
+    .query(`
+      SELECT pieza_id FROM piezas_vehiculo
+      WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+        AND etiqueta = @etiqueta`)
+  return r.recordset[0]?.pieza_id ?? null
 }

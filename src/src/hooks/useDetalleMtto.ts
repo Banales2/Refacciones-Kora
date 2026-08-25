@@ -11,6 +11,8 @@ export interface DetalleMttoPieza {
   cantidad:         number
   costo_unitario:   number
   pieza_id:         number
+  /** Tipo de la refacción: dice en qué renglones del vehículo puede montarse. */
+  tipo_pieza_id:    number | null
   numero_serie:     string
   descripcion:      string
   /** Lo que queda de ese lote en la sucursal de la que salió este consumo. */
@@ -19,6 +21,8 @@ export interface DetalleMttoPieza {
   // sucursal que además pertenecen a un lote sin sucursal de recepción.
   sucursal_id:      number | null
   sucursal:         string | null
+  /** Cuántas de estas piezas ya se montaron en la unidad. */
+  montadas:         number
 }
 
 interface DetalleMttoResponse {

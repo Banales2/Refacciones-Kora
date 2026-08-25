@@ -1,6 +1,7 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { DetalleMttoPiezaCreate, DetalleMttoPiezaUpdate } from '../schemas/detalleMttoPiezaSchema'
+import { moverExistencia } from './inventarioSql'
 
 export interface DetalleMttoPieza {
   id:               number
@@ -9,11 +10,16 @@ export interface DetalleMttoPieza {
   cantidad:         number
   costo_unitario:   number
   pieza_id:         number
+  tipo_pieza_id:    number | null
   numero_serie:     string
   descripcion:      string
   lote_disponible:  number
   sucursal_id:      number | null
   sucursal:         string | null
+  // Cuántas de estas piezas ya se montaron en la unidad colgándose de este
+  // renglón. Lo que falta por montar es `cantidad - montadas`, y mientras sea
+  // mayor que cero el consumo sigue apareciendo como pendiente en el vehículo.
+  montadas:         number
 }
 
 export interface LoteDisponible {
@@ -35,7 +41,9 @@ const SUCURSAL_DEL_DETALLE = 'COALESCE(d.sucursal_id, l.sucursal_id)'
 
 const SELECT_DETALLE = `
   SELECT d.id, d.mantenimiento_id, d.lote_id, d.cantidad, d.costo_unitario,
-         p.id AS pieza_id, p.numero_serie, p.descripcion,
+         p.id AS pieza_id, p.tipo_pieza_id, p.numero_serie, p.descripcion,
+         (SELECT COUNT(*) FROM instalaciones_pieza ip
+          WHERE ip.detalle_mtto_pieza_id = d.id) AS montadas,
          ${SUCURSAL_DEL_DETALLE} AS sucursal_id,
          s.nombre AS sucursal,
          -- Lo que queda del lote en esa sucursal, que es el tope real para
@@ -112,28 +120,6 @@ export async function getRaw(id: number): Promise<{
       JOIN lotes_pieza l ON l.id = d.lote_id
       WHERE d.id = @id`)
   return r.recordset[0] ?? null
-}
-
-// Mueve la existencia de (lote, sucursal) en `delta`. Positivo devuelve al
-// almacén, negativo consume. El UPDATE-then-INSERT cubre la devolución a una
-// sucursal que se quedó sin fila al agotarse.
-//
-// El CHECK de la tabla impide dejarla en negativo: si el cálculo se equivoca,
-// la transacción revienta en lugar de dejar un inventario imposible.
-async function moverExistencia(
-  tx: sql.Transaction, loteId: number, sucursalId: number, delta: number,
-): Promise<void> {
-  await tx.request()
-    .input('lid',   sql.Int, loteId)
-    .input('suc',   sql.Int, sucursalId)
-    .input('delta', sql.Int, delta)
-    .query(`
-      UPDATE existencias_lote SET cantidad = cantidad + @delta
-      WHERE lote_id = @lid AND sucursal_id = @suc;
-
-      IF @@ROWCOUNT = 0
-        INSERT INTO existencias_lote (lote_id, sucursal_id, cantidad)
-        VALUES (@lid, @suc, @delta);`)
 }
 
 export async function create(

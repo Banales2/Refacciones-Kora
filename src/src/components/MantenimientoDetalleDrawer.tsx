@@ -8,13 +8,14 @@ import {
   ActionIcon, Button, Modal, NumberInput, Select, Grid, Divider, Tooltip, Badge,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
-import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
+import { IconPencil, IconTrash, IconPlus, IconCar } from '@tabler/icons-react'
 import {
   useDetalleMtto, useCreateDetalleMtto, useUpdateDetalleMtto, useDeleteDetalleMtto,
 } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPieza, DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import type { Mantenimiento } from '../hooks/useMantenimientos'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
+import MontarConsumoModal from './MontarConsumoModal'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -177,6 +178,9 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
   const [createOpen, setCreateOpen] = useState(false)
   const [editItem, setEditItem]     = useState<DetalleMttoPieza | null>(null)
   const [deleteItem, setDeleteItem] = useState<DetalleMttoPieza | null>(null)
+  // El consumo que se está montando en la unidad. Va ligado, así que montar no
+  // vuelve a descontar del almacén.
+  const [montarItem, setMontarItem] = useState<DetalleMttoPieza | null>(null)
 
   const { data, isLoading } = useDetalleMtto(mantenimientoId)
   const createMut = useCreateDetalleMtto(mantenimientoId)
@@ -301,12 +305,33 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
                         <Table.Td>
                           <Text size="sm" fw={500}>{d.numero_serie}</Text>
                           <Text size="xs" c="dimmed">{d.descripcion}</Text>
+                          {/* Lo que ya quedó puesto en la unidad. Sin esto no
+                              hay forma de ver desde aquí qué se consumió pero
+                              nunca se montó, que es el hueco de siempre. */}
+                          {d.montadas > 0 && (
+                            <Badge size="xs" variant="light" color="teal" mt={4}>
+                              {d.montadas === d.cantidad
+                                ? 'Montada en la unidad'
+                                : `${d.montadas} de ${d.cantidad} montadas`}
+                            </Badge>
+                          )}
                         </Table.Td>
                         <Table.Td style={{ textAlign: 'center' }}>{d.cantidad}</Table.Td>
                         <Table.Td style={{ textAlign: 'right' }}>{formatMXN(d.costo_unitario)}</Table.Td>
                         <Table.Td style={{ textAlign: 'right' }}>{formatMXN(d.cantidad * d.costo_unitario)}</Table.Td>
                         <Table.Td>
                           <Group gap={4} justify="flex-end" wrap="nowrap">
+                            {d.montadas < d.cantidad && (
+                              <Tooltip label="Montar en la unidad">
+                                <ActionIcon
+                                  variant="subtle" color="teal" size="sm"
+                                  aria-label={`Montar ${d.numero_serie} en la unidad`}
+                                  onClick={() => setMontarItem(d)}
+                                >
+                                  <IconCar size={14} />
+                                </ActionIcon>
+                              </Tooltip>
+                            )}
                             <ActionIcon
                               variant="subtle" color="blue" size="sm"
                               aria-label="Editar refacción"
@@ -373,6 +398,15 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
             <Text component="span" fw={700}>{deleteItem?.numero_serie}</Text>
             {' '}de este mantenimiento? El stock se devolverá al lote de origen.
           </Text>
+          {/* Devolver el stock con la pieza aún puesta la dejaría contada en el
+              estante y en el carro. La API lo rechaza; avisarlo antes evita el
+              viaje. */}
+          {(deleteItem?.montadas ?? 0) > 0 && (
+            <Alert color="yellow" variant="light">
+              Esta refacción ya está montada en la unidad. Quítala del vehículo
+              antes de borrar el consumo.
+            </Alert>
+          )}
           {deleteMut.error && (
             <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>
           )}
@@ -386,6 +420,20 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
           </Group>
         </Stack>
       </Modal>
+
+      {/* Se remonta por consumo (`key`): así la posición, la fecha y el error
+          del anterior no se arrastran al siguiente. */}
+      {data && (
+        <MontarConsumoModal
+          key={montarItem?.id ?? 'cerrado'}
+          consumo={montarItem}
+          vehiculoId={data.mantenimiento.vehiculo_id}
+          mantenimientoId={data.mantenimiento.id}
+          fechaMantenimiento={data.mantenimiento.fecha}
+          kmMantenimiento={data.mantenimiento.km_actual}
+          onClose={() => setMontarItem(null)}
+        />
+      )}
     </>
   )
 }

@@ -40,6 +40,14 @@ export type DestinoPieza = 'desecho' | 'reacondicionar' | 'devolucion_proveedor'
 // de esto, solo que el renglón del historial queda sin rastro de compra.
 export interface DatosMontaje {
   lote_id?:           number
+  // De qué sucursal sale la pieza. Mandarla es lo que hace que el montaje
+  // DESCUENTE una unidad del almacén. Sin ella solo se registra.
+  sucursal_id?:       number
+  // El consumo del mantenimiento que ya descontó esta pieza. Con él el montaje
+  // no vuelve a descontar: se cuelga de ese renglón.
+  detalle_mtto_pieza_id?: number
+  // El mantenimiento en el que se hizo el cambio, si aplica.
+  mantenimiento_id?:  number
   fecha_instalacion?: string
   km_instalacion?:    number
   // De la pieza que sale, cuando el montaje reemplaza una anterior.
@@ -55,10 +63,19 @@ export interface DatosRetiro {
   destino?:       DestinoPieza
 }
 
-// Invalida la lista vigente y el historial: un montaje toca las dos.
+// Un montaje ya no toca solo la lista y el historial: desde la migración 008
+// también mueve inventario, así que hay que refrescar lo que muestra
+// existencias. Y los consumos sin montar cambian en cuanto uno queda ligado.
 function invalidar(qc: ReturnType<typeof useQueryClient>, vehiculoId: number) {
   qc.invalidateQueries({ queryKey: ['piezas-vehiculo', vehiculoId] })
   qc.invalidateQueries({ queryKey: ['piezas-historial', vehiculoId] })
+  qc.invalidateQueries({ queryKey: ['consumos-sin-montar', vehiculoId] })
+  qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
+  qc.invalidateQueries({ queryKey: ['lotes'] })
+  qc.invalidateQueries({ queryKey: ['refacciones'] })
+  // El detalle del mantenimiento lleva la cuenta de cuántas piezas de cada
+  // consumo ya se montaron: ligar una la cambia.
+  qc.invalidateQueries({ queryKey: ['detalle-mtto'] })
 }
 
 export function useSetPiezaVehiculo() {
@@ -113,6 +130,8 @@ export interface InstalacionHistorial {
   fecha_compra:      string | null
   sucursal:          string | null
   mantenimiento_id:  number | null
+  /** No null = la pieza se descontó como consumo del mantenimiento, no aquí. */
+  detalle_mtto_pieza_id: number | null
   fecha_instalacion: string | null
   km_instalacion:    number | null
   fecha_retiro:      string | null
@@ -126,5 +145,36 @@ export function useHistorialPiezas(vehiculoId?: number, enabled = true) {
     queryKey: ['piezas-historial', vehiculoId],
     queryFn: () => api.get<{ data: InstalacionHistorial[] }>(`/vehiculos/${vehiculoId}/piezas/historial`),
     enabled: vehiculoId !== undefined && enabled,
+  })
+}
+
+// Piezas de una refacción que ya se descontaron del almacén en un mantenimiento
+// de esta unidad y siguen sin montarse. Son las candidatas a ligar en un
+// montaje: ligarse a una en vez de descontar es lo que evita contar dos veces
+// la misma unidad física.
+export interface ConsumoSinMontar {
+  id:                  number
+  mantenimiento_id:    number
+  fecha_mantenimiento: string
+  tipo_mantenimiento:  string | null
+  lote_id:             number
+  sucursal_id:         number | null
+  sucursal:            string | null
+  costo_unitario:      number
+  num_factura:         string | null
+  proveedor:           string | null
+  fecha_compra:        string | null
+  cantidad:            number
+  /** Cuántas de ese consumo siguen sin montarse. Siempre >= 1. */
+  sin_montar:          number
+}
+
+export function useConsumosSinMontar(vehiculoId: number | null, piezaId: number | null) {
+  return useQuery({
+    queryKey: ['consumos-sin-montar', vehiculoId, piezaId],
+    queryFn: () => api.get<{ data: ConsumoSinMontar[] }>(
+      `/vehiculos/${vehiculoId}/consumos-sin-montar?pieza_id=${piezaId}`,
+    ),
+    enabled: vehiculoId !== null && piezaId !== null,
   })
 }
