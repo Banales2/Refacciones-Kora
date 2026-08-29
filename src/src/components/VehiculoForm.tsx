@@ -20,7 +20,7 @@ import { llevaPermiso, llevaSeguro } from '../lib/tipoVehiculo'
 
 const TIPO_META: Record<TipoVehiculo, { label: string; color: string }> = {
   camion:       { label: 'Unidad de reparto', color: 'blue'   },
-  tractocamion: { label: 'Tractocamión',     color: 'violet' },
+  tractocamion: { label: 'Unidad de translado', color: 'violet' },
   caja_trailer: { label: 'Caja de trailer',  color: 'orange' },
   utilitario:   { label: 'Vehículo utilitario',color: 'teal'   },
   montacargas:  { label: 'Montacargas',      color: 'yellow' },
@@ -389,7 +389,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
         {/* Campos condicionales — tractocamion */}
         {(tipo === 'tractocamion') && (
           <>
-            <Divider label="Datos del tractocamión" labelPosition="left" />
+            <Divider label="Datos de la unidad de translado" labelPosition="left" />
             <Grid>
               <Grid.Col span={4}>
                 <NumberInput label="Tonelaje" placeholder="Ej. 20" min={1} required {...form.getInputProps('tonelaje')} />

@@ -85,7 +85,7 @@ import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
 const TIPOS: { value: TipoVehiculo; label: string; color: string }[] = [
   { value: 'camion',       label: 'Unidad de reparto', color: 'blue'   },
-  { value: 'tractocamion', label: 'Tractocamión',      color: 'violet' },
+  { value: 'tractocamion', label: 'Unidad de translado', color: 'violet' },
   { value: 'caja_trailer', label: 'Caja de trailer',   color: 'orange' },
   { value: 'utilitario',   label: 'Vehículo utilitario', color: 'teal'   },
   { value: 'montacargas',  label: 'Montacargas',       color: 'yellow' },

@@ -10,7 +10,7 @@ export const TIPO_COLORS: Record<string, string> = {
 
 export const TIPO_LABELS: Record<string, string> = {
   camion:       'Unidad de reparto',
-  tractocamion: 'Tractocamión',
+  tractocamion: 'Unidad de translado',
   caja_trailer: 'Caja de trailer',
   utilitario:   'Vehículo utilitario',
   montacargas:  'Montacargas',

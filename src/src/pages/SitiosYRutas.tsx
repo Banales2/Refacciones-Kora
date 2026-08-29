@@ -280,7 +280,7 @@ function RutasPanel() {
       <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar translado" centered size="sm">
         <Stack gap="md">
           <Text>¿Eliminar <strong>{deleting?.nombre}</strong>?</Text>
-          <Text size="sm" c="dimmed">No podrá eliminarse si tiene tractocamiones asignados.</Text>
+          <Text size="sm" c="dimmed">No podrá eliminarse si tiene unidades de translado asignadas.</Text>
           {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>

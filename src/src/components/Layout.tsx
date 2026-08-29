@@ -66,7 +66,7 @@ const NAV_GROUPS: {
   {
     titulo: 'Flota',
     items: [
-      { section: 'vehiculos',   label: 'Vehículos',   description: 'Unidades de reparto y tractocamiones', icon: IconTruck },
+      { section: 'vehiculos',   label: 'Vehículos',   description: 'Unidades de reparto y de translado', icon: IconTruck },
       { section: 'modelos',     label: 'Modelos',     description: 'Marcas y modelos de la flota',         icon: IconCar   },
     ],
   },

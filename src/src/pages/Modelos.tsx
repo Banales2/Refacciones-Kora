@@ -40,7 +40,7 @@ import {
 
 const TIPOS: Record<TipoVehiculo, { label: string; color: string }> = {
   camion:       { label: 'Unidad de reparto', color: 'blue'   },
-  tractocamion: { label: 'Tractocamión',      color: 'violet' },
+  tractocamion: { label: 'Unidad de translado', color: 'violet' },
   caja_trailer: { label: 'Caja de trailer',   color: 'orange' },
   utilitario:   { label: 'Vehículo utilitario', color: 'teal'   },
   montacargas:  { label: 'Montacargas',       color: 'yellow' },
@@ -301,7 +301,7 @@ function PlantillaForm({
         />
         <Select
           label="Disparador" required
-          description={soportaKm ? undefined : 'Para disparadores por kilometraje, restringe el modelo a tipos con km (unidad de reparto, tractocamión o utilitario).'}
+          description={soportaKm ? undefined : 'Para disparadores por kilometraje, restringe el modelo a tipos con km (unidad de reparto, unidad de translado o utilitario).'}
           data={soportaKm ? [
             { value: 'km',    label: 'Por kilometraje' },
             { value: 'meses', label: 'Por tiempo (meses)' },
