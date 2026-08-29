@@ -18,6 +18,8 @@ export interface PlantillaRequerimiento {
   created_at:      string
   updated_at:      string
   modelo_id:       number
+  /** Garantías del modelo que obligan a este servicio. Vacío = se pide siempre. */
+  garantia_modelo_ids: number[]
 }
 
 export interface PlantillaPayload {
@@ -28,6 +30,8 @@ export interface PlantillaPayload {
   intervalo_km?:   number | null
   intervalo_meses?: number | null
   activo?:         boolean
+  /** Ausente en una edición = no se tocan; [] = el servicio deja de colgar de una garantía. */
+  garantia_modelo_ids?: number[]
 }
 
 export function usePlantillaModelo(modeloId: number) {
@@ -49,6 +53,9 @@ function invalidarPlantilla(qc: ReturnType<typeof useQueryClient>, modeloId: num
   qc.invalidateQueries({ queryKey: ['pendientes'] })
   qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
   qc.invalidateQueries({ queryKey: ['dashboard'] })
+  // El vínculo con las garantías se materializa en cada vehículo al guardar la
+  // plantilla, así que la lista de garantías de las unidades también cambia.
+  qc.invalidateQueries({ queryKey: ['garantias-vehiculo'] })
 }
 
 export function useCreatePlantilla(modeloId: number) {

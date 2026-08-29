@@ -6,6 +6,7 @@ import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import * as service from '../services/plantillaService'
 import { TEXTO_SIMPLE, TEXTO_LIBRE, KM_MAX } from '../schemas/common'
+import { GarantiaIdsSchema } from '../schemas/garantiaSchema'
 
 const Schema = z.object({
   nombre: z
@@ -33,6 +34,8 @@ const Schema = z.object({
   intervalo_km:    z.coerce.number().int().positive().max(KM_MAX, 'Máximo 9,999,999 km').nullable().optional(),
   intervalo_meses: z.coerce.number().int().positive().nullable().optional(),
   activo:          z.boolean().optional(),
+  // Garantías del modelo que obligan a este servicio. Ausente = no se tocan.
+  garantia_modelo_ids: GarantiaIdsSchema,
 })
 
 export async function plantillaUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
@@ -40,9 +43,9 @@ export async function plantillaUpdate(req: HttpRequest, ctx: InvocationContext):
     const user = requireRole(req, 'admin', 'editor')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
-    const body = Schema.parse(await req.json())
+    const { garantia_modelo_ids, ...body } = Schema.parse(await req.json())
     const antes = await capturar('plantilla_requerimientos_modelo', id)
-    const updated = await service.update(id, body)
+    const updated = await service.update(id, body, garantia_modelo_ids)
     await audit({
       user,
       accion: 'EDITAR',

@@ -1,5 +1,6 @@
 import * as repo from '../repositories/vehiculosRepo'
 import * as plantillaRepo from '../repositories/plantillaRepo'
+import * as garantiasRepo from '../repositories/garantiasRepo'
 import * as modelosRepo from '../repositories/modelosRepo'
 import * as dashboardService from './dashboardService'
 import { getPool } from '../shared/db'
@@ -79,7 +80,12 @@ export async function create(data: VehiculoCreate) {
   await validateTipoPermitido(data.modelo_id, data.tipo)
   await validateSerieYPlacas(data.serie, data.placas)
   const vehicle = await repo.create(data)
+  // La unidad nace con lo que su modelo dice que trae: primero las garantías,
+  // luego los requerimientos de la plantilla, y al final el vínculo entre unos y
+  // otras —que necesita que las dos copias ya existan.
+  await garantiasRepo.copyModelToVehicle(vehicle.id, data.modelo_id)
   await plantillaRepo.copyModelToVehicle(vehicle.id, data.modelo_id)
+  await garantiasRepo.sincronizarVinculosDesdePlantilla({ vehiculoId: vehicle.id })
   return vehicle
 }
 

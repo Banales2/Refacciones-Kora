@@ -6,6 +6,7 @@ import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import * as service from '../services/requerimentosService'
 import { TEXTO_SIMPLE, TEXTO_LIBRE, KM_MAX } from '../schemas/common'
+import { GarantiaIdsSchema } from '../schemas/garantiaSchema'
 
 const Schema = z.object({
   nombre: z
@@ -37,6 +38,8 @@ const Schema = z.object({
   fecha_inicio:    z.string().date().nullable().optional(),
   km_inicio:       z.coerce.number().int().min(0).max(KM_MAX, 'Máximo 9,999,999 km').nullable().optional(),
   fecha_reporte:   z.string().date().nullable().optional(),
+  // Ausente = no se tocan las garantías atadas; [] = se desatan todas.
+  garantia_ids:    GarantiaIdsSchema,
 })
 
 export async function requerimientosUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
@@ -44,9 +47,9 @@ export async function requerimientosUpdate(req: HttpRequest, ctx: InvocationCont
     const user = requireRole(req, 'admin', 'editor')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
-    const body = Schema.parse(await req.json())
+    const { garantia_ids, ...body } = Schema.parse(await req.json())
     const antes = await capturar('requerimientos_exclusivos', id)
-    const updated = await service.update(id, body)
+    const updated = await service.update(id, body, garantia_ids)
     await audit({
       user,
       accion: 'EDITAR',

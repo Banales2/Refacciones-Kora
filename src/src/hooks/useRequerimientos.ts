@@ -28,6 +28,14 @@ export interface RequerimientoExclusivo {
   fecha_inicio:        string | null
   km_inicio:           number | null
   fecha_reporte:       string | null
+  /** Garantías de la unidad que obligan a este servicio. Vacío = se pide siempre. */
+  garantia_ids:        number[]
+  /**
+   * Todas sus garantías se vencieron o se cancelaron: el servicio existía para
+   * no perderlas y ya no hay nada que perder. Lo calcula la API contra la fecha
+   * de arranque y el odómetro; aquí solo se pinta.
+   */
+  silenciado_por_garantia: boolean
 }
 
 export interface RequerimientoPayload {
@@ -41,6 +49,8 @@ export interface RequerimientoPayload {
   fecha_inicio?:    string | null
   km_inicio?:       number | null
   fecha_reporte?:   string | null
+  /** Ausente en una edición = no se tocan las garantías atadas; [] = se desatan. */
+  garantia_ids?:    number[]
 }
 
 export function useRequerimientos(vehiculoId: number) {

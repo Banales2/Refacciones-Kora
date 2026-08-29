@@ -2,6 +2,7 @@ import * as repo from '../repositories/dashboardRepo'
 import { RequerimientoFleet } from '../repositories/dashboardRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import * as pendientesRepo from '../repositories/pendientesRepo'
+import * as garantiasService from './garantiasService'
 import { getPool } from '../shared/db'
 import { parseVigencia, DIAS_ALERTA_LICENCIA } from '../shared/vigenciaLicencia'
 import { fechaMexico } from '../shared/fechaMexico'
@@ -263,6 +264,11 @@ interface RequerimientoFleetConUrgencia extends RequerimientoFleet {
 async function clasificarRequerimientosFleet() {
   const requerimientos = await repo.findRequerimientosActivosFleet()
   const links = await repo.findMantenimientoLinks(requerimientos.map(r => r.id))
+  // Un preventivo que existía por una garantía deja de pedirse cuando todas las
+  // garantías que lo sostenían se acabaron: no cuenta como vencido ni como por
+  // vencer, y con eso sale del tablero, del calendario y de las alertas de la
+  // unidad. El requerimiento se queda en la ficha, en gris, diciendo por qué.
+  const silenciados = await garantiasService.idsSilenciadosPorGarantia()
 
   const lastLinkByReq = new Map<number, { fecha: string; km_actual: number | null }>()
   for (const l of links) {
@@ -274,6 +280,7 @@ async function clasificarRequerimientosFleet() {
   const porVencer: RequerimientoFleetConUrgencia[] = []
 
   for (const req of requerimientos) {
+    if (silenciados.has(req.id)) continue
     const base = baseDe(req, lastLinkByReq.get(req.id) ?? null)
     const urgencia = calcularUrgencia(req, base, now)
     if (isOverdue(req, base, now)) vencidos.push({ ...req, urgencia })

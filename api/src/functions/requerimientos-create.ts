@@ -6,6 +6,7 @@ import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import * as service from '../services/requerimentosService'
 import { TEXTO_SIMPLE, TEXTO_LIBRE, KM_MAX } from '../schemas/common'
+import { GarantiaIdsSchema } from '../schemas/garantiaSchema'
 
 const Schema = z.object({
   nombre: z
@@ -36,6 +37,9 @@ const Schema = z.object({
   fecha_inicio:    z.string().date().nullable().optional(),
   km_inicio:       z.coerce.number().int().min(0).max(KM_MAX, 'Máximo 9,999,999 km').nullable().optional(),
   fecha_reporte:   z.string().date().nullable().optional(),
+  // Garantías de esa unidad que obligan a este servicio. Vacío o ausente = el
+  // requerimiento se pide siempre, como hasta ahora.
+  garantia_ids:    GarantiaIdsSchema,
 })
 
 export async function requerimientosCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
@@ -43,8 +47,8 @@ export async function requerimientosCreate(req: HttpRequest, ctx: InvocationCont
     const user = requireRole(req, 'admin', 'editor')
     const vehiculoId = parseInt(req.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
-    const body = Schema.parse(await req.json())
-    const created = await service.create(vehiculoId, body)
+    const { garantia_ids, ...body } = Schema.parse(await req.json())
+    const created = await service.create(vehiculoId, body, garantia_ids)
     await audit({
       user,
       accion: 'CREAR',

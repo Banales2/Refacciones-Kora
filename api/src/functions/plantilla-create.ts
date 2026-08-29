@@ -6,6 +6,7 @@ import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import * as service from '../services/plantillaService'
 import { TEXTO_SIMPLE, TEXTO_LIBRE, KM_MAX } from '../schemas/common'
+import { GarantiaIdsSchema } from '../schemas/garantiaSchema'
 
 const Schema = z.object({
   nombre: z
@@ -30,6 +31,8 @@ const Schema = z.object({
   intervalo_km:    z.coerce.number().int().positive().max(KM_MAX, 'Máximo 9,999,999 km').nullable().optional(),
   intervalo_meses: z.coerce.number().int().positive().nullable().optional(),
   activo:          z.boolean().default(true),
+  // Garantías del modelo que obligan a este servicio. Vacío = se pide siempre.
+  garantia_modelo_ids: GarantiaIdsSchema,
 })
 
 export async function plantillaCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
@@ -37,8 +40,8 @@ export async function plantillaCreate(req: HttpRequest, ctx: InvocationContext):
     const user = requireRole(req, 'admin', 'editor')
     const modeloId = parseInt(req.params.modeloId, 10)
     if (isNaN(modeloId)) return { status: 400, jsonBody: { error: 'ID de modelo inválido' } }
-    const body = Schema.parse(await req.json())
-    const created = await service.create(modeloId, body)
+    const { garantia_modelo_ids, ...body } = Schema.parse(await req.json())
+    const created = await service.create(modeloId, body, garantia_modelo_ids)
     await audit({
       user,
       accion: 'CREAR',

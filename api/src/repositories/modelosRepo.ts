@@ -117,10 +117,30 @@ export async function countVehiculos(id: number): Promise<number> {
   return r.recordset[0].cnt
 }
 
+// El modelo solo se borra cuando ya no tiene vehículos (lo comprueba el
+// servicio), así que aquí no quedan garantías de unidades que soltar. Lo que sí
+// hay que soltar a mano es el vínculo plantilla↔garantía: las dos tablas bajan
+// del modelo por cascadas distintas y `plantilla_garantias` apunta a
+// `garantias_modelo` con NO ACTION (ver la migración 010), así que dejar que el
+// motor resuelva el orden es apostar.
 export async function remove(id: number): Promise<boolean> {
   const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM modelos OUTPUT DELETED.id WHERE id = @id')
-  return r.recordset.length > 0
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE pg FROM plantilla_garantias pg
+      JOIN garantias_modelo g ON g.id = pg.garantia_modelo_id
+      WHERE g.modelo_id = @id
+    `)
+    await tx.request().input('id', sql.Int, id)
+      .query('DELETE FROM garantias_modelo WHERE modelo_id = @id')
+    const r = await tx.request().input('id', sql.Int, id)
+      .query('DELETE FROM modelos OUTPUT DELETED.id WHERE id = @id')
+    await tx.commit()
+    return r.recordset.length > 0
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
 }

@@ -43,6 +43,8 @@ import {
 import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
 import type { AlertaDocumento, AlertaVehiculo, TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
 import { useDocumentosPorVencer, useRequerimientosVencidos } from '../hooks/useDashboard'
+import { useGarantiasVehiculo, textoCobertura } from '../hooks/useGarantias'
+import GarantiasVehiculoSection from '../components/GarantiasVehiculoSection'
 import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, StatusReq } from '../hooks/useRequerimientos'
 import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
 import type { OrigenPendiente } from '../hooks/usePendientes'
@@ -241,6 +243,9 @@ export function RequerimientoForm({
       status:          (initial?.status ?? 'activo') as StatusReq,
       fecha_reporte:   initial?.fecha_reporte?.split('T')[0] ?? todayIso(),
       desde:           'ahora' as 'ahora' | 'ultimo',
+      // Garantías de esta unidad que obligan al servicio. Vacío = se pide
+      // siempre, que es como se comportaban todos hasta ahora.
+      garantia_ids:    (initial?.garantia_ids ?? []).map(String),
     },
     validate: {
       nombre: (v) =>
@@ -268,6 +273,15 @@ export function RequerimientoForm({
 
   const { options: categoriaOptions, setSearch: setCategoriaSearch } =
     useCategoriaOptions(form.values.categoria, initial?.categoria)
+
+  // Las garantías vencidas también se ofrecen: atar un servicio a una que ya
+  // caducó lo silencia de inmediato, que es justo lo que se quiere cuando se
+  // captura tarde.
+  const { data: garantiasData } = useGarantiasVehiculo(vehiculo?.id ?? 0)
+  const garantiasOpts = (garantiasData?.data ?? []).map((g) => ({
+    value: String(g.id),
+    label: `${g.nombre} — ${textoCobertura(g)}${g.estado.vigente ? '' : ' (vencida)'}`,
+  }))
 
   // Baseline preview
   const baselineKm   = desde === 'ahora' ? (vehiculo?.kilometraje ?? null)  : (lastMant?.km_actual  ?? null)
@@ -306,6 +320,7 @@ export function RequerimientoForm({
       fecha_inicio,
       km_inicio,
       fecha_reporte:   vals.fecha_reporte || null,
+      garantia_ids:    vals.garantia_ids.map(Number),
     })
   }
 
@@ -385,6 +400,16 @@ export function RequerimientoForm({
           ]}
           allowDeselect={false}
           {...form.getInputProps('status')}
+        />
+
+        <MultiSelect
+          label="Existe por estas garantías"
+          placeholder={garantiasOpts.length ? 'Ninguna: se pide siempre' : 'La unidad no tiene garantías'}
+          description="Cuando todas se venzan, este servicio dejará de pedirse"
+          data={garantiasOpts}
+          disabled={garantiasOpts.length === 0}
+          clearable
+          {...form.getInputProps('garantia_ids')}
         />
 
         {!isEdit && (
@@ -535,8 +560,12 @@ function RequerimientoTable({
         </Table.Thead>
         <Table.Tbody>
           {items.map((item) => {
-            const overdue     = overdueIds.has(item.id)
-            const warn        = !overdue && warnIds.has(item.id)
+            // Un servicio que existía por una garantía ya vencida no se pinta
+            // como vencido ni como próximo: dejó de pedirse. Se queda en gris
+            // para que se vea que se hacía y por qué se dejó de hacer.
+            const silenciado  = item.silenciado_por_garantia
+            const overdue     = !silenciado && overdueIds.has(item.id)
+            const warn        = !silenciado && !overdue && warnIds.has(item.id)
             const linked      = linkedMantenimiento(item.id, mantenimientos)
             const baseDateStr = linked?.fecha?.split('T')[0] ?? item.fecha_inicio?.split('T')[0] ?? null
             const baseKmVal   = linked?.km_actual ?? item.km_inicio ?? null
@@ -556,6 +585,7 @@ function RequerimientoTable({
                   overdue ? 'var(--mantine-color-red-0)'    :
                   warn    ? 'var(--mantine-color-yellow-0)' :
                   undefined,
+                opacity: silenciado ? 0.6 : undefined,
               }}
             >
               <Table.Td fw={500}>
@@ -571,6 +601,14 @@ function RequerimientoTable({
                   </span>
                   {item.plantilla_origen_id && (
                     <Text component="span" size="xs" c="dimmed">(del modelo)</Text>
+                  )}
+                  {silenciado && (
+                    <Tooltip
+                      label="La garantía que obligaba a este servicio ya venció: dejó de pedirse"
+                      multiline w={240}
+                    >
+                      <Badge size="xs" variant="light" color="gray">Garantía vencida</Badge>
+                    </Tooltip>
                   )}
                 </Group>
               </Table.Td>
@@ -643,8 +681,9 @@ function RequerimientoDetalleDrawer({
   onClose:        () => void
   onEdit:         (item: RequerimientoExclusivo) => void
 }) {
-  const overdue = item ? overdueIds.has(item.id) : false
-  const warn    = item ? !overdue && warnIds.has(item.id) : false
+  const silenciado = item?.silenciado_por_garantia ?? false
+  const overdue = item ? !silenciado && overdueIds.has(item.id) : false
+  const warn    = item ? !silenciado && !overdue && warnIds.has(item.id) : false
 
   const linked      = item ? linkedMantenimiento(item.id, mantenimientos) : undefined
   const baseDateStr = item ? (linked?.fecha?.split('T')[0] ?? item.fecha_inicio?.split('T')[0] ?? null) : null
@@ -670,6 +709,7 @@ function RequerimientoDetalleDrawer({
               <Text size="xl" fw={700}>{item.nombre}</Text>
               <Badge variant="light" color={STATUS_META[item.status].color}>{STATUS_META[item.status].label}</Badge>
               {item.plantilla_origen_id && <Badge variant="light" color="grape">Requerimiento del modelo</Badge>}
+              {silenciado && <Badge variant="light" color="gray">Garantía vencida</Badge>}
             </Group>
             <Tooltip label="Editar">
               <ActionIcon variant="light" color="blue" onClick={() => onEdit(item)}>
@@ -678,6 +718,14 @@ function RequerimientoDetalleDrawer({
             </Tooltip>
           </Group>
 
+          {silenciado && (
+            <Alert color="gray" title="Ya no se pide" variant="light">
+              Este servicio existía para no perder una garantía de la unidad, y todas las
+              garantías que lo obligaban ya vencieron o se cancelaron. Se deja aquí como
+              rastro: no vuelve a contar como vencido ni aparece en el tablero. Si quieres
+              seguir haciéndolo de todas formas, edítalo y quítale las garantías.
+            </Alert>
+          )}
           {overdue && (
             <Alert color="red" title="Vencido" icon={<IconAlertTriangle size={16} />}>
               Este requerimiento ya superó su intervalo de mantenimiento.
@@ -2488,6 +2536,9 @@ function VehiculoDetalle({
     const overdueIds = new Set<number>()
     const warnIds    = new Set<number>()
     for (const req of reqs) {
+      // Existía por una garantía que ya se acabó: deja de pedirse, igual que en
+      // el tablero. Sigue en la lista, en gris, para que quede el rastro.
+      if (req.silenciado_por_garantia) continue
       if      (isOverdue(req, vehiculo, mants))  overdueIds.add(req.id)
       else if (isWarning(req, vehiculo, mants))  warnIds.add(req.id)
     }
@@ -2705,6 +2756,14 @@ function VehiculoDetalle({
 
       {/* Refacción que usa esta unidad por cada tipo que pide su modelo */}
       <PiezasVehiculoSection vehiculoId={vehiculo.id} kmVehiculo={vehiculo.kilometraje} />
+
+      {/* Garantías: son la razón por la que existen varios de los
+          requerimientos de abajo, así que van justo antes */}
+      <GarantiasVehiculoSection
+        vehiculoId={vehiculo.id}
+        fechaCompra={vehiculo.fecha_compra?.split('T')[0] ?? null}
+        soportaKm={!sinKilometraje(vehiculo.tipo)}
+      />
 
       {/* Requerimientos preventivos */}
       <RequerimientosSection

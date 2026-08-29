@@ -417,6 +417,14 @@ export async function remove(id: number): Promise<void> {
       JOIN pendientes p ON p.id = ap.pendiente_id
       WHERE p.vehiculo_id = @id
     `)
+    // El vínculo con las garantías apunta a `garantias_vehiculo` con NO ACTION
+    // (ver la migración 010): se suelta antes, para no depender del orden en que
+    // el motor resuelva las dos cascadas que bajan de `vehiculos`.
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE rg FROM requerimiento_garantias rg
+      JOIN garantias_vehiculo gv ON gv.id = rg.garantia_vehiculo_id
+      WHERE gv.vehiculo_id = @id
+    `)
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM pendientes WHERE vehiculo_id=@id')
     const sub = tx.request().input('id', sql.Int, id)

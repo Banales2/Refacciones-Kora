@@ -27,6 +27,8 @@ import EtiquetaEditable from '../components/EtiquetaEditable'
 import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
 import type { Modelo, ModeloPayload } from '../hooks/useModelos'
 import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode } from '../hooks/usePlantilla'
+import { useGarantiasModelo, textoCobertura } from '../hooks/useGarantias'
+import GarantiasModeloSection from '../components/GarantiasModeloSection'
 import type {
   TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload,
 } from '../hooks/useVehiculos'
@@ -215,8 +217,9 @@ function ModeloForm({
 // ── Formulario de plantilla ───────────────────────────────────────────────────
 
 function PlantillaForm({
-  initial, isPending, error, onSubmit, onCancel, soportaKm,
+  modeloId, initial, isPending, error, onSubmit, onCancel, soportaKm,
 }: {
+  modeloId: number
   initial?: PlantillaRequerimiento
   isPending: boolean
   error: string | null
@@ -235,6 +238,9 @@ function PlantillaForm({
       intervalo_km:    initial?.intervalo_km ?? (null as number | null),
       intervalo_meses: initial?.intervalo_meses ?? (null as number | null),
       activo:          initial?.activo ?? true,
+      // Garantías del modelo que obligan a este servicio. Vacío = se pide
+      // siempre, que es como se comportaba todo antes de que existieran.
+      garantia_modelo_ids: (initial?.garantia_modelo_ids ?? []).map(String),
     },
     validate: {
       nombre: (v) =>
@@ -261,6 +267,13 @@ function PlantillaForm({
   const { options: categoriaOptions, setSearch: setCategoriaSearch } =
     useCategoriaOptions(form.values.categoria, initial?.categoria)
 
+  // Solo las activas: atar un servicio a una garantía que el modelo ya no da
+  // dejaría el vínculo sin copia en las unidades nuevas.
+  const { data: garantiasData } = useGarantiasModelo(modeloId)
+  const garantiasOpts = (garantiasData?.data ?? [])
+    .filter((g) => g.activo || form.values.garantia_modelo_ids.includes(String(g.id)))
+    .map((g) => ({ value: String(g.id), label: `${g.nombre} — ${textoCobertura(g)}` }))
+
   function handleSubmit(vals: typeof form.values) {
     onSubmit({
       nombre:          vals.nombre.trim(),
@@ -270,6 +283,7 @@ function PlantillaForm({
       intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km    : null,
       intervalo_meses: (mode === 'meses' || mode === 'ambos') ? vals.intervalo_meses : null,
       activo:          vals.activo,
+      garantia_modelo_ids: vals.garantia_modelo_ids.map(Number),
     })
   }
 
@@ -327,6 +341,15 @@ function PlantillaForm({
             {...form.getInputProps('intervalo_meses')}
           />
         )}
+        <MultiSelect
+          label="Existe por estas garantías"
+          placeholder={garantiasOpts.length ? 'Ninguna: se pide siempre' : 'El modelo no tiene garantías'}
+          description="Cuando todas se venzan, este servicio dejará de pedirse en cada unidad"
+          data={garantiasOpts}
+          disabled={garantiasOpts.length === 0}
+          clearable
+          {...form.getInputProps('garantia_modelo_ids')}
+        />
         <Switch label="Activo" {...form.getInputProps('activo', { type: 'checkbox' })} />
 
         {error && <Alert color="red" title="Error">{error}</Alert>}
@@ -460,6 +483,7 @@ function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tip
         centered size="md"
       >
         <PlantillaForm
+          modeloId={modeloId}
           initial={editing ?? undefined}
           isPending={createMut.isPending || updateMut.isPending}
           error={formError}
@@ -777,6 +801,11 @@ function ModeloDetalle({
       </Paper>
 
       {/* Plantilla de requerimientos preventivos */}
+      <GarantiasModeloSection
+        modeloId={modelo.id}
+        soportaKm={modeloSoportaKm(modelo.tipos_permitidos ?? [])}
+      />
+
       <PlantillaSection modeloId={modelo.id} tiposPermitidos={modelo.tipos_permitidos ?? []} />
 
       {/* Piezas específicas del modelo */}

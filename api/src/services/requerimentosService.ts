@@ -1,26 +1,63 @@
 import * as repo from '../repositories/requerimentosRepo'
+import * as garantiasService from './garantiasService'
 import { ConflictError, NotFoundError } from '../shared/errors'
-import type { RequerimientoCreate, RequerimientoUpdate } from '../repositories/requerimentosRepo'
+import type {
+  RequerimientoCreate, RequerimientoUpdate, RequerimientoExclusivo,
+} from '../repositories/requerimentosRepo'
 import { ensureDailySync } from './dashboardService'
 
-export async function getByVehiculo(vehiculoId: number) {
+// Un requerimiento puede existir por una garantía: es el servicio que el
+// fabricante exige para no perderla. Cuando todas las garantías que lo sostienen
+// se acaban, el servicio deja de pedirse — y eso se calcula, no se guarda, así
+// que viaja resuelto en cada renglón.
+export interface RequerimientoConGarantias extends RequerimientoExclusivo {
+  garantia_ids: number[]
+  /** Todas sus garantías se vencieron o se cancelaron: ya no hay que hacerlo. */
+  silenciado_por_garantia: boolean
+}
+
+export async function getByVehiculo(vehiculoId: number): Promise<RequerimientoConGarantias[]> {
   // "Una vez al día, cada vez que se use la app": consultar requerimientos ya
   // dispara el snapshot diario del dashboard si todavía no ha corrido hoy.
   await ensureDailySync()
-  return repo.findByVehiculo(vehiculoId)
+  const [items, garantias] = await Promise.all([
+    repo.findByVehiculo(vehiculoId),
+    garantiasService.getGarantiasPorRequerimiento(vehiculoId),
+  ])
+  return items.map((r) => {
+    const g = garantias.get(r.id)
+    return {
+      ...r,
+      garantia_ids: g?.ids ?? [],
+      silenciado_por_garantia: g?.silenciado ?? false,
+    }
+  })
 }
 
 export async function getCategorias() {
   return repo.findCategorias()
 }
 
-export async function create(vehiculoId: number, data: Omit<RequerimientoCreate, 'vehiculo_id'>) {
-  return repo.create({ ...data, vehiculo_id: vehiculoId })
+export async function create(
+  vehiculoId: number,
+  data: Omit<RequerimientoCreate, 'vehiculo_id'>,
+  garantiaIds?: number[],
+) {
+  const created = await repo.create({ ...data, vehiculo_id: vehiculoId })
+  if (garantiaIds?.length) {
+    await garantiasService.setVinculosRequerimiento(created.id, vehiculoId, garantiaIds)
+  }
+  return created
 }
 
-export async function update(id: number, data: RequerimientoUpdate) {
+export async function update(id: number, data: RequerimientoUpdate, garantiaIds?: number[]) {
   const updated = await repo.update(id, data)
   if (!updated) throw new NotFoundError('Requerimiento')
+  // Solo cuando el campo viaja: un PATCH que no lo trae deja las garantías
+  // atadas como estaban.
+  if (garantiaIds !== undefined) {
+    await garantiasService.setVinculosRequerimiento(id, updated.vehiculo_id, garantiaIds)
+  }
   await ensureDailySync()
   return updated
 }
