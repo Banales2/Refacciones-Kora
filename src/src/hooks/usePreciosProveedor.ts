@@ -14,6 +14,8 @@ export interface PrecioProveedor {
   pieza_id:       number
   precio:         number
   fecha:          string
+  /** En cuántos días naturales surte ese proveedor. Null si no se capturó. */
+  tiempo_entrega_dias: number | null
   observaciones:  string | null
   registrado_por: string
   pieza_serie:    string
@@ -33,6 +35,7 @@ export interface PrecioProveedorPayload {
   pieza_id:       number
   precio:         number
   fecha:          string
+  tiempo_entrega_dias?: number | null
   observaciones?: string | null
 }
 
@@ -89,6 +92,8 @@ export interface PrecioDeProveedor {
   proveedor:    string
   precio:       number
   fecha:        string
+  /** Días naturales en que surte ese proveedor. Null si no se capturó. */
+  tiempo_entrega_dias: number | null
   /** Cuánto más caro es que el mejor precio de esa refacción, en porcentaje. */
   sobre_mejor:  number
 }
@@ -109,6 +114,9 @@ export interface FilaComparativa {
   ultimo_proveedor: string | null
   ultima_compra:    string | null
   ahorro_unitario:  number | null
+  /** El plazo más corto entre los proveedores que lo capturaron. */
+  mejor_entrega:           number | null
+  mejor_entrega_proveedor: string | null
 }
 
 export interface ComparativaPrecios {
@@ -125,5 +133,29 @@ export function useComparativaPrecios() {
   return useQuery({
     queryKey: ['precios-proveedor', 'comparativa'],
     queryFn: () => api.get<{ data: ComparativaPrecios }>('/precios-proveedor/comparativa'),
+  })
+}
+
+// ─── Comparativa de una refacción ───────────────────────────────────────────
+// La de arriba es el catálogo entero; ésta es la de una sola pieza, que es la
+// pregunta que se hace al abrirla ("¿a quién le compro ésta?"). Se pide aparte
+// para no traerse la tabla completa cada vez que se abre una refacción.
+
+export interface ComparativaPieza {
+  pieza: {
+    id:           number
+    numero_serie: string
+    descripcion:  string
+    tipo_pieza:   string | null
+  }
+  /** Null cuando ningún proveedor la cotiza todavía. */
+  fila: FilaComparativa | null
+}
+
+export function useComparativaPieza(piezaId: number | null) {
+  return useQuery({
+    queryKey: ['precios-proveedor', 'pieza', piezaId],
+    queryFn: () => api.get<{ data: ComparativaPieza }>(`/piezas/${piezaId}/comparativa-precios`),
+    enabled: piezaId != null,
   })
 }

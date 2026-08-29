@@ -31,6 +31,8 @@ export type PrecioFormValues = {
   pieza_id:      string
   precio:        number | string
   fecha:         string
+  /** Días naturales de entrega. Cadena vacía = no se preguntó. */
+  tiempo_entrega_dias: number | string
   observaciones: string
 }
 
@@ -63,11 +65,22 @@ export default function PrecioProveedorForm({
       pieza_id: piezaFija ? String(piezaFija.id) : '',
       precio: '',
       fecha: hoy,
+      tiempo_entrega_dias: '',
       observaciones: '',
     },
     validate: {
       pieza_id: (v) => (!v ? 'Refacción requerida' : null),
       precio:   (v) => (v === '' || Number(v) <= 0 ? 'Debe ser mayor a 0' : null),
+      // Opcional: no todos los proveedores lo dicen al cotizar, y dejarlo en
+      // blanco es más honesto que inventar un plazo.
+      tiempo_entrega_dias: (v) => {
+        if (v === '' || v === null) return null
+        const n = Number(v)
+        if (!Number.isInteger(n)) return 'Días completos, sin decimales'
+        if (n < 0)   return 'No puede ser negativo'
+        if (n > 365) return 'No puede ser mayor a 365 días'
+        return null
+      },
       fecha: (v) => {
         if (!v) return 'Fecha requerida'
         if (v > hoy) return 'No puede ser una fecha futura'
@@ -132,6 +145,8 @@ export default function PrecioProveedorForm({
         pieza_id: parseInt(v.pieza_id, 10),
         precio:   Number(v.precio),
         fecha:    v.fecha,
+        tiempo_entrega_dias:
+          v.tiempo_entrega_dias === '' ? null : Number(v.tiempo_entrega_dias),
         observaciones: v.observaciones.trim() || null,
       }))}
     >
@@ -169,6 +184,14 @@ export default function PrecioProveedorForm({
           prefix="$" thousandSeparator=","
           description="Lo que pide el proveedor por una pieza"
           {...form.getInputProps('precio')}
+        />
+        <NumberInput
+          label="Tiempo de entrega"
+          placeholder="Ej. 3"
+          min={0} max={365} allowDecimal={false} step={1}
+          suffix=" días"
+          description="En cuántos días surte, si lo dijo. El más barato no siempre es el que llega antes"
+          {...form.getInputProps('tiempo_entrega_dias')}
         />
         <FechaInput
           label="Fecha de la cotización"

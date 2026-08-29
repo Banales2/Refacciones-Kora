@@ -1,4 +1,5 @@
 import * as repo from '../repositories/preciosProveedorRepo'
+import * as refaccionesRepo from '../repositories/refaccionesRepo'
 import type { PrecioProveedor } from '../repositories/preciosProveedorRepo'
 import type { PrecioProveedorCreate, PrecioProveedorUpdate } from '../schemas/precioProveedorSchema'
 import { NotFoundError, ConflictError } from '../shared/errors'
@@ -50,6 +51,8 @@ export interface PrecioDeProveedor {
   proveedor:    string
   precio:       number
   fecha:        string
+  /** Días naturales en que surte ese proveedor. Null si no se capturó. */
+  tiempo_entrega_dias: number | null
   /** Cuánto más caro es que el mejor precio de esa refacción, en porcentaje. */
   sobre_mejor:  number
 }
@@ -74,6 +77,9 @@ export interface FilaComparativa {
   ultima_compra:    string | null
   /** Lo que se paga de más hoy contra el mejor precio cotizado, por unidad. */
   ahorro_unitario:  number | null
+  /** El plazo más corto entre los proveedores que lo capturaron. */
+  mejor_entrega:          number | null
+  mejor_entrega_proveedor: string | null
 }
 
 export interface ComparativaPrecios {
@@ -93,8 +99,8 @@ export interface ComparativaPrecios {
 // fila por refacción con todos sus precios ordenados. Se hace aquí y no en SQL
 // porque el número de proveedores es variable y un PIVOT tendría que armarse
 // con SQL dinámico.
-export async function getComparativa(): Promise<ComparativaPrecios> {
-  const vigentes = await repo.findVigentesGlobal()
+export async function getComparativa(piezaId?: number): Promise<ComparativaPrecios> {
+  const vigentes = await repo.findVigentesGlobal(piezaId)
 
   const porPieza = new Map<number, FilaComparativa>()
   const proveedores = new Map<number, string>()
@@ -108,10 +114,12 @@ export async function getComparativa(): Promise<ComparativaPrecios> {
       diferencia: 0, diferencia_pct: 0,
       ultimo_pagado: v.ultimo_pagado, ultimo_proveedor: v.ultimo_proveedor,
       ultima_compra: v.ultima_compra, ahorro_unitario: null,
+      mejor_entrega: null, mejor_entrega_proveedor: null,
     }
     fila.precios.push({
       proveedor_id: v.proveedor_id, proveedor: v.proveedor,
-      precio: v.precio, fecha: v.fecha, sobre_mejor: 0,
+      precio: v.precio, fecha: v.fecha,
+      tiempo_entrega_dias: v.tiempo_entrega_dias, sobre_mejor: 0,
     })
     porPieza.set(v.pieza_id, fila)
   }
@@ -139,6 +147,16 @@ export async function getComparativa(): Promise<ComparativaPrecios> {
     fila.ahorro_unitario = fila.ultimo_pagado != null && fila.ultimo_pagado > mejor.precio
       ? Math.round((fila.ultimo_pagado - mejor.precio) * 100) / 100
       : null
+
+    // El más barato no siempre es el que entrega antes: con la unidad parada,
+    // el plazo pesa tanto como el precio, así que la fila lleva los dos.
+    const conEntrega = fila.precios.filter((p) => p.tiempo_entrega_dias != null)
+    if (conEntrega.length) {
+      const rapido = conEntrega.reduce((a, b) =>
+        b.tiempo_entrega_dias! < a.tiempo_entrega_dias! ? b : a)
+      fila.mejor_entrega           = rapido.tiempo_entrega_dias
+      fila.mejor_entrega_proveedor = rapido.proveedor
+    }
   }
 
   // Primero lo que más margen tiene: es donde una llamada al proveedor rinde más.
@@ -158,5 +176,37 @@ export async function getComparativa(): Promise<ComparativaPrecios> {
       ahorro_unitario_total: Math.round(
         piezas.reduce((s, p) => s + (p.ahorro_unitario ?? 0), 0) * 100) / 100,
     },
+  }
+}
+
+// ─── Comparativa de una sola refacción ──────────────────────────────────────
+// Es la que se abre desde la pieza para decidir a quién comprarle *ésta*: los
+// mismos números de la comparativa global, pero de una fila. Devuelve también
+// la pieza porque la refacción puede no tener ni un precio capturado, y el
+// documento igual tiene que decir de cuál se está hablando.
+
+export interface ComparativaPieza {
+  pieza: {
+    id:           number
+    numero_serie: string
+    descripcion:  string
+    tipo_pieza:   string | null
+  }
+  /** Null cuando ningún proveedor la cotiza todavía. */
+  fila: FilaComparativa | null
+}
+
+export async function getComparativaPieza(piezaId: number): Promise<ComparativaPieza> {
+  const pieza = await refaccionesRepo.findById(piezaId)
+  if (!pieza) throw new NotFoundError('Refacción')
+  const comparativa = await getComparativa(piezaId)
+  return {
+    pieza: {
+      id:           pieza.id,
+      numero_serie: pieza.numero_serie,
+      descripcion:  pieza.descripcion,
+      tipo_pieza:   pieza.tipo_pieza ?? null,
+    },
+    fila: comparativa.piezas[0] ?? null,
   }
 }

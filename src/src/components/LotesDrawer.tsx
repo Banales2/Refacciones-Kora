@@ -1,16 +1,23 @@
 // Drawer de lotes de compra de una pieza: se abre al seleccionar una pieza en
 // la página Piezas y permite ver el stock por lote (proveedor, factura, costo,
 // cantidades) y dar de alta, editar o eliminar lotes.
+//
+// Desde aquí sale también el PDF comparativo de proveedores de esa refacción
+// —precio vigente de cada uno y en cuántos días entrega—: la pieza abierta es
+// justo el momento en que se decide a quién comprarle, y hasta ahora esa
+// comparación solo existía para el catálogo completo.
 import { useState } from 'react'
 import {
   Drawer, Stack, Group, Text, Badge, Table, Loader, Center, Alert,
-  ActionIcon, Button, Modal,
+  ActionIcon, Button, Modal, Tooltip,
 } from '@mantine/core'
-import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
+import { IconPencil, IconTrash, IconPlus, IconFileTypePdf } from '@tabler/icons-react'
 import {
   useLotes, useCreateLote, useUpdateLote, useDeleteLote,
 } from '../hooks/useLotes'
 import type { Lote, LotePayload } from '../hooks/useLotes'
+import { useComparativaPieza } from '../hooks/usePreciosProveedor'
+import { exportComparativaPiezaPdf } from '../lib/reportes/comparativaPieza'
 import LoteForm from './LoteForm'
 import type { LoteFormValues } from './LoteForm'
 
@@ -46,8 +53,13 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editLote, setEditLote] = useState<Lote | null>(null)
   const [deleteLote, setDeleteLote] = useState<Lote | null>(null)
+  const [generando, setGenerando]   = useState(false)
 
   const { data, isLoading } = useLotes(piezaId)
+  // La comparativa se pide junto con los lotes y no al pulsar el botón: así el
+  // drawer ya sabe si hay algo que comparar y puede decirlo antes de que
+  // alguien genere un PDF vacío.
+  const { data: comparativa, isLoading: cargandoComparativa } = useComparativaPieza(piezaId)
   const createMut = useCreateLote()
   const updateMut = useUpdateLote()
   const deleteMut = useDeleteLote()
@@ -91,6 +103,14 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
   }
 
   const stockTotal = data?.lotes.reduce((s, l) => s + l.cantidad_disponible, 0) ?? 0
+  const cotizaciones = comparativa?.data.fila?.precios.length ?? 0
+
+  async function generarComparativa() {
+    if (!comparativa) return
+    setGenerando(true)
+    try { await exportComparativaPiezaPdf(comparativa.data) }
+    finally { setGenerando(false) }
+  }
 
   return (
     <>
@@ -129,13 +149,37 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                   </Badge>
                 </div>
               </Group>
-              <Button
-                size="xs"
-                leftSection={<IconPlus size={14} />}
-                onClick={() => setCreateOpen(true)}
-              >
-                Nuevo lote
-              </Button>
+              <Group gap="xs">
+                <Tooltip
+                  label={
+                    cotizaciones === 0
+                      ? 'Ningún proveedor tiene precio registrado para esta refacción'
+                      : `Precio y tiempo de entrega de ${cotizaciones} proveedor${cotizaciones !== 1 ? 'es' : ''}`
+                  }
+                >
+                  {/* El <span> es lo que sostiene el tooltip cuando el botón va
+                      deshabilitado: un botón inerte no dispara eventos. */}
+                  <span>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      leftSection={<IconFileTypePdf size={14} />}
+                      loading={generando}
+                      disabled={cargandoComparativa || cotizaciones === 0}
+                      onClick={generarComparativa}
+                    >
+                      Comparar proveedores
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Button
+                  size="xs"
+                  leftSection={<IconPlus size={14} />}
+                  onClick={() => setCreateOpen(true)}
+                >
+                  Nuevo lote
+                </Button>
+              </Group>
             </Group>
 
             {!data?.lotes.length ? (

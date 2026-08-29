@@ -127,6 +127,7 @@ function HistorialTabla({
           <Table.Th style={{ width: 130 }}>Fecha</Table.Th>
           <Table.Th style={{ width: 120, textAlign: 'right' }}>Precio</Table.Th>
           <Table.Th style={{ width: 110 }}>Cambio</Table.Th>
+          <Table.Th style={{ width: 100 }}>Entrega</Table.Th>
           <Table.Th>Observaciones</Table.Th>
           <Table.Th style={{ width: 160 }}>Registró</Table.Th>
           <Table.Th style={{ width: 80 }} />
@@ -146,6 +147,15 @@ function HistorialTabla({
             </Table.Td>
             <Table.Td>
               <VariacionCelda actual={p.precio} anterior={historial[i + 1]?.precio} />
+            </Table.Td>
+            <Table.Td c={p.tiempo_entrega_dias == null ? 'dimmed' : undefined}>
+              <Text size="sm">
+                {p.tiempo_entrega_dias == null
+                  ? '—'
+                  : p.tiempo_entrega_dias === 0
+                    ? 'Inmediata'
+                    : `${p.tiempo_entrega_dias} día${p.tiempo_entrega_dias !== 1 ? 's' : ''}`}
+              </Text>
             </Table.Td>
             <Table.Td c={p.observaciones ? undefined : 'dimmed'}>
               <Text size="sm">{p.observaciones ?? '—'}</Text>
@@ -352,6 +362,7 @@ export default function ProveedorDetalle({
               pieza_id:      String(editPrecio.pieza_id),
               precio:        Number(editPrecio.precio),
               fecha:         editPrecio.fecha.split('T')[0],
+              tiempo_entrega_dias: editPrecio.tiempo_entrega_dias ?? '',
               observaciones: editPrecio.observaciones ?? '',
             }}
             piezaFija={{
@@ -360,9 +371,9 @@ export default function ProveedorDetalle({
             }}
             isPending={updateMut.isPending}
             error={updateMut.error ? (updateMut.error as Error).message : null}
-            onSubmit={({ precio, fecha, observaciones }) =>
+            onSubmit={({ precio, fecha, tiempo_entrega_dias, observaciones }) =>
               updateMut.mutate(
-                { id: editPrecio.id, payload: { precio, fecha, observaciones } },
+                { id: editPrecio.id, payload: { precio, fecha, tiempo_entrega_dias, observaciones } },
                 { onSuccess: () => setEditPrecio(null) }
               )
             }

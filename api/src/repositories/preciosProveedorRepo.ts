@@ -8,6 +8,8 @@ export interface PrecioProveedor {
   pieza_id:       number
   precio:         number
   fecha:          string
+  /** En cuántos días naturales surte ese proveedor. Null si no se capturó. */
+  tiempo_entrega_dias: number | null
   observaciones:  string | null
   registrado_por: string
   // Datos de la refacción, para no tener que cruzarlos en el cliente.
@@ -49,7 +51,7 @@ const CTE_COMPARATIVA = `
 const SELECT_PRECIO = `
   SELECT pp.id, pp.proveedor_id, pp.pieza_id, pp.precio,
          CONVERT(char(10), pp.fecha, 23) AS fecha,
-         pp.observaciones, pp.registrado_por,
+         pp.tiempo_entrega_dias, pp.observaciones, pp.registrado_por,
          p.numero_serie AS pieza_serie, p.descripcion AS pieza,
          tp.nombre AS tipo_pieza,
          CAST(CASE WHEN v.rn = 1 THEN 1 ELSE 0 END AS BIT) AS vigente,
@@ -100,13 +102,14 @@ export async function create(
     .input('pieza_id',       sql.Int,             data.pieza_id)
     .input('precio',         sql.Decimal(18, 2),  data.precio)
     .input('fecha',          sql.Date,            data.fecha)
+    .input('entrega',        sql.Int,             data.tiempo_entrega_dias ?? null)
     .input('observaciones',  sql.NVarChar(255),   data.observaciones ?? null)
     .input('registrado_por', sql.NVarChar(120),   registradoPor)
     .query(`
       INSERT INTO precios_proveedor
-        (proveedor_id, pieza_id, precio, fecha, observaciones, registrado_por)
+        (proveedor_id, pieza_id, precio, fecha, tiempo_entrega_dias, observaciones, registrado_por)
       OUTPUT INSERTED.id
-      VALUES (@proveedor_id, @pieza_id, @precio, @fecha, @observaciones, @registrado_por)
+      VALUES (@proveedor_id, @pieza_id, @precio, @fecha, @entrega, @observaciones, @registrado_por)
     `)
   return findById(r.recordset[0].id) as Promise<PrecioProveedor>
 }
@@ -125,6 +128,10 @@ export async function update(id: number, data: PrecioProveedorUpdate): Promise<P
   if (data.fecha !== undefined) {
     req.input('fecha', sql.Date, data.fecha)
     sets.push('fecha = @fecha')
+  }
+  if (data.tiempo_entrega_dias !== undefined) {
+    req.input('entrega', sql.Int, data.tiempo_entrega_dias ?? null)
+    sets.push('tiempo_entrega_dias = @entrega')
   }
   if (data.observaciones !== undefined) {
     req.input('observaciones', sql.NVarChar(255), data.observaciones ?? null)
@@ -195,6 +202,7 @@ export interface PrecioVigente {
   proveedor:     string
   precio:        number
   fecha:         string
+  tiempo_entrega_dias: number | null
   observaciones: string | null
   /** Lo que se pagó la última vez que se compró esa refacción, venga de quien venga. */
   ultimo_pagado:      number | null
@@ -210,11 +218,18 @@ export interface PrecioVigente {
 // Se trae además la última compra real de cada refacción: el precio cotizado
 // dice a cuánto la venden, pero la decisión se toma comparándolo contra lo que
 // de hecho se pagó la última vez.
-export async function findVigentesGlobal(): Promise<PrecioVigente[]> {
+//
+// `piezaId` acota la consulta a una sola refacción: es la comparativa que se
+// abre desde la pieza, y traerse el catálogo entero para quedarse con una fila
+// sería pagar la tabla completa por una pregunta puntual.
+export async function findVigentesGlobal(piezaId?: number): Promise<PrecioVigente[]> {
   const pool = await getPool()
-  const r = await pool.request().query(`
+  const r = await pool.request()
+    .input('pieza', sql.Int, piezaId ?? null)
+    .query(`
     WITH vigentes AS (
-      SELECT pp.id, pp.proveedor_id, pp.pieza_id, pp.precio, pp.fecha, pp.observaciones,
+      SELECT pp.id, pp.proveedor_id, pp.pieza_id, pp.precio, pp.fecha,
+             pp.tiempo_entrega_dias, pp.observaciones,
              ROW_NUMBER() OVER (PARTITION BY pp.proveedor_id, pp.pieza_id
                                 ORDER BY pp.fecha DESC, pp.id DESC) AS rn
       FROM precios_proveedor pp
@@ -227,7 +242,8 @@ export async function findVigentesGlobal(): Promise<PrecioVigente[]> {
     )
     SELECT v.pieza_id, p.numero_serie, p.descripcion, tp.nombre AS tipo_pieza,
            v.proveedor_id, pr.nombre AS proveedor,
-           v.precio, CONVERT(char(10), v.fecha, 23) AS fecha, v.observaciones,
+           v.precio, CONVERT(char(10), v.fecha, 23) AS fecha,
+           v.tiempo_entrega_dias, v.observaciones,
            uc.costo_unitario                        AS ultimo_pagado,
            pru.nombre                               AS ultimo_proveedor,
            CONVERT(char(10), uc.fecha_compra, 23)   AS ultima_compra
@@ -238,6 +254,7 @@ export async function findVigentesGlobal(): Promise<PrecioVigente[]> {
     LEFT JOIN ultima_compra uc ON uc.pieza_id = v.pieza_id AND uc.rn = 1
     LEFT JOIN proveedores  pru ON pru.id = uc.proveedor_id
     WHERE v.rn = 1
+      AND (@pieza IS NULL OR v.pieza_id = @pieza)
     ORDER BY p.descripcion, p.numero_serie, v.precio
   `)
   return r.recordset

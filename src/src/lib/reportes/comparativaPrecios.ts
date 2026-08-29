@@ -12,6 +12,7 @@ import type { ComparativaPrecios } from '../../hooks/usePreciosProveedor'
 import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
 import { formatMXN, formatFecha } from '../formato'
+import { textoEntrega } from './comparativaPieza'
 
 function nombreBase(): string {
   return `comparativa-precios-${hoyISO()}`
@@ -111,10 +112,11 @@ export async function exportComparativaPreciosPdf(c: ComparativaPrecios) {
   pdf.seccion(
     'Detalle por refacción',
     'Todos los precios vigentes de cada refacción, del más barato al más caro. ' +
-    'La columna "vs mejor" dice cuánto más caro es cada uno que el más económico.',
+    'La columna "vs mejor" dice cuánto más caro es cada uno que el más económico, ' +
+    'y "entrega" en cuántos días surte ese proveedor.',
   )
   pdf.tabla({
-    head: ['Refacción', 'Descripción', 'Tipo', 'Proveedor', 'Precio', 'Cotizado', 'vs mejor'],
+    head: ['Refacción', 'Descripción', 'Tipo', 'Proveedor', 'Precio', 'Entrega', 'Cotizado', 'vs mejor'],
     body: c.piezas.flatMap((p) =>
       p.precios.map((pr, i) => [
         // El nombre solo en el primer renglón de cada refacción: así el bloque
@@ -124,13 +126,14 @@ export async function exportComparativaPreciosPdf(c: ComparativaPrecios) {
         i === 0 ? (p.tipo_pieza ?? '—') : '',
         pr.proveedor,
         formatMXN(pr.precio),
+        textoEntrega(pr.tiempo_entrega_dias),
         formatFecha(pr.fecha),
         i === 0 ? 'el más barato' : `+${pr.sobre_mejor.toFixed(1)}%`,
       ])
     ),
-    columnStyles: { 4: { halign: 'right' }, 6: { halign: 'right' } },
+    columnStyles: { 4: { halign: 'right' }, 5: { halign: 'right' }, 7: { halign: 'right' } },
     didParseCell: (d: CellHookData) => {
-      if (d.section !== 'body' || d.column.index !== 6) return
+      if (d.section !== 'body' || d.column.index !== 7) return
       const txt = String(d.cell.raw)
       if (txt === 'el más barato') d.cell.styles.textColor = COLOR.verde
       else if (parseFloat(txt.replace(/[+%]/g, '')) >= 25) d.cell.styles.textColor = COLOR.rojo
@@ -173,6 +176,10 @@ export async function exportComparativaPreciosExcel(c: ComparativaPrecios) {
     })),
     { header: 'Mejor precio',    width: 14, formato: 'moneda' as const, valor: (p: typeof c.piezas[number]) => p.mejor_precio },
     { header: 'Más barato con',  width: 26, valor: (p: typeof c.piezas[number]) => p.mejor_proveedor },
+    { header: 'Entrega + rápida (días)', width: 20,
+      valor: (p: typeof c.piezas[number]) => p.mejor_entrega ?? '—' },
+    { header: 'Entrega + rápida con',    width: 26,
+      valor: (p: typeof c.piezas[number]) => p.mejor_entrega_proveedor ?? '—' },
     { header: 'Diferencia',      width: 14, formato: 'moneda' as const, valor: (p: typeof c.piezas[number]) => p.diferencia },
     { header: 'Diferencia %',    width: 13, formato: 'porcentaje' as const, valor: (p: typeof c.piezas[number]) => p.diferencia_pct },
     { header: 'Última compra',   width: 14, formato: 'fecha' as const,
@@ -197,6 +204,7 @@ export async function exportComparativaPreciosExcel(c: ComparativaPrecios) {
     { header: 'Tipo',        width: 20, valor: (x) => x.pieza.tipo_pieza ?? '—' },
     { header: 'Proveedor',   width: 28, valor: (x) => x.precio.proveedor },
     { header: 'Precio',      width: 14, formato: 'moneda', valor: (x) => x.precio.precio },
+    { header: 'Entrega (días)', width: 14, valor: (x) => x.precio.tiempo_entrega_dias ?? '—' },
     { header: 'Cotizado',    width: 13, formato: 'fecha',  valor: (x) => new Date(`${x.precio.fecha}T12:00:00`) },
     { header: 'vs mejor %',  width: 12, formato: 'porcentaje', valor: (x) => x.precio.sobre_mejor },
     { header: 'Es el más barato', width: 16, valor: (x) => x.precio.sobre_mejor === 0 ? 'Sí' : 'No' },
