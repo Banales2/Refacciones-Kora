@@ -30,6 +30,7 @@ import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode } from '../h
 import { useGarantiasModelo, textoCobertura } from '../hooks/useGarantias'
 import GarantiasModeloSection from '../components/GarantiasModeloSection'
 import PrimerosServiciosInput from '../components/PrimerosServiciosInput'
+import ProgramaModeloSection from '../components/ProgramaModeloSection'
 import { resumenPrimerosServicios } from '../lib/intervalos'
 import type {
   TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload,
@@ -840,6 +841,10 @@ function ModeloDetalle({
       />
 
       <PlantillaSection modeloId={modelo.id} tiposPermitidos={modelo.tipos_permitidos ?? []} />
+
+      {/* La tabla del fabricante. Va después de la plantilla porque aquella es
+          la que se hereda hoy a los vehículos; esta todavía no. */}
+      <ProgramaModeloSection modeloId={modelo.id} />
 
       {/* Piezas específicas del modelo */}
       <TiposPiezaModeloSection modeloId={modelo.id} />
