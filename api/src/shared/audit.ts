@@ -62,6 +62,8 @@ const ENTIDADES: Record<string, { etiqueta: string; campos: string[] }> = {
   piezas_vehiculo:                 { etiqueta: 'Pieza instalada',         campos: ['pieza', 'tipo_pieza', 'vehiculo_serie', 'vehiculo_placas'] },
   plantilla_requerimientos_modelo: { etiqueta: 'Plantilla de requerimiento', campos: ['nombre', 'marca', 'modelo'] },
   precios_proveedor:               { etiqueta: 'Precio de proveedor',    campos: ['proveedor', 'pieza', 'pieza_serie', 'precio', 'fecha'] },
+  programas_mantenimiento:         { etiqueta: 'Programa de mantenimiento', campos: ['nombre', 'marca', 'modelo'] },
+  programa_operaciones:            { etiqueta: 'Operación del programa', campos: ['nombre', 'programa', 'marca', 'modelo'] },
   proveedores:                     { etiqueta: 'Proveedor',               campos: ['nombre', 'contacto'] },
   recargas_combustible:            { etiqueta: 'Recarga de combustible',  campos: ['vehiculo_serie', 'conductor', 'gasolinera', 'fecha', 'litros'] },
   requerimientos_exclusivos:       { etiqueta: 'Requerimiento preventivo', campos: ['nombre', 'vehiculo_serie', 'vehiculo_placas'] },

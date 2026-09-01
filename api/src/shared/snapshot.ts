@@ -111,6 +111,22 @@ const CONSULTAS: Record<string, string> = {
     LEFT JOIN modelos m ON m.id = pl.modelo_id
     WHERE pl.id = @id`,
 
+  programas_mantenimiento: `
+    SELECT pr.*, m.marca, m.nombre AS modelo
+    FROM programas_mantenimiento pr
+    LEFT JOIN modelos m ON m.id = pr.modelo_id
+    WHERE pr.id = @id`,
+
+  // Un renglón del programa sin decir de qué programa y de qué modelo es no se
+  // puede leer en la bitácora: "Filtro de aire" lo tienen todos.
+  programa_operaciones: `
+    SELECT o.*, pr.nombre AS programa, m.marca, m.nombre AS modelo, tp.nombre AS tipo_pieza
+    FROM programa_operaciones o
+    LEFT JOIN programas_mantenimiento pr ON pr.id = o.programa_id
+    LEFT JOIN modelos m     ON m.id = pr.modelo_id
+    LEFT JOIN tipos_pieza tp ON tp.id = o.tipo_pieza_id
+    WHERE o.id = @id`,
+
   precios_proveedor: `
     SELECT pp.*, pr.nombre AS proveedor,
            p.numero_serie AS pieza_serie, p.descripcion AS pieza
