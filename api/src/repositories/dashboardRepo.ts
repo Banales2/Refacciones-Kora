@@ -284,6 +284,9 @@ export interface RequerimientoFleet {
   trigger_mode:    'km' | 'meses' | 'ambos'
   intervalo_km:    number | null
   intervalo_meses: number | null
+  // Primeros servicios con intervalo propio (ver shared/intervalos). Aquí sigue
+  // en su forma de base -texto- porque el servicio la parsea al clasificar.
+  intervalos_iniciales_km: string | null
   fecha_inicio:    string | null
   km_inicio:       number | null
   vehiculo_id:     number
@@ -296,7 +299,7 @@ export async function findRequerimientosActivosFleet(): Promise<RequerimientoFle
   const pool = await getPool()
   const r = await pool.request().query(`
     SELECT p.id, p.nombre, p.categoria, r.trigger_mode, r.intervalo_km, r.intervalo_meses,
-           r.fecha_inicio, r.km_inicio, p.vehiculo_id,
+           r.intervalos_iniciales_km, r.fecha_inicio, r.km_inicio, p.vehiculo_id,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
            CASE WHEN v.tipo='camion'       THEN c.kilometraje
                 WHEN v.tipo='tractocamion' THEN t.kilometraje

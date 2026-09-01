@@ -6,6 +6,7 @@ import * as garantiasService from './garantiasService'
 import { getPool } from '../shared/db'
 import { parseVigencia, DIAS_ALERTA_LICENCIA } from '../shared/vigenciaLicencia'
 import { fechaMexico } from '../shared/fechaMexico'
+import { parseIntervalosIniciales, intervaloKmVigente } from '../shared/intervalos'
 import type { Rango } from '../shared/rangoReporte'
 
 function partesMexico(d: Date = new Date()): { year: number; month: number; day: number } {
@@ -208,23 +209,36 @@ function toDateStr(d: string | Date | null | undefined): string | null {
 interface Base {
   baseKm:    number
   baseFecha: Date | null
+  // El intervalo en km que le toca al PRÓXIMO servicio. Casi siempre es el
+  // `intervalo_km` del requerimiento, pero mientras queden primeros servicios
+  // sin hacer es el escalón que corresponda (ver shared/intervalos).
+  intervaloKm: number | null
 }
 
 function baseDe(
   req:  RequerimientoFleet,
   link: { fecha: string | Date; km_actual: number } | null,
+  serviciosHechos: number,
 ): Base {
   const baseKm = link?.km_actual ?? req.km_inicio ?? 0
   const baseFechaStr =
     toDateStr(link?.fecha) ??
     toDateStr(req.fecha_inicio) ??
     toDateStr(req.fecha_compra)
-  return { baseKm, baseFecha: baseFechaStr ? new Date(`${baseFechaStr}T12:00:00`) : null }
+  return {
+    baseKm,
+    baseFecha: baseFechaStr ? new Date(`${baseFechaStr}T12:00:00`) : null,
+    intervaloKm: intervaloKmVigente(
+      req.intervalo_km,
+      parseIntervalosIniciales(req.intervalos_iniciales_km),
+      serviciosHechos,
+    ),
+  }
 }
 
 function isOverdue(req: RequerimientoFleet, base: Base, now: Date): boolean {
-  if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && req.intervalo_km != null && req.kilometraje != null) {
-    if (req.kilometraje - base.baseKm >= req.intervalo_km) return true
+  if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && base.intervaloKm != null && req.kilometraje != null) {
+    if (req.kilometraje - base.baseKm >= base.intervaloKm) return true
   }
   if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_meses != null && base.baseFecha) {
     if (diffMeses(base.baseFecha, now) >= req.intervalo_meses) return true
@@ -233,8 +247,8 @@ function isOverdue(req: RequerimientoFleet, base: Base, now: Date): boolean {
 }
 
 function isWarning(req: RequerimientoFleet, base: Base, now: Date): boolean {
-  if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && req.intervalo_km != null && req.kilometraje != null) {
-    if (req.kilometraje - base.baseKm >= req.intervalo_km * 0.75) return true
+  if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && base.intervaloKm != null && req.kilometraje != null) {
+    if (req.kilometraje - base.baseKm >= base.intervaloKm * 0.75) return true
   }
   if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_meses != null && base.baseFecha) {
     if (diffMeses(base.baseFecha, now) >= req.intervalo_meses - 1) return true
@@ -248,8 +262,8 @@ function isWarning(req: RequerimientoFleet, base: Base, now: Date): boolean {
 // Sirve para ordenar tanto vencidos como por-vencer de más a menos urgente.
 function calcularUrgencia(req: RequerimientoFleet, base: Base, now: Date): number {
   const ratios: number[] = []
-  if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && req.intervalo_km != null && req.kilometraje != null) {
-    ratios.push((req.kilometraje - base.baseKm) / req.intervalo_km)
+  if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && base.intervaloKm != null && req.kilometraje != null) {
+    ratios.push((req.kilometraje - base.baseKm) / base.intervaloKm)
   }
   if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_meses != null && base.baseFecha) {
     ratios.push(diffMeses(base.baseFecha, now) / req.intervalo_meses)
@@ -271,8 +285,12 @@ async function clasificarRequerimientosFleet() {
   const silenciados = await garantiasService.idsSilenciadosPorGarantia()
 
   const lastLinkByReq = new Map<number, { fecha: string; km_actual: number | null }>()
+  // Cuántas veces se ha atendido cada preventivo. Solo importa cuando trae
+  // primeros servicios: es lo que dice en qué escalón va.
+  const hechosByReq = new Map<number, number>()
   for (const l of links) {
     if (!lastLinkByReq.has(l.pendiente_id)) lastLinkByReq.set(l.pendiente_id, l)
+    hechosByReq.set(l.pendiente_id, (hechosByReq.get(l.pendiente_id) ?? 0) + 1)
   }
 
   const now = fechaMexicoComoDate()
@@ -281,7 +299,7 @@ async function clasificarRequerimientosFleet() {
 
   for (const req of requerimientos) {
     if (silenciados.has(req.id)) continue
-    const base = baseDe(req, lastLinkByReq.get(req.id) ?? null)
+    const base = baseDe(req, lastLinkByReq.get(req.id) ?? null, hechosByReq.get(req.id) ?? 0)
     const urgencia = calcularUrgencia(req, base, now)
     if (isOverdue(req, base, now)) vencidos.push({ ...req, urgencia })
     else if (isWarning(req, base, now)) porVencer.push({ ...req, urgencia })

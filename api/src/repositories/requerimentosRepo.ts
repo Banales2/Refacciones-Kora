@@ -6,6 +6,7 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import * as pendientes from './pendientesRepo'
 import { PENDIENTE_COLS, type StatusPendiente } from './pendientesRepo'
+import { parseIntervalosIniciales, serializeIntervalosIniciales } from '../shared/intervalos'
 
 export type TriggerMode = 'km' | 'meses' | 'ambos'
 export type StatusReq   = StatusPendiente
@@ -24,6 +25,9 @@ export interface RequerimientoExclusivo {
   trigger_mode:        TriggerMode
   intervalo_km:        number | null
   intervalo_meses:     number | null
+  // Los primeros servicios con intervalo distinto al de ciclo, en orden y como
+  // distancias entre servicios. null = todos al mismo (ver shared/intervalos).
+  intervalos_iniciales_km: number[] | null
   fecha_inicio:        string | null
   km_inicio:           number | null
   fecha_reporte:       string | null
@@ -39,6 +43,7 @@ export interface RequerimientoCreate {
   trigger_mode:         TriggerMode
   intervalo_km?:        number | null
   intervalo_meses?:     number | null
+  intervalos_iniciales_km?: number[] | null
   fecha_inicio?:        string | null
   km_inicio?:           number | null
   fecha_reporte?:       string | null
@@ -53,6 +58,7 @@ export interface RequerimientoUpdate {
   trigger_mode?:    TriggerMode
   intervalo_km?:    number | null
   intervalo_meses?: number | null
+  intervalos_iniciales_km?: number[] | null
   fecha_inicio?:    string | null
   km_inicio?:       number | null
   fecha_reporte?:   string | null
@@ -60,17 +66,25 @@ export interface RequerimientoUpdate {
 
 const SELECT_REQ = `
   SELECT ${PENDIENTE_COLS},
-         r.trigger_mode, r.intervalo_km, r.intervalo_meses,
+         r.trigger_mode, r.intervalo_km, r.intervalo_meses, r.intervalos_iniciales_km,
          r.fecha_inicio, r.km_inicio, r.fecha_reporte, r.plantilla_origen_id
   FROM pendientes p
   JOIN requerimientos_exclusivos r ON r.id = p.id`
+
+// La columna llega como texto; el resto del sistema solo la conoce como lista.
+function mapRow(row: Record<string, unknown>): RequerimientoExclusivo {
+  return {
+    ...(row as unknown as RequerimientoExclusivo),
+    intervalos_iniciales_km: parseIntervalosIniciales(row.intervalos_iniciales_km as string | null),
+  }
+}
 
 export async function findByVehiculo(vehiculoId: number): Promise<RequerimientoExclusivo[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
     .query(`${SELECT_REQ} WHERE p.vehiculo_id=@vid ORDER BY p.nombre`)
-  return r.recordset
+  return r.recordset.map(mapRow)
 }
 
 export async function findById(id: number): Promise<RequerimientoExclusivo | null> {
@@ -78,7 +92,7 @@ export async function findById(id: number): Promise<RequerimientoExclusivo | nul
   const r = await pool.request()
     .input('id', sql.Int, id)
     .query(`${SELECT_REQ} WHERE p.id=@id`)
-  return r.recordset[0] ?? null
+  return r.recordset[0] ? mapRow(r.recordset[0]) : null
 }
 
 // Se reexporta para no obligar a los servicios a conocer la tabla padre.
@@ -103,15 +117,16 @@ export async function create(data: RequerimientoCreate): Promise<RequerimientoEx
       .input('triggerMode',  sql.NVarChar(20), data.trigger_mode)
       .input('intervaloKm',  sql.Int,          data.intervalo_km        ?? null)
       .input('intervaloMes', sql.Int,          data.intervalo_meses     ?? null)
+      .input('iniciales',    sql.NVarChar(200), serializeIntervalosIniciales(data.intervalos_iniciales_km))
       .input('fechaInicio',  sql.Date,         data.fecha_inicio        ?? null)
       .input('kmInicio',     sql.Int,          data.km_inicio           ?? null)
       .input('fechaReporte', sql.Date,         data.fecha_reporte       ?? null)
       .input('origenId',     sql.Int,          data.plantilla_origen_id ?? null)
       .query(`
         INSERT INTO requerimientos_exclusivos
-          (id, trigger_mode, intervalo_km, intervalo_meses,
+          (id, trigger_mode, intervalo_km, intervalo_meses, intervalos_iniciales_km,
            fecha_inicio, km_inicio, fecha_reporte, plantilla_origen_id)
-        VALUES (@id, @triggerMode, @intervaloKm, @intervaloMes,
+        VALUES (@id, @triggerMode, @intervaloKm, @intervaloMes, @iniciales,
                 @fechaInicio, @kmInicio, @fechaReporte, @origenId)
       `)
     await tx.commit()
@@ -142,6 +157,7 @@ export async function update(id: number, data: RequerimientoUpdate): Promise<Req
     if (data.trigger_mode !== undefined) { req.input('triggerMode',  sql.NVarChar(20), data.trigger_mode);            sets.push('trigger_mode=@triggerMode')       }
     if ('intervalo_km'    in data)       { req.input('intervaloKm',  sql.Int,  data.intervalo_km    ?? null);         sets.push('intervalo_km=@intervaloKm')       }
     if ('intervalo_meses' in data)       { req.input('intervaloMes', sql.Int,  data.intervalo_meses ?? null);         sets.push('intervalo_meses=@intervaloMes')   }
+    if ('intervalos_iniciales_km' in data) { req.input('iniciales',  sql.NVarChar(200), serializeIntervalosIniciales(data.intervalos_iniciales_km)); sets.push('intervalos_iniciales_km=@iniciales') }
     if ('fecha_inicio'    in data)       { req.input('fechaInicio',  sql.Date, data.fecha_inicio    ?? null);         sets.push('fecha_inicio=@fechaInicio')       }
     if ('km_inicio'       in data)       { req.input('kmInicio',     sql.Int,  data.km_inicio       ?? null);         sets.push('km_inicio=@kmInicio')             }
     if ('fecha_reporte'   in data)       { req.input('fechaReporte', sql.Date, data.fecha_reporte   ?? null);         sets.push('fecha_reporte=@fechaReporte')     }

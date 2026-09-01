@@ -29,6 +29,8 @@ import type { Modelo, ModeloPayload } from '../hooks/useModelos'
 import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode } from '../hooks/usePlantilla'
 import { useGarantiasModelo, textoCobertura } from '../hooks/useGarantias'
 import GarantiasModeloSection from '../components/GarantiasModeloSection'
+import PrimerosServiciosInput from '../components/PrimerosServiciosInput'
+import { resumenPrimerosServicios } from '../lib/intervalos'
 import type {
   TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload,
 } from '../hooks/useVehiculos'
@@ -237,6 +239,8 @@ function PlantillaForm({
       trigger_mode:    (initial?.trigger_mode ?? (soportaKm ? 'km' : 'meses')) as TriggerMode,
       intervalo_km:    initial?.intervalo_km ?? (null as number | null),
       intervalo_meses: initial?.intervalo_meses ?? (null as number | null),
+      // Vacío = todos los servicios al mismo intervalo, que es lo normal.
+      intervalos_iniciales_km: initial?.intervalos_iniciales_km ?? ([] as number[]),
       activo:          initial?.activo ?? true,
       // Garantías del modelo que obligan a este servicio. Vacío = se pide
       // siempre, que es como se comportaba todo antes de que existieran.
@@ -259,6 +263,11 @@ function PlantillaForm({
         (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : validarKm(v),
       intervalo_meses: (v, vals) =>
         (vals.trigger_mode === 'meses' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
+      // Un escalón en blanco o en cero no es un servicio: dejaría el
+      // requerimiento vencido desde el día uno.
+      intervalos_iniciales_km: (v: number[]) =>
+        v.some((km) => !km || km < 1) ? 'Cada servicio necesita su kilometraje' :
+        v.some((km) => km > KM_MAX)   ? `Máximo ${KM_MAX.toLocaleString('es-MX')} km` : null,
     },
   })
 
@@ -282,6 +291,12 @@ function PlantillaForm({
       trigger_mode:    vals.trigger_mode,
       intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km    : null,
       intervalo_meses: (mode === 'meses' || mode === 'ambos') ? vals.intervalo_meses : null,
+      // Los primeros servicios se miden en km: si el disparador es solo por
+      // tiempo no aplican, igual que no aplica el intervalo de kilometraje.
+      intervalos_iniciales_km:
+        (mode === 'km' || mode === 'ambos') && vals.intervalos_iniciales_km.length
+          ? vals.intervalos_iniciales_km
+          : null,
       activo:          vals.activo,
       garantia_modelo_ids: vals.garantia_modelo_ids.map(Number),
     })
@@ -331,6 +346,14 @@ function PlantillaForm({
             suffix=" km" thousandSeparator=","
             allowDecimal={false} allowNegative={false} clampBehavior="strict"
             {...form.getInputProps('intervalo_km')}
+          />
+        )}
+        {(mode === 'km' || mode === 'ambos') && (
+          <PrimerosServiciosInput
+            value={form.values.intervalos_iniciales_km}
+            onChange={(v) => form.setFieldValue('intervalos_iniciales_km', v)}
+            intervaloKm={form.values.intervalo_km}
+            error={form.errors.intervalos_iniciales_km}
           />
         )}
         {(mode === 'meses' || mode === 'ambos') && (
@@ -449,7 +472,17 @@ function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tip
                     <Table.Td>
                       <Badge variant="light" color={tm.color} size="sm">{tm.label}</Badge>
                     </Table.Td>
-                    <Table.Td><Text size="sm">{fmtIntervalo(item)}</Text></Table.Td>
+                    <Table.Td>
+                      <Text size="sm">{fmtIntervalo(item)}</Text>
+                      {/* El intervalo de arriba es el de ciclo; si los primeros
+                          servicios no lo siguen, hay que decirlo aquí o la
+                          tabla miente sobre cuándo toca el primero. */}
+                      {resumenPrimerosServicios(item.intervalos_iniciales_km, item.intervalo_km) && (
+                        <Text size="xs" c="dimmed">
+                          {resumenPrimerosServicios(item.intervalos_iniciales_km, item.intervalo_km)}
+                        </Text>
+                      )}
+                    </Table.Td>
                     <Table.Td style={{ textAlign: 'center' }}>
                       <Badge variant="dot" color={item.activo ? 'green' : 'gray'} size="sm">
                         {item.activo ? 'Sí' : 'No'}

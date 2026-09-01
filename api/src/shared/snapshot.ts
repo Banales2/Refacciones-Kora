@@ -88,6 +88,7 @@ const CONSULTAS: Record<string, string> = {
   // parten del padre y le pegan el hijo.
   requerimientos_exclusivos: `
     SELECT p.*, r.trigger_mode, r.intervalo_km, r.intervalo_meses,
+           r.intervalos_iniciales_km,
            r.fecha_inicio, r.km_inicio, r.fecha_reporte, r.plantilla_origen_id,
            v.numero_serie AS vehiculo_serie, v.placas AS vehiculo_placas
     FROM pendientes p

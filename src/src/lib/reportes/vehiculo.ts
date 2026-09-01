@@ -14,6 +14,9 @@ import type { Mantenimiento } from '../../hooks/useMantenimientos'
 import type { Incidencia } from '../../hooks/useIncidencias'
 import type { PiezaDeVehiculo } from '../../hooks/usePiezasVehiculo'
 import type { Recarga } from '../../hooks/useRecargas'
+import type { GarantiaVehiculo } from '../../hooks/useGarantias'
+import { textoCobertura, etiquetaGarantia } from '../../hooks/useGarantias'
+import { resumenPrimerosServicios } from '../intervalos'
 import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
 import { formatMXN, formatNum, formatLitros, formatFecha } from '../formato'
@@ -31,6 +34,8 @@ export interface DatosVehiculo {
   incidencias:    Incidencia[]
   piezas:         PiezaDeVehiculo[]
   recargas:       Recarga[]
+  /** Con su vigencia ya calculada por la API; no se recalcula aquí. */
+  garantias:      GarantiaVehiculo[]
   /**
    * Periodo que se pidió. Las listas ya llegan filtradas por él desde la
    * pantalla; aquí solo sirve para decirlo en la portada, que es lo que evita
@@ -131,16 +136,31 @@ function resumir(d: DatosVehiculo): Resumen {
 }
 
 function estadoRequerimiento(d: DatosVehiculo, r: RequerimientoExclusivo): string {
-  if (d.overdueIds.has(r.id)) return 'VENCIDO'
-  if (d.warnIds.has(r.id))    return 'Por vencer'
+  // Un servicio que existía por una garantía ya vencida no está "al día": dejó
+  // de pedirse. Va primero porque la pantalla tampoco lo cuenta como vencido.
+  if (r.silenciado_por_garantia) return 'Sin garantía'
+  if (d.overdueIds.has(r.id))    return 'VENCIDO'
+  if (d.warnIds.has(r.id))       return 'Por vencer'
   return 'Al día'
+}
+
+/** "hasta el 14 mar 2027 o los 100,000 km". */
+function limiteGarantia(g: GarantiaVehiculo): string {
+  const partes: string[] = []
+  if (g.estado.vence_el) partes.push(formatFecha(g.estado.vence_el))
+  if (g.estado.vence_a_los_km != null) partes.push(`${formatNum(g.estado.vence_a_los_km)} km`)
+  return partes.join(' o ') || '—'
 }
 
 function intervalo(r: RequerimientoExclusivo): string {
   const partes: string[] = []
   if (r.intervalo_km != null)    partes.push(`${formatNum(r.intervalo_km)} km`)
   if (r.intervalo_meses != null) partes.push(`${r.intervalo_meses} mes${r.intervalo_meses !== 1 ? 'es' : ''}`)
-  return partes.join(' o ') || '—'
+  const base = partes.join(' o ') || '—'
+  // Sin esto el expediente diría "cada 15,000 km" de un servicio cuyo primero
+  // caía a los 5,000: el intervalo de ciclo no es toda la regla.
+  const primeros = resumenPrimerosServicios(r.intervalos_iniciales_km, r.intervalo_km)
+  return primeros ? `${base} (${primeros})` : base
 }
 
 // ─── PDF ────────────────────────────────────────────────────────────────────
@@ -260,13 +280,75 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
     })
   }
 
+  // ── Garantías ──
+  // Van antes de los requerimientos porque son su explicación: varios de los
+  // servicios de abajo existen para no perderlas, y cuando se acaban dejan de
+  // pedirse. Sin esta sección, el renglón "Sin garantía" de la tabla siguiente
+  // no se entiende.
+  const vigentes = d.garantias.filter((g) => g.estado.vigente)
+  pdf.seccion(
+    'Garantías',
+    d.garantias.length === 0
+      ? undefined
+      : vigentes.length > 0
+        ? `${vigentes.length} de ${d.garantias.length} siguen vigentes.`
+        : 'Ninguna sigue vigente: la unidad ya no tiene cobertura.',
+  )
+  if (d.garantias.length === 0) {
+    pdf.vacio('Esta unidad no tiene garantías registradas.')
+  } else {
+    pdf.tabla({
+      head: ['Garantía', 'Cobertura', 'Desde', 'Vence', 'Servicios', 'Estado'],
+      body: [...d.garantias]
+        // Las vigentes arriba: son las que todavía se pueden reclamar.
+        .sort((a, b) => Number(b.estado.vigente) - Number(a.estado.vigente) ||
+                        a.nombre.localeCompare(b.nombre, 'es-MX'))
+        .map((g) => [
+          g.folio ? `${g.nombre} (folio ${g.folio})` : g.nombre,
+          textoCobertura(g),
+          g.fecha_inicio ? formatFecha(g.fecha_inicio) : 'sin fecha',
+          limiteGarantia(g),
+          String(g.requerimientos),
+          etiquetaGarantia(g).label.toUpperCase(),
+        ]),
+      columnStyles: { 4: { halign: 'center' } },
+      didParseCell: (c: CellHookData) => {
+        if (c.section !== 'body' || c.column.index !== 5) return
+        const txt = String(c.cell.raw)
+        if (txt === 'VIGENTE')          c.cell.styles.textColor = COLOR.verde
+        else if (txt === 'POR VENCER') { c.cell.styles.textColor = COLOR.naranja; c.cell.styles.fontStyle = 'bold' }
+        else                            c.cell.styles.textColor = COLOR.gris
+      },
+      fontSize: 9,
+    })
+
+    const canceladas = d.garantias.filter((g) => g.motivo_cancelacion)
+    for (const g of canceladas) {
+      pdf.nota(`${g.nombre}: cancelada${g.cancelada_en ? ` el ${formatFecha(g.cancelada_en)}` : ''} — ${g.motivo_cancelacion}.`)
+    }
+    const sinFecha = d.garantias.filter((g) => g.estado.faltan_datos.length > 0).length
+    if (sinFecha > 0) {
+      pdf.nota(
+        `${sinFecha} garantía(s) no se pueden calcular por completo (falta la fecha de inicio o el ` +
+        'odómetro de la unidad). Mientras tanto se tratan como vigentes.'
+      )
+    }
+  }
+
   // ── Requerimientos ──
   const vencidos = d.requerimientos.filter((q) => d.overdueIds.has(q.id))
+  const sinGarantia = d.requerimientos.filter((q) => q.silenciado_por_garantia).length
   pdf.seccion(
     'Requerimientos preventivos',
-    vencidos.length > 0
-      ? `${vencidos.length} de ${d.requerimientos.length} están vencidos.`
-      : 'Ninguno vencido.',
+    [
+      vencidos.length > 0
+        ? `${vencidos.length} de ${d.requerimientos.length} están vencidos.`
+        : 'Ninguno vencido.',
+      sinGarantia > 0
+        ? `${sinGarantia} dejaron de pedirse: existían por una garantía que ya se acabó ` +
+          '(aparecen como "Sin garantía").'
+        : '',
+    ].filter(Boolean).join(' '),
   )
   if (d.requerimientos.length === 0) {
     pdf.vacio('Esta unidad no tiene requerimientos preventivos capturados.')
@@ -274,13 +356,17 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
     pdf.tabla({
       head: ['Requerimiento', 'Categoría', 'Intervalo', 'Estado'],
       body: [...d.requerimientos]
-        // Lo vencido primero: es lo que se va a hacer.
-        .sort((a, b) => Number(d.overdueIds.has(b.id)) - Number(d.overdueIds.has(a.id)))
+        // Lo vencido primero: es lo que se va a hacer. Lo que ya no se pide por
+        // garantía vencida, hasta abajo: está de rastro, no de tarea.
+        .sort((a, b) =>
+          Number(a.silenciado_por_garantia) - Number(b.silenciado_por_garantia) ||
+          Number(d.overdueIds.has(b.id)) - Number(d.overdueIds.has(a.id)))
         .map((q) => [q.nombre, q.categoria ?? '—', intervalo(q), estadoRequerimiento(d, q)]),
       didParseCell: (c: CellHookData) => {
         if (c.section !== 'body' || c.column.index !== 3) return
-        if (String(c.cell.raw) === 'VENCIDO')      { c.cell.styles.textColor = COLOR.rojo; c.cell.styles.fontStyle = 'bold' }
-        else if (String(c.cell.raw) === 'Por vencer') c.cell.styles.textColor = COLOR.naranja
+        if (String(c.cell.raw) === 'VENCIDO')          { c.cell.styles.textColor = COLOR.rojo; c.cell.styles.fontStyle = 'bold' }
+        else if (String(c.cell.raw) === 'Por vencer')   c.cell.styles.textColor = COLOR.naranja
+        else if (String(c.cell.raw) === 'Sin garantía') c.cell.styles.textColor = COLOR.gris
       },
       fontSize: 9,
     })

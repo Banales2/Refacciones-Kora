@@ -59,6 +59,8 @@ import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
 import ConfirmarAvanceKm from '../components/ConfirmarAvanceKm'
+import PrimerosServiciosInput from '../components/PrimerosServiciosInput'
+import { intervaloKmVigente, resumenPrimerosServicios } from '../lib/intervalos'
 import { avanzaOdometro } from '../lib/odometro'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 import type { LoteDisponible } from '../hooks/useLotesDisponibles'
@@ -219,6 +221,25 @@ function linkedMantenimiento(pendienteId: number, mantenimientos: Mantenimiento[
   )
 }
 
+// Cuántas veces se ha atendido ya el requerimiento. Solo importa cuando trae
+// primeros servicios con intervalo propio: es lo que dice en qué escalón va.
+function serviciosHechos(pendienteId: number, mantenimientos: Mantenimiento[]): number {
+  const hoy = todayIso()
+  return mantenimientos.filter(
+    m => m.pendiente_ids.includes(pendienteId) && m.fecha && m.fecha.split('T')[0] <= hoy
+  ).length
+}
+
+// El intervalo de km que aplica hoy a un requerimiento, ya resueltos sus
+// primeros servicios. Lo usan el vencido/por vencer de esta página y la ficha.
+function intervaloKmDe(req: RequerimientoExclusivo, mantenimientos: Mantenimiento[]): number | null {
+  return intervaloKmVigente(
+    req.intervalo_km,
+    req.intervalos_iniciales_km,
+    serviciosHechos(req.id, mantenimientos),
+  )
+}
+
 export function RequerimientoForm({
   initial, isPending, error, onSubmit, onCancel, vehiculo, lastMant,
 }: {
@@ -240,6 +261,8 @@ export function RequerimientoForm({
       trigger_mode:    (initial?.trigger_mode ?? (soloTiempo ? 'meses' : 'ambos')) as TriggerMode,
       intervalo_km:     initial?.intervalo_km ?? (null as number | null),
       intervalo_meses:  initial?.intervalo_meses ?? (null as number | null),
+      // Vacío = todos los servicios al mismo intervalo, que es lo normal.
+      intervalos_iniciales_km: initial?.intervalos_iniciales_km ?? ([] as number[]),
       status:          (initial?.status ?? 'activo') as StatusReq,
       fecha_reporte:   initial?.fecha_reporte?.split('T')[0] ?? todayIso(),
       desde:           'ahora' as 'ahora' | 'ultimo',
@@ -265,6 +288,11 @@ export function RequerimientoForm({
         (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : validarKm(v),
       intervalo_meses: (v, vals) =>
         (vals.trigger_mode === 'meses' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
+      // Un escalón en blanco o en cero no es un servicio: dejaría el
+      // requerimiento vencido desde el día uno.
+      intervalos_iniciales_km: (v: number[]) =>
+        v.some((km) => !km || km < 1) ? 'Cada servicio necesita su kilometraje' :
+        v.some((km) => km > KM_MAX)   ? `Máximo ${KM_MAX.toLocaleString('es-MX')} km` : null,
     },
   })
 
@@ -316,6 +344,12 @@ export function RequerimientoForm({
       trigger_mode:    vals.trigger_mode,
       intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km    : null,
       intervalo_meses: (mode === 'meses' || mode === 'ambos') ? vals.intervalo_meses : null,
+      // Los primeros servicios se miden en km: si el disparador es solo por
+      // tiempo no aplican, igual que no aplica el intervalo de kilometraje.
+      intervalos_iniciales_km:
+        (mode === 'km' || mode === 'ambos') && vals.intervalos_iniciales_km.length
+          ? vals.intervalos_iniciales_km
+          : null,
       status:          vals.status,
       fecha_inicio,
       km_inicio,
@@ -379,6 +413,14 @@ export function RequerimientoForm({
             suffix=" km" thousandSeparator=","
             allowDecimal={false} allowNegative={false} clampBehavior="strict"
             {...form.getInputProps('intervalo_km')}
+          />
+        )}
+        {(mode === 'km' || mode === 'ambos') && (
+          <PrimerosServiciosInput
+            value={form.values.intervalos_iniciales_km}
+            onChange={(v) => form.setFieldValue('intervalos_iniciales_km', v)}
+            intervaloKm={form.values.intervalo_km}
+            error={form.errors.intervalos_iniciales_km}
           />
         )}
         {(mode === 'meses' || mode === 'ambos') && (
@@ -472,8 +514,9 @@ function isOverdue(
   const baseFecha = baseFechaStr ? new Date(`${baseFechaStr}T12:00:00`) : null
 
   if (req.trigger_mode === 'km' || req.trigger_mode === 'ambos') {
-    if (req.intervalo_km != null && vehiculo.kilometraje != null) {
-      if (vehiculo.kilometraje - baseKm >= req.intervalo_km) return true
+    const intervaloKm = intervaloKmDe(req, mantenimientos)
+    if (intervaloKm != null && vehiculo.kilometraje != null) {
+      if (vehiculo.kilometraje - baseKm >= intervaloKm) return true
     }
   }
 
@@ -513,9 +556,10 @@ function isWarning(
   const baseFecha = baseFechaStr ? new Date(`${baseFechaStr}T12:00:00`) : null
 
   if (req.trigger_mode === 'km' || req.trigger_mode === 'ambos') {
-    if (req.intervalo_km != null && vehiculo.kilometraje != null) {
+    const intervaloKm = intervaloKmDe(req, mantenimientos)
+    if (intervaloKm != null && vehiculo.kilometraje != null) {
       const elapsed = vehiculo.kilometraje - baseKm
-      if (elapsed >= req.intervalo_km * 0.75) return true
+      if (elapsed >= intervaloKm * 0.75) return true
     }
   }
 
@@ -618,7 +662,17 @@ function RequerimientoTable({
                   {TRIGGER_META[item.trigger_mode].label}
                 </Badge>
               </Table.Td>
-              <Table.Td><Text size="sm">{fmtIntervalo(item)}</Text></Table.Td>
+              <Table.Td>
+                <Text size="sm">{fmtIntervalo(item)}</Text>
+                {/* El intervalo de arriba es el de ciclo; si los primeros
+                    servicios no lo siguen, hay que decirlo aquí o la tabla
+                    miente sobre cuándo toca el primero. */}
+                {resumenPrimerosServicios(item.intervalos_iniciales_km, item.intervalo_km) && (
+                  <Text size="xs" c="dimmed">
+                    {resumenPrimerosServicios(item.intervalos_iniciales_km, item.intervalo_km)}
+                  </Text>
+                )}
+              </Table.Td>
               <Table.Td>
                 <Text size="sm" c={baseDisplay === '—' ? 'dimmed' : undefined}>
                   {baseDisplay}
@@ -749,6 +803,32 @@ function RequerimientoDetalleDrawer({
             <Grid.Col span={6}><InfoItem label="Disparador" value={TRIGGER_META[item.trigger_mode].label} /></Grid.Col>
             <Grid.Col span={6}><InfoItem label="Intervalo" value={fmtIntervalo(item)} /></Grid.Col>
             <Grid.Col span={6}><InfoItem label="Referencia" value={referencia} /></Grid.Col>
+            {/* Cuando los primeros servicios no siguen el intervalo de ciclo,
+                el campo "Intervalo" por sí solo no dice cuánto falta para el
+                próximo: eso depende de cuántos se hayan hecho ya. */}
+            {!!item.intervalos_iniciales_km?.length && (
+              <Grid.Col span={12}>
+                <InfoItem
+                  label="Primeros servicios"
+                  value={resumenPrimerosServicios(item.intervalos_iniciales_km, item.intervalo_km)}
+                />
+              </Grid.Col>
+            )}
+            {!!item.intervalos_iniciales_km?.length && (
+              <Grid.Col span={12}>
+                <InfoItem
+                  label="Intervalo del próximo servicio"
+                  value={(() => {
+                    const km = intervaloKmVigente(
+                      item.intervalo_km,
+                      item.intervalos_iniciales_km,
+                      serviciosHechos(item.id, mantenimientos),
+                    )
+                    return km != null ? `${km.toLocaleString('es-MX')} km desde la referencia` : null
+                  })()}
+                />
+              </Grid.Col>
+            )}
             <Grid.Col span={6}><InfoItem label="Fecha de inicio" value={fmtShort(item.fecha_inicio)} /></Grid.Col>
             <Grid.Col span={6}><InfoItem label="Fecha de reporte" value={fmtShort(item.fecha_reporte)} /></Grid.Col>
             <Grid.Col span={6}>
@@ -2483,6 +2563,9 @@ function VehiculoDetalle({
   const { data: incidData }   = useIncidenciasVehiculo(vehiculo.id)
   const { data: piezasData }  = usePiezasVehiculo(vehiculo.id)
   const { data: recargasData } = useRecargas(vehiculo.id)
+  // Misma clave que usa la sección de garantías de abajo: React Query la
+  // comparte, así que pedirla aquí para el expediente no agrega una petición.
+  const { data: garantiasData } = useGarantiasVehiculo(vehiculo.id)
   const [generando, setGenerando] = useState<'pdf' | 'excel' | null>(null)
   const [expedienteAbierto, setExpedienteAbierto] = useState(false)
 
@@ -2507,8 +2590,8 @@ function VehiculoDetalle({
   // esa seccion sale vacia en vez de bloquear el boton.
   //
   // El periodo acota solo lo que tiene fecha de ocurrencia —mantenimientos,
-  // incidencias y cargas—; los requerimientos, las piezas montadas y los datos
-  // de la unidad son el estado de hoy y no se filtran: recortarlos daria un
+  // incidencias y cargas—; los requerimientos, las garantías, las piezas montadas
+  // y los datos de la unidad son el estado de hoy y no se filtran: recortarlos daria un
   // expediente que dice que la unidad no tiene refacciones montadas.
   async function generarExpediente(formato: 'pdf' | 'excel', periodo: Periodo = PERIODO_DEFAULT) {
     setGenerando(formato)
@@ -2522,6 +2605,9 @@ function VehiculoDetalle({
         incidencias:    (incidData?.data ?? []).filter((i) => dentroDelPeriodo(i.fecha, periodo)),
         piezas:         piezasData?.data ?? [],
         recargas:       (recargasData?.data ?? []).filter((r) => dentroDelPeriodo(r.fecha, periodo)),
+        // Sin filtrar por periodo, como los demás datos de estado: una garantía
+        // que arrancó antes del periodo sigue siendo la que cubre la unidad hoy.
+        garantias:      garantiasData?.data ?? [],
         periodo,
       }
       await (formato === 'pdf' ? exportVehiculoPdf : exportVehiculoExcel)(datos)

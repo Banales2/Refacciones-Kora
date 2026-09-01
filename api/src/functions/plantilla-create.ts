@@ -7,6 +7,7 @@ import { capturar } from '../shared/snapshot'
 import * as service from '../services/plantillaService'
 import { TEXTO_SIMPLE, TEXTO_LIBRE, KM_MAX } from '../schemas/common'
 import { GarantiaIdsSchema } from '../schemas/garantiaSchema'
+import { IntervalosInicialesSchema } from '../schemas/intervalosSchema'
 
 const Schema = z.object({
   nombre: z
@@ -30,6 +31,8 @@ const Schema = z.object({
   trigger_mode:    z.enum(['km', 'meses', 'ambos']),
   intervalo_km:    z.coerce.number().int().positive().max(KM_MAX, 'Máximo 9,999,999 km').nullable().optional(),
   intervalo_meses: z.coerce.number().int().positive().nullable().optional(),
+  // Primeros servicios con intervalo propio, antes de caer en el de ciclo.
+  intervalos_iniciales_km: IntervalosInicialesSchema,
   activo:          z.boolean().default(true),
   // Garantías del modelo que obligan a este servicio. Vacío = se pide siempre.
   garantia_modelo_ids: GarantiaIdsSchema,

@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { parseIntervalosIniciales, serializeIntervalosIniciales } from '../shared/intervalos'
 
 export type TriggerMode = 'km' | 'meses' | 'ambos'
 
@@ -10,6 +11,10 @@ export interface PlantillaRequerimiento {
   categoria:       string | null
   intervalo_km:    number | null
   intervalo_meses: number | null
+  // Los primeros servicios que no siguen el intervalo de ciclo, en orden y como
+  // distancias entre servicios. null = todos al mismo intervalo (ver
+  // shared/intervalos). En la base es texto; aquí ya sale como lista.
+  intervalos_iniciales_km: number[] | null
   trigger_mode:    TriggerMode
   activo:          boolean
   created_at:      string
@@ -25,6 +30,7 @@ export interface PlantillaCreate {
   trigger_mode:    TriggerMode
   intervalo_km?:   number | null
   intervalo_meses?: number | null
+  intervalos_iniciales_km?: number[] | null
   activo?:         boolean
 }
 
@@ -35,18 +41,27 @@ export interface PlantillaUpdate {
   trigger_mode?:   TriggerMode
   intervalo_km?:   number | null
   intervalo_meses?: number | null
+  intervalos_iniciales_km?: number[] | null
   activo?:         boolean
 }
 
 const COLS = `id, nombre, descripcion, categoria, intervalo_km, intervalo_meses,
-  trigger_mode, activo, created_at, updated_at, modelo_id`
+  intervalos_iniciales_km, trigger_mode, activo, created_at, updated_at, modelo_id`
+
+// La columna llega como texto; el resto del sistema solo la conoce como lista.
+function mapRow(row: Record<string, unknown>): PlantillaRequerimiento {
+  return {
+    ...(row as unknown as PlantillaRequerimiento),
+    intervalos_iniciales_km: parseIntervalosIniciales(row.intervalos_iniciales_km as string | null),
+  }
+}
 
 export async function findByModelo(modeloId: number): Promise<PlantillaRequerimiento[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('modeloId', sql.Int, modeloId)
     .query(`SELECT ${COLS} FROM plantilla_requerimientos_modelo WHERE modelo_id=@modeloId ORDER BY nombre`)
-  return r.recordset
+  return r.recordset.map(mapRow)
 }
 
 export async function findById(id: number): Promise<PlantillaRequerimiento | null> {
@@ -54,7 +69,7 @@ export async function findById(id: number): Promise<PlantillaRequerimiento | nul
   const r = await pool.request()
     .input('id', sql.Int, id)
     .query(`SELECT ${COLS} FROM plantilla_requerimientos_modelo WHERE id=@id`)
-  return r.recordset[0] ?? null
+  return r.recordset[0] ? mapRow(r.recordset[0]) : null
 }
 
 export async function create(data: PlantillaCreate): Promise<PlantillaRequerimiento> {
@@ -67,14 +82,17 @@ export async function create(data: PlantillaCreate): Promise<PlantillaRequerimie
     .input('triggerMode',    sql.NVarChar(20),  data.trigger_mode)
     .input('intervaloKm',    sql.Int,           data.intervalo_km       ?? null)
     .input('intervaloMeses', sql.Int,           data.intervalo_meses    ?? null)
+    .input('iniciales',      sql.NVarChar(200), serializeIntervalosIniciales(data.intervalos_iniciales_km))
     .input('activo',         sql.Bit,           data.activo ?? true)
     .query(`
       INSERT INTO plantilla_requerimientos_modelo
-        (modelo_id, nombre, descripcion, categoria, trigger_mode, intervalo_km, intervalo_meses, activo)
+        (modelo_id, nombre, descripcion, categoria, trigger_mode, intervalo_km, intervalo_meses,
+         intervalos_iniciales_km, activo)
       OUTPUT INSERTED.*
-      VALUES (@modeloId, @nombre, @descripcion, @categoria, @triggerMode, @intervaloKm, @intervaloMeses, @activo)
+      VALUES (@modeloId, @nombre, @descripcion, @categoria, @triggerMode, @intervaloKm, @intervaloMeses,
+              @iniciales, @activo)
     `)
-  return r.recordset[0]
+  return mapRow(r.recordset[0])
 }
 
 export async function update(id: number, data: PlantillaUpdate): Promise<PlantillaRequerimiento | null> {
@@ -88,12 +106,13 @@ export async function update(id: number, data: PlantillaUpdate): Promise<Plantil
   if (data.trigger_mode  !== undefined) { req.input('triggerMode',    sql.NVarChar(20),      data.trigger_mode);     sets.push('trigger_mode=@triggerMode')   }
   if ('intervalo_km'    in data)        { req.input('intervaloKm',    sql.Int,               data.intervalo_km    ?? null); sets.push('intervalo_km=@intervaloKm') }
   if ('intervalo_meses' in data)        { req.input('intervaloMeses', sql.Int,               data.intervalo_meses ?? null); sets.push('intervalo_meses=@intervaloMeses') }
+  if ('intervalos_iniciales_km' in data) { req.input('iniciales',     sql.NVarChar(200),     serializeIntervalosIniciales(data.intervalos_iniciales_km)); sets.push('intervalos_iniciales_km=@iniciales') }
   if (data.activo        !== undefined) { req.input('activo',         sql.Bit,               data.activo);          sets.push('activo=@activo')              }
 
   const r = await req.query(
     `UPDATE plantilla_requerimientos_modelo SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`
   )
-  return r.recordset[0] ?? null
+  return r.recordset[0] ? mapRow(r.recordset[0]) : null
 }
 
 // Copia todas las plantillas activas de un modelo a un vehículo recién dado de
@@ -130,8 +149,9 @@ export async function copyModelToVehicle(vehiculoId: number, modeloId: number): 
       OUTPUT INSERTED.id, src.plantilla_id INTO @mapa (pendiente_id, plantilla_id);
 
       INSERT INTO requerimientos_exclusivos
-        (id, trigger_mode, intervalo_km, intervalo_meses, plantilla_origen_id)
-      SELECT m.pendiente_id, p.trigger_mode, p.intervalo_km, p.intervalo_meses, p.id
+        (id, trigger_mode, intervalo_km, intervalo_meses, intervalos_iniciales_km, plantilla_origen_id)
+      SELECT m.pendiente_id, p.trigger_mode, p.intervalo_km, p.intervalo_meses,
+             p.intervalos_iniciales_km, p.id
       FROM @mapa m
       JOIN plantilla_requerimientos_modelo p ON p.id = m.plantilla_id;
     `)
@@ -150,6 +170,7 @@ export async function copyToVehicles(plantilla: PlantillaRequerimiento): Promise
     .input('triggerMode',   sql.NVarChar(20),      plantilla.trigger_mode)
     .input('intervaloKm',   sql.Int,               plantilla.intervalo_km    ?? null)
     .input('intervaloMes',  sql.Int,               plantilla.intervalo_meses ?? null)
+    .input('iniciales',     sql.NVarChar(200),     serializeIntervalosIniciales(plantilla.intervalos_iniciales_km))
     .input('plantillaId',   sql.Int,               plantilla.id)
     .input('modeloId',      sql.Int,               plantilla.modelo_id)
     .query(`
@@ -168,8 +189,8 @@ export async function copyToVehicles(plantilla: PlantillaRequerimiento): Promise
         );
 
       INSERT INTO requerimientos_exclusivos
-        (id, trigger_mode, intervalo_km, intervalo_meses, plantilla_origen_id)
-      SELECT n.id, @triggerMode, @intervaloKm, @intervaloMes, @plantillaId
+        (id, trigger_mode, intervalo_km, intervalo_meses, intervalos_iniciales_km, plantilla_origen_id)
+      SELECT n.id, @triggerMode, @intervaloKm, @intervaloMes, @iniciales, @plantillaId
       FROM @nuevos n;
     `)
 }
@@ -183,6 +204,7 @@ export async function syncLinked(plantilla: PlantillaRequerimiento): Promise<voi
     .input('triggerMode',   sql.NVarChar(20),      plantilla.trigger_mode)
     .input('intervaloKm',   sql.Int,               plantilla.intervalo_km    ?? null)
     .input('intervaloMes',  sql.Int,               plantilla.intervalo_meses ?? null)
+    .input('iniciales',     sql.NVarChar(200),     serializeIntervalosIniciales(plantilla.intervalos_iniciales_km))
     .input('plantillaId',   sql.Int,               plantilla.id)
     .query(`
       UPDATE p SET
@@ -194,7 +216,8 @@ export async function syncLinked(plantilla: PlantillaRequerimiento): Promise<voi
 
       UPDATE requerimientos_exclusivos SET
         trigger_mode = @triggerMode,
-        intervalo_km = @intervaloKm, intervalo_meses = @intervaloMes
+        intervalo_km = @intervaloKm, intervalo_meses = @intervaloMes,
+        intervalos_iniciales_km = @iniciales
       WHERE plantilla_origen_id = @plantillaId;
     `)
 }
