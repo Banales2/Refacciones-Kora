@@ -3,6 +3,7 @@ import { RequerimientoFleet } from '../repositories/dashboardRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import * as pendientesRepo from '../repositories/pendientesRepo'
 import * as garantiasService from './garantiasService'
+import * as programaVehiculoService from './programaVehiculoService'
 import { getPool } from '../shared/db'
 import { parseVigencia, DIAS_ALERTA_LICENCIA } from '../shared/vigenciaLicencia'
 import { fechaMexico } from '../shared/fechaMexico'
@@ -317,20 +318,57 @@ export interface RequerimientoVencido {
   categoria:       string | null
   vehiculo_id:     number
   vehiculo_nombre: string
+  /**
+   * De dónde sale la alerta. 'programa' es la tabla del fabricante —una visita
+   * completa que ya toca, o un renglón que venció por su límite de meses—;
+   * 'requerimiento' es un preventivo suelto de la unidad. Se distinguen porque
+   * se atienden en pantallas distintas.
+   */
+  origen:          'requerimiento' | 'programa'
+}
+
+// Las alertas del programa no tienen un `pendiente` detrás, así que no traen id
+// propio. Se les da uno negativo: el tablero solo lo usa para distinguir
+// renglones, y así nunca choca con el de un requerimiento real.
+function comoRequerimiento(
+  alertas: programaVehiculoService.AlertaPrograma[], desde: number,
+): RequerimientoVencido[] {
+  return alertas.map((a, i) => ({
+    id:              -(desde + i + 1),
+    nombre:          a.nombre,
+    categoria:       a.categoria,
+    vehiculo_id:     a.vehiculo_id,
+    vehiculo_nombre: a.vehiculo_nombre,
+    origen:          'programa' as const,
+  }))
 }
 
 export async function getRequerimientosVencidos(): Promise<RequerimientoVencido[]> {
   await ensureDailySync()
-  const { vencidos } = await clasificarRequerimientosFleet()
-  return vencidos
-    .map(r => ({ id: r.id, nombre: r.nombre, categoria: r.categoria, vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre }))
+  const [{ vencidos }, programa] = await Promise.all([
+    clasificarRequerimientosFleet(),
+    programaVehiculoService.clasificarFleet(),
+  ])
+  const sueltos: RequerimientoVencido[] = vencidos.map(r => ({
+    id: r.id, nombre: r.nombre, categoria: r.categoria,
+    vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre,
+    origen: 'requerimiento' as const,
+  }))
+  return [...sueltos, ...comoRequerimiento(programa.vencidos, sueltos.length)]
 }
 
 export async function getRequerimientosPorVencer(): Promise<RequerimientoVencido[]> {
   await ensureDailySync()
-  const { porVencer } = await clasificarRequerimientosFleet()
-  return porVencer
-    .map(r => ({ id: r.id, nombre: r.nombre, categoria: r.categoria, vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre }))
+  const [{ porVencer }, programa] = await Promise.all([
+    clasificarRequerimientosFleet(),
+    programaVehiculoService.clasificarFleet(),
+  ])
+  const sueltos: RequerimientoVencido[] = porVencer.map(r => ({
+    id: r.id, nombre: r.nombre, categoria: r.categoria,
+    vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre,
+    origen: 'requerimiento' as const,
+  }))
+  return [...sueltos, ...comoRequerimiento(programa.porVencer, sueltos.length)]
 }
 
 // Incidencias abiertas de la flota, las más graves primero. Pasa por

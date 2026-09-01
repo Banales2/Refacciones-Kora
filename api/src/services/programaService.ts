@@ -1,6 +1,7 @@
 // Reglas del programa de mantenimiento de un modelo. El repositorio guarda la
 // cuadrícula; aquí vive lo que la hace válida y lo que se deriva de ella.
 import * as repo from '../repositories/programaRepo'
+import * as vehiculoRepo from '../repositories/programaVehiculoRepo'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
 import type {
   ProgramaCreate, ProgramaUpdate, ProgramaCompleto,
@@ -37,6 +38,16 @@ export async function update(id: number, data: ProgramaUpdate) {
 }
 
 export async function remove(id: number) {
+  // Borrar el programa se llevaría el avance de cada unidad que lo sigue: en
+  // qué punto del recorrido va y qué renglones tiene al día. Eso es historial,
+  // no catálogo, así que se pide soltarlas primero en vez de arrasar.
+  const unidades = await vehiculoRepo.contarVehiculosDePrograma(id)
+  if (unidades > 0) {
+    throw new ConflictError(
+      `${unidades} ${unidades === 1 ? 'unidad sigue' : 'unidades siguen'} este programa. ` +
+      'Quítaselo desde la ficha de cada unidad antes de borrarlo.'
+    )
+  }
   const deleted = await repo.remove(id)
   if (!deleted) throw new NotFoundError('Programa de mantenimiento')
 }
@@ -44,7 +55,27 @@ export async function remove(id: number) {
 // ─── Fases ──────────────────────────────────────────────────────────────────
 
 export async function setFases(programaId: number, fases: FaseEntrada[]) {
-  if (!await repo.findCabecera(programaId)) throw new NotFoundError('Programa de mantenimiento')
+  const actuales = await repo.findById(programaId)
+  if (!actuales) throw new NotFoundError('Programa de mantenimiento')
+
+  // Quitar una columna borra sus celdas, y eso es reversible capturándolas de
+  // nuevo. Pero si alguna unidad ya hizo esa visita, la columna es parte de su
+  // historial y desaparecería el registro de un servicio que sí ocurrió.
+  const kmNuevos = new Set(fases.map((f) => f.km))
+  const aQuitar  = actuales.fases.filter((f) => !kmNuevos.has(f.km))
+  if (aQuitar.length) {
+    const conVisitas = await vehiculoRepo.fasesConVisitas(aQuitar.map((f) => f.id))
+    if (conVisitas.length) {
+      const marcas = actuales.fases
+        .filter((f) => conVisitas.includes(f.id))
+        .map((f) => f.km.toLocaleString('es-MX'))
+      throw new ConflictError(
+        `No se puede quitar la columna de ${marcas.join(' ni la de ')} km: ` +
+        'hay unidades que ya hicieron ese servicio.'
+      )
+    }
+  }
+
   await repo.setFases(programaId, fases)
   return getById(programaId)
 }
@@ -62,6 +93,10 @@ export async function updateOperacion(id: number, data: OperacionUpdate) {
 }
 
 export async function removeOperacion(id: number) {
+  // El renglón se va del manual, así que lo que las unidades tuvieran al día
+  // sobre él deja de significar algo: se suelta antes, o la llave foránea
+  // aborta el borrado.
+  await vehiculoRepo.borrarEstadosDeOperacion(id)
   if (!await repo.removeOperacion(id)) throw new NotFoundError('Operación')
 }
 

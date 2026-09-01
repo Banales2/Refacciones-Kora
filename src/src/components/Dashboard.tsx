@@ -157,8 +157,16 @@ function RequerimientosPorVehiculoTable({
                     <Collapse expanded={abierto}>
                       <Stack gap={4} py="xs" pl="xl">
                         {g.requerimientos.map(r => (
-                          <Group key={r.id} justify="space-between" wrap="nowrap">
-                            <Text size="sm">{r.nombre}</Text>
+                          <Group key={`${r.origen}-${r.id}`} justify="space-between" wrap="nowrap">
+                            <Group gap={6} wrap="nowrap">
+                              {/* De dónde viene: el manual del fabricante o un
+                                  preventivo suelto. Se atienden en secciones
+                                  distintas de la ficha de la unidad. */}
+                              {r.origen === 'programa' && (
+                                <Badge size="xs" variant="light" color="grape">Programa</Badge>
+                              )}
+                              <Text size="sm">{r.nombre}</Text>
+                            </Group>
                             <Text size="xs" c="dimmed">{r.categoria ?? '—'}</Text>
                           </Group>
                         ))}

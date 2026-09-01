@@ -15,6 +15,7 @@ import type { Incidencia } from '../../hooks/useIncidencias'
 import type { PiezaDeVehiculo } from '../../hooks/usePiezasVehiculo'
 import type { Recarga } from '../../hooks/useRecargas'
 import type { GarantiaVehiculo } from '../../hooks/useGarantias'
+import type { EstadoProgramaVehiculo } from '../../hooks/useProgramaVehiculo'
 import { textoCobertura, etiquetaGarantia } from '../../hooks/useGarantias'
 import { resumenPrimerosServicios } from '../intervalos'
 import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
@@ -36,6 +37,11 @@ export interface DatosVehiculo {
   recargas:       Recarga[]
   /** Con su vigencia ya calculada por la API; no se recalcula aquí. */
   garantias:      GarantiaVehiculo[]
+  /**
+   * El programa del fabricante y en qué punto va la unidad, ya derivado por la
+   * API. Nulo cuando la unidad no sigue ninguno.
+   */
+  programa?:      EstadoProgramaVehiculo | null
   /**
    * Periodo que se pidió. Las listas ya llegan filtradas por él desde la
    * pantalla; aquí solo sirve para decirlo en la portada, que es lo que evita
@@ -335,6 +341,47 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
     }
   }
 
+  // ── Programa del fabricante ──
+  // Va antes de los requerimientos sueltos porque es lo que manda el manual, y
+  // porque su próxima visita es lo primero que alguien busca en el expediente.
+  if (d.programa) {
+    const pr = d.programa
+    const porTiempo = pr.operaciones_tiempo.filter((o) => o.vencida)
+    pdf.seccion(
+      'Programa del fabricante',
+      [
+        pr.programa.nombre,
+        pr.proxima
+          ? `Siguiente: servicio de ${formatNum(pr.proxima.fase.km)} km, a los ` +
+            `${formatNum(pr.proxima.km_odometro)} km de odómetro` +
+            (pr.proxima.vencida ? ' (VENCIDO).' : '.')
+          : 'Sin columnas capturadas.',
+        porTiempo.length > 0
+          ? `${porTiempo.length} ${porTiempo.length === 1 ? 'operación vencida' : 'operaciones vencidas'} por tiempo, ` +
+            'sin esperar a esa visita.'
+          : '',
+      ].filter(Boolean).join(' '),
+    )
+    if (pr.proxima && pr.proxima.operaciones.length > 0) {
+      pdf.tabla({
+        head: ['Qué toca en la siguiente visita', 'Acción'],
+        body: pr.proxima.operaciones.map((o) => [o.operacion.nombre, o.accion]),
+        fontSize: 9,
+      })
+    }
+    if (porTiempo.length > 0) {
+      pdf.tabla({
+        head: ['Vencida por tiempo', 'Límite', 'Última vez'],
+        body: porTiempo.map((o) => [
+          o.operacion.nombre,
+          `cada ${o.operacion.limite_meses} meses`,
+          o.ultima_fecha ? formatFecha(o.ultima_fecha) : 'Nunca',
+        ]),
+        fontSize: 9,
+      })
+    }
+  }
+
   // ── Requerimientos ──
   const vencidos = d.requerimientos.filter((q) => d.overdueIds.has(q.id))
   const sinGarantia = d.requerimientos.filter((q) => q.silenciado_por_garantia).length
@@ -551,6 +598,15 @@ export async function exportVehiculoExcel(d: DatosVehiculo) {
     { header: 'Estado',        width: 14, valor: (q) => estadoRequerimiento(d, q) },
     { header: 'Descripción',   width: 50, valor: (q) => q.descripcion ?? '' },
   ], d.requerimientos, { vacio: 'Esta unidad no tiene requerimientos preventivos capturados.' })
+
+  if (d.programa?.proxima) {
+    wb.hoja('Programa del fabricante', [
+      { header: 'Operación', width: 46, valor: (o: { operacion: { nombre: string }; accion: string }) => o.operacion.nombre },
+      { header: 'Acción',    width: 10, valor: (o: { operacion: { nombre: string }; accion: string }) => o.accion },
+    ], d.programa.proxima.operaciones, {
+      vacio: 'La siguiente visita no tiene operaciones capturadas.',
+    })
+  }
 
   wb.hoja('Incidencias', [
     { header: 'Fecha',      width: 13, formato: 'fecha', valor: (i) => new Date(`${i.fecha.split('T')[0]}T12:00:00`) },

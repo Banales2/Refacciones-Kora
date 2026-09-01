@@ -45,6 +45,8 @@ import type { AlertaDocumento, AlertaVehiculo, TipoVehiculo, VehiculoRow, Vehicu
 import { useDocumentosPorVencer, useRequerimientosVencidos } from '../hooks/useDashboard'
 import { useGarantiasVehiculo, textoCobertura } from '../hooks/useGarantias'
 import GarantiasVehiculoSection from '../components/GarantiasVehiculoSection'
+import ProgramaVehiculoSection from '../components/ProgramaVehiculoSection'
+import { useProgramaVehiculo } from '../hooks/useProgramaVehiculo'
 import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, StatusReq } from '../hooks/useRequerimientos'
 import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
 import type { OrigenPendiente } from '../hooks/usePendientes'
@@ -2566,6 +2568,9 @@ function VehiculoDetalle({
   // Misma clave que usa la sección de garantías de abajo: React Query la
   // comparte, así que pedirla aquí para el expediente no agrega una petición.
   const { data: garantiasData } = useGarantiasVehiculo(vehiculo.id)
+  // Misma clave que usa la sección del programa de abajo: React Query la
+  // comparte, así que pedirla aquí para el expediente no agrega una petición.
+  const { data: programaData } = useProgramaVehiculo(vehiculo.id)
   const [generando, setGenerando] = useState<'pdf' | 'excel' | null>(null)
   const [expedienteAbierto, setExpedienteAbierto] = useState(false)
 
@@ -2608,6 +2613,9 @@ function VehiculoDetalle({
         // Sin filtrar por periodo, como los demás datos de estado: una garantía
         // que arrancó antes del periodo sigue siendo la que cubre la unidad hoy.
         garantias:      garantiasData?.data ?? [],
+        // Tampoco se filtra: en qué punto del programa va la unidad es su
+        // estado de hoy, no algo que ocurriera dentro del periodo.
+        programa:       programaData?.data ?? null,
         periodo,
       }
       await (formato === 'pdf' ? exportVehiculoPdf : exportVehiculoExcel)(datos)
@@ -2849,6 +2857,15 @@ function VehiculoDetalle({
         vehiculoId={vehiculo.id}
         fechaCompra={vehiculo.fecha_compra?.split('T')[0] ?? null}
         soportaKm={!sinKilometraje(vehiculo.tipo)}
+      />
+
+      {/* El programa del fabricante. Va antes de los requerimientos sueltos
+          porque es lo que manda el manual; aquellos son para lo que no está
+          en él. Los dos conviven. */}
+      <ProgramaVehiculoSection
+        vehiculoId={vehiculo.id}
+        modeloId={vehiculo.modelo_id}
+        kilometraje={vehiculo.kilometraje}
       />
 
       {/* Requerimientos preventivos */}

@@ -59,6 +59,13 @@ export interface RequerimientoVencido {
   categoria:       string | null
   vehiculo_id:     number
   vehiculo_nombre: string
+  /**
+   * De dónde sale la alerta. 'programa' es la tabla del fabricante —una visita
+   * completa que ya toca, o un renglón que venció por su límite de meses—;
+   * 'requerimiento' es un preventivo suelto de la unidad. Se atienden en
+   * secciones distintas de la ficha, y por eso se distinguen aquí.
+   */
+  origen:          'requerimiento' | 'programa'
 }
 
 export function useRequerimientosVencidos() {
