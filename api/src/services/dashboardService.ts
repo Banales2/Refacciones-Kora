@@ -395,8 +395,16 @@ export function limiteAlertaDocumentos(): string {
 // reimplementar la regla (km contra el último mantenimiento + intervalo en
 // meses) ni en SQL ni en el navegador.
 export async function getVehiculosConRequerimientosVencidos(): Promise<number[]> {
-  const { vencidos } = await clasificarRequerimientosFleet()
-  return [...new Set(vencidos.map((r) => r.vehiculo_id))]
+  // También las del programa del fabricante: si el tablero dice que una unidad
+  // trae un servicio vencido, el filtro de la búsqueda tiene que encontrarla.
+  const [sueltos, programa] = await Promise.all([
+    clasificarRequerimientosFleet(),
+    programaVehiculoService.clasificarFleet(),
+  ])
+  return [...new Set([
+    ...sueltos.vencidos.map((r) => r.vehiculo_id),
+    ...programa.vencidos.map((r) => r.vehiculo_id),
+  ])]
 }
 
 export interface LicenciaPorVencer {
@@ -482,9 +490,19 @@ export async function getDocumentosPorVencer(rango?: Rango | null): Promise<Docu
 }
 
 export async function registrarSnapshotHistorial(): Promise<void> {
-  const { vencidos, porVencer } = await clasificarRequerimientosFleet()
+  // Cuenta las dos fuentes, igual que las tarjetas de vencidos y por vencer:
+  // si la gráfica sumara solo los requerimientos sueltos, diría un número
+  // distinto al que el tablero muestra justo encima.
+  const [sueltos, programa] = await Promise.all([
+    clasificarRequerimientosFleet(),
+    programaVehiculoService.clasificarFleet(),
+  ])
   const hoy = fechaMexico()
-  await repo.upsertSnapshotHistorial(hoy, vencidos.length, porVencer.length)
+  await repo.upsertSnapshotHistorial(
+    hoy,
+    sueltos.vencidos.length  + programa.vencidos.length,
+    sueltos.porVencer.length + programa.porVencer.length,
+  )
 }
 
 export async function getHistorial(meses = 12): Promise<repo.HistorialDia[]> {
