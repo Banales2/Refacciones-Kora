@@ -22,6 +22,7 @@ import {
 import type { ServicioPendiente, OperacionPorTiempo } from '../hooks/useProgramaVehiculo'
 import { useProgramaModelo } from '../hooks/usePrograma'
 import { KM_MAX } from '../lib/validaciones'
+import { formatMXN, formatMXNCorto } from '../lib/formato'
 import { FechaInput } from './FechaInput'
 
 const nf = new Intl.NumberFormat('es-MX')
@@ -69,6 +70,11 @@ function ProximaVisita({
               <Badge color="gray" variant="outline" size="sm">
                 Visita {proxima.indice + 1}
               </Badge>
+              {proxima.fase.costo != null && (
+                <Badge color="teal" variant="light" size="sm">
+                  {formatMXN(proxima.fase.costo)}
+                </Badge>
+              )}
             </Group>
             <Text size="sm" c="dimmed">
               Toca a los {nf.format(proxima.km_odometro)} km de odómetro
@@ -208,7 +214,7 @@ export default function ProgramaVehiculoSection({
     )
   }
 
-  const { programa, proxima, siguientes, operaciones_tiempo, visitas, vinculo } = estado
+  const { programa, proxima, siguientes, operaciones_tiempo, visitas, vinculo, proyeccion } = estado
   const porTiempo = operaciones_tiempo.filter((o) => o.vencida || o.por_vencer)
   const ultimaVisita = visitas[visitas.length - 1]
 
@@ -342,9 +348,40 @@ export default function ProgramaVehiculoSection({
           {siguientes.map((s) => (
             <Badge key={s.indice} variant="outline" color="gray" size="sm">
               {nf.format(s.km_odometro)} km · col {nf.format(s.fase.km)}
+              {s.fase.costo != null && ` · ${formatMXNCorto(s.fase.costo)}`}
             </Badge>
           ))}
         </Group>
+      )}
+
+      {/* Lo que va a costar el mantenimiento programado de aquí en adelante.
+          Las columnas sin cotizar no se cuentan como cero: se dicen aparte
+          para que el total se lea sabiendo qué tanto le falta. */}
+      {proyeccion.visitas > 0 && (proyeccion.costo > 0 || proyeccion.sin_costo > 0) && (
+        <Paper withBorder p="sm" radius="md">
+          <Group justify="space-between" wrap="wrap" gap="xs">
+            <Stack gap={0}>
+              <Text size="xs" c="dimmed" fw={600} tt="uppercase">
+                Costo de las próximas {proyeccion.visitas} visitas
+              </Text>
+              {proyeccion.hasta_km != null && (
+                <Text size="xs" c="dimmed">
+                  hasta los {nf.format(proyeccion.hasta_km)} km de odómetro
+                </Text>
+              )}
+            </Stack>
+            <Group gap="xs">
+              <Text fw={700}>{formatMXN(proyeccion.costo)}</Text>
+              {proyeccion.sin_costo > 0 && (
+                <Tooltip label="Esas columnas no tienen cotización capturada, así que no entran en el total">
+                  <Badge color="gray" variant="light" size="sm">
+                    +{proyeccion.sin_costo} sin cotizar
+                  </Badge>
+                </Tooltip>
+              )}
+            </Group>
+          </Group>
+        </Paper>
       )}
 
       {visitas.length > 0 && (

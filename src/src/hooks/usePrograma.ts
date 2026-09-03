@@ -22,6 +22,12 @@ export interface FasePrograma {
   km:    number
   /** Se hace una sola vez, en la primera pasada: el asentamiento. */
   unica: boolean
+  /**
+   * Lo que el taller cobra por la columna completa, mano de obra y refacciones
+   * juntas, que es como llega la cotización. Nulo = sin cotizar; la proyección
+   * lo deja fuera en vez de contarlo como cero.
+   */
+  costo: number | null
 }
 
 export interface OperacionPrograma {
@@ -66,6 +72,7 @@ export interface OperacionPayload {
 export interface FasePayload {
   km:    number
   unica: boolean
+  costo: number | null
 }
 
 // ─── Lectura ────────────────────────────────────────────────────────────────

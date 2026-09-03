@@ -16,6 +16,8 @@ import { proximosServicios, type FasePrograma, type FasePayload } from '../hooks
 interface Renglon {
   km:    number | null
   unica: boolean
+  /** Lo que el taller cobra por la columna completa. Nulo = sin cotizar. */
+  costo: number | null
 }
 
 const nf = new Intl.NumberFormat('es-MX')
@@ -55,8 +57,8 @@ export default function ProgramaFasesModal({
 }) {
   const [renglones, setRenglones] = useState<Renglon[]>(
     fases.length
-      ? fases.map((f) => ({ km: f.km, unica: f.unica }))
-      : [{ km: null, unica: false }]
+      ? fases.map((f) => ({ km: f.km, unica: f.unica, costo: f.costo }))
+      : [{ km: null, unica: false, costo: null }]
   )
 
   const errores = validar(renglones)
@@ -72,14 +74,14 @@ export default function ProgramaFasesModal({
     const ultimo = renglones[renglones.length - 1]?.km ?? 0
     const previo = renglones[renglones.length - 2]?.km ?? 0
     const paso   = ultimo && previo ? ultimo - previo : ultimo || 15000
-    setRenglones((prev) => [...prev, { km: ultimo + paso, unica: false }])
+    setRenglones((prev) => [...prev, { km: ultimo + paso, unica: false, costo: null }])
   }
 
   // Cómo va a quedar el recorrido, con la vuelta incluida. Es lo único que hace
   // evidente que las columnas únicas se consumen y que después se cicla.
   const listas = renglones
-    .filter((r): r is { km: number; unica: boolean } => r.km != null && r.km > 0)
-    .map((r, i) => ({ id: i, orden: i, km: r.km, unica: r.unica }))
+    .filter((r): r is { km: number; unica: boolean; costo: number | null } => r.km != null && r.km > 0)
+    .map((r, i) => ({ id: i, orden: i, km: r.km, unica: r.unica, costo: r.costo }))
   const recorrido = valido ? proximosServicios(listas, 0, Math.min(listas.length + 4, 14)) : []
 
   return (
@@ -88,6 +90,11 @@ export default function ProgramaFasesModal({
         Cada columna es un servicio del manual, con la marca de odómetro tal como la publica el
         fabricante. Las marcadas <strong>una sola vez</strong> son las de asentamiento: se hacen en
         la primera pasada y después el recorrido se queda dando vueltas sobre el resto.
+      </Text>
+      <Text size="sm" c="dimmed">
+        El costo es lo que el taller cobra por la columna completa —mano de obra y refacciones
+        juntas—, que es como llega la cotización. Dejarlo vacío no es cotizarlo en cero: la
+        proyección de gastos deja fuera esa visita y lo dice.
       </Text>
 
       {renglones.map((r, i) => (
@@ -101,6 +108,18 @@ export default function ProgramaFasesModal({
             value={r.km ?? ''}
             error={errores.get(i)}
             onChange={(v) => set(i, { km: typeof v === 'number' ? v : parseInt(String(v), 10) || null })}
+          />
+          <NumberInput
+            w={150}
+            label={i === 0 ? 'Costo cotizado' : undefined}
+            min={0} max={9_999_999}
+            prefix="$" thousandSeparator="," decimalScale={2}
+            placeholder="Sin cotizar"
+            allowNegative={false} clampBehavior="strict"
+            value={r.costo ?? ''}
+            onChange={(v) => set(i, {
+              costo: v === '' || v == null ? null : Number(v),
+            })}
           />
           <Switch
             mt={i === 0 ? 32 : 8}
@@ -164,7 +183,7 @@ export default function ProgramaFasesModal({
         <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
         <Button
           loading={isPending} disabled={!valido}
-          onClick={() => onSubmit(listas.map((f) => ({ km: f.km, unica: f.unica })))}
+          onClick={() => onSubmit(listas.map((f) => ({ km: f.km, unica: f.unica, costo: f.costo })))}
         >
           Guardar columnas
         </Button>

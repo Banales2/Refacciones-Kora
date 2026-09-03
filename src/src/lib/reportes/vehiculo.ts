@@ -360,6 +360,14 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
           ? `${porTiempo.length} ${porTiempo.length === 1 ? 'operación vencida' : 'operaciones vencidas'} por tiempo, ` +
             'sin esperar a esa visita.'
           : '',
+        // Lo cotizado de aquí en adelante. Las columnas sin cotizar se dicen
+        // aparte: el total no las cuenta como cero.
+        pr.proyeccion.costo > 0
+          ? `Las próximas ${pr.proyeccion.visitas} visitas están cotizadas en ` +
+            `${formatMXN(pr.proyeccion.costo)}` +
+            (pr.proyeccion.hasta_km != null ? `, hasta los ${formatNum(pr.proyeccion.hasta_km)} km` : '') +
+            (pr.proyeccion.sin_costo > 0 ? ` (${pr.proyeccion.sin_costo} sin cotizar).` : '.')
+          : '',
       ].filter(Boolean).join(' '),
     )
     if (pr.proxima && pr.proxima.operaciones.length > 0) {

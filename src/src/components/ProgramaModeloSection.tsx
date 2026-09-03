@@ -25,6 +25,7 @@ import type {
   Programa, OperacionPrograma, OperacionPayload, FasePayload, AccionPrograma,
 } from '../hooks/usePrograma'
 import { TEXTO_LIBRE, limpiarTextoLibre } from '../lib/validaciones'
+import { formatMXN, formatMXNCorto } from '../lib/formato'
 import ProgramaFasesModal from './ProgramaFasesModal'
 import ProgramaOperacionForm from './ProgramaOperacionForm'
 
@@ -54,6 +55,29 @@ function resumenRecorrido(programa: Programa): string | null {
     )
   }
   return partes.join('; ')
+}
+
+// Lo que cuesta una vuelta completa del ciclo y a cuánto sale el kilómetro. Es
+// la lectura que sirve para negociar con el taller y para comparar modelos.
+function resumenCostos(programa: Programa): string | null {
+  const bucle = programa.fases.filter((f) => !f.unica)
+  if (!bucle.length) return null
+  const cotizadas = bucle.filter((f) => f.costo != null)
+  if (!cotizadas.length) return null
+
+  const total = cotizadas.reduce((s, f) => s + (f.costo ?? 0), 0)
+  // La vuelta del ciclo recorre desde la primera columna del bucle hasta la
+  // última, más el brinco de regreso: eso es el largo de una vuelta.
+  const largo = bucle[bucle.length - 1].km - bucle[0].km + (bucle.length > 1
+    ? bucle[1].km - bucle[0].km
+    : bucle[0].km)
+
+  const partes = [`Una vuelta del ciclo: ${formatMXN(total)}`]
+  if (cotizadas.length < bucle.length) {
+    partes.push(`${bucle.length - cotizadas.length} sin cotizar`)
+  }
+  if (largo > 0) partes.push(`${formatMXN(total / largo)} por km`)
+  return partes.join(' · ')
 }
 
 // ── Alta del programa ────────────────────────────────────────────────────────
@@ -337,6 +361,11 @@ export default function ProgramaModeloSection({ modeloId }: { modeloId: number }
                               <Text size={'9px' as string} c="dimmed">1 vez</Text>
                             </Tooltip>
                           )}
+                          {/* Lo cotizado por la columna. Sin costo se deja el
+                              hueco: un "$0" se leería como gratis. */}
+                          {f.costo != null && (
+                            <Text size={'9px' as string} c="dimmed">{formatMXNCorto(f.costo)}</Text>
+                          )}
                         </Stack>
                       </Table.Th>
                     ))}
@@ -410,6 +439,10 @@ export default function ProgramaModeloSection({ modeloId }: { modeloId: number }
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
+          )}
+
+          {resumenCostos(programa) && (
+            <Text size="xs" c="dimmed">{resumenCostos(programa)}</Text>
           )}
 
           {/* Lo que el taller va a ver: a qué odómetro cae cada visita. Aquí se

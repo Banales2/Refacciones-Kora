@@ -19,6 +19,18 @@ import type { VinculoPrograma, Visita, EstadoOperacion } from '../repositories/p
 // regla que ya usa el tablero para los requerimientos sueltos.
 const AVISO_KM = 0.75
 
+// Cuántas visitas hacia adelante se proyectan. Ver getEstado.
+const HORIZONTE_PROYECCION = 8
+
+function proyectar(servicios: ServicioPendiente[]): ProyeccionCostos {
+  return {
+    visitas:   servicios.length,
+    costo:     servicios.reduce((s, v) => s + (v.fase.costo ?? 0), 0),
+    sin_costo: servicios.filter((v) => v.fase.costo == null).length,
+    hasta_km:  servicios.length ? servicios[servicios.length - 1].km_odometro : null,
+  }
+}
+
 // ─── Cálculo ────────────────────────────────────────────────────────────────
 
 function diffMeses(desde: string, hasta: string): number {
@@ -61,6 +73,21 @@ export interface OperacionPorTiempo {
   por_vencer:   boolean
 }
 
+// Lo que va a costar el mantenimiento programado de aquí en adelante, sumando
+// lo que el taller cotizó por cada columna. Las columnas sin cotizar no se
+// cuentan como cero: se dicen aparte, para que el total se lea sabiendo qué
+// tanto le falta.
+export interface ProyeccionCostos {
+  /** Cuántas visitas entraron en la proyección. */
+  visitas:    number
+  /** Suma de lo cotizado de esas visitas. */
+  costo:      number
+  /** Cuántas de esas visitas no tienen costo capturado. */
+  sin_costo:  number
+  /** Odómetro hasta el que llega la proyección. */
+  hasta_km:   number | null
+}
+
 export interface EstadoPrograma {
   vinculo:            VinculoPrograma
   programa:           ProgramaCompleto
@@ -73,6 +100,7 @@ export interface EstadoPrograma {
   proxima:            ServicioPendiente | null
   /** Las que vienen después, para que el taller pueda planear. */
   siguientes:         ServicioPendiente[]
+  proyeccion:         ProyeccionCostos
   operaciones_tiempo: OperacionPorTiempo[]
 }
 
@@ -159,8 +187,11 @@ export async function getEstado(vehiculoId: number): Promise<EstadoPrograma | nu
   if (!programa) return null
 
   const hoy = fechaMexico()
+  // Ocho visitas por delante: con el ELF eso es una vuelta larga del ciclo, que
+  // es el horizonte con el que se planea un presupuesto sin inventar cuánto va
+  // a rodar la unidad por mes.
   const servicios = armarServicios(
-    programa, visitas.length, vinculo.km_inicio, datos?.kilometraje ?? null, 4
+    programa, visitas.length, vinculo.km_inicio, datos?.kilometraje ?? null, HORIZONTE_PROYECCION
   )
 
   return {
@@ -173,6 +204,7 @@ export async function getEstado(vehiculoId: number): Promise<EstadoPrograma | nu
     km_recorrido:     datos?.kilometraje != null ? datos.kilometraje - vinculo.km_inicio : null,
     proxima:          servicios[0] ?? null,
     siguientes:       servicios.slice(1),
+    proyeccion:       proyectar(servicios),
     operaciones_tiempo: armarOperacionesTiempo(
       programa, vinculo, estados, hoy, aFecha(datos?.fecha_compra)
     ),

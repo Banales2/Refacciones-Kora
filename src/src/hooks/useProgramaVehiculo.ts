@@ -54,6 +54,16 @@ export interface OperacionPorTiempo {
   por_vencer:   boolean
 }
 
+// Lo que va a costar el mantenimiento programado de aquí en adelante. Las
+// columnas sin cotizar no cuentan como cero: se dicen aparte para que el total
+// se lea sabiendo qué tanto le falta.
+export interface ProyeccionCostos {
+  visitas:   number
+  costo:     number
+  sin_costo: number
+  hasta_km:  number | null
+}
+
 export interface EstadoProgramaVehiculo {
   vinculo:            VinculoPrograma
   programa:           Programa
@@ -64,6 +74,7 @@ export interface EstadoProgramaVehiculo {
   km_recorrido:       number | null
   proxima:            ServicioPendiente | null
   siguientes:         ServicioPendiente[]
+  proyeccion:         ProyeccionCostos
   operaciones_tiempo: OperacionPorTiempo[]
 }
 

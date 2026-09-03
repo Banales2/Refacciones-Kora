@@ -46,6 +46,10 @@ export const FasesSchema = z
   .array(z.object({
     km:    z.coerce.number().int().positive().max(KM_MAX, 'Máximo 9,999,999 km'),
     unica: z.boolean().default(false),
+    // Lo cotizado por la columna completa. Ausente o nulo = sin cotizar, que no
+    // es lo mismo que gratis: la proyección la deja fuera en vez de sumar cero.
+    costo: z.coerce.number().min(0, 'No puede ser negativo').max(9_999_999, 'Máximo $9,999,999')
+      .nullable().optional(),
   }))
   .min(1, 'El programa necesita al menos una fase')
   .max(60, 'Máximo 60 fases')

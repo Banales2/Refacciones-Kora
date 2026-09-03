@@ -22,6 +22,12 @@ export interface Fase {
   km:     number
   /** Se hace una sola vez, en la primera pasada: el asentamiento. */
   unica:  boolean
+  /**
+   * Lo que el taller cobra por la columna completa, mano de obra y refacciones
+   * juntas, que es como llega la cotización. Nulo = sin cotizar; la proyección
+   * lo deja fuera en vez de contarlo como cero.
+   */
+  costo:  number | null
 }
 
 export interface Operacion {
@@ -69,6 +75,7 @@ export interface ProgramaUpdate {
 export interface FaseEntrada {
   km:    number
   unica: boolean
+  costo?: number | null
 }
 
 export interface OperacionCreate {
@@ -104,7 +111,7 @@ async function cargarCompleto(programa: Programa | null): Promise<ProgramaComple
 
   const [fasesRes, opsRes, celdasRes] = await Promise.all([
     pool.request().input('pid', sql.Int, programa.id).query(`
-      SELECT id, orden, km, unica
+      SELECT id, orden, km, unica, costo
       FROM programa_fases WHERE programa_id=@pid ORDER BY orden`),
     pool.request().input('pid', sql.Int, programa.id).query(`
       SELECT id, orden, nombre, descripcion, categoria, tipo_pieza_id, limite_meses
@@ -125,7 +132,12 @@ async function cargarCompleto(programa: Programa | null): Promise<ProgramaComple
 
   return {
     ...programa,
-    fases: fasesRes.recordset.map((f) => ({ ...f, unica: !!f.unica })),
+    // mssql devuelve DECIMAL como string cuando no cabe en un number seguro;
+    // aquí siempre cabe, pero se normaliza para que el consumidor no tenga que
+    // preguntarse de qué tipo le llegó el dinero.
+    fases: fasesRes.recordset.map((f) => ({
+      ...f, unica: !!f.unica, costo: f.costo == null ? null : Number(f.costo),
+    })),
     operaciones: opsRes.recordset.map((o) => ({ ...o, celdas: porOperacion.get(o.id) ?? {} })),
   }
 }
@@ -268,16 +280,18 @@ export async function setFases(programaId: number, fases: FaseEntrada[]): Promis
           .input('id',    sql.Int, id)
           .input('orden', sql.Int, i)
           .input('unica', sql.Bit, fase.unica)
-          .query('UPDATE programa_fases SET orden=@orden, unica=@unica WHERE id=@id')
+          .input('costo', sql.Decimal(18, 2), fase.costo ?? null)
+          .query('UPDATE programa_fases SET orden=@orden, unica=@unica, costo=@costo WHERE id=@id')
       } else {
         await tx.request()
           .input('pid',   sql.Int, programaId)
           .input('orden', sql.Int, i)
           .input('km',    sql.Int, fase.km)
           .input('unica', sql.Bit, fase.unica)
+          .input('costo', sql.Decimal(18, 2), fase.costo ?? null)
           .query(`
-            INSERT INTO programa_fases (programa_id, orden, km, unica)
-            VALUES (@pid, @orden, @km, @unica)`)
+            INSERT INTO programa_fases (programa_id, orden, km, unica, costo)
+            VALUES (@pid, @orden, @km, @unica, @costo)`)
       }
     }
 
