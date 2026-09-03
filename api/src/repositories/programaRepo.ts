@@ -96,6 +96,21 @@ export interface OperacionUpdate {
 
 const PROGRAMA_COLS = `id, modelo_id, nombre, descripcion, activo, created_at, updated_at`
 
+// Desplazamiento con el que se aparta el orden viejo antes de reasignarlo.
+//
+// Reordenar exige liberar los valores primero: el índice único de
+// (programa_id, orden) choca en cuanto dos renglones se cruzan a medio camino.
+// Lo natural sería negarlos, pero `orden` lleva un CHECK (orden >= 0) desde la
+// migración 012, y un valor negativo lo viola. SQL Server reporta esa violación
+// con el mismo error 547 que las llaves foráneas, así que salía por la API como
+// un 409 de "hay registros que dependen de este" que no tenía ninguna relación
+// con lo que se estaba guardando.
+//
+// Desplazar hacia arriba cumple lo mismo -aparta los valores sin colisionar- y
+// respeta el CHECK. El tope real son 60 fases y 500 operaciones por programa,
+// así que un millón está muy por encima de cualquier orden que pueda existir.
+const OFFSET_ORDEN = 1_000_000
+
 export async function findAcciones(): Promise<Accion[]> {
   const pool = await getPool()
   const r = await pool.request()
@@ -268,10 +283,9 @@ export async function setFases(programaId: number, fases: FaseEntrada[]): Promis
         .query('DELETE FROM programa_fases WHERE id=@fid')
     }
 
-    // El orden se libera antes de reasignarlo: el índice único de
-    // (programa_id, orden) choca si dos columnas se cruzan a medio camino.
-    await tx.request().input('pid', sql.Int, programaId)
-      .query('UPDATE programa_fases SET orden = -1 - orden WHERE programa_id=@pid')
+    // El orden se libera antes de reasignarlo (ver OFFSET_ORDEN).
+    await tx.request().input('pid', sql.Int, programaId).input('off', sql.Int, OFFSET_ORDEN)
+      .query('UPDATE programa_fases SET orden = orden + @off WHERE programa_id=@pid')
 
     for (const [i, fase] of fases.entries()) {
       const id = porKm.get(fase.km)
@@ -375,10 +389,9 @@ export async function reordenarOperaciones(programaId: number, ids: number[]): P
   const tx = pool.transaction()
   await tx.begin()
   try {
-    // Mismo truco que en setFases: el índice único de (programa_id, orden) no
-    // tolera dos renglones cruzándose a medio reordenamiento.
-    await tx.request().input('pid', sql.Int, programaId)
-      .query('UPDATE programa_operaciones SET orden = -1 - orden WHERE programa_id=@pid')
+    // Mismo apartado que en setFases (ver OFFSET_ORDEN).
+    await tx.request().input('pid', sql.Int, programaId).input('off', sql.Int, OFFSET_ORDEN)
+      .query('UPDATE programa_operaciones SET orden = orden + @off WHERE programa_id=@pid')
     for (const [i, id] of ids.entries()) {
       await tx.request()
         .input('id',    sql.Int, id)
@@ -386,14 +399,16 @@ export async function reordenarOperaciones(programaId: number, ids: number[]): P
         .input('orden', sql.Int, i)
         .query('UPDATE programa_operaciones SET orden=@orden WHERE id=@id AND programa_id=@pid')
     }
-    // Los que no venían en la lista van después, en el orden que traían.
+    // Los que no venían en la lista van después, en el orden que traían: siguen
+    // apartados con el desplazamiento, así que se reconocen por él.
     await tx.request()
       .input('pid',  sql.Int, programaId)
       .input('base', sql.Int, ids.length)
+      .input('off',  sql.Int, OFFSET_ORDEN)
       .query(`
         WITH restantes AS (
-          SELECT id, ROW_NUMBER() OVER (ORDER BY orden DESC) - 1 AS pos
-          FROM programa_operaciones WHERE programa_id=@pid AND orden < 0
+          SELECT id, ROW_NUMBER() OVER (ORDER BY orden) - 1 AS pos
+          FROM programa_operaciones WHERE programa_id=@pid AND orden >= @off
         )
         UPDATE o SET orden = @base + r.pos
         FROM programa_operaciones o JOIN restantes r ON r.id = o.id`)
