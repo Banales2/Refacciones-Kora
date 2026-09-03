@@ -371,6 +371,7 @@ export default function ProgramaModeloSection({ modeloId }: { modeloId: number }
                                     ? `var(--mantine-color-${colorDe(acciones, accion)}-filled)`
                                     : 'var(--mantine-color-dimmed)',
                                   fontSize: 12, fontWeight: 700, lineHeight: '26px',
+                                  textAlign: 'center',
                                 }}
                               >
                                 {accion ?? '·'}
