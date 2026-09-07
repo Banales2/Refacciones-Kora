@@ -111,6 +111,15 @@ const CONSULTAS: Record<string, string> = {
     LEFT JOIN tipos_pieza tp ON tp.id = o.tipo_pieza_id
     WHERE o.id = @id`,
 
+  // La columna del programa que un mantenimiento cerró. Se captura con la marca
+  // de kilometraje resuelta: "fase_id 47" no dice nada en la bitácora.
+  mantenimiento_programa: `
+    SELECT mp.*, f.km AS marca_km, pr.nombre AS programa
+    FROM mantenimiento_programa mp
+    LEFT JOIN programa_fases f            ON f.id = mp.fase_id
+    LEFT JOIN programas_mantenimiento pr  ON pr.id = f.programa_id
+    WHERE mp.mantenimiento_id = @id`,
+
   precios_proveedor: `
     SELECT pp.*, pr.nombre AS proveedor,
            p.numero_serie AS pieza_serie, p.descripcion AS pieza

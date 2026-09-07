@@ -286,6 +286,13 @@ export async function remove(id: number): Promise<boolean> {
       DELETE e FROM vehiculo_fase_excepcion e
       JOIN programa_fases f ON f.id = e.fase_id
       WHERE f.programa_id=@id`)
+    // Y lo que algún mantenimiento declaraba haber cerrado de este programa.
+    // El mantenimiento se queda: ocurrió, con su costo y sus piezas. Lo que se
+    // suelta es la afirmación de qué columna cerró, que ya no tiene columna.
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE mp FROM mantenimiento_programa mp
+      JOIN programa_fases f ON f.id = mp.fase_id
+      WHERE f.programa_id=@id`)
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM programa_operaciones WHERE programa_id=@id')
     await tx.request().input('id', sql.Int, id)
@@ -327,6 +334,8 @@ export async function setFases(programaId: number, fases: FaseEntrada[]): Promis
         .query('DELETE FROM programa_operacion_fase WHERE fase_id=@fid')
       await tx.request().input('fid', sql.Int, vieja.id)
         .query('DELETE FROM vehiculo_fase_excepcion WHERE fase_id=@fid')
+      await tx.request().input('fid', sql.Int, vieja.id)
+        .query('DELETE FROM mantenimiento_programa WHERE fase_id=@fid')
       await tx.request().input('fid', sql.Int, vieja.id)
         .query('DELETE FROM programa_fases WHERE id=@fid')
     }

@@ -1,7 +1,13 @@
 // Lo que una unidad lleva hecho de sus programas de mantenimiento: qué programa
-// sigue en cada etapa y desde dónde, qué visitas al taller cerró, y cuándo se
-// atendió por última vez cada renglón. Ver la migración 013 para por qué son
-// tres cosas separadas, y la 016 para por qué hay una fila por etapa.
+// sigue en cada etapa y desde dónde, qué columnas cerró, y cuándo se atendió
+// por última vez cada renglón. Ver la migración 013 para por qué son cosas
+// separadas, y la 016 para por qué hay una fila por etapa.
+//
+// La columna cerrada NO es un registro propio: es un `mantenimiento`, con su
+// fecha, su odómetro, su costo, su técnico y sus piezas, que declara qué
+// columna del programa atendió —igual que ya declara qué incidencias cerró—.
+// Ver la migración 017. Hacia el usuario eso se llama "visita al taller", que
+// es como se piensa el trabajo, y por eso el tipo de aquí conserva el nombre.
 //
 // Aquí no se decide en qué etapa va la unidad: eso se calcula contra su garantía
 // principal, y vive en el servicio. Este repo solo guarda y lee.
@@ -35,6 +41,12 @@ export interface VinculoPrograma {
   forzada:      boolean
 }
 
+/**
+ * Una columna del programa ya cerrada, leída como la "visita al taller" que el
+ * usuario ve. Por debajo es el mantenimiento con el que se pagó: `id` y
+ * `mantenimiento_id` son el mismo número, y el resto —fecha, km, costo— sale de
+ * él, no de una copia.
+ */
 export interface Visita {
   id:               number
   vehiculo_id:      number
@@ -44,7 +56,11 @@ export interface Visita {
   indice:           number
   fecha:            string
   km:               number | null
-  mantenimiento_id: number | null
+  /** Siempre presente: la visita ES el mantenimiento. Se conserva por claridad. */
+  mantenimiento_id: number
+  /** Lo que costó de verdad, no lo cotizado en la fase. */
+  costo:            number
+  tipo:             string | null
 }
 
 /**
@@ -73,18 +89,24 @@ export interface EstadoOperacion {
   operacion_id: number
   ultima_fecha: string
   ultimo_km:    number | null
-  visita_id:    number | null
+  /**
+   * El mantenimiento que lo cerró cuando vino con la columna completa. Nulo =
+   * se atendió por su cuenta, sin hacer la columna, porque su límite de meses
+   * venció antes que el kilometraje.
+   */
+  mantenimiento_id: number | null
 }
 
 export interface VisitaCreate {
+  /** El mantenimiento que cerró la columna. No se crea aquí: ya existe. */
+  mantenimiento_id: number
   vehiculo_id:      number
   etapa:            Etapa
   fase_id:          number
   indice:           number
   fecha:            string
   km?:              number | null
-  mantenimiento_id?: number | null
-  /** Los renglones que esa columna manda hacer: se cierran todos con la visita. */
+  /** Los renglones que esa columna manda hacer: se cierran todos con ella. */
   operacion_ids:    number[]
 }
 
@@ -174,8 +196,10 @@ export async function removeVinculo(vehiculoId: number, etapa: Etapa): Promise<b
         JOIN vehiculo_programa vp
           ON vp.programa_id = o.programa_id AND vp.vehiculo_id = e.vehiculo_id
         WHERE e.vehiculo_id=@vid AND vp.etapa=@etapa`)
+    // Solo el vínculo con el programa: los mantenimientos se quedan, porque
+    // esos servicios sí ocurrieron.
     await tx.request().input('vid', sql.Int, vehiculoId).input('etapa', sql.NVarChar(20), etapa)
-      .query('DELETE FROM vehiculo_programa_visita WHERE vehiculo_id=@vid AND etapa=@etapa')
+      .query('DELETE FROM mantenimiento_programa WHERE vehiculo_id=@vid AND etapa=@etapa')
     const r = await tx.request().input('vid', sql.Int, vehiculoId).input('etapa', sql.NVarChar(20), etapa)
       .query(`DELETE FROM vehiculo_programa OUTPUT DELETED.vehiculo_id
               WHERE vehiculo_id=@vid AND etapa=@etapa`)
@@ -316,14 +340,26 @@ export async function findDatosVehiculo(vehiculoId: number): Promise<DatosVehicu
 
 // ─── Visitas y estados ──────────────────────────────────────────────────────
 
+// El mantenimiento es la visita, así que se lee de ahí: la fecha y el odómetro
+// son los del servicio real, no una copia que se pueda desincronizar al
+// corregirlos.
+const SELECT_VISITA = `
+  SELECT mp.mantenimiento_id AS id, mp.vehiculo_id, mp.etapa, mp.fase_id, mp.indice,
+         CONVERT(char(10), m.fecha, 23) AS fecha, m.km_actual AS km,
+         mp.mantenimiento_id, m.costo, m.tipo
+  FROM mantenimiento_programa mp
+  JOIN mantenimiento m ON m.id = mp.mantenimiento_id`
+
+function mapVisita(row: Record<string, unknown>): Visita {
+  return { ...(row as unknown as Visita), costo: Number(row.costo ?? 0) }
+}
+
 export async function findVisitas(vehiculoId: number): Promise<Visita[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
-    .query(`
-      SELECT id, vehiculo_id, etapa, fase_id, indice, fecha, km, mantenimiento_id
-      FROM vehiculo_programa_visita WHERE vehiculo_id=@vid ORDER BY etapa, indice`)
-  return r.recordset
+    .query(`${SELECT_VISITA} WHERE mp.vehiculo_id=@vid ORDER BY mp.etapa, mp.indice`)
+  return r.recordset.map(mapVisita)
 }
 
 export async function findEstados(vehiculoId: number): Promise<EstadoOperacion[]> {
@@ -331,73 +367,80 @@ export async function findEstados(vehiculoId: number): Promise<EstadoOperacion[]
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
     .query(`
-      SELECT operacion_id, ultima_fecha, ultimo_km, visita_id
+      SELECT operacion_id, ultima_fecha, ultimo_km, mantenimiento_id
       FROM vehiculo_operacion_estado WHERE vehiculo_id=@vid`)
   return r.recordset
 }
 
-// Cierra una columna completa: deja la visita y pone al día, de un golpe, todos
-// los renglones que esa columna manda hacer.
+// Cierra una columna completa: declara que este mantenimiento la atendió y pone
+// al día, de un golpe, todos los renglones que la columna manda hacer.
+//
+// El mantenimiento ya existe cuando se llega aquí. No se crea desde este módulo
+// —eso es trabajo de `mantenimientoRepo`, con sus piezas y su stock— y por eso
+// esto es un vínculo, no un alta.
 export async function crearVisita(data: VisitaCreate): Promise<Visita> {
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
   try {
-    const r = await tx.request()
+    await tx.request()
+      .input('mid',    sql.Int,  data.mantenimiento_id)
       .input('vid',    sql.Int,  data.vehiculo_id)
       .input('etapa',  sql.NVarChar(20), data.etapa)
       .input('fid',    sql.Int,  data.fase_id)
       .input('indice', sql.Int,  data.indice)
-      .input('fecha',  sql.Date, data.fecha)
-      .input('km',     sql.Int,  data.km ?? null)
-      .input('mid',    sql.Int,  data.mantenimiento_id ?? null)
       .query(`
-        INSERT INTO vehiculo_programa_visita
-          (vehiculo_id, etapa, fase_id, indice, fecha, km, mantenimiento_id)
-        OUTPUT INSERTED.id, INSERTED.vehiculo_id, INSERTED.etapa, INSERTED.fase_id,
-               INSERTED.indice, INSERTED.fecha, INSERTED.km, INSERTED.mantenimiento_id
-        VALUES (@vid, @etapa, @fid, @indice, @fecha, @km, @mid)`)
-    const visita: Visita = r.recordset[0]
+        INSERT INTO mantenimiento_programa
+          (mantenimiento_id, vehiculo_id, etapa, fase_id, indice)
+        VALUES (@mid, @vid, @etapa, @fid, @indice)`)
 
     for (const opId of data.operacion_ids) {
       await tx.request()
-        .input('vid',    sql.Int,  data.vehiculo_id)
-        .input('oid',    sql.Int,  opId)
-        .input('fecha',  sql.Date, data.fecha)
-        .input('km',     sql.Int,  data.km ?? null)
-        .input('visita', sql.Int,  visita.id)
+        .input('vid',   sql.Int,  data.vehiculo_id)
+        .input('oid',   sql.Int,  opId)
+        .input('fecha', sql.Date, data.fecha)
+        .input('km',    sql.Int,  data.km ?? null)
+        .input('mid',   sql.Int,  data.mantenimiento_id)
         .query(`
           MERGE INTO vehiculo_operacion_estado AS tgt
           USING (SELECT @vid AS vehiculo_id, @oid AS operacion_id) AS src
             ON tgt.vehiculo_id = src.vehiculo_id AND tgt.operacion_id = src.operacion_id
           WHEN MATCHED THEN UPDATE SET
-            ultima_fecha = @fecha, ultimo_km = @km, visita_id = @visita
+            ultima_fecha = @fecha, ultimo_km = @km, mantenimiento_id = @mid
           WHEN NOT MATCHED THEN
-            INSERT (vehiculo_id, operacion_id, ultima_fecha, ultimo_km, visita_id)
-            VALUES (@vid, @oid, @fecha, @km, @visita);`)
+            INSERT (vehiculo_id, operacion_id, ultima_fecha, ultimo_km, mantenimiento_id)
+            VALUES (@vid, @oid, @fecha, @km, @mid);`)
     }
 
     await tx.commit()
-    return visita
+    return (await findVisita(data.mantenimiento_id))!
   } catch (err) {
     await tx.rollback()
     throw err
   }
 }
 
-// Deshace una visita. Los renglones que esa visita cerró vuelven a quedar sin
-// atención: no se puede saber qué decían antes, y dejarles la fecha vieja sería
-// peor que dejarlos vencidos —diría que se hicieron cuando no se hicieron—.
-// Los que se atendieron por su cuenta (visita_id nulo) no se tocan.
-export async function borrarVisita(id: number): Promise<boolean> {
+// Deshace una visita: suelta el vínculo entre el mantenimiento y la columna.
+//
+// El mantenimiento NO se borra. Puede haber sido un error decir que cerró esa
+// columna, y aun así la unidad entró al taller, se gastó ese dinero y se le
+// pusieron esas piezas. Quien quiera borrar el gasto borra el mantenimiento, y
+// entonces este vínculo se va con él por la cascada.
+//
+// Los renglones que esa visita cerró vuelven a quedar sin atención: no se puede
+// saber qué decían antes, y dejarles la fecha vieja sería peor que dejarlos
+// vencidos —diría que se hicieron cuando no se hicieron—. Los que se atendieron
+// por su cuenta (mantenimiento_id nulo) no se tocan.
+export async function borrarVisita(mantenimientoId: number): Promise<boolean> {
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
   try {
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM vehiculo_operacion_estado WHERE visita_id=@id')
-    const r = await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM vehiculo_programa_visita OUTPUT DELETED.id WHERE id=@id')
+    await tx.request().input('id', sql.Int, mantenimientoId)
+      .query('DELETE FROM vehiculo_operacion_estado WHERE mantenimiento_id=@id')
+    const r = await tx.request().input('id', sql.Int, mantenimientoId)
+      .query(`DELETE FROM mantenimiento_programa
+              OUTPUT DELETED.mantenimiento_id WHERE mantenimiento_id=@id`)
     await tx.commit()
     return r.recordset.length > 0
   } catch (err) {
@@ -406,19 +449,43 @@ export async function borrarVisita(id: number): Promise<boolean> {
   }
 }
 
-export async function findVisita(id: number): Promise<Visita | null> {
+export async function findVisita(mantenimientoId: number): Promise<Visita | null> {
   const pool = await getPool()
   const r = await pool.request()
-    .input('id', sql.Int, id)
+    .input('id', sql.Int, mantenimientoId)
+    .query(`${SELECT_VISITA} WHERE mp.mantenimiento_id=@id`)
+  return r.recordset[0] ? mapVisita(r.recordset[0]) : null
+}
+
+/** El mantenimiento tal como lo necesita el programa para cerrarle una columna. */
+export interface MantenimientoDelPrograma {
+  id:          number
+  vehiculo_id: number
+  fecha:       string
+  km_actual:   number | null
+  /** Ya está ligado a una columna: no se puede usar para cerrar otra. */
+  ya_ligado:   boolean
+}
+
+export async function findMantenimientoParaVisita(
+  mantenimientoId: number,
+): Promise<MantenimientoDelPrograma | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, mantenimientoId)
     .query(`
-      SELECT id, vehiculo_id, etapa, fase_id, indice, fecha, km, mantenimiento_id
-      FROM vehiculo_programa_visita WHERE id=@id`)
-  return r.recordset[0] ?? null
+      SELECT m.id, m.vehiculo_id, CONVERT(char(10), m.fecha, 23) AS fecha, m.km_actual,
+             CASE WHEN EXISTS (
+               SELECT 1 FROM mantenimiento_programa mp WHERE mp.mantenimiento_id = m.id
+             ) THEN 1 ELSE 0 END AS ya_ligado
+      FROM mantenimiento m WHERE m.id=@id`)
+  const row = r.recordset[0]
+  return row ? { ...row, ya_ligado: !!row.ya_ligado } : null
 }
 
 // Atención suelta de un renglón: el "o cada N meses" venció antes que el
-// kilometraje de su columna. No deja visita —no se hizo la columna— y por eso
-// el estado queda con `visita_id` nulo.
+// kilometraje de su columna. No cierra ninguna columna —no se hizo— y por eso
+// el estado queda con `mantenimiento_id` nulo.
 export async function atenderOperacion(
   vehiculoId: number, operacionId: number, fecha: string, km: number | null,
 ): Promise<void> {
@@ -433,9 +500,9 @@ export async function atenderOperacion(
       USING (SELECT @vid AS vehiculo_id, @oid AS operacion_id) AS src
         ON tgt.vehiculo_id = src.vehiculo_id AND tgt.operacion_id = src.operacion_id
       WHEN MATCHED THEN UPDATE SET
-        ultima_fecha = @fecha, ultimo_km = @km, visita_id = NULL
+        ultima_fecha = @fecha, ultimo_km = @km, mantenimiento_id = NULL
       WHEN NOT MATCHED THEN
-        INSERT (vehiculo_id, operacion_id, ultima_fecha, ultimo_km, visita_id)
+        INSERT (vehiculo_id, operacion_id, ultima_fecha, ultimo_km, mantenimiento_id)
         VALUES (@vid, @oid, @fecha, @km, NULL);`)
 }
 
@@ -449,16 +516,27 @@ export async function contarVehiculosDePrograma(programaId: number): Promise<num
   return r.recordset[0].n
 }
 
-/** Fases con visitas ya registradas: quitarlas del programa borraría historial. */
+/** Fases ya cerradas por algún mantenimiento: quitarlas borraría historial. */
 export async function fasesConVisitas(faseIds: number[]): Promise<number[]> {
   if (!faseIds.length) return []
   const pool = await getPool()
   const req = pool.request()
   const params = faseIds.map((id, i) => { req.input(`f${i}`, sql.Int, id); return `@f${i}` })
   const r = await req.query(`
-    SELECT DISTINCT fase_id FROM vehiculo_programa_visita
+    SELECT DISTINCT fase_id FROM mantenimiento_programa
     WHERE fase_id IN (${params.join(',')})`)
   return r.recordset.map((f: { fase_id: number }) => f.fase_id)
+}
+
+/**
+ * Suelta lo que el programa tenga colgado de un mantenimiento que se va a
+ * borrar. La tabla puente cae sola por la cascada; el estado de las operaciones
+ * apunta con NO ACTION y hay que soltarlo a mano.
+ */
+export async function soltarMantenimiento(mantenimientoId: number): Promise<void> {
+  const pool = await getPool()
+  await pool.request().input('id', sql.Int, mantenimientoId)
+    .query('DELETE FROM vehiculo_operacion_estado WHERE mantenimiento_id=@id')
 }
 
 /** Suelta el estado que las unidades tengan de una operación que se va a borrar. */
@@ -504,11 +582,11 @@ export async function findVisitasDeVehiculos(ids: number[]): Promise<Visita[]> {
   const pool = await getPool()
   const req = pool.request()
   const params = ids.map((id, i) => { req.input(`v${i}`, sql.Int, id); return `@v${i}` })
-  const r = await req.query(`
-    SELECT id, vehiculo_id, etapa, fase_id, indice, fecha, km, mantenimiento_id
-    FROM vehiculo_programa_visita WHERE vehiculo_id IN (${params.join(',')})
-    ORDER BY vehiculo_id, etapa, indice`)
-  return r.recordset
+  const r = await req.query(
+    `${SELECT_VISITA} WHERE mp.vehiculo_id IN (${params.join(',')})
+     ORDER BY mp.vehiculo_id, mp.etapa, mp.indice`
+  )
+  return r.recordset.map(mapVisita)
 }
 
 export interface EstadoFleet extends EstadoOperacion {
@@ -521,7 +599,7 @@ export async function findEstadosDeVehiculos(ids: number[]): Promise<EstadoFleet
   const req = pool.request()
   const params = ids.map((id, i) => { req.input(`v${i}`, sql.Int, id); return `@v${i}` })
   const r = await req.query(`
-    SELECT vehiculo_id, operacion_id, ultima_fecha, ultimo_km, visita_id
+    SELECT vehiculo_id, operacion_id, ultima_fecha, ultimo_km, mantenimiento_id
     FROM vehiculo_operacion_estado WHERE vehiculo_id IN (${params.join(',')})`)
   return r.recordset
 }

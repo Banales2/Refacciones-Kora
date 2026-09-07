@@ -13,10 +13,15 @@ export interface Mantenimiento {
   costo:            number
   km_actual:        number
   observaciones:    string | null
-  // Preventivos e incidencias que este mantenimiento atendió, sin distinguir:
-  // ambos son `pendientes`.
+  // Lo que este mantenimiento atendió: incidencias, que son `pendientes`.
   pendiente_ids:    number[]
   piezas_total:     number
+  /**
+   * La marca de la columna del programa que este mantenimiento cerró —lo que
+   * la pantalla llama "la visita de los 45,000 km"—. Null = no cerró ninguna,
+   * que es el caso de la mayoría. Ver la migración 017.
+   */
+  servicio_programa_km: number | null
 }
 
 /** Mantenimiento con la unidad resuelta, para el historial de toda la flota. */
@@ -51,9 +56,12 @@ export interface MantenimientoUpdate {
 // se eliminó del catálogo, tecnico_id quedó en NULL y aquí se ve vacío.
 const SELECT_MANT = `
   SELECT m.id, m.vehiculo_id, m.fecha, m.tipo, m.tecnico_id, t.nombre AS tecnico,
-         m.costo, m.km_actual, m.observaciones
+         m.costo, m.km_actual, m.observaciones,
+         f.km AS servicio_programa_km
   FROM mantenimiento m
-  LEFT JOIN tecnicos t ON t.id = m.tecnico_id`
+  LEFT JOIN tecnicos t ON t.id = m.tecnico_id
+  LEFT JOIN mantenimiento_programa mp ON mp.mantenimiento_id = m.id
+  LEFT JOIN programa_fases f ON f.id = mp.fase_id`
 
 async function attachPendienteIds(
   pool: sql.ConnectionPool,
@@ -137,11 +145,14 @@ export async function findAll(): Promise<MantenimientoDeFlota[]> {
   const r = await pool.request().query(`
     SELECT m.id, m.vehiculo_id, m.fecha, m.tipo, m.tecnico_id, t.nombre AS tecnico,
            m.costo, m.km_actual, m.observaciones,
+           f.km AS servicio_programa_km,
            v.numero_serie AS vehiculo_serie, v.placas AS vehiculo_placas,
            v.tipo AS vehiculo_tipo
     FROM mantenimiento m
     LEFT JOIN tecnicos  t ON t.id = m.tecnico_id
     JOIN      vehiculos v ON v.id = m.vehiculo_id
+    LEFT JOIN mantenimiento_programa mp ON mp.mantenimiento_id = m.id
+    LEFT JOIN programa_fases f ON f.id = mp.fase_id
     ORDER BY m.fecha DESC, m.id DESC
   `)
   const extra = new Map<number, Pick<MantenimientoDeFlota, 'vehiculo_serie' | 'vehiculo_placas' | 'vehiculo_tipo'>>()
@@ -263,6 +274,16 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
         JOIN mantenimiento m ON m.id = mp.mantenimiento_id
         WHERE mp.mantenimiento_id = @id
       `)
+      // Y por la misma razón, lo que este mantenimiento puso al día del
+      // programa de mantenimiento: si además cerró una columna, los renglones
+      // que atendió llevan copiada su fecha y su odómetro (migración 017).
+      await tx.request().input('id', sql.Int, id).query(`
+        UPDATE e
+        SET e.ultima_fecha = m.fecha, e.ultimo_km = m.km_actual
+        FROM vehiculo_operacion_estado e
+        JOIN mantenimiento m ON m.id = e.mantenimiento_id
+        WHERE e.mantenimiento_id = @id
+      `)
     }
 
     // Mover la fecha puede abrir o cerrar incidencias que ni se tocaron: un
@@ -308,6 +329,13 @@ export async function remove(id: number): Promise<boolean> {
 
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM mantenimiento_pendientes WHERE mantenimiento_id=@id')
+
+    // Si este mantenimiento cerró una columna del programa, borrarlo deshace
+    // ese avance: era el único respaldo de que el servicio se hizo. La tabla
+    // puente se va sola por su cascada; lo que el mantenimiento puso al día
+    // renglón por renglón apunta con NO ACTION y hay que soltarlo a mano.
+    await tx.request().input('id', sql.Int, id)
+      .query('DELETE FROM vehiculo_operacion_estado WHERE mantenimiento_id=@id')
 
     const r = await tx.request()
       .input('id', sql.Int, id)

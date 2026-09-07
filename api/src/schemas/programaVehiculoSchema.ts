@@ -42,11 +42,11 @@ export const ExcepcionesSchema = z.object({
   })).max(500, 'Máximo 500 renglones').default([]),
 })
 
+// Cerrar la columna que toca. Solo viaja el mantenimiento: la fecha y el
+// odómetro del servicio son los suyos, y volver a mandarlos aquí abriría la
+// puerta a que las dos versiones no coincidieran.
 export const VisitaSchema = z.object({
-  fecha:            z.string().date(),
-  // Ausente = se toma el odómetro que la unidad trae hoy.
-  km:               z.coerce.number().int().min(0).max(KM_MAX, 'Máximo 9,999,999 km').nullable().optional(),
-  mantenimiento_id: z.coerce.number().int().positive().nullable().optional(),
+  mantenimiento_id: z.coerce.number().int().positive(),
 })
 
 export const AtenderOperacionSchema = z.object({

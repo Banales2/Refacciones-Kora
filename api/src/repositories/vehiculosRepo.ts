@@ -419,14 +419,19 @@ export async function remove(id: number): Promise<void> {
     `)
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM pendientes WHERE vehiculo_id=@id')
-    // El avance del programa de mantenimiento (migración 013). Los estados
-    // apuntan a las visitas con NO ACTION, así que van primero; se borran a
-    // mano por lo mismo que las garantías, para no depender del orden en que el
-    // motor resuelva las cascadas que bajan de `vehiculos`.
+    // El avance del programa de mantenimiento y lo que la unidad hacía distinto
+    // de él (migraciones 013, 016 y 017). Se borra a mano, por lo mismo que las
+    // garantías: para no depender del orden en que el motor resuelva las
+    // cascadas que bajan de `vehiculos`.
+    //
+    // Las columnas cerradas no aparecen aquí porque son mantenimientos, y una
+    // unidad con mantenimientos no se puede borrar: lo comprueba el servicio.
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM vehiculo_operacion_estado WHERE vehiculo_id=@id')
     await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM vehiculo_programa_visita WHERE vehiculo_id=@id')
+      .query('DELETE FROM vehiculo_fase_excepcion WHERE vehiculo_id=@id')
+    await tx.request().input('id', sql.Int, id)
+      .query('DELETE FROM vehiculo_operacion_excepcion WHERE vehiculo_id=@id')
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM vehiculo_programa WHERE vehiculo_id=@id')
     const sub = tx.request().input('id', sql.Int, id)

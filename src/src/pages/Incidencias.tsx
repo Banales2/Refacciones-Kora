@@ -23,7 +23,7 @@ import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import IncidenciaForm from '../components/IncidenciaForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
-import { MantenimientoForm } from './Vehiculos'
+import MantenimientoForm from '../components/MantenimientoForm'
 import type { DeshacerAtencion } from './Vehiculos'
 import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
 

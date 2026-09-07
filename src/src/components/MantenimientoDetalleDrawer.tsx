@@ -238,6 +238,15 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
                   {esProgramado(data?.mantenimiento.fecha) && (
                     <Badge size="sm" variant="light" color="blue">Programado</Badge>
                   )}
+                  {/* Este mantenimiento es, además, la visita al taller con la
+                      que la unidad cerró una columna de su programa. */}
+                  {data?.mantenimiento.servicio_programa_km != null && (
+                    <Tooltip label="Con este mantenimiento la unidad cerró esa columna de su programa">
+                      <Badge size="sm" variant="light" color="grape">
+                        Visita de {data.mantenimiento.servicio_programa_km.toLocaleString('es-MX')} km
+                      </Badge>
+                    </Tooltip>
+                  )}
                 </Group>
                 <Text size="sm" c="dimmed">{data?.mantenimiento.tipo ?? 'Sin tipo especificado'}</Text>
               </div>

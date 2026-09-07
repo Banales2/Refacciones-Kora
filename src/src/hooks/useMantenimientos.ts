@@ -17,6 +17,12 @@ export interface Mantenimiento {
   observaciones:    string | null
   pendiente_ids: number[]
   piezas_total:     number
+  /**
+   * La marca de la columna del programa que este mantenimiento cerró: lo que la
+   * ficha de la unidad llama "la visita de los 45,000 km". Null = no cerró
+   * ninguna, que es lo normal. Borrar el mantenimiento deshace ese avance.
+   */
+  servicio_programa_km: number | null
 }
 
 export interface MantenimientoPayload {

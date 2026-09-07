@@ -27,6 +27,12 @@ export interface VinculoPrograma {
   forzada:      boolean
 }
 
+/**
+ * Una columna del programa ya cerrada. Hacia el usuario es "la visita al
+ * taller"; por debajo es el mantenimiento con el que se pagó, así que `id` y
+ * `mantenimiento_id` son el mismo número y la fecha, el odómetro y el costo
+ * salen de él.
+ */
 export interface VisitaPrograma {
   id:               number
   vehiculo_id:      number
@@ -36,7 +42,10 @@ export interface VisitaPrograma {
   indice:           number
   fecha:            string
   km:               number | null
-  mantenimiento_id: number | null
+  mantenimiento_id: number
+  /** Lo que costó de verdad, no lo que la fase tenía cotizado. */
+  costo:            number
+  tipo:             string | null
 }
 
 /**
@@ -136,7 +145,13 @@ export interface EstadoProgramaVehiculo {
   programa:           Programa
   excepciones:        Excepciones
   visitas:            VisitaPrograma[]
-  estados:            { operacion_id: number; ultima_fecha: string; ultimo_km: number | null; visita_id: number | null }[]
+  estados:            {
+    operacion_id: number
+    ultima_fecha: string
+    ultimo_km:    number | null
+    /** El mantenimiento que lo cerró; nulo si se atendió suelto, por tiempo. */
+    mantenimiento_id: number | null
+  }[]
   servicios_hechos:   number
   kilometraje:        number | null
   km_recorrido:       number | null
@@ -220,27 +235,35 @@ export function useSetExcepciones(vehiculoId: number) {
   })
 }
 
+// Solo el mantenimiento: la fecha y el odómetro del servicio son los suyos.
 export interface VisitaPayload {
-  fecha:             string
-  km?:               number | null
-  mantenimiento_id?: number | null
+  mantenimiento_id: number
 }
 
+// Declara que un mantenimiento ya registrado cerró la columna que tocaba.
 export function useRegistrarVisita(vehiculoId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (payload: VisitaPayload) =>
       api.post<{ data: EstadoProgramaVehiculo }>(`/vehiculos/${vehiculoId}/programa/visitas`, payload),
-    onSuccess: (r) => guardar(qc, vehiculoId, r.data),
+    onSuccess: (r) => {
+      guardar(qc, vehiculoId, r.data)
+      qc.invalidateQueries({ queryKey: ['mantenimientos'] })
+    },
   })
 }
 
+// Suelta el vínculo con la columna; el mantenimiento se queda, porque la unidad
+// sí entró al taller. El id es el del mantenimiento: la visita no tiene propio.
 export function useDeshacerVisita(vehiculoId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (visitaId: number) =>
-      api.delete<{ data: EstadoProgramaVehiculo }>(`/programa-visitas/${visitaId}`),
-    onSuccess: (r) => guardar(qc, vehiculoId, r.data),
+    mutationFn: (mantenimientoId: number) =>
+      api.delete<{ data: EstadoProgramaVehiculo }>(`/programa-visitas/${mantenimientoId}`),
+    onSuccess: (r) => {
+      guardar(qc, vehiculoId, r.data)
+      qc.invalidateQueries({ queryKey: ['mantenimientos'] })
+    },
   })
 }
 

@@ -11,6 +11,12 @@
 // que TODAVÍA está en garantía no es un atraso cualquiera, es la garantía en
 // riesgo. El programa del fabricante existe justamente para no perderla.
 //
+// LA VISITA ES UN MANTENIMIENTO. Aquí se sigue hablando de "visita al taller"
+// porque es como se piensa el trabajo, pero registrarla abre el formulario de
+// mantenimiento completo —costo, técnico, refacciones— y lo que se guarda es un
+// mantenimiento como cualquier otro, que además declara qué columna del
+// programa cerró. No hay dos registros de la misma entrada al taller.
+//
 // Debajo, dos cosas distintas se vencen, y la sección está partida en dos por
 // eso:
 //
@@ -41,6 +47,12 @@ import { KM_MAX } from '../lib/validaciones'
 import { formatMXN, formatMXNCorto } from '../lib/formato'
 import { FechaInput } from './FechaInput'
 import ProgramaExcepcionesModal from './ProgramaExcepcionesModal'
+import MantenimientoForm from './MantenimientoForm'
+import { useCreateMantenimiento } from '../hooks/useMantenimientos'
+import type { MantenimientoPayload } from '../hooks/useMantenimientos'
+import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
+import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
+import type { TipoVehiculo } from '../hooks/useVehiculos'
 
 const nf = new Intl.NumberFormat('es-MX')
 
@@ -242,11 +254,13 @@ function ProximaVisita({
 // ── Sección ──────────────────────────────────────────────────────────────────
 
 export default function ProgramaVehiculoSection({
-  vehiculoId, modeloId, kilometraje,
+  vehiculoId, modeloId, kilometraje, tipoVehiculo,
 }: {
   vehiculoId:  number
   modeloId:    number
   kilometraje: number | null
+  /** Para el formulario de mantenimiento: define si la unidad lleva odómetro. */
+  tipoVehiculo?: TipoVehiculo
 }) {
   const { data, isLoading } = useProgramaVehiculo(vehiculoId)
   const estado = data?.data ?? null
@@ -259,6 +273,10 @@ export default function ProgramaVehiculoSection({
   const quitarMut   = useQuitarPrograma(vehiculoId)
   const visitaMut   = useRegistrarVisita(vehiculoId)
   const deshacerMut = useDeshacerVisita(vehiculoId)
+  // La visita se registra creando el mantenimiento y diciendo después qué
+  // columna cerró: son el mismo hecho, y el mantenimiento es donde vive.
+  const mantMut     = useCreateMantenimiento(vehiculoId)
+  const piezasMut   = useCreateDetallesMtto()
   const atenderMut  = useAtenderOperacion(vehiculoId)
 
   const [arranqueOpen, setArranqueOpen] = useState(false)
@@ -270,6 +288,8 @@ export default function ProgramaVehiculoSection({
 
   const [kmInicio, setKmInicio]         = useState<number | null>(null)
   const [fechaInicio, setFechaInicio]   = useState<string | null>(null)
+  // Solo para atender un renglón suelto: la visita completa los toma del
+  // formulario de mantenimiento.
   const [fechaTrabajo, setFechaTrabajo] = useState(hoyIso())
   const [kmTrabajo, setKmTrabajo]       = useState<number | null>(null)
 
@@ -353,7 +373,47 @@ export default function ProgramaVehiculoSection({
   const delModeloActivo = (delModelo?.data ?? [])
     .find((p) => p.id === estado.vinculo.programa_id) ?? null
   const porTiempo = operaciones_tiempo.filter((o) => o.vencida || o.por_vencer)
-  const ultimaVisita = visitas[visitas.length - 1]
+  // La última de la etapa activa: es la única que se puede deshacer sin dejar
+  // un hueco en el recorrido.
+  const visitasEtapa = visitas.filter((v) => v.etapa === estado.etapa)
+  const ultimaVisita = visitasEtapa[visitasEtapa.length - 1]
+
+  // Registrar la visita son tres pasos encadenados porque son tres hechos: se
+  // registra el mantenimiento, se le cargan las refacciones y se declara qué
+  // columna cerró. Si el mantenimiento queda pero el vínculo falla, se dice:
+  // el gasto ya está capturado y lo único que falta es marcar la columna, que
+  // se puede reintentar sin volver a capturar nada.
+  function registrarVisita(payload: MantenimientoPayload, piezas: DetalleMttoPayload[]) {
+    setError(null)
+    mantMut.mutate(payload, {
+      onError: (e: Error) => setError(e.message),
+      onSuccess: (res) => {
+        const ligar = () => visitaMut.mutate(
+          { mantenimiento_id: res.data.id },
+          {
+            onSuccess: () => setVisitaOpen(false),
+            onError: (e: Error) => setError(
+              `El mantenimiento se registró, pero no se pudo marcar como el servicio del ` +
+              `programa: ${e.message}`
+            ),
+          }
+        )
+        if (!piezas.length) { ligar(); return }
+        piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
+          onSuccess: ligar,
+          // El mantenimiento ya quedó: lo que falló son las refacciones, y esas
+          // se agregan desde su detalle. La columna se marca de todos modos.
+          onError: (e: Error) => {
+            setError(
+              `El mantenimiento se registró, pero no se pudieron guardar todas las ` +
+              `refacciones: ${e.message}. Agrégalas desde el detalle del mantenimiento.`
+            )
+            ligar()
+          },
+        })
+      },
+    })
+  }
 
   return (
     <>
@@ -419,12 +479,7 @@ export default function ProgramaVehiculoSection({
         <ProximaVisita
           proxima={proxima}
           kmRecorrido={estado.km_recorrido}
-          onRegistrar={() => {
-            setError(null)
-            setFechaTrabajo(hoyIso())
-            setKmTrabajo(estado.kilometraje)
-            setVisitaOpen(true)
-          }}
+          onRegistrar={() => { setError(null); setVisitaOpen(true) }}
         />
       ) : (
         <Alert color="blue" variant="light">
@@ -547,6 +602,9 @@ export default function ProgramaVehiculoSection({
                 <Table.Th>Columna</Table.Th>
                 <Table.Th>Fecha</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>Odómetro</Table.Th>
+                {/* Lo que costó de verdad, que es lo que se gana con que la
+                    visita sea el mantenimiento y no un registro aparte. */}
+                <Table.Th style={{ textAlign: 'right' }}>Costo</Table.Th>
                 <Table.Th style={{ width: 40 }} />
               </Table.Tr>
             </Table.Thead>
@@ -557,17 +615,32 @@ export default function ProgramaVehiculoSection({
                   <Table.Tr key={v.id}>
                     <Table.Td><Text size="sm">{v.indice + 1}</Text></Table.Td>
                     <Table.Td>
-                      <Text size="sm">{fase ? `${nf.format(fase.km)} km` : '—'}</Text>
+                      <Group gap={6} wrap="nowrap">
+                        {/* La columna solo se resuelve dentro de su etapa: las
+                            de la otra son de un programa que no está cargado. */}
+                        <Text size="sm">{fase ? `${nf.format(fase.km)} km` : '—'}</Text>
+                        {v.etapa !== estado.etapa && (
+                          <Badge size="xs" variant="outline" color="gray">
+                            {TIPO_PROGRAMA_LABEL[v.etapa]}
+                          </Badge>
+                        )}
+                      </Group>
                     </Table.Td>
                     <Table.Td><Text size="sm">{fmtFecha(v.fecha)}</Text></Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       <Text size="sm">{v.km != null ? `${nf.format(v.km)} km` : '—'}</Text>
                     </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Text size="sm">{formatMXN(v.costo)}</Text>
+                    </Table.Td>
                     <Table.Td>
                       {/* Solo la última: deshacer una de en medio dejaría un
                           hueco en el recorrido. */}
                       {v.id === ultimaVisita?.id && (
-                        <Tooltip label="Deshacer esta visita">
+                        <Tooltip
+                          label="Deshacer: la columna vuelve a pedirse. El mantenimiento se queda."
+                          multiline w={230}
+                        >
                           <ActionIcon
                             variant="subtle" color="red" size="sm"
                             loading={deshacerMut.isPending}
@@ -591,45 +664,30 @@ export default function ProgramaVehiculoSection({
 
       {/* ── Modales ── */}
 
+      {/* La visita se captura como lo que es: un mantenimiento. El formulario
+          es el mismo de siempre —con su costo, su técnico y sus refacciones—;
+          lo único que agrega esta pantalla es decir, al guardarlo, qué columna
+          del programa cerró. */}
       <Modal
         opened={visitaOpen} onClose={() => setVisitaOpen(false)}
         title={proxima ? `Registrar el servicio de ${nf.format(proxima.fase.km)} km` : 'Registrar visita'}
-        centered size="md"
+        centered size="lg"
       >
         <Stack gap="sm">
-          <Text size="sm" c="dimmed">
-            Se dan por hechas las {proxima?.operaciones.length ?? 0} operaciones de esta columna.
-            Los renglones que se atiendan aquí dejan de contar su límite de meses desde esta fecha.
-          </Text>
-          <FechaInput
-            label="Fecha del servicio"
-            value={fechaTrabajo}
-            onChange={(d) => setFechaTrabajo(d ?? hoyIso())}
-            maxDate={hoyIso()}
+          <Alert color="blue" variant="light">
+            Esto registra un mantenimiento y lo marca como el servicio de{' '}
+            {proxima ? `${nf.format(proxima.fase.km)} km` : 'esta columna'} del programa. Se dan
+            por hechas sus {proxima?.operaciones.length ?? 0} operaciones, y sus límites de meses
+            vuelven a contar desde esta fecha.
+          </Alert>
+          <MantenimientoForm
+            vehiculoId={vehiculoId}
+            tipoVehiculo={tipoVehiculo}
+            isPending={visitaMut.isPending || mantMut.isPending || piezasMut.isPending}
+            error={error}
+            onSubmit={registrarVisita}
+            onCancel={() => setVisitaOpen(false)}
           />
-          <NumberInput
-            label="Odómetro" min={0} max={KM_MAX}
-            suffix=" km" thousandSeparator=","
-            description="Con el que entró al taller."
-            allowDecimal={false} allowNegative={false} clampBehavior="strict"
-            value={kmTrabajo ?? ''}
-            onChange={(v) => setKmTrabajo(typeof v === 'number' ? v : parseInt(String(v), 10) || null)}
-          />
-          {visitaMut.error && <Alert color="red" title="Error">{(visitaMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setVisitaOpen(false)} disabled={visitaMut.isPending}>
-              Cancelar
-            </Button>
-            <Button
-              loading={visitaMut.isPending}
-              onClick={() => visitaMut.mutate(
-                { fecha: fechaTrabajo, km: kmTrabajo },
-                { onSuccess: () => setVisitaOpen(false) }
-              )}
-            >
-              Registrar
-            </Button>
-          </Group>
         </Stack>
       </Modal>
 

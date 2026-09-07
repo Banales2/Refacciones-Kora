@@ -23,7 +23,7 @@ import * as repo from '../repositories/programaVehiculoRepo'
 import * as programaRepo from '../repositories/programaRepo'
 import * as garantiasRepo from '../repositories/garantiasRepo'
 import { proximosServicios } from './programaService'
-import { NotFoundError, ValidationError } from '../shared/errors'
+import { NotFoundError, ValidationError, ConflictError } from '../shared/errors'
 import { fechaMexico } from '../shared/fechaMexico'
 import { evaluarGarantia, type EstadoGarantia } from '../shared/garantias'
 import type { Fase, Operacion, ProgramaCompleto } from '../repositories/programaRepo'
@@ -601,9 +601,17 @@ export async function asignarProgramaDelModelo(
 
 // ─── Cerrar trabajo ─────────────────────────────────────────────────────────
 
+/**
+ * Declara que un mantenimiento cerró la columna que le tocaba a la unidad.
+ *
+ * El mantenimiento se registra antes, por su camino normal, con su costo, su
+ * técnico y sus piezas: aquí no se crea nada, solo se dice qué columna
+ * atendió. Hacia el usuario esto es "registrar la visita al taller"; por
+ * debajo, la visita y el mantenimiento son el mismo hecho (migración 017).
+ */
 export async function registrarVisita(
   vehiculoId: number,
-  data: { fecha: string; km?: number | null; mantenimiento_id?: number | null },
+  data: { mantenimiento_id: number },
 ) {
   const estado = await getEstado(vehiculoId)
   if (!estado) throw new NotFoundError('Programa de la unidad')
@@ -611,36 +619,57 @@ export async function registrarVisita(
     throw new ValidationError('El programa no tiene columnas que hacer')
   }
 
+  const mant = await repo.findMantenimientoParaVisita(data.mantenimiento_id)
+  if (!mant) throw new NotFoundError('Mantenimiento')
+  // Cerrar la columna de una unidad con el mantenimiento de otra dejaría un
+  // avance que no corresponde a ninguna máquina.
+  if (mant.vehiculo_id !== vehiculoId) {
+    throw new ValidationError('Ese mantenimiento es de otra unidad')
+  }
+  // Un mantenimiento es una entrada al taller, y una entrada cierra una
+  // columna. Ligarlo a dos sería contar el mismo servicio dos veces en el
+  // recorrido.
+  if (mant.ya_ligado) {
+    throw new ConflictError('Ese mantenimiento ya cerró un servicio del programa')
+  }
+
   // Siempre se cierra la visita que toca. Dejar elegir cuál rompería el
   // recorrido: el índice es lo que dice en qué punto del ciclo va la unidad, y
   // saltarse uno haría que la columna siguiente ya no fuera la correcta.
   const proxima = estado.proxima
   await repo.crearVisita({
+    mantenimiento_id: data.mantenimiento_id,
     vehiculo_id:      vehiculoId,
     // Se sella la etapa vigente: el índice solo significa algo dentro de ella.
     etapa:            estado.etapa,
     fase_id:          proxima.fase.id,
     indice:           proxima.indice,
-    fecha:            data.fecha,
-    km:               data.km ?? estado.kilometraje ?? null,
-    mantenimiento_id: data.mantenimiento_id ?? null,
+    // La fecha y el odómetro del servicio son los del mantenimiento: es el
+    // mismo hecho, y copiarlos de otro lado sería inventar una segunda verdad.
+    fecha:            mant.fecha,
+    km:               mant.km_actual ?? estado.kilometraje ?? null,
     operacion_ids:    proxima.operaciones.map((o) => o.operacion.id),
   })
   return getEstado(vehiculoId)
 }
 
-export async function deshacerVisita(visitaId: number) {
-  const visita = await repo.findVisita(visitaId)
+/**
+ * Deshace la visita: suelta el vínculo, no borra el mantenimiento. Que se haya
+ * dicho mal qué columna cerró no quita que la unidad entró al taller y que ese
+ * dinero se gastó.
+ */
+export async function deshacerVisita(mantenimientoId: number) {
+  const visita = await repo.findVisita(mantenimientoId)
   if (!visita) throw new NotFoundError('Visita')
   // Solo la última de su etapa: deshacer una de en medio dejaría un hueco en el
   // recorrido y la unidad quedaría con un índice que ya no corresponde a
   // ninguna columna.
   const visitas = (await repo.findVisitas(visita.vehiculo_id))
     .filter((v) => v.etapa === visita.etapa)
-  if (visitas[visitas.length - 1]?.id !== visitaId) {
+  if (visitas[visitas.length - 1]?.id !== mantenimientoId) {
     throw new ValidationError('Solo se puede deshacer la última visita registrada')
   }
-  await repo.borrarVisita(visitaId)
+  await repo.borrarVisita(mantenimientoId)
   return getEstado(visita.vehiculo_id)
 }
 

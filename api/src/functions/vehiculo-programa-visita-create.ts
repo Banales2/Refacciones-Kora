@@ -1,6 +1,10 @@
 // Cerrar la visita que toca: la unidad entró al taller e hizo la columna
 // completa. Pone al día de un golpe todos los renglones que esa columna manda,
 // que es justamente lo que significa que el kilometraje sea grupal.
+//
+// Lo que se manda es el mantenimiento que la pagó, no una visita: son el mismo
+// hecho (migración 017). El mantenimiento se registra antes, por su camino
+// normal, con su costo y sus piezas.
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
@@ -17,10 +21,10 @@ export async function vehiculoProgramaVisitaCreate(req: HttpRequest, ctx: Invoca
     const estado = await service.registrarVisita(vehiculoId, body)
     await audit({
       user,
-      accion: 'CREAR',
-      tabla: 'vehiculo_programa_visita',
-      registroId: vehiculoId,
-      despues: { vehiculo_id: vehiculoId, ...body },
+      accion: 'EDITAR',
+      tabla: 'mantenimiento',
+      registroId: body.mantenimiento_id,
+      despues: { vehiculo_id: vehiculoId, cerro_servicio_del_programa: true },
       ipAddress: getClientIp(req),
     })
     return { status: 201, jsonBody: { data: estado } }
