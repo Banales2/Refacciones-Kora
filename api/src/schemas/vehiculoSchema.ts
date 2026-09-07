@@ -22,7 +22,7 @@ export const TIPOS_CON_TENENCIA: TipoVehiculo[] = ['camion', 'utilitario']
 // otros dos, cosas que ya vencieron o están por vencer. Las unidades dadas de
 // baja quedan fuera de todos: ya no se les va a capturar ni renovar nada.
 export const ALERTAS_VEHICULO = [
-  'sin_tenencia', 'sin_seguro', 'requerimientos_vencidos', 'permiso_por_vencer',
+  'sin_tenencia', 'sin_seguro', 'programa_atrasado', 'permiso_por_vencer',
 ] as const
 export type AlertaVehiculo = typeof ALERTAS_VEHICULO[number]
 

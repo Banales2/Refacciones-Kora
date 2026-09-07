@@ -2,8 +2,8 @@
 // marca con puntos de color qué ocurrió (mantenimientos, incidencias,
 // combustible, compras) y las agendas programadas se pintan como un rango
 // naranja, marcando traslapes. Al hacer clic en un día se abre su bitácora
-// completa; arriba viven las alertas de requerimientos y el flujo de agendar un
-// mantenimiento futuro (que al completarse genera el mantenimiento real).
+// completa; arriba viven las alertas del programa de mantenimiento y el flujo de
+// agendar un mantenimiento futuro (que al completarse genera el real).
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
@@ -31,16 +31,16 @@ import {
   useAgendasCalendario, useCreateAgenda, useCancelarAgenda, useCompletarAgenda,
   type AgendaConVehiculo,
 } from '../hooks/useAgendasMantenimiento'
-import { useCreateRequerimiento } from '../hooks/useRequerimientos'
-import type { RequerimientoPayload } from '../hooks/useRequerimientos'
+import { useCreateIncidencia } from '../hooks/useIncidencias'
+import type { IncidenciaPayload } from '../hooks/useIncidencias'
+import IncidenciaForm from '../components/IncidenciaForm'
 import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
 import type { OrigenPendiente } from '../hooks/usePendientes'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
-import { MantenimientoForm, RequerimientoForm } from './Vehiculos'
+import { MantenimientoForm } from './Vehiculos'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import type { TipoVehiculo, VehiculoRow } from '../hooks/useVehiculos'
-import { useMantenimientos } from '../hooks/useMantenimientos'
 import { useTecnicos } from '../hooks/useTecnicos'
 import type { Tecnico } from '../hooks/useTecnicos'
 import NuevoTecnicoModal from '../components/NuevoTecnicoModal'
@@ -48,22 +48,22 @@ import type { MantenimientoPayload } from '../hooks/useMantenimientos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
-interface VehiculoConRequerimientos {
+interface VehiculoConServicios {
   vehiculo_id:     number
   vehiculo_nombre: string
-  requerimientos:  RequerimientoVencido[]
+  servicios:       RequerimientoVencido[]
 }
 
 // `items` ya viene ordenado por urgencia (más próximo a vencer primero) desde
 // el backend; al agrupar por vehículo preservando el orden de primera
-// aparición, el vehículo con el requerimiento más urgente queda primero.
-function agruparPorVehiculoOrdenado(items: RequerimientoVencido[]): VehiculoConRequerimientos[] {
-  const map = new Map<number, VehiculoConRequerimientos>()
+// aparición, el vehículo con el servicio más urgente queda primero.
+function agruparPorVehiculoOrdenado(items: RequerimientoVencido[]): VehiculoConServicios[] {
+  const map = new Map<number, VehiculoConServicios>()
   for (const item of items) {
     if (!map.has(item.vehiculo_id)) {
-      map.set(item.vehiculo_id, { vehiculo_id: item.vehiculo_id, vehiculo_nombre: item.vehiculo_nombre, requerimientos: [] })
+      map.set(item.vehiculo_id, { vehiculo_id: item.vehiculo_id, vehiculo_nombre: item.vehiculo_nombre, servicios: [] })
     }
-    map.get(item.vehiculo_id)!.requerimientos.push(item)
+    map.get(item.vehiculo_id)!.servicios.push(item)
   }
   return [...map.values()]
 }
@@ -270,18 +270,18 @@ function AgendaForm({
   onCancel:  () => void
 }) {
   const vehiculoId = vehiculo.id
-  const { data: mantData } = useMantenimientos(vehiculoId)
-  const lastMant = mantData?.data?.[0] ?? null
-  const createReqMut = useCreateRequerimiento(vehiculoId)
-  const [nuevoReqOpen, setNuevoReqOpen]   = useState(false)
-  const [nuevoReqError, setNuevoReqError] = useState<string | null>(null)
+  const createIncMut = useCreateIncidencia(vehiculoId)
+  const [nuevaIncOpen, setNuevaIncOpen]   = useState(false)
+  const [nuevaIncError, setNuevaIncError] = useState<string | null>(null)
 
-  // Una agenda puede atender pendientes de los dos tipos a la vez, así que el
-  // selector viene de la lista combinada y los agrupa por origen.
+  // El selector se arma agrupado por origen. Hoy el único origen es la
+  // incidencia —lo que dicta el programa de mantenimiento se cierra desde la
+  // ficha de la unidad, no desde una agenda—, pero el agrupado se conserva
+  // porque así llega la lista.
   const { data: pendientesData } = usePendientes(vehiculoId)
   const pendienteGroups = useMemo(() => {
     const items = pendientesData?.data ?? []
-    return (['preventivo', 'incidencia'] as OrigenPendiente[])
+    return (['incidencia'] as OrigenPendiente[])
       .map(origen => ({
         group: ORIGEN_LABEL[origen],
         items: items
@@ -310,19 +310,19 @@ function AgendaForm({
       fecha_inicio: (v) => !v ? 'Requerido' : null,
       fecha_fin:    (v, vals) => !v ? 'Requerido' : v < vals.fecha_inicio ? 'No puede ser antes del inicio' : null,
       tipo:         (v) => !v ? 'Requerido' : null,
-      pendiente_ids: (v) => v.length === 0 ? 'Selecciona al menos un requerimiento o incidencia' : null,
+      pendiente_ids: (v) => v.length === 0 ? 'Selecciona al menos una incidencia' : null,
       tecnico_id:   (v) => !v ? 'Requerido' : null,
     },
   })
 
-  function handleCrearRequerimiento(payload: RequerimientoPayload) {
-    setNuevoReqError(null)
-    createReqMut.mutate(payload, {
+  function handleCrearIncidencia(payload: IncidenciaPayload) {
+    setNuevaIncError(null)
+    createIncMut.mutate(payload, {
       onSuccess: (res) => {
         form.setFieldValue('pendiente_ids', [...form.values.pendiente_ids, String(res.data.id)])
-        setNuevoReqOpen(false)
+        setNuevaIncOpen(false)
       },
-      onError: (e: Error) => setNuevoReqError(e.message),
+      onError: (e: Error) => setNuevaIncError(e.message),
     })
   }
 
@@ -379,7 +379,7 @@ function AgendaForm({
         <div>
           <MultiSelect
             label="Qué se busca resolver"
-            description="Requerimientos preventivos e incidencias de esta unidad"
+            description="Incidencias abiertas de esta unidad"
             required
             placeholder={hayPendientes ? 'Selecciona los pendientes…' : 'Esta unidad no tiene nada pendiente'}
             data={pendienteGroups}
@@ -389,9 +389,9 @@ function AgendaForm({
           />
           <Button
             variant="subtle" size="xs" mt={4} leftSection={<IconPlus size={14} />}
-            onClick={() => setNuevoReqOpen(true)}
+            onClick={() => setNuevaIncOpen(true)}
           >
-            Crear nuevo requerimiento preventivo
+            Reportar una incidencia
           </Button>
         </div>
         <Textarea label="Notas" autosize minRows={2} placeholder="Detalles del mantenimiento planeado (opcional)" {...form.getInputProps('observaciones')} />
@@ -402,18 +402,16 @@ function AgendaForm({
       </Stack>
 
       <Modal
-        opened={nuevoReqOpen}
-        onClose={() => setNuevoReqOpen(false)}
-        title="Nuevo requerimiento"
+        opened={nuevaIncOpen}
+        onClose={() => setNuevaIncOpen(false)}
+        title="Nueva incidencia"
         size="md"
       >
-        <RequerimientoForm
-          isPending={createReqMut.isPending}
-          error={nuevoReqError}
-          onSubmit={handleCrearRequerimiento}
-          onCancel={() => setNuevoReqOpen(false)}
-          vehiculo={vehiculo}
-          lastMant={lastMant}
+        <IncidenciaForm
+          isPending={createIncMut.isPending}
+          error={nuevaIncError}
+          onSubmit={handleCrearIncidencia}
+          onCancel={() => setNuevaIncOpen(false)}
         />
       </Modal>
 
@@ -669,14 +667,14 @@ export default function Calendario({
 
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
         <AlertaStat
-          label="Requerimientos vencidos"
+          label="Servicios vencidos"
           count={vencidos.length}
           vehiculos={vehiculosVencidos.length}
           color="red"
           onClick={vencidos.length > 0 ? () => setAlertaAbierta('vencidos') : undefined}
         />
         <AlertaStat
-          label="Requerimientos por vencer"
+          label="Servicios por vencer"
           count={porVencer.length}
           vehiculos={vehiculosPorVencer.length}
           color="yellow"
@@ -1004,7 +1002,7 @@ export default function Calendario({
       <Modal
         opened={alertaAbierta !== null}
         onClose={() => setAlertaAbierta(null)}
-        title={alertaAbierta === 'vencidos' ? 'Vehículos con requerimientos vencidos' : 'Vehículos con requerimientos por vencer'}
+        title={alertaAbierta === 'vencidos' ? 'Vehículos con servicios vencidos' : 'Vehículos con servicios por vencer'}
         size="md"
       >
         {vehiculosAlerta.length === 0 ? (
@@ -1030,11 +1028,11 @@ export default function Calendario({
                       <Text size="sm" fw={500}>{v.vehiculo_nombre}</Text>
                     )}
                     <Text size="xs" c="dimmed">
-                      {v.requerimientos.map(r => r.nombre).join(', ')}
+                      {v.servicios.map(r => r.nombre).join(', ')}
                     </Text>
                   </div>
                   <Badge color={alertaAbierta === 'vencidos' ? 'red' : 'yellow'} variant="light">
-                    {v.requerimientos.length}
+                    {v.servicios.length}
                   </Badge>
                 </Group>
               </Card>

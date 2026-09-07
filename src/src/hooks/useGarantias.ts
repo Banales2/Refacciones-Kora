@@ -1,18 +1,18 @@
 // Garantías: el catálogo de lo que trae un modelo y la garantía real de cada
 // unidad, con su vigencia ya calculada por la API.
 //
-// Importan por lo que arrastran: un requerimiento preventivo puede existir solo
-// para no perder una garantía, y cuando esa garantía caduca el servicio deja de
-// pedirse. Por eso tocar una garantía invalida también los requerimientos, los
-// pendientes y el tablero.
+// Importan por lo que arrastran: la garantía marcada como principal en el
+// modelo es la que decide qué programa de mantenimiento sigue cada unidad —el
+// del fabricante mientras siga viva, el de después de la garantía cuando se
+// acaba—. Por eso tocar una garantía invalida también el programa de la unidad
+// y el tablero.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 export type TriggerMode = 'km' | 'meses' | 'ambos'
 
 // Con 'ambos' la garantía se acaba con lo que ocurra primero ("3 años o 100,000
-// km"). Es la lectura contraria a la de un requerimiento, donde 'ambos' es el
-// intervalo que se cumple más seguido.
+// km").
 export const TRIGGER_GARANTIA: Record<TriggerMode, string> = {
   km:    'Por kilometraje',
   meses: 'Por tiempo',
@@ -28,6 +28,12 @@ export interface GarantiaModelo {
   duracion_meses: number | null
   limite_km:      number | null
   activo:         boolean
+  /**
+   * La que gobierna el programa de mantenimiento: mientras siga viva, las
+   * unidades de este modelo siguen el del fabricante; al vencer pasan al de
+   * después de la garantía. Una por modelo.
+   */
+  principal:      boolean
   created_at:     string
   updated_at:     string
 }
@@ -39,6 +45,7 @@ export interface GarantiaModeloPayload {
   duracion_meses?: number | null
   limite_km?:      number | null
   activo?:         boolean
+  principal?:      boolean
 }
 
 /** Lo que la API calcula: no se guarda en la base, se deriva de la fecha y el odómetro. */
@@ -72,8 +79,6 @@ export interface GarantiaVehiculo {
   created_at:         string
   updated_at:         string
   kilometraje:        number | null
-  /** Cuántos requerimientos preventivos dependen de ella. */
-  requerimientos:     number
   estado:             EstadoGarantia
 }
 
@@ -101,15 +106,13 @@ export function useGarantiasModelo(modeloId: number) {
 }
 
 // Tocar el catálogo no se queda en el modelo: la API copia o sincroniza la
-// garantía en todas sus unidades, y eso puede silenciar o revivir sus
-// requerimientos. Se invalidan las claves completas, sin id, para que caigan las
-// de todos los vehículos.
+// garantía en todas sus unidades, y eso puede cambiar en cuál de los dos
+// programas está cada una. Se invalidan las claves completas, sin id, para que
+// caigan las de todos los vehículos.
 function invalidarModelo(qc: ReturnType<typeof useQueryClient>, modeloId: number) {
   qc.invalidateQueries({ queryKey: ['garantias-modelo', modeloId] })
   qc.invalidateQueries({ queryKey: ['garantias-vehiculo'] })
-  qc.invalidateQueries({ queryKey: ['plantilla', modeloId] })
-  qc.invalidateQueries({ queryKey: ['requerimientos'] })
-  qc.invalidateQueries({ queryKey: ['pendientes'] })
+  qc.invalidateQueries({ queryKey: ['programa-vehiculo'] })
   qc.invalidateQueries({ queryKey: ['dashboard'] })
 }
 
@@ -142,7 +145,7 @@ export function useDeleteGarantiaModelo(modeloId: number) {
 // ─── Garantías de una unidad ────────────────────────────────────────────────
 
 // `vehiculoId` puede llegar en 0 desde un formulario que todavía no sabe de qué
-// unidad habla (el alta de un requerimiento suelto): ahí no se pide nada.
+// unidad habla: ahí no se pide nada.
 export function useGarantiasVehiculo(vehiculoId: number) {
   return useQuery({
     queryKey: ['garantias-vehiculo', vehiculoId],
@@ -153,10 +156,9 @@ export function useGarantiasVehiculo(vehiculoId: number) {
 
 function invalidarVehiculo(qc: ReturnType<typeof useQueryClient>, vehiculoId: number) {
   qc.invalidateQueries({ queryKey: ['garantias-vehiculo', vehiculoId] })
-  // Cambiar el arranque de una garantía cambia qué requerimientos siguen
-  // pidiéndose en esa unidad.
-  qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
-  qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })
+  // Cambiar el arranque o cancelar una garantía puede mover a la unidad al otro
+  // programa, o traerla de vuelta.
+  qc.invalidateQueries({ queryKey: ['programa-vehiculo', vehiculoId] })
   qc.invalidateQueries({ queryKey: ['dashboard'] })
 }
 

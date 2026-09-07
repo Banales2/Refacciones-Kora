@@ -2,15 +2,14 @@
 // ubicación (rutas / sucursales / unitarios) y tipo, con búsqueda paginada,
 // edición rápida de kilometraje, alta/edición/baja y reporte PDF del
 // inventario. La vista de detalle de un vehículo concentra sus datos, sus
-// mantenimientos realizados y sus requerimientos.
-// Exporta también MantenimientoForm y RequerimientoForm, reutilizados por el
-// Calendario.
+// mantenimientos realizados, sus incidencias y su programa de mantenimiento.
+// Exporta también MantenimientoForm, reutilizado por el Calendario.
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import {
   Stack, Group, Text, TextInput, Textarea, Table, Badge, Pill,
   Pagination, Loader, Center, Alert, Button, Select, MultiSelect,
   Modal, ActionIcon, Tooltip, NumberInput, Input,
-  Divider, Grid, Paper, SegmentedControl, Accordion, Drawer,
+  Divider, Grid, Paper, Accordion,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
@@ -30,24 +29,19 @@ import ExpedienteVehiculoModal from '../components/ExpedienteVehiculoModal'
 import { type Periodo, dentroDelPeriodo, PERIODO_DEFAULT } from '../lib/reportes/periodo'
 import { useRecargas } from '../hooks/useRecargas'
 import {
-  TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre, KM_MAX, validarKm,
+  TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre, KM_MAX, validarKm,
 } from '../lib/validaciones'
 import {
   useMantenimientos, useCreateMantenimiento, useUpdateMantenimiento, useDeleteMantenimiento,
 } from '../hooks/useMantenimientos'
 import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimientos'
 import { FechaInput } from '../components/FechaInput'
-import {
-  useRequerimientos, useCreateRequerimiento, useUpdateRequerimiento, useDeleteRequerimiento,
-} from '../hooks/useRequerimientos'
-import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
 import type { AlertaDocumento, AlertaVehiculo, TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
 import { useDocumentosPorVencer, useRequerimientosVencidos } from '../hooks/useDashboard'
-import { useGarantiasVehiculo, textoCobertura } from '../hooks/useGarantias'
+import { useGarantiasVehiculo } from '../hooks/useGarantias'
 import GarantiasVehiculoSection from '../components/GarantiasVehiculoSection'
 import ProgramaVehiculoSection from '../components/ProgramaVehiculoSection'
 import { useProgramaVehiculo } from '../hooks/useProgramaVehiculo'
-import type { RequerimientoExclusivo, RequerimientoPayload, TriggerMode, StatusReq } from '../hooks/useRequerimientos'
 import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
 import type { OrigenPendiente } from '../hooks/usePendientes'
 import {
@@ -61,8 +55,6 @@ import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
 import ConfirmarAvanceKm from '../components/ConfirmarAvanceKm'
-import PrimerosServiciosInput from '../components/PrimerosServiciosInput'
-import { intervaloKmVigente, resumenPrimerosServicios } from '../lib/intervalos'
 import { avanzaOdometro } from '../lib/odometro'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 import type { LoteDisponible } from '../hooks/useLotesDisponibles'
@@ -101,19 +93,6 @@ function sinKilometraje(tipo: TipoVehiculo): boolean {
   return tipo === 'caja_trailer' || tipo === 'montacargas'
 }
 
-const TRIGGER_META: Record<TriggerMode, { label: string; color: string }> = {
-  km:    { label: 'Kilometraje', color: 'blue'   },
-  meses: { label: 'Tiempo',      color: 'green'  },
-  ambos: { label: 'Km + tiempo', color: 'orange' },
-}
-
-const STATUS_META: Record<StatusReq, { label: string; color: string }> = {
-  activo:     { label: 'Activo',      color: 'blue'  },
-  completado: { label: 'Completado',  color: 'green' },
-  pausado:    { label: 'Pausado',     color: 'yellow' },
-  cancelado:  { label: 'Cancelado',   color: 'red'    },
-}
-
 function tipoInfo(t: TipoVehiculo) {
   return TIPOS.find((x) => x.value === t)!
 }
@@ -125,15 +104,6 @@ function statusColor(s: string) {
   if (v === 'taller')   return 'orange'
   return 'gray'
 }
-
-function fmtIntervalo(item: RequerimientoExclusivo) {
-  const parts: string[] = []
-  if (item.intervalo_km)    parts.push(`${item.intervalo_km.toLocaleString('es-MX')} km`)
-  if (item.intervalo_meses) parts.push(`${item.intervalo_meses} mes${item.intervalo_meses !== 1 ? 'es' : ''}`)
-  return parts.join(' / ') || '—'
-}
-
-// ── Formulario de requerimiento ───────────────────────────────────────────────
 
 function fmtShort(iso: string | null | undefined) {
   if (!iso) return null
@@ -165,7 +135,7 @@ function antiguedad(iso: string | null | undefined) {
 const ALERTA_CHIP: Record<AlertaVehiculo, string> = {
   sin_tenencia:            'Solo sin tenencia',
   sin_seguro:              'Solo sin seguro',
-  requerimientos_vencidos: 'Solo con requerimientos vencidos',
+  programa_atrasado:       'Solo atrasados en su programa',
   permiso_por_vencer:      'Solo con permiso por vencer',
 }
 
@@ -191,7 +161,7 @@ const AVISO_DOCUMENTO: Record<AlertaDocumento, {
 const ALERTA_DETALLE: Record<AlertaVehiculo, string> = {
   sin_tenencia:            'Camiones de reparto y utilitarios sin fecha de tenencia.',
   sin_seguro:              'Unidades que se aseguran (todas menos las cajas de trailer) sin póliza asignada.',
-  requerimientos_vencidos: 'Con al menos un requerimiento preventivo vencido por kilometraje o por tiempo.',
+  programa_atrasado:       'Con la visita de su programa de mantenimiento ya vencida, o con una operación vencida por tiempo.',
   permiso_por_vencer:      'Con permiso de circulación ya vencido o que vence dentro de 30 días.',
 }
 
@@ -212,766 +182,6 @@ function formatMXN(n: number) {
 function todayIso() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-// Un mantenimiento programado a futuro todavía no cuenta como referencia/cumplimiento:
-// solo se toma en cuenta una vez que su fecha llega a hoy (o ya pasó).
-function linkedMantenimiento(pendienteId: number, mantenimientos: Mantenimiento[]): Mantenimiento | undefined {
-  const hoy = todayIso()
-  return mantenimientos.find(
-    m => m.pendiente_ids.includes(pendienteId) && m.fecha && m.fecha.split('T')[0] <= hoy
-  )
-}
-
-// Cuántas veces se ha atendido ya el requerimiento. Solo importa cuando trae
-// primeros servicios con intervalo propio: es lo que dice en qué escalón va.
-function serviciosHechos(pendienteId: number, mantenimientos: Mantenimiento[]): number {
-  const hoy = todayIso()
-  return mantenimientos.filter(
-    m => m.pendiente_ids.includes(pendienteId) && m.fecha && m.fecha.split('T')[0] <= hoy
-  ).length
-}
-
-// El intervalo de km que aplica hoy a un requerimiento, ya resueltos sus
-// primeros servicios. Lo usan el vencido/por vencer de esta página y la ficha.
-function intervaloKmDe(req: RequerimientoExclusivo, mantenimientos: Mantenimiento[]): number | null {
-  return intervaloKmVigente(
-    req.intervalo_km,
-    req.intervalos_iniciales_km,
-    serviciosHechos(req.id, mantenimientos),
-  )
-}
-
-export function RequerimientoForm({
-  initial, isPending, error, onSubmit, onCancel, vehiculo, lastMant,
-}: {
-  initial?:   RequerimientoExclusivo
-  isPending:  boolean
-  error:      string | null
-  onSubmit:   (p: RequerimientoPayload) => void
-  onCancel:   () => void
-  vehiculo?:  VehiculoRow
-  lastMant?:  Mantenimiento | null
-}) {
-  const isEdit    = !!initial
-  const soloTiempo = vehiculo?.tipo === 'montacargas'
-  const form = useForm({
-    initialValues: {
-      nombre:          initial?.nombre ?? '',
-      descripcion:     initial?.descripcion ?? '',
-      categoria:       initial?.categoria ?? '',
-      trigger_mode:    (initial?.trigger_mode ?? (soloTiempo ? 'meses' : 'ambos')) as TriggerMode,
-      intervalo_km:     initial?.intervalo_km ?? (null as number | null),
-      intervalo_meses:  initial?.intervalo_meses ?? (null as number | null),
-      // Vacío = todos los servicios al mismo intervalo, que es lo normal.
-      intervalos_iniciales_km: initial?.intervalos_iniciales_km ?? ([] as number[]),
-      status:          (initial?.status ?? 'activo') as StatusReq,
-      fecha_reporte:   initial?.fecha_reporte?.split('T')[0] ?? todayIso(),
-      desde:           'ahora' as 'ahora' | 'ultimo',
-      // Garantías de esta unidad que obligan al servicio. Vacío = se pide
-      // siempre, que es como se comportaban todos hasta ahora.
-      garantia_ids:    (initial?.garantia_ids ?? []).map(String),
-    },
-    validate: {
-      nombre: (v) =>
-        !v.trim() ? 'Requerido' :
-        v.length > 40 ? 'Máximo 40 caracteres' :
-        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
-      descripcion: (v) =>
-        !v || !v.trim() ? 'Requerido' :
-        v.length > 255 ? 'Máximo 255 caracteres' :
-        !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
-      categoria: (v) =>
-        !v || !v.trim() ? 'Requerido' :
-        v.length > 30 ? 'Máximo 30 caracteres' :
-        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
-      fecha_reporte: (v) => !v ? 'Requerido' : null,
-      intervalo_km: (v, vals) =>
-        (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : validarKm(v),
-      intervalo_meses: (v, vals) =>
-        (vals.trigger_mode === 'meses' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
-      // Un escalón en blanco o en cero no es un servicio: dejaría el
-      // requerimiento vencido desde el día uno.
-      intervalos_iniciales_km: (v: number[]) =>
-        v.some((km) => !km || km < 1) ? 'Cada servicio necesita su kilometraje' :
-        v.some((km) => km > KM_MAX)   ? `Máximo ${KM_MAX.toLocaleString('es-MX')} km` : null,
-    },
-  })
-
-  const mode  = form.values.trigger_mode
-  const desde = form.values.desde
-
-  const { options: categoriaOptions, setSearch: setCategoriaSearch } =
-    useCategoriaOptions(form.values.categoria, initial?.categoria)
-
-  // Las garantías vencidas también se ofrecen: atar un servicio a una que ya
-  // caducó lo silencia de inmediato, que es justo lo que se quiere cuando se
-  // captura tarde.
-  const { data: garantiasData } = useGarantiasVehiculo(vehiculo?.id ?? 0)
-  const garantiasOpts = (garantiasData?.data ?? []).map((g) => ({
-    value: String(g.id),
-    label: `${g.nombre} — ${textoCobertura(g)}${g.estado.vigente ? '' : ' (vencida)'}`,
-  }))
-
-  // Baseline preview
-  const baselineKm   = desde === 'ahora' ? (vehiculo?.kilometraje ?? null)  : (lastMant?.km_actual  ?? null)
-  const baselineDate = desde === 'ahora' ? todayIso()
-    : lastMant?.fecha?.split('T')[0] ?? vehiculo?.fecha_compra?.split('T')[0] ?? null
-
-  function handleSubmit(vals: typeof form.values) {
-    let fecha_inicio: string | null
-    let km_inicio: number | null
-
-    if (!isEdit) {
-      // Siempre se guarda un baseline como registro, aunque después no se use.
-      // Si se pide "último mantenimiento" y sí lo hay, se toma de ahí; en
-      // cualquier otro caso se usan los datos actuales del vehículo (hoy + km).
-      if (vals.desde === 'ultimo' && lastMant) {
-        fecha_inicio = lastMant.fecha?.split('T')[0] ?? null
-        km_inicio    = lastMant.km_actual ?? null
-      } else {
-        fecha_inicio = todayIso()
-        km_inicio    = vehiculo?.kilometraje ?? null
-      }
-    } else {
-      // Al editar no se recalcula: se conserva el baseline con el que se creó.
-      fecha_inicio = initial!.fecha_inicio?.split('T')[0] ?? null
-      km_inicio    = initial!.km_inicio ?? null
-    }
-
-    onSubmit({
-      nombre:          vals.nombre.trim(),
-      descripcion:     vals.descripcion.trim(),
-      categoria:       vals.categoria?.trim()    || null,
-      trigger_mode:    vals.trigger_mode,
-      intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km    : null,
-      intervalo_meses: (mode === 'meses' || mode === 'ambos') ? vals.intervalo_meses : null,
-      // Los primeros servicios se miden en km: si el disparador es solo por
-      // tiempo no aplican, igual que no aplica el intervalo de kilometraje.
-      intervalos_iniciales_km:
-        (mode === 'km' || mode === 'ambos') && vals.intervalos_iniciales_km.length
-          ? vals.intervalos_iniciales_km
-          : null,
-      status:          vals.status,
-      fecha_inicio,
-      km_inicio,
-      fecha_reporte:   vals.fecha_reporte || null,
-      garantia_ids:    vals.garantia_ids.map(Number),
-    })
-  }
-
-  return (
-    <form onSubmit={form.onSubmit(handleSubmit)}>
-      <Stack gap="sm">
-        <TextInput
-          label="Nombre" placeholder="Ej. Cambio de filtro de aceite" required
-          maxLength={40}
-          {...form.getInputProps('nombre')}
-          onChange={(e) => form.setFieldValue('nombre', limpiarTextoSimple(e.currentTarget.value, 40))}
-        />
-        <Textarea
-          label="Descripción" required autosize minRows={2}
-          maxLength={255}
-          {...form.getInputProps('descripcion')}
-          onChange={(e) => form.setFieldValue('descripcion', limpiarTextoLibre(e.currentTarget.value, 255))}
-        />
-        <Select
-          label="Categoría" required
-          placeholder="Selecciona o escribe para crear una categoría"
-          data={categoriaOptions}
-          searchable
-          onSearchChange={(v) => setCategoriaSearch(limpiarTextoSimple(v, 30))}
-          nothingFoundMessage="Escribe para crear una nueva categoría"
-          maxLength={30}
-          {...form.getInputProps('categoria')}
-          onChange={(v) => { form.setFieldValue('categoria', v ?? ''); setCategoriaSearch('') }}
-        />
-        <FechaInput
-          label="Fecha de reporte" required
-          description="Cuándo se encontró/reportó el requerimiento"
-          maxDate={hoyIso()}
-          value={form.values.fecha_reporte}
-          onChange={(d) => form.setFieldValue('fecha_reporte', d)}
-          error={form.errors.fecha_reporte as string}
-        />
-        <Select
-          label="Disparador" required
-          data={
-            soloTiempo
-              ? [{ value: 'meses', label: 'Por tiempo (meses)' }]
-              : [
-                  { value: 'km',    label: 'Por kilometraje' },
-                  { value: 'meses', label: 'Por tiempo (meses)' },
-                  { value: 'ambos', label: 'Kilometraje y tiempo' },
-                ]
-          }
-          disabled={soloTiempo}
-          description={soloTiempo ? 'Los montacargas solo dan seguimiento por tiempo.' : undefined}
-          {...form.getInputProps('trigger_mode')}
-        />
-        {(mode === 'km' || mode === 'ambos') && (
-          <NumberInput
-            label="Intervalo de kilometraje" required min={1} max={KM_MAX}
-            suffix=" km" thousandSeparator=","
-            allowDecimal={false} allowNegative={false} clampBehavior="strict"
-            {...form.getInputProps('intervalo_km')}
-          />
-        )}
-        {(mode === 'km' || mode === 'ambos') && (
-          <PrimerosServiciosInput
-            value={form.values.intervalos_iniciales_km}
-            onChange={(v) => form.setFieldValue('intervalos_iniciales_km', v)}
-            intervaloKm={form.values.intervalo_km}
-            error={form.errors.intervalos_iniciales_km}
-          />
-        )}
-        {(mode === 'meses' || mode === 'ambos') && (
-          <NumberInput
-            label="Intervalo en meses" required min={1}
-            suffix=" meses"
-            allowDecimal={false} allowNegative={false}
-            {...form.getInputProps('intervalo_meses')}
-          />
-        )}
-        {/* Un preventivo no se completa: se atiende y vuelve a arrancar el
-            ciclo. Si por ahora no aplica, se pausa. */}
-        <Select
-          label="Status" required
-          data={[
-            { value: 'activo',     label: 'Activo' },
-            { value: 'pausado',    label: 'Pausado' },
-            { value: 'cancelado',  label: 'Cancelado' },
-          ]}
-          allowDeselect={false}
-          {...form.getInputProps('status')}
-        />
-
-        <MultiSelect
-          label="Existe por estas garantías"
-          placeholder={garantiasOpts.length ? 'Ninguna: se pide siempre' : 'La unidad no tiene garantías'}
-          description="Cuando todas se venzan, este servicio dejará de pedirse"
-          data={garantiasOpts}
-          disabled={garantiasOpts.length === 0}
-          clearable
-          {...form.getInputProps('garantia_ids')}
-        />
-
-        {!isEdit && (
-          <Stack gap={6}>
-            <Text size="sm" fw={500}>Conteo a partir de</Text>
-            <SegmentedControl
-              fullWidth
-              data={[
-                { value: 'ahora',  label: 'Ahora' },
-                { value: 'ultimo', label: 'Último mantenimiento / compra' },
-              ]}
-              {...form.getInputProps('desde')}
-            />
-            <Text size="xs" c="dimmed">
-              {baselineDate
-                ? <>Referencia: <strong>{fmtShort(baselineDate)}</strong>
-                    {baselineKm != null && <>, <strong>{baselineKm.toLocaleString('es-MX')} km</strong></>}
-                  </>
-                : 'Sin fecha de referencia disponible — el vencimiento se calculará cuando se registre un mantenimiento.'}
-            </Text>
-          </Stack>
-        )}
-
-        {error && <Alert color="red" title="Error">{error}</Alert>}
-        <Group justify="flex-end" mt="xs">
-          <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
-          <Button type="submit" loading={isPending}>
-            {isEdit ? 'Guardar cambios' : 'Crear requerimiento preventivo'}
-          </Button>
-        </Group>
-      </Stack>
-    </form>
-  )
-}
-
-// ── Lógica de vencimiento ─────────────────────────────────────────────────────
-
-function isOverdue(
-  req:          RequerimientoExclusivo,
-  vehiculo:     VehiculoRow,
-  mantenimientos: Mantenimiento[],
-): boolean {
-  if (req.status !== 'activo') return false
-
-  const now = new Date()
-
-  // Solo el mantenimiento explícitamente vinculado a este requerimiento resetea su baseline
-  const linkedMant = linkedMantenimiento(req.id, mantenimientos) ?? null
-
-  const baseKm =
-    linkedMant?.km_actual ??
-    req.km_inicio          ??
-    0
-
-  const baseFechaStr =
-    linkedMant?.fecha?.split('T')[0]     ??
-    req.fecha_inicio?.split('T')[0]      ??
-    vehiculo.fecha_compra?.split('T')[0] ??
-    null
-  const baseFecha = baseFechaStr ? new Date(`${baseFechaStr}T12:00:00`) : null
-
-  if (req.trigger_mode === 'km' || req.trigger_mode === 'ambos') {
-    const intervaloKm = intervaloKmDe(req, mantenimientos)
-    if (intervaloKm != null && vehiculo.kilometraje != null) {
-      if (vehiculo.kilometraje - baseKm >= intervaloKm) return true
-    }
-  }
-
-  if (req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') {
-    if (req.intervalo_meses != null && baseFecha) {
-      const months =
-        (now.getFullYear() - baseFecha.getFullYear()) * 12 +
-        (now.getMonth() - baseFecha.getMonth())
-      if (months >= req.intervalo_meses) return true
-    }
-  }
-
-  return false
-}
-
-function isWarning(
-  req:            RequerimientoExclusivo,
-  vehiculo:       VehiculoRow,
-  mantenimientos: Mantenimiento[],
-): boolean {
-  if (req.status !== 'activo') return false
-  if (isOverdue(req, vehiculo, mantenimientos)) return false
-
-  const now        = new Date()
-  const linkedMant = linkedMantenimiento(req.id, mantenimientos) ?? null
-
-  const baseKm =
-    linkedMant?.km_actual ??
-    req.km_inicio          ??
-    0
-
-  const baseFechaStr =
-    linkedMant?.fecha?.split('T')[0]     ??
-    req.fecha_inicio?.split('T')[0]      ??
-    vehiculo.fecha_compra?.split('T')[0] ??
-    null
-  const baseFecha = baseFechaStr ? new Date(`${baseFechaStr}T12:00:00`) : null
-
-  if (req.trigger_mode === 'km' || req.trigger_mode === 'ambos') {
-    const intervaloKm = intervaloKmDe(req, mantenimientos)
-    if (intervaloKm != null && vehiculo.kilometraje != null) {
-      const elapsed = vehiculo.kilometraje - baseKm
-      if (elapsed >= intervaloKm * 0.75) return true
-    }
-  }
-
-  if (req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') {
-    if (req.intervalo_meses != null && baseFecha) {
-      const months =
-        (now.getFullYear() - baseFecha.getFullYear()) * 12 +
-        (now.getMonth()    - baseFecha.getMonth())
-      if (months >= req.intervalo_meses - 1) return true
-    }
-  }
-
-  return false
-}
-
-// ── Sección de requerimientos ─────────────────────────────────────────────────
-
-function RequerimientoTable({
-  items, mantenimientos, overdueIds, warnIds, onOpenDetalle, onEdit, onDelete,
-}: {
-  items:          RequerimientoExclusivo[]
-  mantenimientos: Mantenimiento[]
-  overdueIds:     Set<number>
-  warnIds:        Set<number>
-  onOpenDetalle:  (item: RequerimientoExclusivo) => void
-  onEdit:         (item: RequerimientoExclusivo) => void
-  onDelete:       (item: RequerimientoExclusivo) => void
-}) {
-  return (
-    <Table.ScrollContainer minWidth={600}>
-      <Table striped highlightOnHover withTableBorder>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Nombre</Table.Th>
-            <Table.Th>Categoría</Table.Th>
-            <Table.Th>Disparador</Table.Th>
-            <Table.Th>Intervalo</Table.Th>
-            <Table.Th>Referencia</Table.Th>
-            <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
-            <Table.Th style={{ width: 80 }} />
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {items.map((item) => {
-            // Un servicio que existía por una garantía ya vencida no se pinta
-            // como vencido ni como próximo: dejó de pedirse. Se queda en gris
-            // para que se vea que se hacía y por qué se dejó de hacer.
-            const silenciado  = item.silenciado_por_garantia
-            const overdue     = !silenciado && overdueIds.has(item.id)
-            const warn        = !silenciado && !overdue && warnIds.has(item.id)
-            const linked      = linkedMantenimiento(item.id, mantenimientos)
-            const baseDateStr = linked?.fecha?.split('T')[0] ?? item.fecha_inicio?.split('T')[0] ?? null
-            const baseKmVal   = linked?.km_actual ?? item.km_inicio ?? null
-            const datePart    = fmtShort(baseDateStr) ?? '—'
-            const kmPart      = baseKmVal != null ? `${baseKmVal.toLocaleString('es-MX')} km` : '—'
-            const baseDisplay =
-              item.trigger_mode === 'meses' ? datePart :
-              item.trigger_mode === 'km'    ? kmPart :
-              `${datePart} / ${kmPart}`
-            return (
-            <Table.Tr
-              key={item.id}
-              onClick={() => onOpenDetalle(item)}
-              style={{
-                cursor: 'pointer',
-                backgroundColor:
-                  overdue ? 'var(--mantine-color-red-0)'    :
-                  warn    ? 'var(--mantine-color-yellow-0)' :
-                  undefined,
-                opacity: silenciado ? 0.6 : undefined,
-              }}
-            >
-              <Table.Td fw={500}>
-                <Group gap={6} wrap="nowrap">
-                  {overdue && <IconAlertTriangle size={14} color="var(--mantine-color-red-6)"    />}
-                  {warn    && <IconAlertTriangle size={14} color="var(--mantine-color-yellow-7)" />}
-                  <span style={
-                    overdue ? { color: 'var(--mantine-color-red-7)'    } :
-                    warn    ? { color: 'var(--mantine-color-yellow-8)' } :
-                    undefined
-                  }>
-                    {item.nombre}
-                  </span>
-                  {item.plantilla_origen_id && (
-                    <Text component="span" size="xs" c="dimmed">(del modelo)</Text>
-                  )}
-                  {silenciado && (
-                    <Tooltip
-                      label="La garantía que obligaba a este servicio ya venció: dejó de pedirse"
-                      multiline w={240}
-                    >
-                      <Badge size="xs" variant="light" color="gray">Garantía vencida</Badge>
-                    </Tooltip>
-                  )}
-                </Group>
-              </Table.Td>
-              <Table.Td>{item.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
-              <Table.Td>
-                <Badge variant="light" color={TRIGGER_META[item.trigger_mode].color} size="sm">
-                  {TRIGGER_META[item.trigger_mode].label}
-                </Badge>
-              </Table.Td>
-              <Table.Td>
-                <Text size="sm">{fmtIntervalo(item)}</Text>
-                {/* El intervalo de arriba es el de ciclo; si los primeros
-                    servicios no lo siguen, hay que decirlo aquí o la tabla
-                    miente sobre cuándo toca el primero. */}
-                {resumenPrimerosServicios(item.intervalos_iniciales_km, item.intervalo_km) && (
-                  <Text size="xs" c="dimmed">
-                    {resumenPrimerosServicios(item.intervalos_iniciales_km, item.intervalo_km)}
-                  </Text>
-                )}
-              </Table.Td>
-              <Table.Td>
-                <Text size="sm" c={baseDisplay === '—' ? 'dimmed' : undefined}>
-                  {baseDisplay}
-                </Text>
-              </Table.Td>
-              <Table.Td style={{ textAlign: 'center' }}>
-                <Badge variant="light" color={STATUS_META[item.status].color} size="sm">
-                  {STATUS_META[item.status].label}
-                </Badge>
-              </Table.Td>
-              <Table.Td onClick={(e) => e.stopPropagation()}>
-                <Group gap={4} justify="flex-end">
-                  <Tooltip label="Editar">
-                    <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => onEdit(item)}>
-                      <IconPencil size={14} />
-                    </ActionIcon>
-                  </Tooltip>
-                  {/* Lo heredado de la plantilla del modelo se pausa, no se
-                      borra: el API lo rechaza igual, aquí sólo se explica. Va
-                      con `data-disabled` y no con `disabled` porque un botón
-                      deshabilitado no emite eventos y se perdería el tooltip. */}
-                  {item.plantilla_origen_id ? (
-                    <Tooltip label="Viene de la plantilla del modelo: edítalo y ponlo como pausado" multiline w={220}>
-                      <ActionIcon variant="subtle" color="red" size="sm"
-                        data-disabled onClick={(e) => e.preventDefault()}>
-                        <IconTrash size={14} />
-                      </ActionIcon>
-                    </Tooltip>
-                  ) : (
-                    <Tooltip label="Eliminar">
-                      <ActionIcon variant="subtle" color="red" size="sm" onClick={() => onDelete(item)}>
-                        <IconTrash size={14} />
-                      </ActionIcon>
-                    </Tooltip>
-                  )}
-                </Group>
-              </Table.Td>
-            </Table.Tr>
-            )
-          })}
-        </Table.Tbody>
-      </Table>
-    </Table.ScrollContainer>
-  )
-}
-
-function fmtDateTime(iso: string) {
-  return new Date(iso).toLocaleString('es-MX', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-}
-
-function RequerimientoDetalleDrawer({
-  item, mantenimientos, overdueIds, warnIds, onClose, onEdit,
-}: {
-  item:           RequerimientoExclusivo | null
-  mantenimientos: Mantenimiento[]
-  overdueIds:     Set<number>
-  warnIds:        Set<number>
-  onClose:        () => void
-  onEdit:         (item: RequerimientoExclusivo) => void
-}) {
-  const silenciado = item?.silenciado_por_garantia ?? false
-  const overdue = item ? !silenciado && overdueIds.has(item.id) : false
-  const warn    = item ? !silenciado && !overdue && warnIds.has(item.id) : false
-
-  const linked      = item ? linkedMantenimiento(item.id, mantenimientos) : undefined
-  const baseDateStr = item ? (linked?.fecha?.split('T')[0] ?? item.fecha_inicio?.split('T')[0] ?? null) : null
-  const baseKmVal   = item ? (linked?.km_actual ?? item.km_inicio ?? null) : null
-  const referencia  = item
-    ? [fmtShort(baseDateStr), baseKmVal != null ? `${baseKmVal.toLocaleString('es-MX')} km` : null]
-        .filter(Boolean).join(' / ') || null
-    : null
-
-  return (
-    <Drawer
-      opened={item !== null}
-      onClose={onClose}
-      title={<Text fw={700}>Detalle del requerimiento preventivo</Text>}
-      position="right"
-      size="md"
-      overlayProps={{ backgroundOpacity: 0.3 }}
-    >
-      {item && (
-        <Stack gap="md">
-          <Group justify="space-between" align="flex-start" wrap="nowrap">
-            <Group gap={8} wrap="wrap">
-              <Text size="xl" fw={700}>{item.nombre}</Text>
-              <Badge variant="light" color={STATUS_META[item.status].color}>{STATUS_META[item.status].label}</Badge>
-              {item.plantilla_origen_id && <Badge variant="light" color="grape">Requerimiento del modelo</Badge>}
-              {silenciado && <Badge variant="light" color="gray">Garantía vencida</Badge>}
-            </Group>
-            <Tooltip label="Editar">
-              <ActionIcon variant="light" color="blue" onClick={() => onEdit(item)}>
-                <IconPencil size={16} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-
-          {silenciado && (
-            <Alert color="gray" title="Ya no se pide" variant="light">
-              Este servicio existía para no perder una garantía de la unidad, y todas las
-              garantías que lo obligaban ya vencieron o se cancelaron. Se deja aquí como
-              rastro: no vuelve a contar como vencido ni aparece en el tablero. Si quieres
-              seguir haciéndolo de todas formas, edítalo y quítale las garantías.
-            </Alert>
-          )}
-          {overdue && (
-            <Alert color="red" title="Vencido" icon={<IconAlertTriangle size={16} />}>
-              Este requerimiento ya superó su intervalo de mantenimiento.
-            </Alert>
-          )}
-          {warn && (
-            <Alert color="yellow" title="Próximo a vencer" icon={<IconAlertTriangle size={16} />}>
-              Este requerimiento está próximo a vencer.
-            </Alert>
-          )}
-
-          <div>
-            <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb={4}>Descripción</Text>
-            <Text size="sm">
-              {item.descripcion ?? <Text component="span" c="dimmed">Sin descripción.</Text>}
-            </Text>
-          </div>
-
-          <Grid gap="md">
-            <Grid.Col span={6}><InfoItem label="Categoría" value={item.categoria} /></Grid.Col>
-            <Grid.Col span={6}><InfoItem label="Disparador" value={TRIGGER_META[item.trigger_mode].label} /></Grid.Col>
-            <Grid.Col span={6}><InfoItem label="Intervalo" value={fmtIntervalo(item)} /></Grid.Col>
-            <Grid.Col span={6}><InfoItem label="Referencia" value={referencia} /></Grid.Col>
-            {/* Cuando los primeros servicios no siguen el intervalo de ciclo,
-                el campo "Intervalo" por sí solo no dice cuánto falta para el
-                próximo: eso depende de cuántos se hayan hecho ya. */}
-            {!!item.intervalos_iniciales_km?.length && (
-              <Grid.Col span={12}>
-                <InfoItem
-                  label="Primeros servicios"
-                  value={resumenPrimerosServicios(item.intervalos_iniciales_km, item.intervalo_km)}
-                />
-              </Grid.Col>
-            )}
-            {!!item.intervalos_iniciales_km?.length && (
-              <Grid.Col span={12}>
-                <InfoItem
-                  label="Intervalo del próximo servicio"
-                  value={(() => {
-                    const km = intervaloKmVigente(
-                      item.intervalo_km,
-                      item.intervalos_iniciales_km,
-                      serviciosHechos(item.id, mantenimientos),
-                    )
-                    return km != null ? `${km.toLocaleString('es-MX')} km desde la referencia` : null
-                  })()}
-                />
-              </Grid.Col>
-            )}
-            <Grid.Col span={6}><InfoItem label="Fecha de inicio" value={fmtShort(item.fecha_inicio)} /></Grid.Col>
-            <Grid.Col span={6}><InfoItem label="Fecha de reporte" value={fmtShort(item.fecha_reporte)} /></Grid.Col>
-            <Grid.Col span={6}>
-              <InfoItem
-                label="Kilometraje de inicio"
-                value={item.km_inicio != null ? `${item.km_inicio.toLocaleString('es-MX')} km` : null}
-              />
-            </Grid.Col>
-            <Grid.Col span={6}><InfoItem label="Creado" value={fmtDateTime(item.created_at)} /></Grid.Col>
-            <Grid.Col span={6}><InfoItem label="Última actualización" value={fmtDateTime(item.updated_at)} /></Grid.Col>
-          </Grid>
-        </Stack>
-      )}
-    </Drawer>
-  )
-}
-
-function RequerimientosSection({ vehiculo, mantenimientos, overdueIds = new Set<number>(), warnIds = new Set<number>() }: {
-  vehiculo:       VehiculoRow
-  mantenimientos: Mantenimiento[]
-  overdueIds?:    Set<number>
-  warnIds?:       Set<number>
-}) {
-  const vehiculoId = vehiculo.id
-  const lastMant   = mantenimientos[0] ?? null
-
-  const [formOpen, setFormOpen]     = useState(false)
-  const [editing, setEditing]       = useState<RequerimientoExclusivo | null>(null)
-  const [deleting, setDeleting]     = useState<RequerimientoExclusivo | null>(null)
-  const [formError, setFormError]   = useState<string | null>(null)
-  const [detalleItem, setDetalleItem] = useState<RequerimientoExclusivo | null>(null)
-
-  const { data, isLoading } = useRequerimientos(vehiculoId)
-  const rawItems  = data?.data ?? []
-  const items     = [...rawItems].sort((a, b) => {
-    const esPlantilla = (r: RequerimientoExclusivo) => r.plantilla_origen_id != null ? 0 : 1
-    const porPlantilla = esPlantilla(a) - esPlantilla(b)
-    if (porPlantilla !== 0) return porPlantilla
-    const inactive = (s: string) => s === 'completado' || s === 'cancelado' ? 1 : 0
-    return inactive(a.status) - inactive(b.status)
-  })
-  const createMut = useCreateRequerimiento(vehiculoId)
-  const updateMut = useUpdateRequerimiento(vehiculoId)
-  const deleteMut = useDeleteRequerimiento(vehiculoId)
-
-  function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
-  function openEdit(item: RequerimientoExclusivo) { setEditing(item); setFormError(null); setFormOpen(true) }
-
-  function handleSubmit(payload: RequerimientoPayload) {
-    setFormError(null)
-    if (editing) {
-      updateMut.mutate({ id: editing.id, payload }, {
-        onSuccess: () => setFormOpen(false),
-        onError:   (e: Error) => setFormError(e.message),
-      })
-    } else {
-      createMut.mutate(payload, {
-        onSuccess: () => setFormOpen(false),
-        onError:   (e: Error) => setFormError(e.message),
-      })
-    }
-  }
-
-  return (
-    <>
-      <Divider
-        label={
-          <Group gap="xs">
-            <Text size="sm" fw={500}>Requerimientos preventivos ({items.length})</Text>
-            <Tooltip label="Agregar requerimiento preventivo">
-              <ActionIcon variant="light" color="blue" size="xs" onClick={openCreate}>
-                <IconPlus size={12} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        }
-        labelPosition="left"
-      />
-
-      {isLoading ? (
-        <Center py="md"><Loader size="sm" /></Center>
-      ) : items.length === 0 ? (
-        <Center py="md">
-          <Stack align="center" gap="xs">
-            <Text c="dimmed" size="sm">No hay requerimientos preventivos para este vehículo.</Text>
-            <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={openCreate}>
-              Agregar requerimiento preventivo
-            </Button>
-          </Stack>
-        </Center>
-      ) : (
-        <RequerimientoTable
-          items={items} mantenimientos={mantenimientos}
-          overdueIds={overdueIds} warnIds={warnIds}
-          onOpenDetalle={setDetalleItem} onEdit={openEdit} onDelete={setDeleting}
-        />
-      )}
-
-      <Modal
-        opened={formOpen} onClose={() => setFormOpen(false)}
-        title={editing ? 'Editar requerimiento preventivo' : 'Nuevo requerimiento preventivo'}
-        centered size="md"
-      >
-        <RequerimientoForm
-          initial={editing ?? undefined}
-          isPending={createMut.isPending || updateMut.isPending}
-          error={formError}
-          onSubmit={handleSubmit}
-          onCancel={() => setFormOpen(false)}
-          vehiculo={vehiculo}
-          lastMant={lastMant}
-        />
-      </Modal>
-
-      <Modal
-        opened={deleting !== null} onClose={() => setDeleting(null)}
-        title="Eliminar requerimiento preventivo" centered size="sm"
-      >
-        <Stack gap="md">
-          <Text>¿Eliminar <strong>{deleting?.nombre}</strong>? Esta acción no se puede deshacer.</Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-
-      <RequerimientoDetalleDrawer
-        item={detalleItem}
-        mantenimientos={mantenimientos}
-        overdueIds={overdueIds}
-        warnIds={warnIds}
-        onClose={() => setDetalleItem(null)}
-        onEdit={(item) => { setDetalleItem(null); openEdit(item) }}
-      />
-    </>
-  )
 }
 
 // ── Sección de incidencias ────────────────────────────────────────────────────
@@ -1327,12 +537,11 @@ export function MantenimientoForm({
 }) {
   const tieneKilometraje = tipoVehiculo !== 'montacargas' && tipoVehiculo !== 'caja_trailer'
 
-  // Un mantenimiento atiende pendientes de los dos tipos, así que el selector se
-  // alimenta de la lista combinada y los agrupa por origen. Los ya vinculados se
-  // consultan aparte: el endpoint de pendientes solo devuelve los activos, y al
-  // editar hay que seguir mostrando los que este mantenimiento ya cerró.
+  // El selector se alimenta de la lista de pendientes y los agrupa por origen.
+  // Los ya vinculados se consultan aparte: el endpoint de pendientes solo
+  // devuelve los activos, y al editar hay que seguir mostrando los que este
+  // mantenimiento ya cerró.
   const { data: pendientesData } = usePendientes(vehiculoId)
-  const { data: reqData }        = useRequerimientos(vehiculoId)
   const { data: incData }        = useIncidenciasVehiculo(vehiculoId)
 
   const linkedIds = useMemo(
@@ -1350,11 +559,6 @@ export function MantenimientoForm({
       porId.set(p.id, { id: p.id, nombre: p.nombre, origen: p.origen, activo: true })
     }
     // Los ya vinculados aunque no estén activos, para no perderlos al editar.
-    for (const r of reqData?.data ?? []) {
-      if (linkedIds.has(r.id) && !porId.has(r.id)) {
-        porId.set(r.id, { id: r.id, nombre: r.nombre, origen: 'preventivo', activo: false })
-      }
-    }
     for (const i of incData?.data ?? []) {
       if (linkedIds.has(i.id) && !porId.has(i.id)) {
         porId.set(i.id, { id: i.id, nombre: i.nombre, origen: 'incidencia', activo: false })
@@ -1365,7 +569,7 @@ export function MantenimientoForm({
     if (fijoId != null) porId.delete(fijoId)
 
     const items = [...porId.values()]
-    return (['preventivo', 'incidencia'] as OrigenPendiente[])
+    return (['incidencia'] as OrigenPendiente[])
       .map(origen => ({
         group: ORIGEN_LABEL[origen],
         items: items
@@ -1374,7 +578,7 @@ export function MantenimientoForm({
           .map(p => ({ value: String(p.id), label: p.activo ? p.nombre : `${p.nombre} (cerrado)` })),
       }))
       .filter(g => g.items.length > 0)
-  }, [pendientesData, reqData, incData, linkedIds, fijoId])
+  }, [pendientesData, incData, linkedIds, fijoId])
 
   const hayPendientes = pendienteGroups.some(g => g.items.length > 0)
 
@@ -2558,7 +1762,6 @@ function VehiculoDetalle({
 }) {
   const ti = tipoInfo(vehiculo.tipo)
 
-  const { data: reqData  } = useRequerimientos(vehiculo.id)
   const { data: mantData } = useMantenimientos(vehiculo.id)
   // Las secciones de abajo ya piden estas tres listas; React Query las comparte
   // por clave, asi que pedirlas aqui para el expediente no agrega peticiones.
@@ -2595,17 +1798,14 @@ function VehiculoDetalle({
   // esa seccion sale vacia en vez de bloquear el boton.
   //
   // El periodo acota solo lo que tiene fecha de ocurrencia —mantenimientos,
-  // incidencias y cargas—; los requerimientos, las garantías, las piezas montadas
-  // y los datos de la unidad son el estado de hoy y no se filtran: recortarlos daria un
+  // incidencias y cargas—; el programa, las garantías, las piezas montadas y los
+  // datos de la unidad son el estado de hoy y no se filtran: recortarlos daria un
   // expediente que dice que la unidad no tiene refacciones montadas.
   async function generarExpediente(formato: 'pdf' | 'excel', periodo: Periodo = PERIODO_DEFAULT) {
     setGenerando(formato)
     try {
       const datos = {
         vehiculo,
-        requerimientos: reqData?.data ?? [],
-        overdueIds,
-        warnIds,
         mantenimientos: (mantData?.data ?? []).filter((m) => dentroDelPeriodo(m.fecha, periodo)),
         incidencias:    (incidData?.data ?? []).filter((i) => dentroDelPeriodo(i.fecha, periodo)),
         piezas:         piezasData?.data ?? [],
@@ -2624,20 +1824,23 @@ function VehiculoDetalle({
     }
   }
 
-  const { overdueIds, warnIds } = useMemo(() => {
-    const reqs  = reqData?.data  ?? []
-    const mants = mantData?.data ?? []
-    const overdueIds = new Set<number>()
-    const warnIds    = new Set<number>()
-    for (const req of reqs) {
-      // Existía por una garantía que ya se acabó: deja de pedirse, igual que en
-      // el tablero. Sigue en la lista, en gris, para que quede el rastro.
-      if (req.silenciado_por_garantia) continue
-      if      (isOverdue(req, vehiculo, mants))  overdueIds.add(req.id)
-      else if (isWarning(req, vehiculo, mants))  warnIds.add(req.id)
+  // Los avisos de arriba de la ficha. Salen del programa, que es lo único que
+  // se vence: la visita completa por kilometraje y, aparte, cada operación por
+  // su propio límite de meses. El detalle de qué es cada cosa vive en la sección
+  // del programa; aquí solo se cuenta, para que quien abre la ficha lo vea sin
+  // tener que bajar.
+  const { vencidos, porVencer } = useMemo(() => {
+    const pr = programaData?.data
+    if (!pr) return { vencidos: 0, porVencer: 0 }
+    const tiempo = pr.operaciones_tiempo
+    return {
+      vencidos:
+        (pr.proxima?.vencida ? 1 : 0) + tiempo.filter((o) => o.vencida).length,
+      porVencer:
+        (pr.proxima && !pr.proxima.vencida && pr.proxima.por_vencer ? 1 : 0) +
+        tiempo.filter((o) => !o.vencida && o.por_vencer).length,
     }
-    return { overdueIds, warnIds }
-  }, [reqData, mantData, vehiculo])
+  }, [programaData])
 
   return (
     <Stack gap="md">
@@ -2655,16 +1858,17 @@ function VehiculoDetalle({
         <Text size="sm">{vehiculoLabel(vehiculo)}</Text>
       </Group>
 
-      {overdueIds.size > 0 && (
+      {vencidos > 0 && (
         <Alert color="red" title="Mantenimiento requerido" icon={<IconAlertTriangle size={16} />}>
-          Se requiere mantenimiento en{' '}
-          <strong>{overdueIds.size} requerimiento{overdueIds.size !== 1 ? 's' : ''} preventivo{overdueIds.size !== 1 ? 's' : ''}</strong>.
+          Esta unidad trae{' '}
+          <strong>{vencidos} {vencidos !== 1 ? 'servicios vencidos' : 'servicio vencido'}</strong>{' '}
+          de su programa de mantenimiento.
         </Alert>
       )}
-      {warnIds.size > 0 && (
+      {porVencer > 0 && (
         <Alert color="yellow" title="Próximo a vencer" icon={<IconAlertTriangle size={16} />}>
-          <strong>{warnIds.size} requerimiento{warnIds.size !== 1 ? 's' : ''} preventivo{warnIds.size !== 1 ? 's' : ''}</strong>{' '}
-          {warnIds.size !== 1 ? 'están próximos a' : 'está próximo a'} vencer (menos de 1 mes o menos del 25% del intervalo de km restante).
+          <strong>{porVencer} {porVencer !== 1 ? 'servicios están próximos' : 'servicio está próximo'}</strong>{' '}
+          a vencer.
         </Alert>
       )}
       {/* Documentos faltantes, tal como los resuelve la API: ya vienen filtrados
@@ -2851,29 +2055,21 @@ function VehiculoDetalle({
       {/* Refacción que usa esta unidad por cada tipo que pide su modelo */}
       <PiezasVehiculoSection vehiculoId={vehiculo.id} kmVehiculo={vehiculo.kilometraje} />
 
-      {/* Garantías: son la razón por la que existen varios de los
-          requerimientos de abajo, así que van justo antes */}
+      {/* Garantías: van antes del programa porque son su explicación. El
+          programa del fabricante existe para no perder la principal, y cuando
+          esa se acaba la unidad pasa al de después de la garantía. */}
       <GarantiasVehiculoSection
         vehiculoId={vehiculo.id}
         fechaCompra={vehiculo.fecha_compra?.split('T')[0] ?? null}
         soportaKm={!sinKilometraje(vehiculo.tipo)}
       />
 
-      {/* El programa del fabricante. Va antes de los requerimientos sueltos
-          porque es lo que manda el manual; aquellos son para lo que no está
-          en él. Los dos conviven. */}
+      {/* El programa de mantenimiento: lo que manda el manual mientras haya
+          garantía, y lo que se acordó para después. */}
       <ProgramaVehiculoSection
         vehiculoId={vehiculo.id}
         modeloId={vehiculo.modelo_id}
         kilometraje={vehiculo.kilometraje}
-      />
-
-      {/* Requerimientos preventivos */}
-      <RequerimientosSection
-        vehiculo={vehiculo}
-        mantenimientos={mantData?.data ?? []}
-        overdueIds={overdueIds}
-        warnIds={warnIds}
       />
 
       {/* Incidencias reportadas */}
@@ -3196,8 +2392,8 @@ export default function Vehiculos({
 
   const sinTenencia = documentosData?.data.sin_tenencia.length ?? 0
   const sinSeguro   = documentosData?.data.sin_seguro.length   ?? 0
-  // Un vehículo puede tener varios requerimientos vencidos; aquí se cuentan
-  // unidades, no requerimientos.
+  // Un vehículo puede traer varios servicios vencidos; aquí se cuentan unidades,
+  // no servicios.
   const conVencidos = new Set((requerimientosData?.data ?? []).map((r) => r.vehiculo_id)).size
   // Cada vehículo tiene un solo permiso, así que sumar los vehículos de cada
   // permiso por vencer no repite unidades.
@@ -3211,9 +2407,9 @@ export default function Vehiculos({
     { alerta: 'sin_seguro', total: sinSeguro,
       texto: `${sinSeguro !== 1 ? 'no tienen' : 'no tiene'} seguro asignado`,
       boton: 'Ver sin seguro' },
-    { alerta: 'requerimientos_vencidos', total: conVencidos,
-      texto: `${conVencidos !== 1 ? 'tienen' : 'tiene'} requerimientos preventivos vencidos`,
-      boton: 'Ver con vencidos' },
+    { alerta: 'programa_atrasado', total: conVencidos,
+      texto: `${conVencidos !== 1 ? 'están atrasados' : 'está atrasado'} en su programa de mantenimiento`,
+      boton: 'Ver atrasados' },
     { alerta: 'permiso_por_vencer', total: conPermisoPorVencer,
       texto: `${conPermisoPorVencer !== 1 ? 'traen' : 'trae'} el permiso de circulación vencido o por vencer`,
       boton: 'Ver permiso por vencer' },
@@ -3349,7 +2545,7 @@ export default function Vehiculos({
           <Stack gap="md">
             <Text>¿Eliminar <strong>{deleting ? vehiculoLabel(deleting) : ''}</strong>? Esta acción no se puede deshacer.</Text>
             <Text size="sm" c="dimmed">
-              Sus requerimientos preventivos se eliminan automáticamente. No podrá
+              Su avance en el programa de mantenimiento se elimina automáticamente. No podrá
               eliminarse si tiene mantenimientos, recargas o vales registrados.
             </Text>
             <Group justify="flex-end">
@@ -3496,7 +2692,7 @@ export default function Vehiculos({
         title="Eliminar vehículo" size="sm">
         <Stack gap="md">
           <Text>¿Eliminar <strong>{deleting ? vehiculoLabel(deleting) : ''}</strong>? Esta acción no se puede deshacer.</Text>
-          <Text size="sm" c="dimmed">Los requerimientos preventivos se eliminarán automáticamente.</Text>
+          <Text size="sm" c="dimmed">Su avance en el programa de mantenimiento se eliminará automáticamente.</Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setDeleteOpen(false)} disabled={deleteMut.isPending}>Cancelar</Button>
             <Button color="red" onClick={handleDelete} loading={deleteMut.isPending}>Eliminar</Button>

@@ -1,13 +1,10 @@
 import * as repo from '../repositories/dashboardRepo'
-import { RequerimientoFleet } from '../repositories/dashboardRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import * as pendientesRepo from '../repositories/pendientesRepo'
-import * as garantiasService from './garantiasService'
 import * as programaVehiculoService from './programaVehiculoService'
 import { getPool } from '../shared/db'
 import { parseVigencia, DIAS_ALERTA_LICENCIA } from '../shared/vigenciaLicencia'
 import { fechaMexico } from '../shared/fechaMexico'
-import { parseIntervalosIniciales, intervaloKmVigente } from '../shared/intervalos'
 import type { Rango } from '../shared/rangoReporte'
 
 function partesMexico(d: Date = new Date()): { year: number; month: number; day: number } {
@@ -192,10 +189,6 @@ export async function getMantenimientosCalendario() {
   return repo.findAllMantenimientosConVehiculo()
 }
 
-function diffMeses(base: Date, ahora: Date): number {
-  return (ahora.getFullYear() - base.getFullYear()) * 12 + (ahora.getMonth() - base.getMonth())
-}
-
 function diffDias(base: Date, ahora: Date): number {
   return Math.floor((ahora.getTime() - base.getTime()) / 86_400_000)
 }
@@ -207,168 +200,51 @@ function toDateStr(d: string | Date | null | undefined): string | null {
   return d.split('T')[0]
 }
 
-interface Base {
-  baseKm:    number
-  baseFecha: Date | null
-  // El intervalo en km que le toca al PRÓXIMO servicio. Casi siempre es el
-  // `intervalo_km` del requerimiento, pero mientras queden primeros servicios
-  // sin hacer es el escalón que corresponda (ver shared/intervalos).
-  intervaloKm: number | null
-}
-
-function baseDe(
-  req:  RequerimientoFleet,
-  link: { fecha: string | Date; km_actual: number } | null,
-  serviciosHechos: number,
-): Base {
-  const baseKm = link?.km_actual ?? req.km_inicio ?? 0
-  const baseFechaStr =
-    toDateStr(link?.fecha) ??
-    toDateStr(req.fecha_inicio) ??
-    toDateStr(req.fecha_compra)
-  return {
-    baseKm,
-    baseFecha: baseFechaStr ? new Date(`${baseFechaStr}T12:00:00`) : null,
-    intervaloKm: intervaloKmVigente(
-      req.intervalo_km,
-      parseIntervalosIniciales(req.intervalos_iniciales_km),
-      serviciosHechos,
-    ),
-  }
-}
-
-function isOverdue(req: RequerimientoFleet, base: Base, now: Date): boolean {
-  if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && base.intervaloKm != null && req.kilometraje != null) {
-    if (req.kilometraje - base.baseKm >= base.intervaloKm) return true
-  }
-  if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_meses != null && base.baseFecha) {
-    if (diffMeses(base.baseFecha, now) >= req.intervalo_meses) return true
-  }
-  return false
-}
-
-function isWarning(req: RequerimientoFleet, base: Base, now: Date): boolean {
-  if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && base.intervaloKm != null && req.kilometraje != null) {
-    if (req.kilometraje - base.baseKm >= base.intervaloKm * 0.75) return true
-  }
-  if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_meses != null && base.baseFecha) {
-    if (diffMeses(base.baseFecha, now) >= req.intervalo_meses - 1) return true
-  }
-  return false
-}
-
-// Qué tan cerca está de vencer (o qué tan vencido está), como fracción del
-// intervalo ya transcurrido: 1 = justo en el límite, >1 = vencido por esa
-// proporción, <1 = todavía falta. Con 'ambos' se toma el más urgente de los dos.
-// Sirve para ordenar tanto vencidos como por-vencer de más a menos urgente.
-function calcularUrgencia(req: RequerimientoFleet, base: Base, now: Date): number {
-  const ratios: number[] = []
-  if ((req.trigger_mode === 'km' || req.trigger_mode === 'ambos') && base.intervaloKm != null && req.kilometraje != null) {
-    ratios.push((req.kilometraje - base.baseKm) / base.intervaloKm)
-  }
-  if ((req.trigger_mode === 'meses' || req.trigger_mode === 'ambos') && req.intervalo_meses != null && base.baseFecha) {
-    ratios.push(diffMeses(base.baseFecha, now) / req.intervalo_meses)
-  }
-  return ratios.length ? Math.max(...ratios) : 0
-}
-
-interface RequerimientoFleetConUrgencia extends RequerimientoFleet {
-  urgencia: number
-}
-
-async function clasificarRequerimientosFleet() {
-  const requerimientos = await repo.findRequerimientosActivosFleet()
-  const links = await repo.findMantenimientoLinks(requerimientos.map(r => r.id))
-  // Un preventivo que existía por una garantía deja de pedirse cuando todas las
-  // garantías que lo sostenían se acabaron: no cuenta como vencido ni como por
-  // vencer, y con eso sale del tablero, del calendario y de las alertas de la
-  // unidad. El requerimiento se queda en la ficha, en gris, diciendo por qué.
-  const silenciados = await garantiasService.idsSilenciadosPorGarantia()
-
-  const lastLinkByReq = new Map<number, { fecha: string; km_actual: number | null }>()
-  // Cuántas veces se ha atendido cada preventivo. Solo importa cuando trae
-  // primeros servicios: es lo que dice en qué escalón va.
-  const hechosByReq = new Map<number, number>()
-  for (const l of links) {
-    if (!lastLinkByReq.has(l.pendiente_id)) lastLinkByReq.set(l.pendiente_id, l)
-    hechosByReq.set(l.pendiente_id, (hechosByReq.get(l.pendiente_id) ?? 0) + 1)
-  }
-
-  const now = fechaMexicoComoDate()
-  const vencidos: RequerimientoFleetConUrgencia[] = []
-  const porVencer: RequerimientoFleetConUrgencia[] = []
-
-  for (const req of requerimientos) {
-    if (silenciados.has(req.id)) continue
-    const base = baseDe(req, lastLinkByReq.get(req.id) ?? null, hechosByReq.get(req.id) ?? 0)
-    const urgencia = calcularUrgencia(req, base, now)
-    if (isOverdue(req, base, now)) vencidos.push({ ...req, urgencia })
-    else if (isWarning(req, base, now)) porVencer.push({ ...req, urgencia })
-  }
-
-  vencidos.sort((a, b) => b.urgencia - a.urgencia)
-  porVencer.sort((a, b) => b.urgencia - a.urgencia)
-
-  return { vencidos, porVencer }
-}
-
+// Un renglón de las tarjetas de "vencidos" y "por vencer": lo que el programa
+// de mantenimiento de una unidad tiene atrasado, sea la visita completa que ya
+// toca o una operación que venció por su límite de meses.
 export interface RequerimientoVencido {
+  /**
+   * Las alertas del programa no tienen un `pendiente` detrás, así que no traen
+   * id propio: se les da uno negativo, que el tablero solo usa para distinguir
+   * renglones al pintarlos.
+   */
   id:              number
   nombre:          string
   categoria:       string | null
   vehiculo_id:     number
   vehiculo_nombre: string
+  /** 'fase' = la visita completa; 'operacion' = un renglón vencido por tiempo. */
+  tipo:            'fase' | 'operacion'
   /**
-   * De dónde sale la alerta. 'programa' es la tabla del fabricante —una visita
-   * completa que ya toca, o un renglón que venció por su límite de meses—;
-   * 'requerimiento' es un preventivo suelto de la unidad. Se distinguen porque
-   * se atienden en pantallas distintas.
+   * La unidad sigue en garantía y este servicio ya se pasó: no es un atraso
+   * más, es la garantía que se puede perder por no llevarla al taller.
    */
-  origen:          'requerimiento' | 'programa'
+  garantia_en_riesgo: boolean
 }
 
-// Las alertas del programa no tienen un `pendiente` detrás, así que no traen id
-// propio. Se les da uno negativo: el tablero solo lo usa para distinguir
-// renglones, y así nunca choca con el de un requerimiento real.
-function comoRequerimiento(
-  alertas: programaVehiculoService.AlertaPrograma[], desde: number,
+function comoRenglon(
+  alertas: programaVehiculoService.AlertaPrograma[],
 ): RequerimientoVencido[] {
   return alertas.map((a, i) => ({
-    id:              -(desde + i + 1),
+    id:              -(i + 1),
     nombre:          a.nombre,
     categoria:       a.categoria,
     vehiculo_id:     a.vehiculo_id,
     vehiculo_nombre: a.vehiculo_nombre,
-    origen:          'programa' as const,
+    tipo:            a.tipo,
+    garantia_en_riesgo: a.garantia_en_riesgo,
   }))
 }
 
 export async function getRequerimientosVencidos(): Promise<RequerimientoVencido[]> {
   await ensureDailySync()
-  const [{ vencidos }, programa] = await Promise.all([
-    clasificarRequerimientosFleet(),
-    programaVehiculoService.clasificarFleet(),
-  ])
-  const sueltos: RequerimientoVencido[] = vencidos.map(r => ({
-    id: r.id, nombre: r.nombre, categoria: r.categoria,
-    vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre,
-    origen: 'requerimiento' as const,
-  }))
-  return [...sueltos, ...comoRequerimiento(programa.vencidos, sueltos.length)]
+  return comoRenglon((await programaVehiculoService.clasificarFleet()).vencidos)
 }
 
 export async function getRequerimientosPorVencer(): Promise<RequerimientoVencido[]> {
   await ensureDailySync()
-  const [{ porVencer }, programa] = await Promise.all([
-    clasificarRequerimientosFleet(),
-    programaVehiculoService.clasificarFleet(),
-  ])
-  const sueltos: RequerimientoVencido[] = porVencer.map(r => ({
-    id: r.id, nombre: r.nombre, categoria: r.categoria,
-    vehiculo_id: r.vehiculo_id, vehiculo_nombre: r.vehiculo_nombre,
-    origen: 'requerimiento' as const,
-  }))
-  return [...sueltos, ...comoRequerimiento(programa.porVencer, sueltos.length)]
+  return comoRenglon((await programaVehiculoService.clasificarFleet()).porVencer)
 }
 
 // Incidencias abiertas de la flota, las más graves primero. Pasa por
@@ -390,21 +266,12 @@ export function limiteAlertaDocumentos(): string {
   return addDias(fechaMexico(), DIAS_ALERTA_DOCUMENTOS)
 }
 
-// Vehículos con al menos un requerimiento preventivo vencido. Se expone para
-// que la búsqueda de vehículos filtre por lo mismo que avisa el tablero, sin
-// reimplementar la regla (km contra el último mantenimiento + intervalo en
-// meses) ni en SQL ni en el navegador.
-export async function getVehiculosConRequerimientosVencidos(): Promise<number[]> {
-  // También las del programa del fabricante: si el tablero dice que una unidad
-  // trae un servicio vencido, el filtro de la búsqueda tiene que encontrarla.
-  const [sueltos, programa] = await Promise.all([
-    clasificarRequerimientosFleet(),
-    programaVehiculoService.clasificarFleet(),
-  ])
-  return [...new Set([
-    ...sueltos.vencidos.map((r) => r.vehiculo_id),
-    ...programa.vencidos.map((r) => r.vehiculo_id),
-  ])]
+// Vehículos atrasados en su programa de mantenimiento. Se expone para que la
+// búsqueda de vehículos filtre por lo mismo que avisa el tablero, sin
+// reimplementar la regla ni en SQL ni en el navegador.
+export async function getVehiculosConProgramaAtrasado(): Promise<number[]> {
+  const { vencidos } = await programaVehiculoService.clasificarFleet()
+  return [...new Set(vencidos.map((r) => r.vehiculo_id))]
 }
 
 export interface LicenciaPorVencer {
@@ -490,19 +357,8 @@ export async function getDocumentosPorVencer(rango?: Rango | null): Promise<Docu
 }
 
 export async function registrarSnapshotHistorial(): Promise<void> {
-  // Cuenta las dos fuentes, igual que las tarjetas de vencidos y por vencer:
-  // si la gráfica sumara solo los requerimientos sueltos, diría un número
-  // distinto al que el tablero muestra justo encima.
-  const [sueltos, programa] = await Promise.all([
-    clasificarRequerimientosFleet(),
-    programaVehiculoService.clasificarFleet(),
-  ])
-  const hoy = fechaMexico()
-  await repo.upsertSnapshotHistorial(
-    hoy,
-    sueltos.vencidos.length  + programa.vencidos.length,
-    sueltos.porVencer.length + programa.porVencer.length,
-  )
+  const { vencidos, porVencer } = await programaVehiculoService.clasificarFleet()
+  await repo.upsertSnapshotHistorial(fechaMexico(), vencidos.length, porVencer.length)
 }
 
 export async function getHistorial(meses = 12): Promise<repo.HistorialDia[]> {
@@ -519,7 +375,7 @@ export async function getHistorial(meses = 12): Promise<repo.HistorialDia[]> {
 
   // Si el snapshot diario aún no corrió hoy, agrega el conteo en vivo para no mostrar el día en blanco.
   if (toDateStr(dias[dias.length - 1]?.fecha) !== hoy) {
-    const { vencidos, porVencer } = await clasificarRequerimientosFleet()
+    const { vencidos, porVencer } = await programaVehiculoService.clasificarFleet()
     dias.push({ fecha: hoy, vencidos: vencidos.length, por_vencer: porVencer.length })
   }
 
@@ -589,7 +445,7 @@ export async function getReporteFlota(
     vehiculosRepo.findAllParaReporte(),
     repo.findCostosPorVehiculoEnRango(rangoMes.start, rangoMes.end),
     repo.findLotesEnRango(rangoMes.start, rangoMes.end),
-    clasificarRequerimientosFleet(),
+    programaVehiculoService.clasificarFleet(),
   ])
 
   const costosMap = new Map(costosPorVehiculo.map(c => [c.vehiculo_id, c]))

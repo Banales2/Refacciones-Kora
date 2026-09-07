@@ -11,13 +11,14 @@ export async function vehiculoProgramaSet(req: HttpRequest, ctx: InvocationConte
     const vehiculoId = parseInt(req.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     const body = AsignarProgramaSchema.parse(await req.json())
-    const vinculo = await service.asignar(vehiculoId, body)
+    // Devuelve las filas de las dos etapas; la bitácora guarda la que se tocó.
+    const vinculos = await service.asignar(vehiculoId, body)
     await audit({
       user,
       accion: 'EDITAR',
       tabla: 'vehiculo_programa',
       registroId: vehiculoId,
-      despues: { ...vinculo },
+      despues: { ...vinculos.find((v) => v.etapa === body.etapa) },
       ipAddress: getClientIp(req),
     })
     return { status: 200, jsonBody: { data: await service.getEstado(vehiculoId) } }

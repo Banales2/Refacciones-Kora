@@ -9,7 +9,6 @@
 // medidos de carga a carga, costo por kilómetro, y el desglose de en qué se le
 // ha ido el dinero. Eso es lo que convierte la ficha en un argumento.
 import type { VehiculoRow } from '../../hooks/useVehiculos'
-import type { RequerimientoExclusivo } from '../../hooks/useRequerimientos'
 import type { Mantenimiento } from '../../hooks/useMantenimientos'
 import type { Incidencia } from '../../hooks/useIncidencias'
 import type { PiezaDeVehiculo } from '../../hooks/usePiezasVehiculo'
@@ -17,7 +16,6 @@ import type { Recarga } from '../../hooks/useRecargas'
 import type { GarantiaVehiculo } from '../../hooks/useGarantias'
 import type { EstadoProgramaVehiculo } from '../../hooks/useProgramaVehiculo'
 import { textoCobertura, etiquetaGarantia } from '../../hooks/useGarantias'
-import { resumenPrimerosServicios } from '../intervalos'
 import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
 import { formatMXN, formatNum, formatLitros, formatFecha } from '../formato'
@@ -27,10 +25,6 @@ import { type Periodo, etiquetaPeriodo, sufijoPeriodo } from './periodo'
 
 export interface DatosVehiculo {
   vehiculo:       VehiculoRow
-  requerimientos: RequerimientoExclusivo[]
-  /** Ids ya clasificados por la pantalla, para no recalcular el vencimiento aquí. */
-  overdueIds:     Set<number>
-  warnIds:        Set<number>
   mantenimientos: Mantenimiento[]
   incidencias:    Incidencia[]
   piezas:         PiezaDeVehiculo[]
@@ -141,32 +135,12 @@ function resumir(d: DatosVehiculo): Resumen {
   }
 }
 
-function estadoRequerimiento(d: DatosVehiculo, r: RequerimientoExclusivo): string {
-  // Un servicio que existía por una garantía ya vencida no está "al día": dejó
-  // de pedirse. Va primero porque la pantalla tampoco lo cuenta como vencido.
-  if (r.silenciado_por_garantia) return 'Sin garantía'
-  if (d.overdueIds.has(r.id))    return 'VENCIDO'
-  if (d.warnIds.has(r.id))       return 'Por vencer'
-  return 'Al día'
-}
-
 /** "hasta el 14 mar 2027 o los 100,000 km". */
 function limiteGarantia(g: GarantiaVehiculo): string {
   const partes: string[] = []
   if (g.estado.vence_el) partes.push(formatFecha(g.estado.vence_el))
   if (g.estado.vence_a_los_km != null) partes.push(`${formatNum(g.estado.vence_a_los_km)} km`)
   return partes.join(' o ') || '—'
-}
-
-function intervalo(r: RequerimientoExclusivo): string {
-  const partes: string[] = []
-  if (r.intervalo_km != null)    partes.push(`${formatNum(r.intervalo_km)} km`)
-  if (r.intervalo_meses != null) partes.push(`${r.intervalo_meses} mes${r.intervalo_meses !== 1 ? 'es' : ''}`)
-  const base = partes.join(' o ') || '—'
-  // Sin esto el expediente diría "cada 15,000 km" de un servicio cuyo primero
-  // caía a los 5,000: el intervalo de ciclo no es toda la regla.
-  const primeros = resumenPrimerosServicios(r.intervalos_iniciales_km, r.intervalo_km)
-  return primeros ? `${base} (${primeros})` : base
 }
 
 // ─── PDF ────────────────────────────────────────────────────────────────────
@@ -287,10 +261,9 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
   }
 
   // ── Garantías ──
-  // Van antes de los requerimientos porque son su explicación: varios de los
-  // servicios de abajo existen para no perderlas, y cuando se acaban dejan de
-  // pedirse. Sin esta sección, el renglón "Sin garantía" de la tabla siguiente
-  // no se entiende.
+  // Van antes del programa porque son su explicación: el programa del
+  // fabricante existe para no perderlas, y cuando la principal se acaba la
+  // unidad pasa al programa de después de la garantía.
   const vigentes = d.garantias.filter((g) => g.estado.vigente)
   pdf.seccion(
     'Garantías',
@@ -304,7 +277,7 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
     pdf.vacio('Esta unidad no tiene garantías registradas.')
   } else {
     pdf.tabla({
-      head: ['Garantía', 'Cobertura', 'Desde', 'Vence', 'Servicios', 'Estado'],
+      head: ['Garantía', 'Cobertura', 'Desde', 'Vence', 'Estado'],
       body: [...d.garantias]
         // Las vigentes arriba: son las que todavía se pueden reclamar.
         .sort((a, b) => Number(b.estado.vigente) - Number(a.estado.vigente) ||
@@ -314,12 +287,10 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
           textoCobertura(g),
           g.fecha_inicio ? formatFecha(g.fecha_inicio) : 'sin fecha',
           limiteGarantia(g),
-          String(g.requerimientos),
           etiquetaGarantia(g).label.toUpperCase(),
         ]),
-      columnStyles: { 4: { halign: 'center' } },
       didParseCell: (c: CellHookData) => {
-        if (c.section !== 'body' || c.column.index !== 5) return
+        if (c.section !== 'body' || c.column.index !== 4) return
         const txt = String(c.cell.raw)
         if (txt === 'VIGENTE')          c.cell.styles.textColor = COLOR.verde
         else if (txt === 'POR VENCER') { c.cell.styles.textColor = COLOR.naranja; c.cell.styles.fontStyle = 'bold' }
@@ -341,9 +312,9 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
     }
   }
 
-  // ── Programa del fabricante ──
-  // Va antes de los requerimientos sueltos porque es lo que manda el manual, y
-  // porque su próxima visita es lo primero que alguien busca en el expediente.
+  // ── Programa de mantenimiento ──
+  // Es lo que manda el manual, y su próxima visita es lo primero que alguien
+  // busca en el expediente.
   if (d.programa) {
     const pr = d.programa
     const porTiempo = pr.operaciones_tiempo.filter((o) => o.vencida)
@@ -388,43 +359,6 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
         fontSize: 9,
       })
     }
-  }
-
-  // ── Requerimientos ──
-  const vencidos = d.requerimientos.filter((q) => d.overdueIds.has(q.id))
-  const sinGarantia = d.requerimientos.filter((q) => q.silenciado_por_garantia).length
-  pdf.seccion(
-    'Requerimientos preventivos',
-    [
-      vencidos.length > 0
-        ? `${vencidos.length} de ${d.requerimientos.length} están vencidos.`
-        : 'Ninguno vencido.',
-      sinGarantia > 0
-        ? `${sinGarantia} dejaron de pedirse: existían por una garantía que ya se acabó ` +
-          '(aparecen como "Sin garantía").'
-        : '',
-    ].filter(Boolean).join(' '),
-  )
-  if (d.requerimientos.length === 0) {
-    pdf.vacio('Esta unidad no tiene requerimientos preventivos capturados.')
-  } else {
-    pdf.tabla({
-      head: ['Requerimiento', 'Categoría', 'Intervalo', 'Estado'],
-      body: [...d.requerimientos]
-        // Lo vencido primero: es lo que se va a hacer. Lo que ya no se pide por
-        // garantía vencida, hasta abajo: está de rastro, no de tarea.
-        .sort((a, b) =>
-          Number(a.silenciado_por_garantia) - Number(b.silenciado_por_garantia) ||
-          Number(d.overdueIds.has(b.id)) - Number(d.overdueIds.has(a.id)))
-        .map((q) => [q.nombre, q.categoria ?? '—', intervalo(q), estadoRequerimiento(d, q)]),
-      didParseCell: (c: CellHookData) => {
-        if (c.section !== 'body' || c.column.index !== 3) return
-        if (String(c.cell.raw) === 'VENCIDO')          { c.cell.styles.textColor = COLOR.rojo; c.cell.styles.fontStyle = 'bold' }
-        else if (String(c.cell.raw) === 'Por vencer')   c.cell.styles.textColor = COLOR.naranja
-        else if (String(c.cell.raw) === 'Sin garantía') c.cell.styles.textColor = COLOR.gris
-      },
-      fontSize: 9,
-    })
   }
 
   // ── Mantenimientos ──
@@ -598,14 +532,6 @@ export async function exportVehiculoExcel(d: DatosVehiculo) {
     totales: { 'Fecha': 'Total', 'Litros': r.consumo.litros, 'Costo': r.consumo.costo },
     vacio: 'Sin recargas registradas para esta unidad.',
   })
-
-  wb.hoja('Requerimientos', [
-    { header: 'Requerimiento', width: 40, valor: (q) => q.nombre },
-    { header: 'Categoría',     width: 22, valor: (q) => q.categoria ?? '—' },
-    { header: 'Intervalo',     width: 24, valor: (q) => intervalo(q) },
-    { header: 'Estado',        width: 14, valor: (q) => estadoRequerimiento(d, q) },
-    { header: 'Descripción',   width: 50, valor: (q) => q.descripcion ?? '' },
-  ], d.requerimientos, { vacio: 'Esta unidad no tiene requerimientos preventivos capturados.' })
 
   if (d.programa?.proxima) {
     wb.hoja('Programa del fabricante', [

@@ -12,7 +12,13 @@ export const NombreOperacionSchema = z
   .max(200, 'Máximo 200 caracteres')
   .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos')
 
+// Cuál de los dos programas del modelo es. 'fabricante' es la tabla del manual
+// —la que hay que cumplir para no perder la garantía—; 'posgarantia' es la que
+// la unidad sigue cuando esa garantía se acaba.
+export const TipoProgramaSchema = z.enum(['fabricante', 'posgarantia'])
+
 export const ProgramaCreateSchema = z.object({
+  tipo: TipoProgramaSchema.default('fabricante'),
   nombre: z
     .string()
     .trim()
@@ -29,7 +35,10 @@ export const ProgramaCreateSchema = z.object({
   activo: z.boolean().default(true),
 })
 
-export const ProgramaUpdateSchema = ProgramaCreateSchema.partial()
+// El tipo no se edita: cambiarlo movería el programa de etapa con las unidades
+// ya andando encima. Si se capturó en el lugar equivocado, se borra y se vuelve
+// a crear.
+export const ProgramaUpdateSchema = ProgramaCreateSchema.omit({ tipo: true }).partial()
 
 // Las columnas del programa, en el orden en que se recorren.
 //

@@ -1,11 +1,10 @@
-// Página Modelos: catálogo de marcas/modelos de vehículos con su plantilla de
-// requerimientos (mantenimientos periódicos que heredan los vehículos del
-// modelo). Lista + vista de detalle con CRUD de plantilla.
+// Página Modelos: catálogo de marcas/modelos de vehículos con sus garantías, su
+// programa de mantenimiento y sus tipos de pieza. Lista + vista de detalle.
 import { useState, useMemo } from 'react'
 import {
-  Stack, Group, Text, TextInput, Textarea, Table, Badge,
+  Stack, Group, Text, TextInput, Table, Badge,
   Loader, Center, Alert, Button, ActionIcon,
-  Modal, Tooltip, Divider, Grid, Paper, Select, MultiSelect, Switch, NumberInput,
+  Modal, Tooltip, Divider, Grid, Paper, MultiSelect,
   Autocomplete,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
@@ -14,10 +13,6 @@ import { IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight } from
 import {
   useModelos, useCreateModelo, useUpdateModelo, useDeleteModelo,
 } from '../hooks/useModelos'
-import {
-  usePlantillaModelo, useCreatePlantilla, useUpdatePlantilla, useDeletePlantilla,
-} from '../hooks/usePlantilla'
-import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
 import { useVehiculos, useCreateVehiculo, useDeleteVehiculo, vehiculoLabel } from '../hooks/useVehiculos'
 import {
   useTiposPiezaModelo, useAddTiposPiezaModelo, useRemoveTipoPiezaModelo,
@@ -26,19 +21,14 @@ import {
 import EtiquetaEditable from '../components/EtiquetaEditable'
 import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
 import type { Modelo, ModeloPayload } from '../hooks/useModelos'
-import type { PlantillaRequerimiento, PlantillaPayload, TriggerMode } from '../hooks/usePlantilla'
-import { useGarantiasModelo, textoCobertura } from '../hooks/useGarantias'
 import GarantiasModeloSection from '../components/GarantiasModeloSection'
-import PrimerosServiciosInput from '../components/PrimerosServiciosInput'
 import ProgramaModeloSection from '../components/ProgramaModeloSection'
-import { resumenPrimerosServicios } from '../lib/intervalos'
 import type {
   TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload,
 } from '../hooks/useVehiculos'
 import { VehiculoForm } from '../components/VehiculoForm'
 import {
-  TEXTO_SIMPLE, TEXTO_LIBRE, ANIO_MODELO,
-  limpiarTextoSimple, limpiarTextoLibre, limpiarAnioModelo, KM_MAX, validarKm,
+  TEXTO_SIMPLE, ANIO_MODELO, limpiarTextoSimple, limpiarAnioModelo,
 } from '../lib/validaciones'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -55,7 +45,7 @@ const TIPOS_VEHICULO_OPTIONS = (Object.keys(TIPOS) as TipoVehiculo[])
   .map((t) => ({ value: t, label: TIPOS[t].label }))
 
 // Tipos de vehículo que llevan kilometraje. Los que no (caja_trailer,
-// montacargas) no admiten requerimientos por kilometraje.
+// montacargas) no admiten un programa que avance por kilometraje.
 const KM_TIPOS: TipoVehiculo[] = ['camion', 'tractocamion', 'utilitario']
 
 // Un modelo admite requerimientos por km solo si está restringido a tipos que
@@ -64,12 +54,6 @@ const KM_TIPOS: TipoVehiculo[] = ['camion', 'tractocamion', 'utilitario']
 // se ofrecen disparadores por kilometraje: un vehículo sin km no podría cumplirlos.
 function modeloSoportaKm(tiposPermitidos: TipoVehiculo[]) {
   return tiposPermitidos.length > 0 && tiposPermitidos.every((t) => KM_TIPOS.includes(t))
-}
-
-const TRIGGER_META: Record<TriggerMode, { label: string; color: string }> = {
-  km:    { label: 'Kilometraje',  color: 'blue'   },
-  meses: { label: 'Tiempo',       color: 'green'  },
-  ambos: { label: 'Km + tiempo',  color: 'orange' },
 }
 
 function statusColor(s: string) {
@@ -85,13 +69,6 @@ function fmtDate(iso: string) {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
-}
-
-function fmtIntervalo(item: PlantillaRequerimiento) {
-  const parts: string[] = []
-  if (item.intervalo_km)    parts.push(`${item.intervalo_km.toLocaleString('es-MX')} km`)
-  if (item.intervalo_meses) parts.push(`${item.intervalo_meses} mes${item.intervalo_meses !== 1 ? 'es' : ''}`)
-  return parts.join(' / ') || '—'
 }
 
 // ── Formulario de modelo ──────────────────────────────────────────────────────
@@ -214,339 +191,6 @@ function ModeloForm({
         </Group>
       </Stack>
     </form>
-  )
-}
-
-// ── Formulario de plantilla ───────────────────────────────────────────────────
-
-function PlantillaForm({
-  modeloId, initial, isPending, error, onSubmit, onCancel, soportaKm,
-}: {
-  modeloId: number
-  initial?: PlantillaRequerimiento
-  isPending: boolean
-  error: string | null
-  onSubmit: (payload: PlantillaPayload) => void
-  onCancel: () => void
-  // Si el modelo no genera vehículos con kilometraje, no se ofrecen los
-  // disparadores por km (solo por tiempo).
-  soportaKm: boolean
-}) {
-  const form = useForm({
-    initialValues: {
-      nombre:          initial?.nombre ?? '',
-      descripcion:     initial?.descripcion ?? '',
-      categoria:       initial?.categoria ?? '',
-      trigger_mode:    (initial?.trigger_mode ?? (soportaKm ? 'km' : 'meses')) as TriggerMode,
-      intervalo_km:    initial?.intervalo_km ?? (null as number | null),
-      intervalo_meses: initial?.intervalo_meses ?? (null as number | null),
-      // Vacío = todos los servicios al mismo intervalo, que es lo normal.
-      intervalos_iniciales_km: initial?.intervalos_iniciales_km ?? ([] as number[]),
-      activo:          initial?.activo ?? true,
-      // Garantías del modelo que obligan a este servicio. Vacío = se pide
-      // siempre, que es como se comportaba todo antes de que existieran.
-      garantia_modelo_ids: (initial?.garantia_modelo_ids ?? []).map(String),
-    },
-    validate: {
-      nombre: (v) =>
-        !v.trim() ? 'Requerido' :
-        v.length > 40 ? 'Máximo 40 caracteres' :
-        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
-      descripcion: (v) =>
-        !v || !v.trim() ? 'Requerido' :
-        v.length > 255 ? 'Máximo 255 caracteres' :
-        !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
-      categoria: (v) =>
-        !v || !v.trim() ? 'Requerido' :
-        v.length > 30 ? 'Máximo 30 caracteres' :
-        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
-      intervalo_km: (v, vals) =>
-        (vals.trigger_mode === 'km' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : validarKm(v),
-      intervalo_meses: (v, vals) =>
-        (vals.trigger_mode === 'meses' || vals.trigger_mode === 'ambos') && !v ? 'Requerido' : null,
-      // Un escalón en blanco o en cero no es un servicio: dejaría el
-      // requerimiento vencido desde el día uno.
-      intervalos_iniciales_km: (v: number[]) =>
-        v.some((km) => !km || km < 1) ? 'Cada servicio necesita su kilometraje' :
-        v.some((km) => km > KM_MAX)   ? `Máximo ${KM_MAX.toLocaleString('es-MX')} km` : null,
-    },
-  })
-
-  const mode = form.values.trigger_mode
-
-  const { options: categoriaOptions, setSearch: setCategoriaSearch } =
-    useCategoriaOptions(form.values.categoria, initial?.categoria)
-
-  // Solo las activas: atar un servicio a una garantía que el modelo ya no da
-  // dejaría el vínculo sin copia en las unidades nuevas.
-  const { data: garantiasData } = useGarantiasModelo(modeloId)
-  const garantiasOpts = (garantiasData?.data ?? [])
-    .filter((g) => g.activo || form.values.garantia_modelo_ids.includes(String(g.id)))
-    .map((g) => ({ value: String(g.id), label: `${g.nombre} — ${textoCobertura(g)}` }))
-
-  function handleSubmit(vals: typeof form.values) {
-    onSubmit({
-      nombre:          vals.nombre.trim(),
-      descripcion:     vals.descripcion.trim(),
-      categoria:       vals.categoria.trim(),
-      trigger_mode:    vals.trigger_mode,
-      intervalo_km:    (mode === 'km'    || mode === 'ambos') ? vals.intervalo_km    : null,
-      intervalo_meses: (mode === 'meses' || mode === 'ambos') ? vals.intervalo_meses : null,
-      // Los primeros servicios se miden en km: si el disparador es solo por
-      // tiempo no aplican, igual que no aplica el intervalo de kilometraje.
-      intervalos_iniciales_km:
-        (mode === 'km' || mode === 'ambos') && vals.intervalos_iniciales_km.length
-          ? vals.intervalos_iniciales_km
-          : null,
-      activo:          vals.activo,
-      garantia_modelo_ids: vals.garantia_modelo_ids.map(Number),
-    })
-  }
-
-  return (
-    <form onSubmit={form.onSubmit(handleSubmit)}>
-      <Stack gap="sm">
-        <TextInput
-          label="Nombre" placeholder="Ej. Cambio de filtro de aceite"
-          required maxLength={40}
-          {...form.getInputProps('nombre')}
-          onChange={(e) => form.setFieldValue('nombre', limpiarTextoSimple(e.currentTarget.value, 40))}
-        />
-        <Textarea
-          label="Descripción" placeholder="Instrucciones o detalles adicionales"
-          required autosize minRows={2} maxLength={255}
-          {...form.getInputProps('descripcion')}
-          onChange={(e) => form.setFieldValue('descripcion', limpiarTextoLibre(e.currentTarget.value, 255))}
-        />
-        <Select
-          label="Categoría" required
-          placeholder="Selecciona o escribe para crear una categoría"
-          data={categoriaOptions}
-          searchable
-          onSearchChange={(v) => setCategoriaSearch(limpiarTextoSimple(v, 30))}
-          nothingFoundMessage="Escribe para crear una nueva categoría"
-          maxLength={30}
-          {...form.getInputProps('categoria')}
-          onChange={(v) => { form.setFieldValue('categoria', v ?? ''); setCategoriaSearch('') }}
-        />
-        <Select
-          label="Disparador" required
-          description={soportaKm ? undefined : 'Para disparadores por kilometraje, restringe el modelo a tipos con km (unidad de reparto, unidad de translado o utilitario).'}
-          data={soportaKm ? [
-            { value: 'km',    label: 'Por kilometraje' },
-            { value: 'meses', label: 'Por tiempo (meses)' },
-            { value: 'ambos', label: 'Kilometraje y tiempo' },
-          ] : [
-            { value: 'meses', label: 'Por tiempo (meses)' },
-          ]}
-          {...form.getInputProps('trigger_mode')}
-        />
-        {(mode === 'km' || mode === 'ambos') && (
-          <NumberInput
-            label="Intervalo de kilometraje" required min={1} max={KM_MAX}
-            suffix=" km" thousandSeparator=","
-            allowDecimal={false} allowNegative={false} clampBehavior="strict"
-            {...form.getInputProps('intervalo_km')}
-          />
-        )}
-        {(mode === 'km' || mode === 'ambos') && (
-          <PrimerosServiciosInput
-            value={form.values.intervalos_iniciales_km}
-            onChange={(v) => form.setFieldValue('intervalos_iniciales_km', v)}
-            intervaloKm={form.values.intervalo_km}
-            error={form.errors.intervalos_iniciales_km}
-          />
-        )}
-        {(mode === 'meses' || mode === 'ambos') && (
-          <NumberInput
-            label="Intervalo en meses" required min={1}
-            suffix=" meses"
-            allowDecimal={false} allowNegative={false}
-            {...form.getInputProps('intervalo_meses')}
-          />
-        )}
-        <MultiSelect
-          label="Existe por estas garantías"
-          placeholder={garantiasOpts.length ? 'Ninguna: se pide siempre' : 'El modelo no tiene garantías'}
-          description="Cuando todas se venzan, este servicio dejará de pedirse en cada unidad"
-          data={garantiasOpts}
-          disabled={garantiasOpts.length === 0}
-          clearable
-          {...form.getInputProps('garantia_modelo_ids')}
-        />
-        <Switch label="Activo" {...form.getInputProps('activo', { type: 'checkbox' })} />
-
-        {error && <Alert color="red" title="Error">{error}</Alert>}
-        <Group justify="flex-end" mt="xs">
-          <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
-          <Button type="submit" loading={isPending}>
-            {initial ? 'Guardar cambios' : 'Crear requerimiento preventivo'}
-          </Button>
-        </Group>
-      </Stack>
-    </form>
-  )
-}
-
-// ── Sección plantilla ─────────────────────────────────────────────────────────
-
-function PlantillaSection({ modeloId, tiposPermitidos }: { modeloId: number; tiposPermitidos: TipoVehiculo[] }) {
-  const soportaKm = modeloSoportaKm(tiposPermitidos)
-  const [formOpen, setFormOpen]   = useState(false)
-  const [editing, setEditing]     = useState<PlantillaRequerimiento | null>(null)
-  const [deleting, setDeleting]   = useState<PlantillaRequerimiento | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
-
-  const { data, isLoading } = usePlantillaModelo(modeloId)
-  const items      = data?.data ?? []
-  const createMut  = useCreatePlantilla(modeloId)
-  const updateMut  = useUpdatePlantilla(modeloId)
-  const deleteMut  = useDeletePlantilla(modeloId)
-
-  function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
-  function openEdit(item: PlantillaRequerimiento) { setEditing(item); setFormError(null); setFormOpen(true) }
-
-  function handleSubmit(payload: PlantillaPayload) {
-    setFormError(null)
-    if (editing) {
-      updateMut.mutate({ id: editing.id, payload }, {
-        onSuccess: () => setFormOpen(false),
-        onError:   (e: Error) => setFormError(e.message),
-      })
-    } else {
-      createMut.mutate(payload, {
-        onSuccess: () => setFormOpen(false),
-        onError:   (e: Error) => setFormError(e.message),
-      })
-    }
-  }
-
-  return (
-    <>
-      <Divider
-        label={
-          <Group gap="xs">
-            <Text size="sm" fw={500}>Plantilla de requerimientos preventivos ({items.length})</Text>
-            <Tooltip label="Agregar requerimiento preventivo">
-              <ActionIcon variant="light" color="blue" size="xs" onClick={openCreate}>
-                <IconPlus size={12} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        }
-        labelPosition="left"
-      />
-
-      {isLoading ? (
-        <Center py="md"><Loader size="sm" /></Center>
-      ) : items.length === 0 ? (
-        <Center py="md">
-          <Stack align="center" gap="xs">
-            <Text c="dimmed" size="sm">No hay requerimientos preventivos definidos para este modelo.</Text>
-            <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={openCreate}>
-              Agregar requerimiento preventivo
-            </Button>
-          </Stack>
-        </Center>
-      ) : (
-        <Table.ScrollContainer minWidth={500}>
-          <Table striped highlightOnHover withTableBorder>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Nombre</Table.Th>
-                <Table.Th>Categoría</Table.Th>
-                <Table.Th>Disparador</Table.Th>
-                <Table.Th>Intervalo</Table.Th>
-                <Table.Th style={{ textAlign: 'center' }}>Activo</Table.Th>
-                <Table.Th style={{ width: 80 }} />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {items.map((item) => {
-                const tm = TRIGGER_META[item.trigger_mode]
-                return (
-                  <Table.Tr key={item.id}>
-                    <Table.Td fw={500}>{item.nombre}</Table.Td>
-                    <Table.Td>
-                      {item.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge variant="light" color={tm.color} size="sm">{tm.label}</Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm">{fmtIntervalo(item)}</Text>
-                      {/* El intervalo de arriba es el de ciclo; si los primeros
-                          servicios no lo siguen, hay que decirlo aquí o la
-                          tabla miente sobre cuándo toca el primero. */}
-                      {resumenPrimerosServicios(item.intervalos_iniciales_km, item.intervalo_km) && (
-                        <Text size="xs" c="dimmed">
-                          {resumenPrimerosServicios(item.intervalos_iniciales_km, item.intervalo_km)}
-                        </Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'center' }}>
-                      <Badge variant="dot" color={item.activo ? 'green' : 'gray'} size="sm">
-                        {item.activo ? 'Sí' : 'No'}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Group gap={4} justify="flex-end">
-                        <Tooltip label="Editar">
-                          <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(item)}>
-                            <IconPencil size={14} />
-                          </ActionIcon>
-                        </Tooltip>
-                        <Tooltip label="Eliminar">
-                          <ActionIcon variant="subtle" color="red" size="sm" onClick={() => setDeleting(item)}>
-                            <IconTrash size={14} />
-                          </ActionIcon>
-                        </Tooltip>
-                      </Group>
-                    </Table.Td>
-                  </Table.Tr>
-                )
-              })}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
-      )}
-
-      <Modal
-        opened={formOpen} onClose={() => setFormOpen(false)}
-        title={editing ? 'Editar requerimiento preventivo' : 'Nuevo requerimiento preventivo de plantilla'}
-        centered size="md"
-      >
-        <PlantillaForm
-          modeloId={modeloId}
-          initial={editing ?? undefined}
-          isPending={createMut.isPending || updateMut.isPending}
-          error={formError}
-          soportaKm={soportaKm}
-          onSubmit={handleSubmit}
-          onCancel={() => setFormOpen(false)}
-        />
-      </Modal>
-
-      <Modal
-        opened={deleting !== null} onClose={() => setDeleting(null)}
-        title="Eliminar requerimiento preventivo de plantilla" centered size="sm"
-      >
-        <Stack gap="md">
-          <Text>¿Estás seguro de eliminar <strong>{deleting?.nombre}</strong>?</Text>
-          <Alert color="orange" title="Atención" variant="light">
-            Todos los vehículos con este modelo perderán este requerimiento preventivo.
-          </Alert>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Sí, eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-    </>
   )
 }
 
@@ -834,16 +478,14 @@ function ModeloDetalle({
         </Group>
       </Paper>
 
-      {/* Plantilla de requerimientos preventivos */}
+      {/* Las garantías van antes del programa porque son su explicación: el
+          programa del fabricante existe para no perder la principal, y cuando
+          esa se acaba la unidad pasa al programa de después de la garantía. */}
       <GarantiasModeloSection
         modeloId={modelo.id}
         soportaKm={modeloSoportaKm(modelo.tipos_permitidos ?? [])}
       />
 
-      <PlantillaSection modeloId={modelo.id} tiposPermitidos={modelo.tipos_permitidos ?? []} />
-
-      {/* La tabla del fabricante. Va después de la plantilla porque aquella es
-          la que se hereda hoy a los vehículos; esta todavía no. */}
       <ProgramaModeloSection modeloId={modelo.id} />
 
       {/* Piezas específicas del modelo */}
@@ -966,7 +608,7 @@ function ModeloDetalle({
             Esta acción no se puede deshacer.
           </Text>
           <Text size="sm" c="dimmed">
-            Sus requerimientos preventivos se eliminan automáticamente. No podrá
+            Su avance en el programa de mantenimiento se elimina automáticamente. No podrá
             eliminarse si tiene mantenimientos, recargas o vales registrados.
           </Text>
           {deleteVehiculoMut.error && (
@@ -1046,8 +688,8 @@ export default function Modelos({
     } else {
       createMut.mutate(payload, {
         // Se abre la ficha del modelo recién creado: lo que toca después del
-        // alta es cargarle su plantilla y sus tipos de pieza, y eso solo se
-        // hace desde ahí. `selected` sale de la lista, así que el detalle
+        // alta es cargarle sus garantías, su programa y sus tipos de pieza, y
+        // eso solo se hace desde ahí. `selected` sale de la lista, así que el detalle
         // aparece en cuanto llega el refetch que dispara la invalidación.
         onSuccess: ({ data: modelo }) => {
           setFormOpen(false)

@@ -12,7 +12,7 @@ export interface Modelo {
   anio:             string | null
   // Tipos de vehículo que este modelo puede generar. Vacío = sin restricción
   // (se permiten todos). Evita, p. ej., crear un montacargas (sin kilometraje)
-  // a partir de un modelo cuya plantilla tiene requerimientos por kilometraje.
+  // a partir de un modelo cuyo programa de mantenimiento va por kilometraje.
   tipos_permitidos: string[]
   created_at:       string
   updated_at:       string
@@ -118,21 +118,14 @@ export async function countVehiculos(id: number): Promise<number> {
 }
 
 // El modelo solo se borra cuando ya no tiene vehículos (lo comprueba el
-// servicio), así que aquí no quedan garantías de unidades que soltar. Lo que sí
-// hay que soltar a mano es el vínculo plantilla↔garantía: las dos tablas bajan
-// del modelo por cascadas distintas y `plantilla_garantias` apunta a
-// `garantias_modelo` con NO ACTION (ver la migración 010), así que dejar que el
-// motor resuelva el orden es apostar.
+// servicio), así que aquí no quedan garantías de unidades que soltar. Las del
+// catálogo sí se sueltan a mano antes que el modelo: cascadean desde él, pero
+// borrarlas explícitamente deja el orden a la vista en vez de dejarlo al motor.
 export async function remove(id: number): Promise<boolean> {
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
   try {
-    await tx.request().input('id', sql.Int, id).query(`
-      DELETE pg FROM plantilla_garantias pg
-      JOIN garantias_modelo g ON g.id = pg.garantia_modelo_id
-      WHERE g.modelo_id = @id
-    `)
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM garantias_modelo WHERE modelo_id = @id')
     const r = await tx.request().input('id', sql.Int, id)

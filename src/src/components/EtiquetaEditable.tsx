@@ -2,7 +2,7 @@
 // sin salir de la tabla. Renombrar no es quitar y volver a agregar —eso borraría
 // la refacción montada y cortaría el historial—, así que se edita en su lugar.
 //
-// La misma celda se usa en la plantilla del modelo y en las piezas del vehículo;
+// La misma celda se usa en los tipos de pieza del modelo y del vehículo;
 // lo único que cambia entre las dos es qué mutación recibe.
 import { useState } from 'react'
 import { ActionIcon, Badge, Group, Text, TextInput, Tooltip } from '@mantine/core'

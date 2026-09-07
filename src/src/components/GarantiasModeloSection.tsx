@@ -1,10 +1,10 @@
 // Catálogo de garantías de un modelo: lo que trae de fábrica cada unidad que se
 // dé de alta con él.
 //
-// Vive junto a la plantilla de requerimientos porque las dos cosas se leen
-// juntas: la plantilla dice qué servicios hay que hacerle a la unidad, y este
-// catálogo dice cuáles de esos servicios existen solo mientras haya garantía
-// que perder.
+// Vive junto al programa de mantenimiento porque las dos cosas se leen juntas:
+// el programa del fabricante existe para no perder la garantía, y la garantía
+// marcada como principal es la que decide hasta cuándo se sigue ese programa y
+// cuándo la unidad pasa al de después de la garantía.
 import { useState } from 'react'
 import {
   Stack, Group, Text, Table, Badge, Button, Modal, Alert, Loader, Center,
@@ -102,7 +102,20 @@ export default function GarantiasModeloSection({
               {items.map((g) => (
                 <Table.Tr key={g.id}>
                   <Table.Td>
-                    <Text size="sm" fw={500}>{g.nombre}</Text>
+                    <Group gap={6} wrap="nowrap">
+                      <Text size="sm" fw={500}>{g.nombre}</Text>
+                      {/* La que decide qué programa siguen las unidades. Va en el
+                          renglón porque es lo que hay que poder ver de un vistazo
+                          al preguntarse por qué una unidad sigue el del manual. */}
+                      {g.principal && (
+                        <Tooltip
+                          label="Mientras esta garantía siga viva, las unidades siguen el programa del fabricante"
+                          multiline w={240}
+                        >
+                          <Badge size="xs" variant="filled" color="blue">Principal</Badge>
+                        </Tooltip>
+                      )}
+                    </Group>
                     {g.descripcion && <Text size="xs" c="dimmed">{g.descripcion}</Text>}
                   </Table.Td>
                   <Table.Td>
@@ -158,9 +171,10 @@ export default function GarantiasModeloSection({
         <Stack gap="md">
           <Text>¿Eliminar <strong>{deleting?.nombre}</strong>?</Text>
           <Alert color="orange" title="Se va de todas las unidades" variant="light">
-            Todos los vehículos de este modelo pierden esta garantía, y los requerimientos
-            que existían por ella vuelven a pedirse para siempre. Si lo que quieres es dejar
-            de darla solo en las unidades nuevas, desactívala en lugar de borrarla.
+            Todos los vehículos de este modelo pierden esta garantía. Si era la principal,
+            además se quedan siguiendo el programa del fabricante para siempre. Si lo que
+            quieres es dejar de darla solo en las unidades nuevas, desactívala en lugar de
+            borrarla.
           </Alert>
           {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
           <Group justify="flex-end">

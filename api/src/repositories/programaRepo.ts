@@ -1,8 +1,13 @@
-// Programa de mantenimiento de un modelo: la tabla que publica el fabricante.
-// Columnas = fases (marcas de odómetro), renglones = operaciones sobre piezas,
-// celdas = qué se le hace a esa pieza en esa fase. Ver la migración 012 para
-// por qué el kilometraje es grupal y el tiempo individual, y cómo se repite el
-// ciclo cuando se acaban las columnas.
+// Programa de mantenimiento de un modelo: columnas = fases (marcas de
+// odómetro), renglones = operaciones sobre piezas, celdas = qué se le hace a esa
+// pieza en esa fase. Ver la migración 012 para por qué el kilometraje es grupal
+// y el tiempo individual, y cómo se repite el ciclo cuando se acaban las
+// columnas.
+//
+// Un modelo tiene hasta dos, distinguidos por `tipo` (migración 016): el del
+// fabricante, que es la tabla del manual y se sigue mientras la unidad esté en
+// garantía, y el de después de la garantía, con la misma estructura pero otros
+// kilometrajes y otras operaciones.
 //
 // Se lee siempre completo: el programa por partes no se usa en ningún lado, y
 // la cuadrícula que lo captura necesita las tres cosas a la vez.
@@ -43,9 +48,17 @@ export interface Operacion {
   celdas:        Record<number, string>
 }
 
+/**
+ * 'fabricante' es la tabla del manual: se sigue mientras la unidad esté en
+ * garantía, porque la garantía depende de que se cumpla. 'posgarantia' es el
+ * que arranca cuando esa garantía se acaba.
+ */
+export type TipoPrograma = 'fabricante' | 'posgarantia'
+
 export interface Programa {
   id:          number
   modelo_id:   number
+  tipo:        TipoPrograma
   nombre:      string
   descripcion: string | null
   activo:      boolean
@@ -60,6 +73,7 @@ export interface ProgramaCompleto extends Programa {
 
 export interface ProgramaCreate {
   modelo_id:    number
+  tipo:         TipoPrograma
   nombre:       string
   descripcion?: string | null
   activo?:      boolean
@@ -94,7 +108,7 @@ export interface OperacionUpdate {
   limite_meses?:  number | null
 }
 
-const PROGRAMA_COLS = `id, modelo_id, nombre, descripcion, activo, created_at, updated_at`
+const PROGRAMA_COLS = `id, modelo_id, tipo, nombre, descripcion, activo, created_at, updated_at`
 
 // Desplazamiento con el que se aparta el orden viejo antes de reasignarlo.
 //
@@ -157,12 +171,29 @@ async function cargarCompleto(programa: Programa | null): Promise<ProgramaComple
   }
 }
 
-export async function findByModelo(modeloId: number): Promise<ProgramaCompleto | null> {
+export async function findByModelo(
+  modeloId: number, tipo: TipoPrograma,
+): Promise<ProgramaCompleto | null> {
   const pool = await getPool()
   const r = await pool.request()
     .input('modeloId', sql.Int, modeloId)
-    .query(`SELECT ${PROGRAMA_COLS} FROM programas_mantenimiento WHERE modelo_id=@modeloId`)
+    .input('tipo',     sql.NVarChar(20), tipo)
+    .query(`SELECT ${PROGRAMA_COLS} FROM programas_mantenimiento
+            WHERE modelo_id=@modeloId AND tipo=@tipo`)
   return cargarCompleto(r.recordset[0] ?? null)
+}
+
+// Los dos programas de un modelo, el del fabricante primero. Es lo que pide la
+// pantalla del modelo, que los edita uno al lado del otro.
+export async function findTodosDeModelo(modeloId: number): Promise<ProgramaCompleto[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('modeloId', sql.Int, modeloId)
+    .query(`SELECT ${PROGRAMA_COLS} FROM programas_mantenimiento
+            WHERE modelo_id=@modeloId
+            ORDER BY CASE tipo WHEN 'fabricante' THEN 0 ELSE 1 END`)
+  const completos = await Promise.all(r.recordset.map((row) => cargarCompleto(row)))
+  return completos.filter((p): p is ProgramaCompleto => p != null)
 }
 
 export async function findById(id: number): Promise<ProgramaCompleto | null> {
@@ -190,7 +221,8 @@ export async function findProgramaDeOperacion(operacionId: number): Promise<Prog
   const r = await pool.request()
     .input('id', sql.Int, operacionId)
     .query(`
-      SELECT p.id, p.modelo_id, p.nombre, p.descripcion, p.activo, p.created_at, p.updated_at
+      SELECT p.id, p.modelo_id, p.tipo, p.nombre, p.descripcion, p.activo,
+             p.created_at, p.updated_at
       FROM programa_operaciones o
       JOIN programas_mantenimiento p ON p.id = o.programa_id
       WHERE o.id=@id`)
@@ -203,13 +235,14 @@ export async function create(data: ProgramaCreate): Promise<Programa> {
   const pool = await getPool()
   const r = await pool.request()
     .input('modeloId',    sql.Int,               data.modelo_id)
+    .input('tipo',        sql.NVarChar(20),      data.tipo)
     .input('nombre',      sql.NVarChar(160),     data.nombre)
     .input('descripcion', sql.NVarChar(sql.MAX), data.descripcion ?? null)
     .input('activo',      sql.Bit,               data.activo ?? true)
     .query(`
-      INSERT INTO programas_mantenimiento (modelo_id, nombre, descripcion, activo)
+      INSERT INTO programas_mantenimiento (modelo_id, tipo, nombre, descripcion, activo)
       OUTPUT INSERTED.*
-      VALUES (@modeloId, @nombre, @descripcion, @activo)
+      VALUES (@modeloId, @tipo, @nombre, @descripcion, @activo)
     `)
   return r.recordset[0]
 }
@@ -242,6 +275,17 @@ export async function remove(id: number): Promise<boolean> {
       DELETE c FROM programa_operacion_fase c
       JOIN programa_operaciones o ON o.id = c.operacion_id
       WHERE o.programa_id=@id`)
+    // Lo que alguna unidad hacía distinto de este programa deja de significar
+    // algo. Apunta con NO ACTION (migración 016): se suelta a mano o el FK
+    // aborta el borrado.
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE e FROM vehiculo_operacion_excepcion e
+      JOIN programa_operaciones o ON o.id = e.operacion_id
+      WHERE o.programa_id=@id`)
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE e FROM vehiculo_fase_excepcion e
+      JOIN programa_fases f ON f.id = e.fase_id
+      WHERE f.programa_id=@id`)
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM programa_operaciones WHERE programa_id=@id')
     await tx.request().input('id', sql.Int, id)
@@ -274,11 +318,15 @@ export async function setFases(programaId: number, fases: FaseEntrada[]): Promis
     const porKm = new Map(existentes.map((f) => [f.km, f.id]))
     const kmNuevos = new Set(fases.map((f) => f.km))
 
-    // Fuera las que ya no están, con sus celdas por delante.
+    // Fuera las que ya no están, con sus celdas y las excepciones que alguna
+    // unidad tuviera sobre ellas por delante: las dos apuntan a la fase y la
+    // segunda con NO ACTION (migraciones 012 y 016).
     for (const vieja of existentes) {
       if (kmNuevos.has(vieja.km)) continue
       await tx.request().input('fid', sql.Int, vieja.id)
         .query('DELETE FROM programa_operacion_fase WHERE fase_id=@fid')
+      await tx.request().input('fid', sql.Int, vieja.id)
+        .query('DELETE FROM vehiculo_fase_excepcion WHERE fase_id=@fid')
       await tx.request().input('fid', sql.Int, vieja.id)
         .query('DELETE FROM programa_fases WHERE id=@fid')
     }
@@ -375,7 +423,10 @@ export async function updateOperacion(id: number, data: OperacionUpdate): Promis
 
 export async function removeOperacion(id: number): Promise<boolean> {
   const pool = await getPool()
-  // Las celdas se van por la cascada de la operación (migración 012).
+  // Las celdas se van por la cascada de la operación (migración 012). Las
+  // excepciones por unidad no: apuntan con NO ACTION (migración 016).
+  await pool.request().input('id', sql.Int, id)
+    .query('DELETE FROM vehiculo_operacion_excepcion WHERE operacion_id=@id')
   const r = await pool.request().input('id', sql.Int, id)
     .query('DELETE FROM programa_operaciones OUTPUT DELETED.id WHERE id=@id')
   return r.recordset.length > 0

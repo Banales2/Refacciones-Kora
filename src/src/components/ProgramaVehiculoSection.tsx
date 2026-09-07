@@ -1,6 +1,18 @@
-// El programa del fabricante visto desde una unidad.
+// El programa de mantenimiento visto desde una unidad.
 //
-// Dos cosas distintas se vencen aquí, y la sección está partida en dos por eso:
+// Arriba de todo va la etapa: mientras la unidad esté en garantía sigue el
+// programa del fabricante, y cuando esa garantía se acaba pasa al de después.
+// La API lo calcula contra la garantía principal del modelo; aquí se pinta, y
+// se ofrece forzarlo a mano para los casos que el cálculo no cubre —la unidad
+// que perdió la garantía por un choque, o aquella a la que el fabricante se la
+// respetó pese al vencimiento formal—.
+//
+// Y de ahí sale la alerta que más importa: un servicio vencido en una unidad
+// que TODAVÍA está en garantía no es un atraso cualquiera, es la garantía en
+// riesgo. El programa del fabricante existe justamente para no perderla.
+//
+// Debajo, dos cosas distintas se vencen, y la sección está partida en dos por
+// eso:
 //
 //  - La **visita**: cuando el odómetro llega a la marca de la siguiente columna,
 //    toca hacer esa columna entera. Es el lado grupal del programa.
@@ -10,20 +22,25 @@
 import { useState } from 'react'
 import {
   Stack, Group, Text, Table, Badge, Button, Modal, Alert, Loader, Center,
-  ActionIcon, Tooltip, Divider, Paper, NumberInput, Progress,
+  ActionIcon, Tooltip, Divider, Paper, NumberInput, Progress, SegmentedControl,
 } from '@mantine/core'
 import {
   IconChecklist, IconPencil, IconTrash, IconPlus, IconClockExclamation, IconArrowBackUp,
+  IconShieldExclamation, IconShieldCheck, IconAdjustments,
 } from '@tabler/icons-react'
 import {
   useProgramaVehiculo, useAsignarPrograma, useQuitarPrograma,
-  useRegistrarVisita, useDeshacerVisita, useAtenderOperacion,
+  useRegistrarVisita, useDeshacerVisita, useAtenderOperacion, useForzarEtapa,
+  useSetExcepciones, ORIGEN_ARRANQUE_LABEL,
 } from '../hooks/useProgramaVehiculo'
-import type { ServicioPendiente, OperacionPorTiempo } from '../hooks/useProgramaVehiculo'
-import { useProgramaModelo } from '../hooks/usePrograma'
+import type {
+  ServicioPendiente, OperacionPorTiempo, Etapa, EstadoProgramaVehiculo,
+} from '../hooks/useProgramaVehiculo'
+import { useProgramasModelo, TIPO_PROGRAMA_LABEL } from '../hooks/usePrograma'
 import { KM_MAX } from '../lib/validaciones'
 import { formatMXN, formatMXNCorto } from '../lib/formato'
 import { FechaInput } from './FechaInput'
+import ProgramaExcepcionesModal from './ProgramaExcepcionesModal'
 
 const nf = new Intl.NumberFormat('es-MX')
 
@@ -37,6 +54,104 @@ function fmtFecha(iso: string | null) {
   return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
     day: '2-digit', month: 'short', year: 'numeric',
   })
+}
+
+// ── Etapa y garantía ─────────────────────────────────────────────────────────
+
+// En qué programa va la unidad, por qué, y qué se está arriesgando si trae algo
+// vencido. Es lo primero que se lee de la sección porque cambia el significado
+// de todo lo de abajo: los mismos kilómetros vencidos son un pendiente más si
+// la unidad ya salió de garantía, y una garantía en riesgo si no.
+function BandaEtapa({
+  estado, isPending, onForzar,
+}: {
+  estado:    EstadoProgramaVehiculo
+  isPending: boolean
+  onForzar:  (etapa: Etapa | null) => void
+}) {
+  const { etapa, etapa_forzada, garantia, garantia_en_riesgo, falta_posgarantia } = estado
+  const vigente = garantia?.estado.vigente ?? false
+
+  return (
+    <Stack gap="sm">
+      <Paper withBorder p="md" radius="md">
+        <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+          <Stack gap={4}>
+            <Group gap="xs">
+              <Badge
+                variant="light"
+                color={etapa === 'fabricante' ? 'blue' : 'grape'}
+                leftSection={etapa === 'fabricante' ? <IconShieldCheck size={12} /> : undefined}
+              >
+                {TIPO_PROGRAMA_LABEL[etapa]}
+              </Badge>
+              {etapa_forzada && (
+                <Tooltip label="Alguien fijó esta etapa a mano; el vencimiento de la garantía no la mueve">
+                  <Badge variant="outline" color="gray" size="sm">Fijada a mano</Badge>
+                </Tooltip>
+              )}
+            </Group>
+            {garantia ? (
+              <Text size="sm" c="dimmed">
+                Garantía principal: <strong>{garantia.nombre}</strong>
+                {vigente
+                  ? ` · vigente${garantia.estado.vence_el ? ` hasta el ${fmtFecha(garantia.estado.vence_el)}` : ''}` +
+                    (garantia.estado.vence_a_los_km != null
+                      ? ` o los ${nf.format(garantia.estado.vence_a_los_km)} km`
+                      : '')
+                  : ' · ya se acabó'}
+              </Text>
+            ) : (
+              <Text size="sm" c="dimmed">
+                Su modelo no tiene marcada una garantía principal, así que la unidad se queda en el
+                programa del fabricante.
+              </Text>
+            )}
+            <Text size="xs" c="dimmed">
+              Arranca en {nf.format(estado.arranque.km)} km
+              {estado.arranque.fecha && ` · ${fmtFecha(estado.arranque.fecha)}`}
+              {' · '}{ORIGEN_ARRANQUE_LABEL[estado.arranque.origen].toLowerCase()}
+            </Text>
+          </Stack>
+
+          {/* Forzar la etapa. Se ofrece siempre porque los dos sentidos son
+              casos reales, no correcciones de un error. */}
+          <Stack gap={4} align="flex-end">
+            <Text size="xs" c="dimmed" fw={600} tt="uppercase">Etapa</Text>
+            <SegmentedControl
+              size="xs"
+              disabled={isPending}
+              value={etapa_forzada ? etapa : 'auto'}
+              onChange={(v) => onForzar(v === 'auto' ? null : (v as Etapa))}
+              data={[
+                { value: 'auto', label: 'Automática' },
+                { value: 'fabricante', label: 'Fabricante' },
+                { value: 'posgarantia', label: 'Post-garantía' },
+              ]}
+            />
+          </Stack>
+        </Group>
+      </Paper>
+
+      {garantia_en_riesgo && (
+        <Alert
+          color="red" variant="filled" title="Garantía en riesgo"
+          icon={<IconShieldExclamation size={16} />}
+        >
+          Esta unidad trae atrasado un servicio del programa del fabricante y su garantía
+          <strong> {garantia?.nombre}</strong> sigue vigente. No llevarla a estos servicios es
+          motivo para perderla.
+        </Alert>
+      )}
+
+      {falta_posgarantia && (
+        <Alert color="orange" variant="light" title="Sin programa de post-garantía">
+          A esta unidad ya se le acabó la garantía, pero su modelo no tiene capturado el programa
+          de después. Mientras tanto sigue el del fabricante. Se captura desde la ficha del modelo.
+        </Alert>
+      )}
+    </Stack>
+  )
 }
 
 // ── Próxima visita ───────────────────────────────────────────────────────────
@@ -135,10 +250,12 @@ export default function ProgramaVehiculoSection({
 }) {
   const { data, isLoading } = useProgramaVehiculo(vehiculoId)
   const estado = data?.data ?? null
-  // Solo para el caso sin programa: saber si el modelo tiene uno que ofrecer.
-  const { data: delModelo } = useProgramaModelo(modeloId)
+  // Solo para el caso sin programa: saber si el modelo tiene alguno que ofrecer.
+  const { data: delModelo } = useProgramasModelo(modeloId)
 
   const asignarMut  = useAsignarPrograma(vehiculoId)
+  const etapaMut    = useForzarEtapa(vehiculoId)
+  const excepMut    = useSetExcepciones(vehiculoId)
   const quitarMut   = useQuitarPrograma(vehiculoId)
   const visitaMut   = useRegistrarVisita(vehiculoId)
   const deshacerMut = useDeshacerVisita(vehiculoId)
@@ -147,6 +264,7 @@ export default function ProgramaVehiculoSection({
   const [arranqueOpen, setArranqueOpen] = useState(false)
   const [visitaOpen, setVisitaOpen]     = useState(false)
   const [quitarOpen, setQuitarOpen]     = useState(false)
+  const [excepOpen, setExcepOpen]       = useState(false)
   const [atendiendo, setAtendiendo]     = useState<OperacionPorTiempo | null>(null)
   const [error, setError]               = useState<string | null>(null)
 
@@ -160,7 +278,7 @@ export default function ProgramaVehiculoSection({
       label={
         <Group gap="xs">
           <IconChecklist size={14} />
-          <Text size="sm" fw={500}>Programa del fabricante</Text>
+          <Text size="sm" fw={500}>Programa de mantenimiento</Text>
         </Group>
       }
       labelPosition="left"
@@ -171,40 +289,53 @@ export default function ProgramaVehiculoSection({
 
   // ── La unidad no sigue ningún programa ──
   if (!estado) {
-    const disponible = delModelo?.data ?? null
+    const disponibles = delModelo?.data ?? []
     return (
       <>
         {encabezado}
         <Paper withBorder p="lg" radius="md">
           <Stack gap="sm" align="flex-start">
-            {disponible ? (
+            {disponibles.length ? (
               <>
                 <Text size="sm" c="dimmed">
-                  Esta unidad no está siguiendo el programa del fabricante. Su modelo tiene
-                  capturado <strong>{disponible.nombre}</strong>.
+                  Esta unidad no está siguiendo ningún programa. Su modelo tiene capturado{' '}
+                  {disponibles.map((p, i) => (
+                    <span key={p.id}>
+                      {i > 0 && ' y '}
+                      <strong>{p.nombre}</strong> ({TIPO_PROGRAMA_LABEL[p.tipo].toLowerCase()})
+                    </span>
+                  ))}.
                 </Text>
                 <Button
                   size="xs" leftSection={<IconPlus size={14} />}
                   loading={asignarMut.isPending}
-                  onClick={() => {
+                  onClick={async () => {
                     setError(null)
-                    asignarMut.mutate(
-                      { programa_id: disponible.id },
-                      { onError: (e: Error) => setError(e.message) }
-                    )
+                    // Los dos de un golpe: el de post-garantía se asigna desde
+                    // ya aunque falten años para usarlo, porque el día que la
+                    // garantía venza nadie se va a acordar de venir a ponerlo.
+                    // Su arranque se deriva cuando toque, así que no adelanta
+                    // nada.
+                    try {
+                      for (const p of disponibles) {
+                        await asignarMut.mutateAsync({ etapa: p.tipo, programa_id: p.id })
+                      }
+                    } catch (e) { setError((e as Error).message) }
                   }}
                 >
-                  Seguir este programa
+                  Seguir {disponibles.length > 1 ? 'estos programas' : 'este programa'}
                 </Button>
                 <Text size="xs" c="dimmed">
-                  Arranca en el odómetro de hoy ({kilometraje != null ? `${nf.format(kilometraje)} km` : 'sin lectura'}),
-                  para que la unidad no nazca con servicios vencidos. Después se puede corregir.
+                  El del fabricante arranca en el odómetro de hoy
+                  ({kilometraje != null ? `${nf.format(kilometraje)} km` : 'sin lectura'}), para que
+                  la unidad no nazca con servicios vencidos. El de post-garantía arranca donde
+                  quede el último servicio que reciba bajo el primero. Los dos se pueden corregir.
                 </Text>
               </>
             ) : (
               <Text size="sm" c="dimmed">
-                El modelo de esta unidad no tiene capturado el programa del fabricante. Se captura
-                desde la ficha del modelo.
+                El modelo de esta unidad no tiene capturado ningún programa de mantenimiento. Se
+                capturan desde la ficha del modelo.
               </Text>
             )}
             {error && <Alert color="red" title="Error">{error}</Alert>}
@@ -214,7 +345,13 @@ export default function ProgramaVehiculoSection({
     )
   }
 
-  const { programa, proxima, siguientes, operaciones_tiempo, visitas, vinculo, proyeccion } = estado
+  const { programa, proxima, siguientes, operaciones_tiempo, visitas, proyeccion } = estado
+  const diferencias = estado.excepciones.fases.length + estado.excepciones.operaciones.length
+  // El del modelo sin tocar: es contra lo que se editan las diferencias, y
+  // `estado.programa` ya las trae aplicadas —una columna omitida ni siquiera
+  // aparecería—.
+  const delModeloActivo = (delModelo?.data ?? [])
+    .find((p) => p.id === estado.vinculo.programa_id) ?? null
   const porTiempo = operaciones_tiempo.filter((o) => o.vencida || o.por_vencer)
   const ultimaVisita = visitas[visitas.length - 1]
 
@@ -222,28 +359,45 @@ export default function ProgramaVehiculoSection({
     <>
       {encabezado}
 
+      <BandaEtapa
+        estado={estado}
+        isPending={etapaMut.isPending}
+        onForzar={(e) => {
+          setError(null)
+          etapaMut.mutate(e, { onError: (err: Error) => setError(err.message) })
+        }}
+      />
+
       <Paper withBorder p="md" radius="md">
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <Stack gap={2}>
             <Text fw={600}>{programa.nombre}</Text>
             <Text size="sm" c="dimmed">
-              Arranca en {nf.format(vinculo.km_inicio)} km
-              {vinculo.fecha_inicio && ` · ${fmtFecha(vinculo.fecha_inicio)}`}
-              {' · '}
               {estado.servicios_hechos === 0
                 ? 'sin visitas registradas'
-                : `${estado.servicios_hechos} ${estado.servicios_hechos === 1 ? 'visita hecha' : 'visitas hechas'}`}
+                : `${estado.servicios_hechos} ${estado.servicios_hechos === 1 ? 'visita hecha' : 'visitas hechas'} en esta etapa`}
               {estado.km_recorrido != null && ` · ${nf.format(estado.km_recorrido)} km bajo el programa`}
             </Text>
           </Stack>
           <Group gap="xs" wrap="nowrap">
+            {/* Lo que esta unidad hace distinto del programa de su modelo. El
+                contador dice si hay algo, para no tener que abrir el modal
+                solo para averiguarlo. */}
+            <Tooltip label="Lo que esta unidad hace distinto del programa de su modelo">
+              <ActionIcon
+                variant={diferencias > 0 ? 'filled' : 'light'} color="grape"
+                onClick={() => { setError(null); setExcepOpen(true) }}
+              >
+                <IconAdjustments size={16} />
+              </ActionIcon>
+            </Tooltip>
             <Tooltip label="Corregir el arranque del programa">
               <ActionIcon
                 variant="light" color="blue"
                 onClick={() => {
                   setError(null)
-                  setKmInicio(vinculo.km_inicio)
-                  setFechaInicio(vinculo.fecha_inicio)
+                  setKmInicio(estado.arranque.km)
+                  setFechaInicio(estado.arranque.fecha)
                   setArranqueOpen(true)
                 }}
               >
@@ -550,7 +704,7 @@ export default function ProgramaVehiculoSection({
             <Button
               loading={asignarMut.isPending}
               onClick={() => asignarMut.mutate(
-                { km_inicio: kmInicio ?? 0, fecha_inicio: fechaInicio },
+                { etapa: estado.etapa, km_inicio: kmInicio ?? 0, fecha_inicio: fechaInicio },
                 { onSuccess: () => setArranqueOpen(false) }
               )}
             >
@@ -561,14 +715,41 @@ export default function ProgramaVehiculoSection({
       </Modal>
 
       <Modal
+        opened={excepOpen} onClose={() => setExcepOpen(false)}
+        title="Lo que esta unidad hace distinto" centered size="xl"
+      >
+        {delModeloActivo ? (
+          <ProgramaExcepcionesModal
+            programa={delModeloActivo}
+            excepciones={estado.excepciones}
+            isPending={excepMut.isPending}
+            error={error}
+            onSubmit={(e) => {
+              setError(null)
+              excepMut.mutate(e, {
+                onSuccess: () => setExcepOpen(false),
+                onError:   (err: Error) => setError(err.message),
+              })
+            }}
+            onCancel={() => setExcepOpen(false)}
+          />
+        ) : (
+          <Center py="lg"><Loader size="sm" /></Center>
+        )}
+      </Modal>
+
+      <Modal
         opened={quitarOpen} onClose={() => setQuitarOpen(false)}
         title="Dejar de seguir el programa" centered size="sm"
       >
         <Stack gap="md">
-          <Text>¿Quitarle el programa a esta unidad?</Text>
+          <Text>
+            ¿Quitarle a esta unidad el programa <strong>{TIPO_PROGRAMA_LABEL[estado.etapa].toLowerCase()}</strong>?
+          </Text>
           <Alert color="orange" title="Atención" variant="light">
-            Se borra su avance: las {visitas.length} visitas registradas y lo que tuviera al día
-            renglón por renglón. El programa del modelo no se toca.
+            Se borra su avance en esta etapa: las{' '}
+            {visitas.filter((v) => v.etapa === estado.etapa).length} visitas registradas y lo que
+            tuviera al día renglón por renglón. La otra etapa y el programa del modelo no se tocan.
           </Alert>
           {quitarMut.error && <Alert color="red" title="Error">{(quitarMut.error as Error).message}</Alert>}
           <Group justify="flex-end">
@@ -576,7 +757,7 @@ export default function ProgramaVehiculoSection({
               Cancelar
             </Button>
             <Button color="red" loading={quitarMut.isPending}
-              onClick={() => quitarMut.mutate(undefined, { onSuccess: () => setQuitarOpen(false) })}>
+              onClick={() => quitarMut.mutate(estado.etapa, { onSuccess: () => setQuitarOpen(false) })}>
               Sí, quitarlo
             </Button>
           </Group>

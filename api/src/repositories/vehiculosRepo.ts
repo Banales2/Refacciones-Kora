@@ -48,8 +48,8 @@ export interface VehiculoRow {
 }
 
 // Subconjunto de AlertaVehiculo que se puede resolver por vehículo con lo que
-// ya trae la consulta. Los requerimientos vencidos no entran: dependen del
-// kilometraje contra el último mantenimiento y los clasifica el tablero.
+// ya trae la consulta. El atraso del programa no entra: depende del recorrido
+// de fases contra el odómetro y lo clasifica el tablero.
 export type AlertaDocumento = Extract<AlertaVehiculo, 'sin_seguro' | 'sin_tenencia'>
 
 // La consulta devuelve un bit por aviso; hacia afuera se expone la lista, que
@@ -112,9 +112,9 @@ const JOINS = `
   LEFT JOIN permisos_circulacion per ON per.id = ${PERMISO_ID_SQL}
 `
 
-// Los requerimientos vencidos no se pueden resolver aquí: dependen del
-// kilometraje contra el último mantenimiento y de intervalos en meses, y esa
-// clasificación ya vive en el servicio del tablero. Llegan resueltos, como una
+// El atraso del programa no se puede resolver aquí: depende del recorrido de
+// fases contra el odómetro y de los límites en meses de cada operación, y esa
+// clasificación ya vive en el servicio del tablero. Llega resuelta, como una
 // lista de ids separados por coma.
 const WHERE_FILTER = `
   WHERE (@tipo     IS NULL OR v.tipo      = @tipo)
@@ -128,7 +128,7 @@ const WHERE_FILTER = `
                OR (@alerta = 'sin_seguro'   AND ${SIN_SEGURO})
                OR (@alerta = 'permiso_por_vencer'
                    AND ${PERMISO_ID_SQL} IS NOT NULL AND per.fecha_expiracion <= @limite)
-               OR (@alerta = 'requerimientos_vencidos'
+               OR (@alerta = 'programa_atrasado'
                    AND v.id IN (SELECT TRY_CAST(value AS INT) FROM STRING_SPLIT(@idsAlerta, ','))))))
 `
 
@@ -416,14 +416,6 @@ export async function remove(id: number): Promise<void> {
       DELETE ap FROM agenda_pendientes ap
       JOIN pendientes p ON p.id = ap.pendiente_id
       WHERE p.vehiculo_id = @id
-    `)
-    // El vínculo con las garantías apunta a `garantias_vehiculo` con NO ACTION
-    // (ver la migración 010): se suelta antes, para no depender del orden en que
-    // el motor resuelva las dos cascadas que bajan de `vehiculos`.
-    await tx.request().input('id', sql.Int, id).query(`
-      DELETE rg FROM requerimiento_garantias rg
-      JOIN garantias_vehiculo gv ON gv.id = rg.garantia_vehiculo_id
-      WHERE gv.vehiculo_id = @id
     `)
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM pendientes WHERE vehiculo_id=@id')

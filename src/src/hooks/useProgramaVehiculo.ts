@@ -1,31 +1,88 @@
-// El programa de mantenimiento visto desde una unidad: en qué punto del
-// recorrido va, qué le toca en la próxima visita al taller y qué renglones se
-// le vencieron por su cuenta.
+// El programa de mantenimiento visto desde una unidad: en qué etapa va, en qué
+// punto del recorrido está, qué le toca en la próxima visita al taller y qué
+// renglones se le vencieron por su cuenta.
 //
 // El kilometraje es grupal —la visita cierra toda la columna de un golpe— y el
 // tiempo es individual: cada renglón trae su "o cada N meses" y puede vencer
 // mucho antes de que llegue el kilometraje de su columna.
+//
+// La etapa la decide la API contra la garantía principal del modelo, y aquí
+// solo se pinta. Lo que sí se manda desde aquí es forzarla a mano.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import type { FasePrograma, OperacionPrograma, Programa } from './usePrograma'
+import type { FasePrograma, OperacionPrograma, Programa, TipoPrograma } from './usePrograma'
+import type { EstadoGarantia } from './useGarantias'
+
+/** La etapa se llama igual que el programa que se sigue en ella. */
+export type Etapa = TipoPrograma
 
 export interface VinculoPrograma {
   vehiculo_id:  number
+  etapa:        Etapa
   programa_id:  number
-  /** Odómetro desde el que se cuenta el recorrido. Una unidad usada no arranca en cero. */
-  km_inicio:    number
+  /** Nulo en posgarantía = derivado; ver `arranque`. */
+  km_inicio:    number | null
   fecha_inicio: string | null
+  /** Una persona fijó esta etapa: el cálculo contra la garantía no manda. */
+  forzada:      boolean
 }
 
 export interface VisitaPrograma {
   id:               number
   vehiculo_id:      number
+  etapa:            Etapa
   fase_id:          number
-  /** Posición en el recorrido desde el arranque: la columna sola no la identifica. */
+  /** Posición en el recorrido de su etapa: la columna sola no la identifica. */
   indice:           number
   fecha:            string
   km:               number | null
   mantenimiento_id: number | null
+}
+
+/**
+ * De dónde salió el punto cero del recorrido de la etapa activa. Lo normal al
+ * pasar a posgarantía es `ultimo_servicio`: el reloj arranca donde quedó el
+ * último preventivo que la unidad realmente recibió.
+ */
+export type OrigenArranque =
+  | 'capturado' | 'ultimo_servicio' | 'vencimiento_garantia' | 'arranque_anterior'
+
+export const ORIGEN_ARRANQUE_LABEL: Record<OrigenArranque, string> = {
+  capturado:            'Capturado a mano',
+  ultimo_servicio:      'Desde el último servicio recibido',
+  vencimiento_garantia: 'Desde el vencimiento de la garantía',
+  arranque_anterior:    'Heredado de la etapa anterior',
+}
+
+export interface Arranque {
+  km:     number
+  fecha:  string | null
+  origen: OrigenArranque
+}
+
+export interface GarantiaDeEtapa {
+  id:     number
+  nombre: string
+  estado: EstadoGarantia
+}
+
+/** Lo que esta unidad hace distinto del programa de su modelo. */
+export interface ExcepcionFase {
+  fase_id: number
+  km:      number | null
+  costo:   number | null
+  omitida: boolean
+}
+
+export interface ExcepcionOperacion {
+  operacion_id: number
+  activa:       boolean
+  limite_meses: number | null
+}
+
+export interface Excepciones {
+  fases:       ExcepcionFase[]
+  operaciones: ExcepcionOperacion[]
 }
 
 export interface OperacionDeFase {
@@ -65,8 +122,19 @@ export interface ProyeccionCostos {
 }
 
 export interface EstadoProgramaVehiculo {
+  etapa:              Etapa
+  etapa_forzada:      boolean
+  /** La garantía principal del modelo copiada en esta unidad. Null = no hay. */
+  garantia:           GarantiaDeEtapa | null
+  /** Hay servicio vencido y la garantía sigue viva: se puede perder. */
+  garantia_en_riesgo: boolean
+  /** Salió de garantía pero su modelo no tiene capturado el segundo programa. */
+  falta_posgarantia:  boolean
   vinculo:            VinculoPrograma
+  arranque:           Arranque
+  /** El del modelo, ya con las excepciones de esta unidad aplicadas. */
   programa:           Programa
+  excepciones:        Excepciones
   visitas:            VisitaPrograma[]
   estados:            { operacion_id: number; ultima_fecha: string; ultimo_km: number | null; visita_id: number | null }[]
   servicios_hechos:   number
@@ -102,6 +170,7 @@ function guardar(
 }
 
 export interface AsignarProgramaPayload {
+  etapa?:        Etapa
   programa_id?:  number
   km_inicio?:    number | null
   fecha_inicio?: string | null
@@ -119,8 +188,35 @@ export function useAsignarPrograma(vehiculoId: number) {
 export function useQuitarPrograma(vehiculoId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => api.delete(`/vehiculos/${vehiculoId}/programa`),
+    mutationFn: (etapa: Etapa = 'fabricante') =>
+      api.delete(`/vehiculos/${vehiculoId}/programa?etapa=${etapa}`),
     onSuccess: () => invalidar(qc, vehiculoId),
+  })
+}
+
+// Fijar la etapa a mano, o soltarla (null) para que vuelva a decidirla la
+// garantía. Sirve en los dos sentidos: retener a la unidad en el programa del
+// fabricante con la garantía ya vencida, o adelantarla al de después cuando la
+// perdió antes de tiempo.
+export function useForzarEtapa(vehiculoId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (etapa: Etapa | null) =>
+      api.put<{ data: EstadoProgramaVehiculo }>(`/vehiculos/${vehiculoId}/programa/etapa`, { etapa }),
+    onSuccess: (r) => guardar(qc, vehiculoId, r.data),
+  })
+}
+
+// Lo que esta unidad hace distinto del programa de su modelo. Va entero: es un
+// reemplazo, no un parche.
+export function useSetExcepciones(vehiculoId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (excepciones: Excepciones) =>
+      api.put<{ data: EstadoProgramaVehiculo }>(
+        `/vehiculos/${vehiculoId}/programa/excepciones`, excepciones
+      ),
+    onSuccess: (r) => guardar(qc, vehiculoId, r.data),
   })
 }
 

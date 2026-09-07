@@ -79,7 +79,7 @@ export function vehiculoLabel(v: Pick<VehiculoRow, 'marca' | 'modelo' | 'serie'>
 // deja fuera tractocamiones, cajas de trailer y montacargas. Ninguno incluye unidades
 // dadas de baja.
 export type AlertaVehiculo =
-  'sin_tenencia' | 'sin_seguro' | 'requerimientos_vencidos' | 'permiso_por_vencer'
+  'sin_tenencia' | 'sin_seguro' | 'programa_atrasado' | 'permiso_por_vencer'
 
 export function useVehiculos(
   page = 1, search = '', tipo?: TipoVehiculo, modeloId?: number, pageSize?: number, enabled = true,

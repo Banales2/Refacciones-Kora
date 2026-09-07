@@ -1,5 +1,4 @@
 import * as repo from '../repositories/vehiculosRepo'
-import * as plantillaRepo from '../repositories/plantillaRepo'
 import * as programaVehiculoService from './programaVehiculoService'
 import * as garantiasRepo from '../repositories/garantiasRepo'
 import * as modelosRepo from '../repositories/modelosRepo'
@@ -50,11 +49,11 @@ function validateCreate(data: VehiculoCreate) {
 export async function getAll(params: VehiculoQuery) {
   const offset = (params.page - 1) * params.pageSize
 
-  // Los requerimientos vencidos los clasifica el tablero, no SQL. Si no hay
-  // ninguno, la consulta sobra: se responde la página vacía.
+  // El atraso del programa lo clasifica el tablero, no SQL. Si no hay ninguna
+  // unidad atrasada, la consulta sobra: se responde la página vacía.
   let idsAlerta: number[] | undefined
-  if (params.alerta === 'requerimientos_vencidos') {
-    idsAlerta = await dashboardService.getVehiculosConRequerimientosVencidos()
+  if (params.alerta === 'programa_atrasado') {
+    idsAlerta = await dashboardService.getVehiculosConProgramaAtrasado()
     if (idsAlerta.length === 0) {
       return { data: [], total: 0, page: params.page, pageSize: params.pageSize }
     }
@@ -81,12 +80,10 @@ export async function create(data: VehiculoCreate) {
   await validateTipoPermitido(data.modelo_id, data.tipo)
   await validateSerieYPlacas(data.serie, data.placas)
   const vehicle = await repo.create(data)
-  // La unidad nace con lo que su modelo dice que trae: primero las garantías,
-  // luego los requerimientos de la plantilla, y al final el vínculo entre unos y
-  // otras —que necesita que las dos copias ya existan.
+  // La unidad nace con lo que su modelo dice que trae: las garantías primero,
+  // porque de la que esté marcada como principal depende qué programa se le
+  // asigna en seguida.
   await garantiasRepo.copyModelToVehicle(vehicle.id, data.modelo_id)
-  await plantillaRepo.copyModelToVehicle(vehicle.id, data.modelo_id)
-  await garantiasRepo.sincronizarVinculosDesdePlantilla({ vehiculoId: vehicle.id })
   // Y el programa del fabricante, si el modelo lo tiene capturado. Arranca en
   // el odómetro de alta: una unidad que entra con 40,000 km no debe nacer con
   // ocho servicios vencidos.
@@ -110,7 +107,7 @@ async function validateSerieYPlacas(
 
 // El modelo puede restringir qué tipos de vehículo genera (vacío = sin
 // restricción). Así se evita, p. ej., crear un montacargas desde un modelo
-// cuya plantilla asume kilometraje.
+// cuyo programa de mantenimiento asume kilometraje.
 async function validateTipoPermitido(modeloId: number, tipo: TipoVehiculo) {
   const permitidos = await modelosRepo.findTiposPermitidos(modeloId)
   if (permitidos.length > 0 && !permitidos.includes(tipo)) {

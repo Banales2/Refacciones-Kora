@@ -9,7 +9,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import {
   SimpleGrid, Card, Text, Group, Stack, Loader, Center, Table, Divider, Badge, ActionIcon,
-  Collapse, Button, Alert, Tabs,
+  Collapse, Button, Alert, Tabs, Tooltip,
 } from '@mantine/core'
 import { BarChart, LineChart } from '@mantine/charts'
 import {
@@ -123,7 +123,7 @@ function RequerimientosPorVehiculoTable({
           <Table.Tr>
             <Table.Th style={{ width: 32 }} />
             <Table.Th>Vehículo</Table.Th>
-            <Table.Th style={{ textAlign: 'center' }}>Requerimientos</Table.Th>
+            <Table.Th style={{ textAlign: 'center' }}>Servicios</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -141,12 +141,25 @@ function RequerimientosPorVehiculoTable({
                     </ActionIcon>
                   </Table.Td>
                   <Table.Td>
-                    <LinkVehiculo
-                      nombre={g.vehiculo_nombre}
-                      onClick={onNavigateVehiculo
-                        ? () => onNavigateVehiculo(g.vehiculo_id)
-                        : undefined}
-                    />
+                    <Group gap={6} wrap="nowrap">
+                      <LinkVehiculo
+                        nombre={g.vehiculo_nombre}
+                        onClick={onNavigateVehiculo
+                          ? () => onNavigateVehiculo(g.vehiculo_id)
+                          : undefined}
+                      />
+                      {/* La unidad sigue en garantía y ya trae algo atrasado. Va
+                          en el renglón del vehículo y no en cada servicio
+                          porque lo que está en juego es de la unidad entera. */}
+                      {g.requerimientos.some(r => r.garantia_en_riesgo) && (
+                        <Tooltip
+                          label="Sigue en garantía y trae servicios del fabricante atrasados: se puede perder"
+                          multiline w={240}
+                        >
+                          <Badge size="xs" color="red" variant="filled">Garantía en riesgo</Badge>
+                        </Tooltip>
+                      )}
+                    </Group>
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'center' }}>
                     <Badge color={color} variant="light">{g.requerimientos.length}</Badge>
@@ -157,13 +170,13 @@ function RequerimientosPorVehiculoTable({
                     <Collapse expanded={abierto}>
                       <Stack gap={4} py="xs" pl="xl">
                         {g.requerimientos.map(r => (
-                          <Group key={`${r.origen}-${r.id}`} justify="space-between" wrap="nowrap">
+                          <Group key={`${r.tipo}-${r.id}`} justify="space-between" wrap="nowrap">
                             <Group gap={6} wrap="nowrap">
-                              {/* De dónde viene: el manual del fabricante o un
-                                  preventivo suelto. Se atienden en secciones
-                                  distintas de la ficha de la unidad. */}
-                              {r.origen === 'programa' && (
-                                <Badge size="xs" variant="light" color="grape">Programa</Badge>
+                              {/* La visita completa que toca por kilometraje, o
+                                  un renglón que venció por su propio límite de
+                                  meses sin arrastrar al resto. */}
+                              {r.tipo === 'operacion' && (
+                                <Badge size="xs" variant="light" color="grape">Por tiempo</Badge>
                               )}
                               <Text size="sm">{r.nombre}</Text>
                             </Group>

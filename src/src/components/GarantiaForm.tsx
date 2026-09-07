@@ -36,6 +36,7 @@ export type GarantiaFormValues = {
   duracion_meses:     number | null
   limite_km:          number | null
   activo:             boolean
+  principal:          boolean
   fecha_inicio:       string
   km_inicio:          number | null
   folio:              string
@@ -74,6 +75,7 @@ export default function GarantiaForm({
       duracion_meses: initial?.duracion_meses ?? null,
       limite_km:      initial?.limite_km ?? null,
       activo:         (initial as GarantiaModelo | undefined)?.activo ?? true,
+      principal:      (initial as GarantiaModelo | undefined)?.principal ?? false,
       // Una garantía nueva arranca cuando se compró la unidad; es lo correcto
       // casi siempre y se corrige cuando la entrega fue otro día.
       fecha_inicio:       inicial?.fecha_inicio ?? (initial ? '' : fechaCompra ?? ''),
@@ -130,6 +132,9 @@ export default function GarantiaForm({
       duracion_meses: porTiempo ? v.duracion_meses : null,
       limite_km:      porKm     ? v.limite_km      : null,
       activo:         v.activo,
+      // Solo del catálogo: una unidad no elige cuál es la principal de su
+      // modelo. Mandarlo desde la ficha del vehículo sería ruido.
+      ...(esVehiculo ? {} : { principal: v.principal }),
       ...(esVehiculo ? {
         fecha_inicio:       v.fecha_inicio || null,
         km_inicio:          v.km_inicio,
@@ -185,6 +190,20 @@ export default function GarantiaForm({
             label="Activa"
             description="Al desactivarla deja de copiarse a las unidades nuevas; las que ya la tienen no se tocan"
             {...form.getInputProps('activo', { type: 'checkbox' })}
+          />
+        )}
+
+        {/* La que decide el programa. Solo una por modelo: marcar esta desmarca
+            la que estuviera, y si ninguna lo está las unidades se quedan en el
+            programa del fabricante para siempre. */}
+        {!esVehiculo && (
+          <Switch
+            label="Es la garantía principal"
+            description={
+              'Mientras esta garantía siga viva, las unidades de este modelo siguen el programa ' +
+              'del fabricante; cuando se acaba pasan al de después de la garantía. Solo una por modelo.'
+            }
+            {...form.getInputProps('principal', { type: 'checkbox' })}
           />
         )}
 

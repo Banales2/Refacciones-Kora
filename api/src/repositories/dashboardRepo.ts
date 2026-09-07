@@ -277,47 +277,6 @@ export async function findLotesEnRango(start: string, end: string): Promise<Lote
   return r.recordset
 }
 
-export interface RequerimientoFleet {
-  id:              number
-  nombre:          string
-  categoria:       string | null
-  trigger_mode:    'km' | 'meses' | 'ambos'
-  intervalo_km:    number | null
-  intervalo_meses: number | null
-  // Primeros servicios con intervalo propio (ver shared/intervalos). Aquí sigue
-  // en su forma de base -texto- porque el servicio la parsea al clasificar.
-  intervalos_iniciales_km: string | null
-  fecha_inicio:    string | null
-  km_inicio:       number | null
-  vehiculo_id:     number
-  vehiculo_nombre: string
-  kilometraje:     number | null
-  fecha_compra:    string | null
-}
-
-export async function findRequerimientosActivosFleet(): Promise<RequerimientoFleet[]> {
-  const pool = await getPool()
-  const r = await pool.request().query(`
-    SELECT p.id, p.nombre, p.categoria, r.trigger_mode, r.intervalo_km, r.intervalo_meses,
-           r.intervalos_iniciales_km, r.fecha_inicio, r.km_inicio, p.vehiculo_id,
-           CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
-           CASE WHEN v.tipo='camion'       THEN c.kilometraje
-                WHEN v.tipo='tractocamion' THEN t.kilometraje
-                WHEN v.tipo='utilitario'   THEN u.kilometraje
-                ELSE NULL END AS kilometraje,
-           v.fecha_compra
-    FROM pendientes p
-    JOIN requerimientos_exclusivos r ON r.id = p.id
-    JOIN vehiculos v ON v.id = p.vehiculo_id
-    JOIN modelos mo ON mo.id = v.modelo_id
-    LEFT JOIN camiones             c ON c.vehiculo_id = v.id
-    LEFT JOIN tractocamiones       t ON t.vehiculo_id = v.id
-    LEFT JOIN vehiculos_utilitarios u ON u.vehiculo_id = v.id
-    WHERE p.status = 'activo'
-  `)
-  return r.recordset
-}
-
 export interface IncidenciaAbiertaFleet {
   id:              number
   nombre:          string
@@ -342,32 +301,6 @@ export async function findIncidenciasAbiertasFleet(): Promise<IncidenciaAbiertaF
     WHERE p.status = 'activo'
     ORDER BY CASE i.severidad WHEN 'grave' THEN 0 WHEN 'moderada' THEN 1 ELSE 2 END,
              i.fecha
-  `)
-  return r.recordset
-}
-
-export interface MantenimientoLink {
-  pendiente_id: number
-  fecha:        string
-  km_actual:    number | null
-}
-
-// El km y la fecha salen del propio vínculo, no del mantenimiento: son los que
-// se congelaron cuando se atendió el pendiente.
-export async function findMantenimientoLinks(pendienteIds: number[]): Promise<MantenimientoLink[]> {
-  if (pendienteIds.length === 0) return []
-  const pool = await getPool()
-  const req = pool.request()
-  const params = pendienteIds.map((id, i) => {
-    req.input(`r${i}`, sql.Int, id)
-    return `@r${i}`
-  })
-  const r = await req.query(`
-    SELECT mp.pendiente_id, mp.fecha, mp.km_actual
-    FROM mantenimiento_pendientes mp
-    WHERE mp.pendiente_id IN (${params.join(',')})
-      AND mp.fecha <= CAST(GETDATE() AS DATE)
-    ORDER BY mp.fecha DESC
   `)
   return r.recordset
 }

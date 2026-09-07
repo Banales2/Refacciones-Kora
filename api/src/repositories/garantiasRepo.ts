@@ -1,11 +1,13 @@
-// Garantías: el catálogo por modelo, la garantía real de cada unidad y el
-// vínculo con los requerimientos preventivos que existen por ellas.
+// Garantías: el catálogo por modelo y la garantía real de cada unidad.
 //
-// Está calcado de `plantillaRepo`: el catálogo del modelo se copia a cada
-// vehículo (`garantia_origen_id`), editarlo sincroniza las copias y borrarlo se
-// las lleva. La diferencia es que la copia guarda además cuándo arranca en esa
-// unidad —`fecha_inicio` y `km_inicio`—, que es lo único que el modelo no puede
-// saber.
+// El catálogo del modelo se copia a cada vehículo (`garantia_origen_id`),
+// editarlo sincroniza las copias y borrarlo se las lleva. La copia guarda
+// además cuándo arranca en esa unidad —`fecha_inicio` y `km_inicio`—, que es lo
+// único que el modelo no puede saber.
+//
+// La garantía marcada como `principal` en el catálogo es la que decide qué
+// programa de mantenimiento sigue la unidad: mientras siga viva se sigue el del
+// fabricante, y al vencer se pasa al de después de la garantía (migración 016).
 //
 // El estado (vigente/vencida) no vive aquí: se calcula en `shared/garantias`.
 import * as sql from 'mssql'
@@ -24,6 +26,13 @@ export interface GarantiaModelo {
   duracion_meses: number | null
   limite_km:      number | null
   activo:         boolean
+  /**
+   * La que gobierna el programa de mantenimiento de la unidad: mientras siga
+   * viva se sigue el del fabricante, y al vencer se pasa al de después de la
+   * garantía. Una por modelo (migración 016); ninguna deja a las unidades en el
+   * programa del fabricante para siempre, que es lo conservador.
+   */
+  principal:      boolean
   created_at:     string
   updated_at:     string
 }
@@ -36,6 +45,7 @@ export interface GarantiaModeloCreate {
   duracion_meses?: number | null
   limite_km?:      number | null
   activo?:         boolean
+  principal?:      boolean
 }
 
 export interface GarantiaModeloUpdate {
@@ -45,17 +55,25 @@ export interface GarantiaModeloUpdate {
   duracion_meses?: number | null
   limite_km?:      number | null
   activo?:         boolean
+  principal?:      boolean
 }
 
 const COLS_MODELO = `id, modelo_id, nombre, descripcion, trigger_mode,
-  duracion_meses, limite_km, activo, created_at, updated_at`
+  duracion_meses, limite_km, activo, principal, created_at, updated_at`
+
+function mapModelo(row: Record<string, unknown>): GarantiaModelo {
+  return {
+    ...(row as unknown as GarantiaModelo),
+    activo: !!row.activo, principal: !!row.principal,
+  }
+}
 
 export async function findByModelo(modeloId: number): Promise<GarantiaModelo[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('modeloId', sql.Int, modeloId)
     .query(`SELECT ${COLS_MODELO} FROM garantias_modelo WHERE modelo_id=@modeloId ORDER BY nombre`)
-  return r.recordset
+  return r.recordset.map(mapModelo)
 }
 
 export async function findModeloById(id: number): Promise<GarantiaModelo | null> {
@@ -63,7 +81,7 @@ export async function findModeloById(id: number): Promise<GarantiaModelo | null>
   const r = await pool.request()
     .input('id', sql.Int, id)
     .query(`SELECT ${COLS_MODELO} FROM garantias_modelo WHERE id=@id`)
-  return r.recordset[0] ?? null
+  return r.recordset[0] ? mapModelo(r.recordset[0]) : null
 }
 
 export async function createModelo(data: GarantiaModeloCreate): Promise<GarantiaModelo> {
@@ -76,13 +94,15 @@ export async function createModelo(data: GarantiaModeloCreate): Promise<Garantia
     .input('meses',       sql.Int,               data.duracion_meses ?? null)
     .input('km',          sql.Int,               data.limite_km      ?? null)
     .input('activo',      sql.Bit,               data.activo ?? true)
+    .input('principal',   sql.Bit,               data.principal ?? false)
     .query(`
       INSERT INTO garantias_modelo
-        (modelo_id, nombre, descripcion, trigger_mode, duracion_meses, limite_km, activo)
+        (modelo_id, nombre, descripcion, trigger_mode, duracion_meses, limite_km,
+         activo, principal)
       OUTPUT INSERTED.*
-      VALUES (@modeloId, @nombre, @descripcion, @trigger, @meses, @km, @activo)
+      VALUES (@modeloId, @nombre, @descripcion, @trigger, @meses, @km, @activo, @principal)
     `)
-  return r.recordset[0]
+  return mapModelo(r.recordset[0])
 }
 
 export async function updateModelo(
@@ -98,29 +118,43 @@ export async function updateModelo(
   if ('duracion_meses' in data)        { req.input('meses',       sql.Int,               data.duracion_meses ?? null); sets.push('duracion_meses=@meses') }
   if ('limite_km'      in data)        { req.input('km',          sql.Int,               data.limite_km      ?? null); sets.push('limite_km=@km')         }
   if (data.activo       !== undefined) { req.input('activo',      sql.Bit,               data.activo);              sets.push('activo=@activo')           }
+  if (data.principal    !== undefined) { req.input('principal',   sql.Bit,               data.principal);           sets.push('principal=@principal')      }
 
   const r = await req.query(`UPDATE garantias_modelo SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`)
-  return r.recordset[0] ?? null
+  return r.recordset[0] ? mapModelo(r.recordset[0]) : null
 }
 
-// Borrar una garantía del catálogo se lleva las copias de las unidades, igual
-// que borrar un renglón de la plantilla se lleva sus requerimientos. Si lo que
-// se quiere es dejar de darla en las unidades nuevas sin tocar las viejas, se
-// desactiva (`activo = 0`).
+/**
+ * Deja como principal solo a esta garantía del modelo. El índice único es
+ * filtrado (migración 016), así que hay que apagar la anterior antes de
+ * encender la nueva o el UPDATE choca a medio camino.
+ */
+export async function setPrincipal(modeloId: number, garantiaId: number | null): Promise<void> {
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    await tx.request().input('mid', sql.Int, modeloId)
+      .query('UPDATE garantias_modelo SET principal=0, updated_at=SYSDATETIME() WHERE modelo_id=@mid AND principal=1')
+    if (garantiaId != null) {
+      await tx.request().input('id', sql.Int, garantiaId).input('mid', sql.Int, modeloId)
+        .query('UPDATE garantias_modelo SET principal=1, updated_at=SYSDATETIME() WHERE id=@id AND modelo_id=@mid')
+    }
+    await tx.commit()
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+}
+
+// Borrar una garantía del catálogo se lleva las copias de las unidades. Si lo
+// que se quiere es dejar de darla en las unidades nuevas sin tocar las viejas,
+// se desactiva (`activo = 0`).
 export async function removeModelo(id: number): Promise<boolean> {
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
   try {
-    // Los vínculos son NO ACTION (ver la migración 010): hay que soltarlos a
-    // mano o el FK aborta el DELETE.
-    await tx.request().input('id', sql.Int, id).query(`
-      DELETE rg FROM requerimiento_garantias rg
-      JOIN garantias_vehiculo gv ON gv.id = rg.garantia_vehiculo_id
-      WHERE gv.garantia_origen_id = @id
-    `)
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM plantilla_garantias WHERE garantia_modelo_id=@id')
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM garantias_vehiculo WHERE garantia_origen_id=@id')
     const r = await tx.request().input('id', sql.Int, id)
@@ -229,8 +263,6 @@ export interface GarantiaVehiculo {
   updated_at:         string
   /** Odómetro actual de la unidad; null en los tipos que no llevan km. */
   kilometraje:        number | null
-  /** Cuántos requerimientos preventivos dependen de esta garantía. */
-  requerimientos:     number
 }
 
 export interface GarantiaVehiculoCreate {
@@ -273,9 +305,7 @@ const SELECT_GARANTIA = `
          CASE WHEN v.tipo='camion'       THEN c.kilometraje
               WHEN v.tipo='tractocamion' THEN t.kilometraje
               WHEN v.tipo='utilitario'   THEN u.kilometraje
-              ELSE NULL END AS kilometraje,
-         (SELECT COUNT(*) FROM requerimiento_garantias rg
-          WHERE rg.garantia_vehiculo_id = g.id) AS requerimientos
+              ELSE NULL END AS kilometraje
   FROM garantias_vehiculo g
   JOIN vehiculos v ON v.id = g.vehiculo_id
   LEFT JOIN camiones              c ON c.vehiculo_id = v.id
@@ -349,235 +379,65 @@ export async function updateVehiculo(
   return findVehiculoGarantiaById(id)
 }
 
+// Sin vínculos que soltar: la garantía de una unidad ya no cuelga de nada más.
 export async function removeVehiculo(id: number): Promise<boolean> {
   const pool = await getPool()
-  const tx = pool.transaction()
-  await tx.begin()
-  try {
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM requerimiento_garantias WHERE garantia_vehiculo_id=@id')
-    const r = await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM garantias_vehiculo OUTPUT DELETED.id WHERE id=@id')
-    await tx.commit()
-    return r.recordset.length > 0
-  } catch (err) {
-    await tx.rollback()
-    throw err
-  }
+  const r = await pool.request().input('id', sql.Int, id)
+    .query('DELETE FROM garantias_vehiculo OUTPUT DELETED.id WHERE id=@id')
+  return r.recordset.length > 0
 }
 
-// ─── Vínculo con los requerimientos ─────────────────────────────────────────
+// ─── La garantía que gobierna el programa ───────────────────────────────────
 
-/** Ids de las garantías que sostienen a cada requerimiento de un vehículo. */
-export async function findVinculosPorVehiculo(
-  vehiculoId: number
-): Promise<{ requerimiento_id: number; garantia_vehiculo_id: number }[]> {
+/**
+ * Lo mínimo para saber si a una unidad se le acabó la garantía principal de su
+ * modelo: la copia que esa unidad tiene de ella. Sin garantía principal
+ * declarada —o sin copia en la unidad— no hay nada que vencer, y el programa de
+ * mantenimiento se queda en el del fabricante.
+ *
+ * Vive aquí y no en el repo del programa porque es una consulta de garantías;
+ * quien decide qué hacer con ella es `programaVehiculoService`.
+ */
+export interface GarantiaPrincipal {
+  vehiculo_id:    number
+  garantia_id:    number
+  nombre:         string
+  trigger_mode:   TriggerMode
+  duracion_meses: number | null
+  limite_km:      number | null
+  fecha_inicio:   string | null
+  km_inicio:      number | null
+  cancelada_en:   string | null
+}
+
+const SELECT_PRINCIPAL = `
+  SELECT gv.vehiculo_id, gv.id AS garantia_id, gv.nombre, gv.trigger_mode,
+         gv.duracion_meses, gv.limite_km,
+         CONVERT(char(10), gv.fecha_inicio, 23) AS fecha_inicio, gv.km_inicio,
+         CONVERT(char(10), gv.cancelada_en, 23) AS cancelada_en
+  FROM garantias_vehiculo gv
+  JOIN garantias_modelo gm ON gm.id = gv.garantia_origen_id AND gm.principal = 1`
+
+export async function findPrincipalDeVehiculo(
+  vehiculoId: number,
+): Promise<GarantiaPrincipal | null> {
   const pool = await getPool()
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
-    .query(`
-      SELECT rg.requerimiento_id, rg.garantia_vehiculo_id
-      FROM requerimiento_garantias rg
-      JOIN pendientes p ON p.id = rg.requerimiento_id
-      WHERE p.vehiculo_id = @vid
-    `)
-  return r.recordset
+    .query(`${SELECT_PRINCIPAL} WHERE gv.vehiculo_id = @vid`)
+  return r.recordset[0] ?? null
 }
 
-/** La garantía y su vigencia, para cada requerimiento de toda la flota. */
-export interface VinculoFleet {
-  requerimiento_id:   number
-  garantia_id:        number
-  nombre:             string
-  trigger_mode:       TriggerMode
-  duracion_meses:     number | null
-  limite_km:          number | null
-  fecha_inicio:       string | null
-  km_inicio:          number | null
-  cancelada_en:       string | null
-  kilometraje:        number | null
-}
-
-// Una sola consulta para todo el tablero: preguntar garantía por garantía
-// dentro del bucle de requerimientos multiplicaría los viajes a la base.
-export async function findVinculosFleet(): Promise<VinculoFleet[]> {
-  const pool = await getPool()
-  const r = await pool.request().query(`
-    SELECT rg.requerimiento_id, g.id AS garantia_id, g.nombre, g.trigger_mode,
-           g.duracion_meses, g.limite_km,
-           CONVERT(char(10), g.fecha_inicio, 23) AS fecha_inicio, g.km_inicio,
-           CONVERT(char(10), g.cancelada_en, 23) AS cancelada_en,
-           CASE WHEN v.tipo='camion'       THEN c.kilometraje
-                WHEN v.tipo='tractocamion' THEN t.kilometraje
-                WHEN v.tipo='utilitario'   THEN u.kilometraje
-                ELSE NULL END AS kilometraje
-    FROM requerimiento_garantias rg
-    JOIN garantias_vehiculo g ON g.id = rg.garantia_vehiculo_id
-    JOIN vehiculos v ON v.id = g.vehiculo_id
-    LEFT JOIN camiones              c ON c.vehiculo_id = v.id
-    LEFT JOIN tractocamiones        t ON t.vehiculo_id = v.id
-    LEFT JOIN vehiculos_utilitarios u ON u.vehiculo_id = v.id
-  `)
-  return r.recordset
-}
-
-/** Deja el requerimiento atado exactamente a esas garantías, ni una más. */
-export async function setVinculosRequerimiento(
-  requerimientoId: number, garantiaIds: number[]
-): Promise<void> {
-  const pool = await getPool()
-  const tx = pool.transaction()
-  await tx.begin()
-  try {
-    await tx.request().input('id', sql.Int, requerimientoId)
-      .query('DELETE FROM requerimiento_garantias WHERE requerimiento_id=@id')
-    for (const gid of garantiaIds) {
-      await tx.request()
-        .input('id',  sql.Int, requerimientoId)
-        .input('gid', sql.Int, gid)
-        .query(`
-          INSERT INTO requerimiento_garantias (requerimiento_id, garantia_vehiculo_id)
-          VALUES (@id, @gid)
-        `)
-    }
-    await tx.commit()
-  } catch (err) {
-    await tx.rollback()
-    throw err
-  }
-}
-
-/** Que las garantías indicadas sean todas de ese vehículo. */
-export async function contarGarantiasDeVehiculo(
-  vehiculoId: number, ids: number[]
-): Promise<number> {
-  if (!ids.length) return 0
-  const pool = await getPool()
-  const req = pool.request().input('vid', sql.Int, vehiculoId)
-  const params = ids.map((id, i) => { req.input(`g${i}`, sql.Int, id); return `@g${i}` })
-  const r = await req.query(`
-    SELECT COUNT(*) AS n FROM garantias_vehiculo
-    WHERE vehiculo_id=@vid AND id IN (${params.join(',')})
-  `)
-  return r.recordset[0].n
-}
-
-// ─── Vínculo a nivel plantilla ──────────────────────────────────────────────
-
-export async function findGarantiasDePlantilla(plantillaId: number): Promise<number[]> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, plantillaId)
-    .query('SELECT garantia_modelo_id FROM plantilla_garantias WHERE plantilla_id=@id')
-  return r.recordset.map((x) => x.garantia_modelo_id)
-}
-
-/** Los vínculos de todas las plantillas de un modelo, para pintarlos de un jalón. */
-export async function findGarantiasDePlantillasDeModelo(
-  modeloId: number
-): Promise<{ plantilla_id: number; garantia_modelo_id: number }[]> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('modeloId', sql.Int, modeloId)
-    .query(`
-      SELECT pg.plantilla_id, pg.garantia_modelo_id
-      FROM plantilla_garantias pg
-      JOIN plantilla_requerimientos_modelo p ON p.id = pg.plantilla_id
-      WHERE p.modelo_id = @modeloId
-    `)
-  return r.recordset
-}
-
-export async function setGarantiasDePlantilla(
-  plantillaId: number, garantiaModeloIds: number[]
-): Promise<void> {
-  const pool = await getPool()
-  const tx = pool.transaction()
-  await tx.begin()
-  try {
-    await tx.request().input('id', sql.Int, plantillaId)
-      .query('DELETE FROM plantilla_garantias WHERE plantilla_id=@id')
-    for (const gid of garantiaModeloIds) {
-      await tx.request()
-        .input('id',  sql.Int, plantillaId)
-        .input('gid', sql.Int, gid)
-        .query(`
-          INSERT INTO plantilla_garantias (plantilla_id, garantia_modelo_id)
-          VALUES (@id, @gid)
-        `)
-    }
-    await tx.commit()
-  } catch (err) {
-    await tx.rollback()
-    throw err
-  }
-}
-
-/** Que las garantías indicadas sean todas del mismo modelo que la plantilla. */
-export async function contarGarantiasDeModelo(modeloId: number, ids: number[]): Promise<number> {
-  if (!ids.length) return 0
-  const pool = await getPool()
-  const req = pool.request().input('modeloId', sql.Int, modeloId)
-  const params = ids.map((id, i) => { req.input(`g${i}`, sql.Int, id); return `@g${i}` })
-  const r = await req.query(`
-    SELECT COUNT(*) AS n FROM garantias_modelo
-    WHERE modelo_id=@modeloId AND id IN (${params.join(',')})
-  `)
-  return r.recordset[0].n
-}
-
-// Baja los vínculos del catálogo a las unidades: por cada plantilla que dice
-// "este servicio existe por esta garantía", ata el requerimiento copiado a la
-// garantía copiada del mismo vehículo. Es idempotente y se llama en los cuatro
-// momentos en que el mapa puede cambiar: alta de vehículo, alta de plantilla,
-// alta de garantía del modelo y edición de los vínculos de una plantilla.
-//
-// Los filtros son opcionales y se combinan: sin ninguno recorre toda la flota.
-export async function sincronizarVinculosDesdePlantilla(filtros: {
-  vehiculoId?:        number
-  plantillaId?:       number
-  garantiaModeloId?:  number
-} = {}): Promise<void> {
+/** Las de varias unidades de un jalón, para el tablero. */
+export async function findPrincipalesDeVehiculos(
+  ids: number[],
+): Promise<Map<number, GarantiaPrincipal>> {
+  const salida = new Map<number, GarantiaPrincipal>()
+  if (!ids.length) return salida
   const pool = await getPool()
   const req = pool.request()
-    .input('vehiculoId', sql.Int, filtros.vehiculoId       ?? null)
-    .input('plantillaId', sql.Int, filtros.plantillaId     ?? null)
-    .input('garantiaId', sql.Int, filtros.garantiaModeloId ?? null)
-
-  await req.query(`
-    INSERT INTO requerimiento_garantias (requerimiento_id, garantia_vehiculo_id)
-    SELECT re.id, gv.id
-    FROM plantilla_garantias pg
-    JOIN requerimientos_exclusivos re ON re.plantilla_origen_id = pg.plantilla_id
-    JOIN pendientes p                 ON p.id = re.id
-    JOIN garantias_vehiculo gv        ON gv.vehiculo_id = p.vehiculo_id
-                                     AND gv.garantia_origen_id = pg.garantia_modelo_id
-    WHERE (@vehiculoId  IS NULL OR p.vehiculo_id = @vehiculoId)
-      AND (@plantillaId IS NULL OR pg.plantilla_id = @plantillaId)
-      AND (@garantiaId  IS NULL OR pg.garantia_modelo_id = @garantiaId)
-      AND NOT EXISTS (
-        SELECT 1 FROM requerimiento_garantias rg
-        WHERE rg.requerimiento_id = re.id AND rg.garantia_vehiculo_id = gv.id
-      )
-  `)
-}
-
-// El reverso: quitar un vínculo en la plantilla lo quita en las unidades. Solo
-// toca los que vienen del catálogo (la garantía tiene `garantia_origen_id`);
-// lo que alguien ató a mano en una unidad se queda.
-export async function limpiarVinculosHuerfanos(plantillaId: number): Promise<void> {
-  const pool = await getPool()
-  await pool.request().input('id', sql.Int, plantillaId).query(`
-    DELETE rg
-    FROM requerimiento_garantias rg
-    JOIN requerimientos_exclusivos re ON re.id = rg.requerimiento_id
-    JOIN garantias_vehiculo gv        ON gv.id = rg.garantia_vehiculo_id
-    WHERE re.plantilla_origen_id = @id
-      AND gv.garantia_origen_id IS NOT NULL
-      AND NOT EXISTS (
-        SELECT 1 FROM plantilla_garantias pg
-        WHERE pg.plantilla_id = re.plantilla_origen_id
-          AND pg.garantia_modelo_id = gv.garantia_origen_id
-      )
-  `)
+  const params = ids.map((id, i) => { req.input(`v${i}`, sql.Int, id); return `@v${i}` })
+  const r = await req.query(`${SELECT_PRINCIPAL} WHERE gv.vehiculo_id IN (${params.join(',')})`)
+  for (const row of r.recordset) salida.set(row.vehiculo_id, row)
+  return salida
 }

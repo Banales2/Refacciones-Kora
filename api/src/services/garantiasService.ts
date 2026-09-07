@@ -1,15 +1,15 @@
-// Garantías: catálogo por modelo, garantía de cada unidad y el vínculo con los
-// requerimientos preventivos que existen por ellas.
+// Garantías: el catálogo por modelo y la garantía de cada unidad.
 //
-// La regla que hace que todo esto sirva de algo vive al final del archivo: un
-// requerimiento atado a garantías deja de pedirse cuando todas se acabaron. El
-// tablero y la ficha del vehículo la consultan desde aquí para no tener cada
-// uno su propia versión de "ya no aplica".
+// Lo que hace que esto sirva de algo es la garantía marcada como `principal` en
+// el modelo: mientras siga viva, la unidad sigue el programa de mantenimiento
+// del fabricante; cuando se acaba, pasa al programa de después de la garantía.
+// `programaVehiculoService` entra por aquí para resolverlo, y no tiene su
+// propia versión de "ya se acabó".
 import * as repo from '../repositories/garantiasRepo'
 import * as modelosRepo from '../repositories/modelosRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import { NotFoundError, ValidationError } from '../shared/errors'
-import { evaluarGarantia, cubiertoPorGarantiaVencida, type EstadoGarantia } from '../shared/garantias'
+import { evaluarGarantia, type EstadoGarantia } from '../shared/garantias'
 import { fechaMexico } from '../shared/fechaMexico'
 import type {
   GarantiaModelo, GarantiaModeloCreate, GarantiaModeloUpdate,
@@ -28,26 +28,31 @@ export async function createModelo(
 ): Promise<GarantiaModelo> {
   if (!(await modelosRepo.findById(modeloId))) throw new NotFoundError('Modelo')
   const creada = await repo.createModelo({ ...data, modelo_id: modeloId })
-  // Igual que la plantilla de requerimientos: dar de alta una garantía en el
-  // modelo la baja a todas sus unidades, y en seguida se atan los servicios que
-  // ya decían existir por ella.
+  // Solo una gobierna el programa: marcarla desmarca la que estuviera. Se hace
+  // después del INSERT porque el índice único es filtrado y las dos en 1 a la
+  // vez chocarían.
+  if (creada.principal) await repo.setPrincipal(modeloId, creada.id)
+  // Dar de alta una garantía en el modelo la baja a todas sus unidades.
   await repo.copyToVehicles(creada)
-  await repo.sincronizarVinculosDesdePlantilla({ garantiaModeloId: creada.id })
-  return creada
+  return (await repo.findModeloById(creada.id))!
 }
 
 export async function updateModelo(
   id: number, data: GarantiaModeloUpdate
 ): Promise<GarantiaModelo> {
-  const actualizada = await repo.updateModelo(id, data)
+  // `principal` se aparta del UPDATE normal: apagarla y encenderla en la misma
+  // sentencia chocaría con el índice único filtrado, así que va por su propia
+  // transacción.
+  const { principal, ...resto } = data
+  const actualizada = await repo.updateModelo(id, resto)
   if (!actualizada) throw new NotFoundError('Garantía del modelo')
+  if (principal !== undefined) {
+    await repo.setPrincipal(actualizada.modelo_id, principal ? id : null)
+  }
   await repo.syncLinked(actualizada)
   // Reactivarla vuelve a bajarla a las unidades que no la tienen.
-  if (actualizada.activo) {
-    await repo.copyToVehicles(actualizada)
-    await repo.sincronizarVinculosDesdePlantilla({ garantiaModeloId: actualizada.id })
-  }
-  return actualizada
+  if (actualizada.activo) await repo.copyToVehicles(actualizada)
+  return (await repo.findModeloById(id))!
 }
 
 export async function removeModelo(id: number): Promise<void> {
@@ -96,9 +101,9 @@ export async function updateVehiculo(
   return conEstado(actualizada, fechaMexico())
 }
 
-// La heredada del modelo no se borra por unidad, por lo mismo que un
-// requerimiento de plantilla tampoco: el catálogo dice qué trae ese modelo, y
-// borrarla en una sola unidad la deja distinta sin dejar rastro de por qué. Si
+// La heredada del modelo no se borra por unidad: el catálogo dice qué trae ese
+// modelo, y borrarla en una sola unidad la deja distinta sin dejar rastro de
+// por qué. Si
 // esa unidad la perdió, se cancela con su motivo, que además es el dato que
 // sirve después ("se le cayó la garantía en marzo por no traerla a servicio").
 export async function removeVehiculo(id: number): Promise<void> {
@@ -112,101 +117,4 @@ export async function removeVehiculo(id: number): Promise<void> {
   }
   const borrada = await repo.removeVehiculo(id)
   if (!borrada) throw new NotFoundError('Garantía')
-}
-
-// ─── Vínculo con los requerimientos ─────────────────────────────────────────
-
-export async function setVinculosRequerimiento(
-  requerimientoId: number, vehiculoId: number, garantiaIds: number[]
-): Promise<void> {
-  const unicos = [...new Set(garantiaIds)]
-  // Atar un requerimiento a la garantía de otra unidad silenciaría un servicio
-  // por algo que no le pasó a ese vehículo.
-  if (unicos.length && await repo.contarGarantiasDeVehiculo(vehiculoId, unicos) !== unicos.length) {
-    throw new ValidationError('Alguna de las garantías no pertenece a este vehículo')
-  }
-  await repo.setVinculosRequerimiento(requerimientoId, unicos)
-}
-
-export async function setGarantiasDePlantilla(
-  plantillaId: number, modeloId: number, garantiaModeloIds: number[]
-): Promise<void> {
-  const unicos = [...new Set(garantiaModeloIds)]
-  if (unicos.length && await repo.contarGarantiasDeModelo(modeloId, unicos) !== unicos.length) {
-    throw new ValidationError('Alguna de las garantías no pertenece a este modelo')
-  }
-  await repo.setGarantiasDePlantilla(plantillaId, unicos)
-  // El cambio en el catálogo baja a las unidades en los dos sentidos: se atan
-  // los vínculos nuevos y se sueltan los que dejaron de estar declarados.
-  await repo.sincronizarVinculosDesdePlantilla({ plantillaId })
-  await repo.limpiarVinculosHuerfanos(plantillaId)
-}
-
-export const getGarantiasDePlantilla = repo.findGarantiasDePlantilla
-export const getGarantiasDePlantillasDeModelo = repo.findGarantiasDePlantillasDeModelo
-
-/** Las garantías de cada requerimiento de un vehículo, con su vigencia. */
-export interface GarantiasDeRequerimiento {
-  ids:        number[]
-  /** True cuando todas están vencidas o canceladas: el servicio ya no aplica. */
-  silenciado: boolean
-}
-
-export async function getGarantiasPorRequerimiento(
-  vehiculoId: number
-): Promise<Map<number, GarantiasDeRequerimiento>> {
-  const [vinculos, garantias] = await Promise.all([
-    repo.findVinculosPorVehiculo(vehiculoId),
-    repo.findByVehiculo(vehiculoId),
-  ])
-  const hoy = fechaMexico()
-  const estadoPorGarantia = new Map<number, EstadoGarantia>(
-    garantias.map((g) => [g.id, evaluarGarantia(g, g.kilometraje, hoy)])
-  )
-
-  const porRequerimiento = new Map<number, EstadoGarantia[]>()
-  const idsPorRequerimiento = new Map<number, number[]>()
-  for (const v of vinculos) {
-    const estado = estadoPorGarantia.get(v.garantia_vehiculo_id)
-    if (!estado) continue
-    if (!porRequerimiento.has(v.requerimiento_id)) {
-      porRequerimiento.set(v.requerimiento_id, [])
-      idsPorRequerimiento.set(v.requerimiento_id, [])
-    }
-    porRequerimiento.get(v.requerimiento_id)!.push(estado)
-    idsPorRequerimiento.get(v.requerimiento_id)!.push(v.garantia_vehiculo_id)
-  }
-
-  const salida = new Map<number, GarantiasDeRequerimiento>()
-  for (const [reqId, estados] of porRequerimiento) {
-    salida.set(reqId, {
-      ids: idsPorRequerimiento.get(reqId)!,
-      silenciado: cubiertoPorGarantiaVencida(estados),
-    })
-  }
-  return salida
-}
-
-/**
- * Los requerimientos de toda la flota que ya no hay que pedir porque las
- * garantías que los exigían se acabaron. El tablero los descuenta de vencidos y
- * por-vencer, y el calendario deja de agendarlos.
- */
-export async function idsSilenciadosPorGarantia(): Promise<Set<number>> {
-  const vinculos = await repo.findVinculosFleet()
-  const hoy = fechaMexico()
-
-  const porRequerimiento = new Map<number, EstadoGarantia[]>()
-  for (const v of vinculos) {
-    const estado = evaluarGarantia(v, v.kilometraje, hoy)
-    const lista = porRequerimiento.get(v.requerimiento_id)
-    if (lista) lista.push(estado)
-    else porRequerimiento.set(v.requerimiento_id, [estado])
-  }
-
-  const silenciados = new Set<number>()
-  for (const [reqId, estados] of porRequerimiento) {
-    if (cubiertoPorGarantiaVencida(estados)) silenciados.add(reqId)
-  }
-  return silenciados
 }

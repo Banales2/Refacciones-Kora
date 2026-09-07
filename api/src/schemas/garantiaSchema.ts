@@ -63,6 +63,9 @@ export const GarantiaModeloCreateSchema = exigeLimites(z.object({
   duracion_meses: duracionMeses,
   limite_km:      limiteKm,
   activo:         z.boolean().optional(),
+  // La que gobierna el programa: mientras siga viva la unidad sigue el del
+  // fabricante. Una por modelo; marcar otra desmarca la anterior.
+  principal:      z.boolean().optional(),
 }))
 
 // En la edición el modo puede no venir, y entonces no hay contra qué exigir los
@@ -74,6 +77,7 @@ export const GarantiaModeloUpdateSchema = exigeLimites(z.object({
   duracion_meses: duracionMeses,
   limite_km:      limiteKm,
   activo:         z.boolean().optional(),
+  principal:      z.boolean().optional(),
 }))
 
 // ─── Garantía de una unidad ─────────────────────────────────────────────────
@@ -132,5 +136,3 @@ export const GarantiaVehiculoUpdateSchema = exigeLimites(z.object({
   motivo_cancelacion: observaciones,
 }))
 
-/** Ids de garantías a las que se ata un requerimiento (o un renglón de plantilla). */
-export const GarantiaIdsSchema = z.array(z.coerce.number().int().positive()).max(20).optional()

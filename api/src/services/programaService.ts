@@ -4,7 +4,7 @@ import * as repo from '../repositories/programaRepo'
 import * as vehiculoRepo from '../repositories/programaVehiculoRepo'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
 import type {
-  ProgramaCreate, ProgramaUpdate, ProgramaCompleto,
+  ProgramaCreate, ProgramaUpdate, ProgramaCompleto, TipoPrograma,
   OperacionCreate, OperacionUpdate, FaseEntrada, Fase,
 } from '../repositories/programaRepo'
 
@@ -12,8 +12,10 @@ export async function getAcciones() {
   return repo.findAcciones()
 }
 
-export async function getByModelo(modeloId: number): Promise<ProgramaCompleto | null> {
-  return repo.findByModelo(modeloId)
+// Los dos programas del modelo: el del fabricante y el de después de la
+// garantía. La pantalla los edita uno al lado del otro, así que llegan juntos.
+export async function getByModelo(modeloId: number): Promise<ProgramaCompleto[]> {
+  return repo.findTodosDeModelo(modeloId)
 }
 
 export async function getById(id: number): Promise<ProgramaCompleto> {
@@ -22,11 +24,18 @@ export async function getById(id: number): Promise<ProgramaCompleto> {
   return programa
 }
 
+const ETIQUETA_TIPO: Record<TipoPrograma, string> = {
+  fabricante:  'del fabricante',
+  posgarantia: 'de después de la garantía',
+}
+
 export async function create(modeloId: number, data: Omit<ProgramaCreate, 'modelo_id'>) {
-  // Mientras sea uno por modelo (migración 012) conviene decirlo con un 409 y
-  // no dejar que reviente el índice único con un 500.
-  if (await repo.findByModelo(modeloId)) {
-    throw new ConflictError('Este modelo ya tiene un programa de mantenimiento')
+  // Uno por modelo y tipo (migración 016): conviene decirlo con un 409 y no
+  // dejar que reviente el índice único con un 500.
+  if (await repo.findByModelo(modeloId, data.tipo)) {
+    throw new ConflictError(
+      `Este modelo ya tiene un programa de mantenimiento ${ETIQUETA_TIPO[data.tipo]}`
+    )
   }
   return repo.create({ ...data, modelo_id: modeloId })
 }
@@ -93,9 +102,9 @@ export async function updateOperacion(id: number, data: OperacionUpdate) {
 }
 
 export async function removeOperacion(id: number) {
-  // El renglón se va del manual, así que lo que las unidades tuvieran al día
+  // El renglón se va del programa, así que lo que las unidades tuvieran al día
   // sobre él deja de significar algo: se suelta antes, o la llave foránea
-  // aborta el borrado.
+  // aborta el borrado. Lo mismo con las excepciones, que las suelta el repo.
   await vehiculoRepo.borrarEstadosDeOperacion(id)
   if (!await repo.removeOperacion(id)) throw new NotFoundError('Operación')
 }

@@ -1,10 +1,16 @@
-// El programa de mantenimiento del modelo, capturado como lo publica el
-// fabricante: una cuadrícula de servicios (columnas) por operaciones (renglones)
-// donde cada casilla dice qué se le hace a esa pieza en ese servicio.
+// Los programas de mantenimiento del modelo, capturados como una cuadrícula de
+// servicios (columnas) por operaciones (renglones), donde cada casilla dice qué
+// se le hace a esa pieza en ese servicio.
 //
-// Vive junto a la plantilla de requerimientos y no la reemplaza: la plantilla es
-// para lo que no está en el manual (llantas, lavado, algo que pidió el cliente),
-// y esto es lo que dicta el fabricante.
+// Son dos, en pestañas, con exactamente la misma estructura:
+//
+//   - El del fabricante: la tabla del manual. Se sigue mientras la unidad esté
+//     en garantía, porque la garantía depende de que se cumpla.
+//   - El de después de la garantía: el que la flota decide para una unidad que
+//     ya no tiene nada que perder. Otros kilometrajes, otras operaciones.
+//
+// Cuál sigue cada unidad no se decide aquí: lo calcula la API contra la
+// garantía marcada como principal en el modelo.
 //
 // La captura es por brocha —se elige una acción arriba y se va marcando sobre la
 // cuadrícula— porque lo que se está haciendo es transcribir una tabla de varios
@@ -13,16 +19,19 @@ import { useState } from 'react'
 import {
   Stack, Group, Text, Table, Badge, Button, Modal, Alert, Loader, Center,
   ActionIcon, Tooltip, Divider, Paper, SegmentedControl, UnstyledButton, TextInput, Textarea,
+  Tabs,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconPlus, IconPencil, IconTrash, IconChecklist, IconColumns } from '@tabler/icons-react'
 import {
-  useProgramaModelo, useAccionesPrograma, useCreatePrograma, useUpdatePrograma,
+  useProgramasModelo, useAccionesPrograma, useCreatePrograma, useUpdatePrograma,
   useDeletePrograma, useSetFases, useCreateOperacion, useUpdateOperacion,
   useDeleteOperacion, useSetCeldas, proximosServicios,
+  TIPO_PROGRAMA_LABEL, TIPO_PROGRAMA_DETALLE,
 } from '../hooks/usePrograma'
 import type {
   Programa, OperacionPrograma, OperacionPayload, FasePayload, AccionPrograma,
+  TipoPrograma,
 } from '../hooks/usePrograma'
 import { TEXTO_LIBRE, limpiarTextoLibre } from '../lib/validaciones'
 import { formatMXN, formatMXNCorto } from '../lib/formato'
@@ -137,12 +146,13 @@ function ProgramaForm({
 
 // ── Sección ──────────────────────────────────────────────────────────────────
 
-export default function ProgramaModeloSection({ modeloId }: { modeloId: number }) {
-  const { data, isLoading } = useProgramaModelo(modeloId)
-  const { data: accionesData } = useAccionesPrograma()
-  const programa = data?.data ?? null
-  const acciones = accionesData?.data ?? []
-
+function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
+  modeloId: number
+  tipo:     TipoPrograma
+  /** Null mientras el modelo no tenga capturado este programa. */
+  programa: Programa | null
+  acciones: AccionPrograma[]
+}) {
   const createMut    = useCreatePrograma(modeloId)
   const updateMut    = useUpdatePrograma(modeloId)
   const deleteMut    = useDeletePrograma(modeloId)
@@ -213,33 +223,16 @@ export default function ProgramaModeloSection({ modeloId }: { modeloId: number }
     }
   }
 
-  const encabezado = (
-    <Divider
-      label={
-        <Group gap="xs">
-          <IconChecklist size={14} />
-          <Text size="sm" fw={500}>Programa de mantenimiento del fabricante</Text>
-        </Group>
-      }
-      labelPosition="left"
-    />
-  )
-
-  if (isLoading) {
-    return <>{encabezado}<Center py="xl"><Loader /></Center></>
-  }
-
   // ── Sin programa todavía ──
   if (!programa) {
     return (
       <>
-        {encabezado}
         <Paper withBorder p="lg" radius="md">
           <Stack gap="sm" align="flex-start">
+            <Text size="sm" c="dimmed">{TIPO_PROGRAMA_DETALLE[tipo]}</Text>
             <Text size="sm" c="dimmed">
-              Este modelo no tiene capturado el programa del fabricante. Es la tabla del manual:
-              los servicios por kilometraje y qué se le hace a cada pieza en cada uno, con el
-              límite de meses de cada renglón.
+              Se captura igual: los servicios por kilometraje y qué se le hace a cada pieza en
+              cada uno, con el límite de meses de cada renglón.
             </Text>
             <Button
               leftSection={<IconPlus size={14} />}
@@ -252,12 +245,12 @@ export default function ProgramaModeloSection({ modeloId }: { modeloId: number }
 
         <Modal
           opened={programaFormOpen} onClose={() => setProgramaFormOpen(false)}
-          title="Nuevo programa de mantenimiento" centered size="lg"
+          title={`Nuevo programa — ${TIPO_PROGRAMA_LABEL[tipo].toLowerCase()}`} centered size="lg"
         >
           <ProgramaForm
             isPending={createMut.isPending}
             error={formError}
-            onSubmit={(p) => createMut.mutate(p, {
+            onSubmit={(p) => createMut.mutate({ ...p, tipo }, {
               onSuccess: () => setProgramaFormOpen(false),
               onError:   (e: Error) => setFormError(e.message),
             })}
@@ -271,8 +264,6 @@ export default function ProgramaModeloSection({ modeloId }: { modeloId: number }
   // ── Con programa ──
   return (
     <>
-      {encabezado}
-
       <Paper withBorder p="md" radius="md">
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <Stack gap={4}>
@@ -558,6 +549,74 @@ export default function ProgramaModeloSection({ modeloId }: { modeloId: number }
           </Group>
         </Stack>
       </Modal>
+    </>
+  )
+}
+
+// ── Sección ──────────────────────────────────────────────────────────────────
+
+export default function ProgramaModeloSection({ modeloId }: { modeloId: number }) {
+  const { data, isLoading }    = useProgramasModelo(modeloId)
+  const { data: accionesData } = useAccionesPrograma()
+  const programas = data?.data ?? []
+  const acciones  = accionesData?.data ?? []
+
+  const [tab, setTab] = useState<TipoPrograma>('fabricante')
+
+  const encabezado = (
+    <Divider
+      label={
+        <Group gap="xs">
+          <IconChecklist size={14} />
+          <Text size="sm" fw={500}>Programas de mantenimiento</Text>
+        </Group>
+      }
+      labelPosition="left"
+    />
+  )
+
+  if (isLoading) {
+    return <>{encabezado}<Center py="xl"><Loader /></Center></>
+  }
+
+  const tipos: TipoPrograma[] = ['fabricante', 'posgarantia']
+
+  return (
+    <>
+      {encabezado}
+      <Tabs value={tab} onChange={(v) => setTab((v ?? 'fabricante') as TipoPrograma)}>
+        <Tabs.List>
+          {tipos.map((tipo) => {
+            const p = programas.find((x) => x.tipo === tipo)
+            return (
+              <Tabs.Tab key={tipo} value={tipo}>
+                <Group gap={6} wrap="nowrap">
+                  <Text size="sm">{TIPO_PROGRAMA_LABEL[tipo]}</Text>
+                  {/* Cuántos renglones trae, o que todavía no existe: se ve sin
+                      tener que entrar a la pestaña. */}
+                  <Badge size="xs" variant={p ? 'light' : 'outline'} color={p ? 'blue' : 'gray'}>
+                    {p ? p.operaciones.length : '—'}
+                  </Badge>
+                </Group>
+              </Tabs.Tab>
+            )
+          })}
+        </Tabs.List>
+
+        {tipos.map((tipo) => (
+          <Tabs.Panel key={tipo} value={tipo} pt="md">
+            <Stack gap="md">
+              <Text size="xs" c="dimmed">{TIPO_PROGRAMA_DETALLE[tipo]}</Text>
+              <ProgramaPanel
+                modeloId={modeloId}
+                tipo={tipo}
+                programa={programas.find((p) => p.tipo === tipo) ?? null}
+                acciones={acciones}
+              />
+            </Stack>
+          </Tabs.Panel>
+        ))}
+      </Tabs>
     </>
   )
 }

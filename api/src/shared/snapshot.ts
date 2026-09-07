@@ -82,20 +82,10 @@ const CONSULTAS: Record<string, string> = {
     LEFT JOIN vehiculos     v  ON v.id = mt.vehiculo_id
     WHERE d.id = @id`,
 
-  // Preventivos e incidencias son hijos de `pendientes` y la mitad de sus datos
-  // vive en el padre: si se captura solo la tabla hija, la bitácora guarda un
-  // registro sin nombre, sin status y sin vehículo. Por eso ambas capturas
-  // parten del padre y le pegan el hijo.
-  requerimientos_exclusivos: `
-    SELECT p.*, r.trigger_mode, r.intervalo_km, r.intervalo_meses,
-           r.intervalos_iniciales_km,
-           r.fecha_inicio, r.km_inicio, r.fecha_reporte, r.plantilla_origen_id,
-           v.numero_serie AS vehiculo_serie, v.placas AS vehiculo_placas
-    FROM pendientes p
-    JOIN requerimientos_exclusivos r ON r.id = p.id
-    LEFT JOIN vehiculos v ON v.id = p.vehiculo_id
-    WHERE p.id = @id`,
-
+  // Una incidencia es hija de `pendientes` y la mitad de sus datos vive en el
+  // padre: si se captura solo la tabla hija, la bitácora guarda un registro sin
+  // nombre, sin status y sin vehículo. Por eso la captura parte del padre y le
+  // pega el hijo.
   incidencias: `
     SELECT p.*, i.reportado_por, i.severidad, i.fecha, i.hora, i.ubicacion,
            i.autorizado_por,
@@ -104,12 +94,6 @@ const CONSULTAS: Record<string, string> = {
     JOIN incidencias i ON i.id = p.id
     LEFT JOIN vehiculos v ON v.id = p.vehiculo_id
     WHERE p.id = @id`,
-
-  plantilla_requerimientos_modelo: `
-    SELECT pl.*, m.marca, m.nombre AS modelo
-    FROM plantilla_requerimientos_modelo pl
-    LEFT JOIN modelos m ON m.id = pl.modelo_id
-    WHERE pl.id = @id`,
 
   programas_mantenimiento: `
     SELECT pr.*, m.marca, m.nombre AS modelo

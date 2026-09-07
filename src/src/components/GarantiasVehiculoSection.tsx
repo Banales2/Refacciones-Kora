@@ -1,10 +1,10 @@
-// Garantías de una unidad: qué le queda cubierto, hasta cuándo y cuántos
-// servicios preventivos existen solo por eso.
+// Garantías de una unidad: qué le queda cubierto y hasta cuándo.
 //
 // La vigencia no se guarda, la calcula la API contra la fecha de arranque y el
-// odómetro de hoy; aquí solo se pinta. Cuando una garantía se acaba, los
-// requerimientos atados a ella dejan de pedirse solos: por eso la tabla dice
-// cuántos cuelgan de cada una.
+// odómetro de hoy; aquí solo se pinta. Importa porque de la garantía marcada
+// como principal en el modelo depende qué programa de mantenimiento sigue la
+// unidad: el del fabricante mientras siga viva, el de después de la garantía
+// cuando se acaba.
 import { useState } from 'react'
 import {
   Stack, Group, Text, Table, Badge, Button, Modal, Alert, Loader, Center,
@@ -95,7 +95,6 @@ export default function GarantiasVehiculoSection({
                   <Table.Th>Cobertura</Table.Th>
                   <Table.Th>Desde</Table.Th>
                   <Table.Th>Vence</Table.Th>
-                  <Table.Th style={{ textAlign: 'center' }}>Servicios</Table.Th>
                   <Table.Th style={{ width: 80 }} />
                 </Table.Tr>
               </Table.Thead>
@@ -127,21 +126,6 @@ export default function GarantiasVehiculoSection({
                         </Text>
                       </Table.Td>
                       <Table.Td><Text size="sm">{textoLimite(g)}</Text></Table.Td>
-                      <Table.Td style={{ textAlign: 'center' }}>
-                        <Tooltip
-                          label={g.requerimientos === 0
-                            ? 'Ningún requerimiento preventivo depende de esta garantía'
-                            : `${g.requerimientos} requerimiento${g.requerimientos === 1 ? '' : 's'} preventivo${g.requerimientos === 1 ? '' : 's'} existe${g.requerimientos === 1 ? '' : 'n'} por esta garantía`}
-                        >
-                          <Badge
-                            size="sm"
-                            variant={g.requerimientos ? 'light' : 'outline'}
-                            color={g.requerimientos ? 'blue' : 'gray'}
-                          >
-                            {g.requerimientos}
-                          </Badge>
-                        </Tooltip>
-                      </Table.Td>
                       <Table.Td>
                         <Group gap={4} justify="flex-end" wrap="nowrap">
                           <Tooltip label="Editar">
@@ -172,13 +156,13 @@ export default function GarantiasVehiculoSection({
           </Table.ScrollContainer>
         )}
 
-        {items.some((g) => !g.estado.vigente && g.requerimientos > 0) && (
+        {items.some((g) => !g.estado.vigente) && (
           <>
             <Divider />
             <Text size="xs" c="dimmed">
-              Los requerimientos preventivos que existían por una garantía ya vencida dejan de
-              pedirse: siguen en la lista de abajo, en gris, para que quede el rastro de por qué
-              se hacían.
+              Cuando se acaba la garantía principal, la unidad deja de seguir el programa del
+              fabricante y pasa al de después de la garantía. Se ve en la sección del programa,
+              más abajo.
             </Text>
           </>
         )}
@@ -207,13 +191,11 @@ export default function GarantiasVehiculoSection({
       >
         <Stack gap="md">
           <Text>¿Eliminar <strong>{deleting?.nombre}</strong> de esta unidad?</Text>
-          {(deleting?.requerimientos ?? 0) > 0 && (
-            <Alert color="orange" title="Hay servicios colgando de ella" variant="light">
-              {deleting?.requerimientos} requerimiento(s) preventivo(s) existen por esta garantía.
-              Al borrarla se sueltan y vuelven a pedirse para siempre. Si la unidad la perdió,
-              cancélala con su fecha y motivo en lugar de eliminarla.
-            </Alert>
-          )}
+          <Alert color="orange" title="Ojo con el programa" variant="light">
+            Si esta garantía era la principal del modelo, borrarla deja a la unidad siguiendo el
+            programa del fabricante para siempre. Si lo que pasó es que la unidad la perdió,
+            cancélala con su fecha y motivo en lugar de eliminarla.
+          </Alert>
           {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>

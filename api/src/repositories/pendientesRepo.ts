@@ -1,18 +1,22 @@
-// Tabla padre de todo lo que hay que atenderle a un vehículo. Tiene dos hijos
-// que comparten su id: `requerimientos_exclusivos` (preventivo, vence por
-// km/tiempo y se repite) e `incidencias` (algo reportado, se cierra una vez).
+// Tabla padre de todo lo que hay que atenderle a un vehículo. Desde la
+// migración 015 le queda un solo hijo, que comparte su id: `incidencias`, algo
+// reportado que se cierra una vez. El otro hijo eran los requerimientos
+// preventivos, que se fueron con el programa de mantenimiento.
 //
-// Los mantenimientos y las agendas se enlazan contra este padre, así que "qué
-// atendió este mantenimiento" es un solo JOIN sin importar de qué tipo sea.
+// Se conserva la forma padre/hijo aunque hoy haya un solo tipo: los
+// mantenimientos y las agendas se enlazan contra el padre, así que "qué atendió
+// este mantenimiento" sigue siendo un solo JOIN.
 //
 // Aquí viven únicamente los campos compartidos y las operaciones sobre el padre;
-// cada hijo maneja los suyos en su propio repo y llama a estos helpers dentro de
+// el hijo maneja los suyos en su propio repo y llama a estos helpers dentro de
 // su transacción. Un pendiente sin hijo no significa nada, por eso `insert` y
 // `applyUpdate` exigen una transacción en curso en vez de abrir la suya.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 
-export type Origen          = 'preventivo' | 'incidencia'
+// El CHECK de la columna sigue admitiendo 'preventivo' (ver la migración 015),
+// pero ya nadie lo escribe.
+export type Origen          = 'incidencia'
 export type StatusPendiente = 'activo' | 'completado' | 'pausado' | 'cancelado'
 
 export interface PendienteBase {
@@ -107,9 +111,6 @@ export async function remove(id: number): Promise<boolean> {
 // Solo mueve entre 'activo' y 'completado'. 'cancelado' y 'pausado' los puso una
 // persona a propósito y no se tocan: cancelar es justamente decir "ya no me
 // alertes", y reabrirla por un vínculo sería ignorar esa decisión.
-//
-// Los preventivos quedan fuera: no se "completan", se les reinicia el ciclo, y
-// eso ya lo resuelve el snapshot de fecha/km del vínculo.
 export async function syncIncidenciaStatuses(
   exec: sql.ConnectionPool | sql.Transaction, ids?: number[]
 ): Promise<void> {
@@ -142,8 +143,8 @@ export async function syncIncidenciaStatuses(
   `)
 }
 
-// Todo lo que un vehículo tiene abierto, de los dos tipos: alimenta el selector
-// de "qué atiende este mantenimiento" y el de las agendas.
+// Todo lo que un vehículo tiene abierto: alimenta el selector de "qué atiende
+// este mantenimiento" y el de las agendas.
 export async function findActivosByVehiculo(vehiculoId: number): Promise<PendienteBase[]> {
   const pool = await getPool()
   const r = await pool.request()
@@ -157,8 +158,9 @@ export async function findActivosByVehiculo(vehiculoId: number): Promise<Pendien
   return r.recordset
 }
 
-// Categorías ya usadas en la flota (padre) o en las plantillas de modelo, para
-// que una categoría escrita una vez quede disponible en todos los formularios.
+// Categorías ya usadas en la flota (padre) o en los renglones de algún programa
+// de mantenimiento, para que una categoría escrita una vez quede disponible en
+// todos los formularios.
 export async function findCategorias(): Promise<string[]> {
   const pool = await getPool()
   const r = await pool.request().query(`
@@ -166,7 +168,7 @@ export async function findCategorias(): Promise<string[]> {
       SELECT DISTINCT categoria FROM pendientes
       WHERE categoria IS NOT NULL AND LTRIM(RTRIM(categoria)) <> ''
       UNION
-      SELECT DISTINCT categoria FROM plantilla_requerimientos_modelo
+      SELECT DISTINCT categoria FROM programa_operaciones
       WHERE categoria IS NOT NULL AND LTRIM(RTRIM(categoria)) <> ''
     ) AS c
     ORDER BY categoria

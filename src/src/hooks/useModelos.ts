@@ -1,5 +1,5 @@
 // Catálogo de marcas/modelos de vehículos. Cada modelo puede tener una
-// plantilla de requerimientos (usePlantilla) que se aplica a sus vehículos.
+// programa de mantenimiento (usePrograma) que siguen sus vehículos.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { TipoVehiculo } from './useVehiculos'

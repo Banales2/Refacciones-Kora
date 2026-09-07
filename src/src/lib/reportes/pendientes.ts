@@ -1,9 +1,9 @@
-// Reporte de la pestaña Pendientes: requerimientos preventivos vencidos y por
-// vencer, incidencias abiertas y la tendencia acumulada.
+// Reporte de la pestaña Pendientes: lo que el programa de mantenimiento tiene
+// vencido y por vencer, las incidencias abiertas y la tendencia acumulada.
 //
-// Es la orden de trabajo del taller. Va agrupado por vehículo y no por
-// requerimiento porque así se atiende: la unidad entra una vez y se le hace
-// todo lo que trae pendiente.
+// Es la orden de trabajo del taller. Va agrupado por vehículo y no por servicio
+// porque así se atiende: la unidad entra una vez y se le hace todo lo que trae
+// pendiente.
 import type { RequerimientoVencido, IncidenciaAbierta, HistorialDia } from '../../hooks/useDashboard'
 import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
@@ -20,21 +20,21 @@ export interface DatosPendientes {
 interface GrupoVehiculo {
   vehiculo_id:     number
   vehiculo_nombre: string
-  requerimientos:  RequerimientoVencido[]
+  servicios:       RequerimientoVencido[]
 }
 
 function agrupar(items: RequerimientoVencido[]): GrupoVehiculo[] {
   const map = new Map<number, GrupoVehiculo>()
   for (const item of items) {
     const entry = map.get(item.vehiculo_id) ?? {
-      vehiculo_id: item.vehiculo_id, vehiculo_nombre: item.vehiculo_nombre, requerimientos: [],
+      vehiculo_id: item.vehiculo_id, vehiculo_nombre: item.vehiculo_nombre, servicios: [],
     }
-    entry.requerimientos.push(item)
+    entry.servicios.push(item)
     map.set(item.vehiculo_id, entry)
   }
   // La unidad con más pendientes primero: es la que hay que meter al taller ya.
   return [...map.values()].sort(
-    (a, b) => b.requerimientos.length - a.requerimientos.length ||
+    (a, b) => b.servicios.length - a.servicios.length ||
               a.vehiculo_nombre.localeCompare(b.vehiculo_nombre, 'es-MX'))
 }
 
@@ -42,13 +42,13 @@ function nombreBase(): string {
   return `pendientes-${hoyISO()}`
 }
 
-// Las filas de la orden de trabajo: una por requerimiento, con el vehículo
-// repetido solo en el primero de cada grupo para que se lea como bloque.
+// Las filas de la orden de trabajo: una por servicio, con el vehículo repetido
+// solo en el primero de cada grupo para que se lea como bloque.
 function filasAgrupadas(grupos: GrupoVehiculo[]): string[][] {
   return grupos.flatMap((g) =>
-    g.requerimientos.map((r, i) => [
+    g.servicios.map((r, i) => [
       i === 0 ? g.vehiculo_nombre : '',
-      i === 0 ? String(g.requerimientos.length) : '',
+      i === 0 ? String(g.servicios.length) : '',
       r.nombre,
       r.categoria ?? '—',
     ])
@@ -63,22 +63,23 @@ export async function exportPendientesPdf(d: DatosPendientes) {
   const pdf = await crearReportePdf({
     titulo: 'Pendientes de mantenimiento',
     subtitulo:
-      `${d.vencidos.length} requerimiento${d.vencidos.length !== 1 ? 's' : ''} vencido${d.vencidos.length !== 1 ? 's' : ''} · ` +
+      `${d.vencidos.length} servicio${d.vencidos.length !== 1 ? 's' : ''} vencido${d.vencidos.length !== 1 ? 's' : ''} · ` +
       `${d.porVencer.length} por vencer · ` +
       `${d.incidencias.length} incidencia${d.incidencias.length !== 1 ? 's' : ''} sin atender`,
     orientacion: 'landscape',
   })
 
   pdf.seccion(
-    'Requerimientos vencidos',
-    'Preventivos cuyo intervalo de kilómetros o de meses ya se pasó. Agrupados por unidad: ' +
-    'la de arriba es la que más trae acumulado.',
+    'Servicios vencidos',
+    'Del programa de mantenimiento: la visita que ya tocaba por kilometraje, o el renglón que ' +
+    'venció por su propio límite de meses. Agrupados por unidad: la de arriba es la que más ' +
+    'trae acumulado.',
   )
   if (gruposVencidos.length === 0) {
-    pdf.vacio('No hay requerimientos vencidos hoy.')
+    pdf.vacio('No hay servicios vencidos hoy.')
   } else {
     pdf.tabla({
-      head: ['Vehículo', 'Total', 'Requerimiento', 'Categoría'],
+      head: ['Vehículo', 'Total', 'Servicio', 'Categoría'],
       body: filasAgrupadas(gruposVencidos),
       columnStyles: { 0: { cellWidth: 70 }, 1: { halign: 'center', cellWidth: 16 } },
       didParseCell: (c: CellHookData) => {
@@ -92,14 +93,15 @@ export async function exportPendientesPdf(d: DatosPendientes) {
   }
 
   pdf.seccion(
-    'Requerimientos por vencer',
-    'Preventivos que están por alcanzar su intervalo. Atenderlos aquí es lo que evita la falla cara.',
+    'Servicios por vencer',
+    'Los que están por alcanzar su marca. Atenderlos aquí es lo que evita la falla cara —y, en ' +
+    'una unidad todavía en garantía, lo que evita perderla.',
   )
   if (gruposPorVencer.length === 0) {
-    pdf.vacio('No hay requerimientos próximos a vencer.')
+    pdf.vacio('No hay servicios próximos a vencer.')
   } else {
     pdf.tabla({
-      head: ['Vehículo', 'Total', 'Requerimiento', 'Categoría'],
+      head: ['Vehículo', 'Total', 'Servicio', 'Categoría'],
       body: filasAgrupadas(gruposPorVencer),
       columnStyles: { 0: { cellWidth: 70 }, 1: { halign: 'center', cellWidth: 16 } },
       didParseCell: (c: CellHookData) => {
@@ -166,13 +168,13 @@ export async function exportPendientesExcel(d: DatosPendientes) {
   // En Excel no se agrupa: se deja plano y con autofiltro, que es lo que
   // permite ordenar por vehículo o por categoría según lo que se busque.
   const columnasReq = [
-    { header: 'Vehículo',      width: 40, valor: (r: RequerimientoVencido) => r.vehiculo_nombre },
-    { header: 'Requerimiento', width: 40, valor: (r: RequerimientoVencido) => r.nombre },
-    { header: 'Categoría',     width: 22, valor: (r: RequerimientoVencido) => r.categoria ?? '—' },
+    { header: 'Vehículo',  width: 40, valor: (r: RequerimientoVencido) => r.vehiculo_nombre },
+    { header: 'Servicio',  width: 40, valor: (r: RequerimientoVencido) => r.nombre },
+    { header: 'Categoría', width: 22, valor: (r: RequerimientoVencido) => r.categoria ?? '—' },
   ]
 
-  wb.hoja('Vencidos',  columnasReq, d.vencidos,  { vacio: 'No hay requerimientos vencidos hoy.' })
-  wb.hoja('Por vencer', columnasReq, d.porVencer, { vacio: 'No hay requerimientos próximos a vencer.' })
+  wb.hoja('Vencidos',   columnasReq, d.vencidos,  { vacio: 'No hay servicios vencidos hoy.' })
+  wb.hoja('Por vencer', columnasReq, d.porVencer, { vacio: 'No hay servicios próximos a vencer.' })
 
   wb.hoja('Incidencias', [
     { header: 'Incidencia', width: 40, valor: (i) => i.nombre },

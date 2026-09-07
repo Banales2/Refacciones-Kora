@@ -1,3 +1,5 @@
+// Alta de uno de los dos programas de un modelo. El cuerpo trae `tipo`: el del
+// fabricante o el de después de la garantía.
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'

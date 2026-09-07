@@ -1,7 +1,7 @@
-// Incidencias: algo reportado de un vehículo que hay que atender una vez. Junto
-// con los requerimientos preventivos son las dos caras de un "pendiente"; la
-// mitad de sus campos (nombre, descripción, categoría, status, vehículo) vive en
-// la tabla padre, pero la API los devuelve planos.
+// Incidencias: algo reportado de un vehículo que hay que atender una vez. Es el
+// único hijo que le queda a "pendientes"; la mitad de sus campos (nombre,
+// descripción, categoría, status, vehículo) vive en la tabla padre, pero la API
+// los devuelve planos.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
@@ -75,7 +75,7 @@ function invalidar(qc: ReturnType<typeof useQueryClient>, vehiculoId: number) {
   qc.invalidateQueries({ queryKey: ['incidencias'] })
   qc.invalidateQueries({ queryKey: ['incidencias', vehiculoId] })
   qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })
-  qc.invalidateQueries({ queryKey: ['requerimientos-categorias'] })
+  qc.invalidateQueries({ queryKey: ['pendientes-categorias'] })
   qc.invalidateQueries({ queryKey: ['incidencias-reportadores'] })
 }
 

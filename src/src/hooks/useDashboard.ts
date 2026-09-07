@@ -1,4 +1,4 @@
-// Consultas del tablero principal: resumen de costos del mes, requerimientos
+// Consultas del tablero principal: resumen de costos del mes, mantenimientos
 // vencidos y por vencer, historial para la gráfica, mantenimientos del
 // calendario y el reporte de flota completo (este último bajo demanda).
 import { useQuery } from '@tanstack/react-query'
@@ -53,19 +53,25 @@ export function useResumenMes() {
   })
 }
 
+// Lo que el programa de mantenimiento de una unidad tiene atrasado.
 export interface RequerimientoVencido {
+  /** Negativo: la alerta no tiene un registro propio detrás, solo distingue renglones. */
   id:              number
   nombre:          string
   categoria:       string | null
   vehiculo_id:     number
   vehiculo_nombre: string
   /**
-   * De dónde sale la alerta. 'programa' es la tabla del fabricante —una visita
-   * completa que ya toca, o un renglón que venció por su límite de meses—;
-   * 'requerimiento' es un preventivo suelto de la unidad. Se atienden en
-   * secciones distintas de la ficha, y por eso se distinguen aquí.
+   * 'fase' es la visita completa que ya toca —toda la columna del programa—;
+   * 'operacion' es un renglón que venció por su propio límite de meses, sin
+   * arrastrar el resto. Se atienden distinto, y por eso se distinguen aquí.
    */
-  origen:          'requerimiento' | 'programa'
+  tipo:            'fase' | 'operacion'
+  /**
+   * La unidad sigue en garantía y este servicio ya se pasó. Es la alerta que
+   * más cuesta ignorar: el programa del fabricante existe para no perderla.
+   */
+  garantia_en_riesgo: boolean
 }
 
 export function useRequerimientosVencidos() {

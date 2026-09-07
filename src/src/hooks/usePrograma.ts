@@ -1,10 +1,14 @@
-// Programa de mantenimiento de un modelo: la tabla que publica el fabricante,
-// con fases (columnas de kilometraje) y operaciones (renglones sobre piezas).
-// Cada celda dice qué se le hace a esa pieza en ese servicio.
+// Programas de mantenimiento de un modelo: fases (columnas de kilometraje) y
+// operaciones (renglones sobre piezas); cada celda dice qué se le hace a esa
+// pieza en ese servicio.
 //
-// Se lee y se invalida siempre completo: la cuadrícula que lo captura necesita
-// las tres cosas a la vez, y casi todas las mutaciones (celdas, fases, orden)
-// devuelven ya el programa entero.
+// Son dos, con la misma estructura: el del fabricante —la tabla del manual, que
+// se sigue mientras la unidad esté en garantía porque la garantía depende de
+// que se cumpla— y el de después de la garantía, más libre.
+//
+// Se leen y se invalidan siempre completos: la cuadrícula que los captura
+// necesita las tres cosas a la vez, y casi todas las mutaciones (celdas, fases,
+// orden) devuelven ya el programa entero.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
@@ -43,9 +47,30 @@ export interface OperacionPrograma {
   celdas:        Record<number, string>
 }
 
+/**
+ * Cuál de los dos es. La etapa de la unidad se llama igual: mientras siga en
+ * garantía sigue el 'fabricante', y al vencer pasa al 'posgarantia'.
+ */
+export type TipoPrograma = 'fabricante' | 'posgarantia'
+
+export const TIPO_PROGRAMA_LABEL: Record<TipoPrograma, string> = {
+  fabricante:  'Del fabricante',
+  posgarantia: 'Después de la garantía',
+}
+
+export const TIPO_PROGRAMA_DETALLE: Record<TipoPrograma, string> = {
+  fabricante:
+    'La tabla del manual. Se sigue mientras la unidad esté en garantía: no llevarla a estos ' +
+    'servicios es motivo para perderla.',
+  posgarantia:
+    'El que la unidad sigue cuando se le acaba la garantía. Misma estructura, con los ' +
+    'kilometrajes y las operaciones que a la flota le convengan.',
+}
+
 export interface Programa {
   id:          number
   modelo_id:   number
+  tipo:        TipoPrograma
   nombre:      string
   descripcion: string | null
   activo:      boolean
@@ -56,6 +81,7 @@ export interface Programa {
 }
 
 export interface ProgramaPayload {
+  tipo:         TipoPrograma
   nombre:       string
   descripcion?: string | null
   activo?:      boolean
@@ -77,12 +103,12 @@ export interface FasePayload {
 
 // ─── Lectura ────────────────────────────────────────────────────────────────
 
-export function useProgramaModelo(modeloId: number) {
+// Los dos programas del modelo, el del fabricante primero. Llega vacío mientras
+// no haya ninguno: no es un error, es la pantalla ofreciendo crearlos.
+export function useProgramasModelo(modeloId: number) {
   return useQuery({
-    // `data` viene en null mientras el modelo no tenga programa: no es un error,
-    // es la pantalla ofreciendo crearlo.
     queryKey: ['programa', modeloId],
-    queryFn: () => api.get<{ data: Programa | null }>(`/modelos/${modeloId}/programa`),
+    queryFn: () => api.get<{ data: Programa[] }>(`/modelos/${modeloId}/programa`),
   })
 }
 
@@ -105,9 +131,12 @@ function invalidar(qc: ReturnType<typeof useQueryClient>, modeloId: number) {
 // Las mutaciones sobre la cuadrícula devuelven ya el programa entero, así que
 // se escribe la caché en vez de invalidarla: marcar una celda no tiene por qué
 // costar un viaje de vuelta, y sin refetch la casilla no parpadea entre lo que
-// se acaba de marcar y lo que contesta el servidor.
+// se acaba de marcar y lo que contesta el servidor. Como la caché guarda los
+// dos programas, se reemplaza solo el que cambió.
 function guardar(qc: ReturnType<typeof useQueryClient>, modeloId: number, data: Programa) {
-  qc.setQueryData(['programa', modeloId], { data })
+  qc.setQueryData(['programa', modeloId], (prev?: { data: Programa[] }) => ({
+    data: (prev?.data ?? []).map((p) => (p.id === data.id ? data : p)),
+  }))
 }
 
 export function useCreatePrograma(modeloId: number) {

@@ -1,6 +1,7 @@
-// El programa de un modelo, completo: cabecera, fases y operaciones con sus
-// celdas. Devuelve `data: null` cuando el modelo todavía no tiene programa —no
-// es un 404: la pantalla del modelo siempre existe y ofrece crearlo.
+// Los programas de un modelo, completos: cabecera, fases y operaciones con sus
+// celdas. Devuelve un arreglo de 0 a 2 —el del fabricante primero—; vacío
+// cuando el modelo todavía no tiene ninguno, que no es un 404: la pantalla del
+// modelo siempre existe y ofrece crearlos.
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'

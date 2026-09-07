@@ -1,9 +1,9 @@
 // Cuándo se le acaba la garantía a una unidad.
 //
 // Vive aquí y no en un service porque la usan dos: el módulo de garantías, para
-// pintar el estado en la ficha del vehículo, y el tablero, que necesita saber
-// qué requerimientos preventivos ya no hay que pedir porque la garantía que los
-// exigía caducó.
+// pintar el estado en la ficha del vehículo, y el programa de mantenimiento,
+// que decide con esto si la unidad sigue el programa del fabricante o ya pasó
+// al de después de la garantía.
 //
 // El estado no se guarda: se calcula contra la fecha de arranque y el odómetro
 // de hoy. Un campo "vencida" en la tabla necesitaría un proceso que lo
@@ -140,13 +140,4 @@ export function evaluarGarantia(
     vigente: true, motivo: null,
     vence_el, vence_a_los_km, meses_restantes, km_restantes, faltan_datos: faltan,
   }
-}
-
-/**
- * Un requerimiento atado a garantías deja de pedirse cuando **todas** se
- * acabaron: mientras una siga viva, el servicio se sigue necesitando. Sin
- * garantías atadas se comporta como siempre, y por eso devuelve false.
- */
-export function cubiertoPorGarantiaVencida(estados: EstadoGarantia[]): boolean {
-  return estados.length > 0 && estados.every((e) => !e.vigente)
 }
