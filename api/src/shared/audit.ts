@@ -55,7 +55,7 @@ const ENTIDADES: Record<string, { etiqueta: string; campos: string[] }> = {
   detalle_mtto_pieza:              { etiqueta: 'Pieza de mantenimiento',  campos: ['pieza', 'pieza_serie', 'cantidad', 'vehiculo_serie'] },
   gasolineras:                     { etiqueta: 'Gasolinera',              campos: ['nombre', 'ubicacion'] },
   lotes_pieza:                     { etiqueta: 'Lote de refacción',       campos: ['pieza', 'pieza_serie', 'proveedor', 'num_factura'] },
-  mantenimiento:                   { etiqueta: 'Mantenimiento',           campos: ['tipo', 'vehiculo_serie', 'vehiculo_placas', 'fecha'] },
+  mantenimiento:                   { etiqueta: 'Mantenimiento',           campos: ['tipo', 'razones', 'vehiculo_serie', 'vehiculo_placas', 'fecha'] },
   modelos:                         { etiqueta: 'Modelo',                  campos: ['marca', 'nombre', 'anio'] },
   permisos_circulacion:            { etiqueta: 'Permiso de circulación',  campos: ['zona_circulacion', 'fecha_expiracion'] },
   piezas:                          { etiqueta: 'Refacción',               campos: ['descripcion', 'numero_serie', 'tipo_pieza'] },

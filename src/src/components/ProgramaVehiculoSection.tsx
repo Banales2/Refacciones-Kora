@@ -48,7 +48,7 @@ import { formatMXN, formatMXNCorto } from '../lib/formato'
 import { FechaInput } from './FechaInput'
 import ProgramaExcepcionesModal from './ProgramaExcepcionesModal'
 import MantenimientoForm from './MantenimientoForm'
-import { useCreateMantenimiento } from '../hooks/useMantenimientos'
+import { useCreateMantenimiento, RAZON_PREVENCION } from '../hooks/useMantenimientos'
 import type { MantenimientoPayload } from '../hooks/useMantenimientos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
@@ -683,6 +683,10 @@ export default function ProgramaVehiculoSection({
           <MantenimientoForm
             vehiculoId={vehiculoId}
             tipoVehiculo={tipoVehiculo}
+            // Un servicio del programa entra por prevención: para eso existe el
+            // programa. Se puede quitar y se le pueden agregar las demás, si de
+            // paso se le atendió otra cosa.
+            prefillRazones={[RAZON_PREVENCION]}
             isPending={visitaMut.isPending || mantMut.isPending || piezasMut.isPending}
             error={error}
             onSubmit={registrarVisita}

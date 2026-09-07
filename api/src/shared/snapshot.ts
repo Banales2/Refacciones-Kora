@@ -56,9 +56,19 @@ const CONSULTAS: Record<string, string> = {
     LEFT JOIN proveedores pr ON pr.id = l.proveedor_id
     WHERE l.id = @id`,
 
+  // Las razones viven en su propia tabla y son varias; se traen concatenadas
+  // porque la bitácora compara valores planos, y "PREVENCIÓN, FALLA ELÉCTRICA"
+  // se lee mejor que un renglón por razón.
   mantenimiento: `
     SELECT mt.*, v.numero_serie AS vehiculo_serie, v.placas AS vehiculo_placas,
-           t.nombre AS tecnico_nombre
+           t.nombre AS tecnico_nombre,
+           STUFF((
+             SELECT ', ' + mr.razon
+             FROM mantenimiento_razones mr
+             WHERE mr.mantenimiento_id = mt.id
+             ORDER BY mr.razon
+             FOR XML PATH(''), TYPE
+           ).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS razones
     FROM mantenimiento mt
     LEFT JOIN vehiculos v ON v.id = mt.vehiculo_id
     LEFT JOIN tecnicos  t ON t.id = mt.tecnico_id

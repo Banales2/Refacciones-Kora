@@ -22,6 +22,13 @@ export interface Mantenimiento {
    * que es el caso de la mayoría. Ver la migración 017.
    */
   servicio_programa_km: number | null
+  /**
+   * Por qué entró la unidad al taller. Varias a la vez: un servicio del
+   * programa entra por PREVENCIÓN y de paso se le atiende la fuga que traía.
+   * Es distinto de `tipo`, que clasifica el gasto (preventivo/correctivo).
+   * Vacío es válido por ahora; ver la migración 018.
+   */
+  razones:          string[]
 }
 
 /** Mantenimiento con la unidad resuelta, para el historial de toda la flota. */
@@ -40,6 +47,7 @@ export interface MantenimientoCreate {
   km_actual?:         number
   observaciones?:     string | null
   pendiente_ids?: number[]
+  razones?:           string[]
 }
 
 export interface MantenimientoUpdate {
@@ -50,6 +58,70 @@ export interface MantenimientoUpdate {
   km_actual?:         number
   observaciones?:     string | null
   pendiente_ids?: number[]
+  razones?:           string[]
+}
+
+/**
+ * Se guardan en mayúsculas y sin espacios sobrantes para que "Prevención" y
+ * "PREVENCIÓN " sean la misma razón y no dos renglones distintos en el
+ * selector. Las repetidas se colapsan aquí y no en la base, para no depender de
+ * que la llave primaria rechace la segunda.
+ */
+export function normalizarRazones(razones: string[]): string[] {
+  const vistas = new Set<string>()
+  for (const r of razones) {
+    const limpia = r.trim().toUpperCase().slice(0, 60)
+    if (limpia) vistas.add(limpia)
+  }
+  return [...vistas]
+}
+
+async function attachRazones<T extends { id: number }>(
+  pool: sql.ConnectionPool, rows: T[],
+): Promise<(T & { razones: string[] })[]> {
+  if (rows.length === 0) return []
+  const req = pool.request()
+  const params = rows.map((r, i) => { req.input(`z${i}`, sql.Int, r.id); return `@z${i}` })
+  const rr = await req.query(
+    `SELECT mantenimiento_id, razon FROM mantenimiento_razones
+     WHERE mantenimiento_id IN (${params.join(',')}) ORDER BY razon`
+  )
+  const map = new Map<number, string[]>()
+  for (const { mantenimiento_id, razon } of rr.recordset) {
+    const lista = map.get(mantenimiento_id)
+    if (lista) lista.push(razon)
+    else map.set(mantenimiento_id, [razon])
+  }
+  return rows.map((r) => ({ ...r, razones: map.get(r.id) ?? [] }))
+}
+
+async function setRazones(
+  tx: sql.Transaction, mantenimientoId: number, razones: string[],
+): Promise<void> {
+  await tx.request().input('id', sql.Int, mantenimientoId)
+    .query('DELETE FROM mantenimiento_razones WHERE mantenimiento_id=@id')
+  for (const razon of normalizarRazones(razones)) {
+    await tx.request()
+      .input('id',    sql.Int,          mantenimientoId)
+      .input('razon', sql.NVarChar(60), razon)
+      .query('INSERT INTO mantenimiento_razones (mantenimiento_id, razon) VALUES (@id, @razon)')
+  }
+}
+
+/**
+ * Las razones ya escritas en la flota, para el selector. PREVENCIÓN va siempre,
+ * aunque nadie la haya usado todavía: es la razón por la que existe el programa
+ * de mantenimiento, y arrancar con el selector vacío obligaría a que el primero
+ * en capturar la inventara.
+ */
+export const RAZON_PREVENCION = 'PREVENCIÓN'
+
+export async function findRazones(): Promise<string[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .query('SELECT DISTINCT razon FROM mantenimiento_razones ORDER BY razon')
+  const usadas = r.recordset.map((row: { razon: string }) => row.razon)
+  return usadas.includes(RAZON_PREVENCION) ? usadas : [RAZON_PREVENCION, ...usadas]
 }
 
 // El nombre del técnico sale del catálogo por join, no de la columna vieja: si
@@ -134,7 +206,7 @@ export async function findByVehiculo(vehiculoId: number): Promise<Mantenimiento[
     .input('vid', sql.Int, vehiculoId)
     .query(`${SELECT_MANT} WHERE m.vehiculo_id=@vid ORDER BY m.fecha DESC`)
   const withReqs = await attachPendienteIds(pool, r.recordset)
-  return attachPiezasTotal(pool, withReqs)
+  return attachRazones(pool, await attachPiezasTotal(pool, withReqs))
 }
 
 // Historial completo de la flota, para la pantalla que rastrea todos los
@@ -164,7 +236,7 @@ export async function findAll(): Promise<MantenimientoDeFlota[]> {
     })
   }
   const withReqs = await attachPendienteIds(pool, r.recordset)
-  const completos = await attachPiezasTotal(pool, withReqs)
+  const completos = await attachRazones(pool, await attachPiezasTotal(pool, withReqs))
   return completos.map(m => ({ ...m, ...extra.get(m.id)! }))
 }
 
@@ -175,7 +247,7 @@ export async function findById(id: number): Promise<Mantenimiento | null> {
     .query(`${SELECT_MANT} WHERE m.id=@id`)
   if (!r.recordset[0]) return null
   const [withReqs] = await attachPendienteIds(pool, [r.recordset[0]])
-  const [row] = await attachPiezasTotal(pool, [withReqs])
+  const [row] = await attachRazones(pool, await attachPiezasTotal(pool, [withReqs]))
   return row
 }
 
@@ -199,12 +271,16 @@ export async function create(data: MantenimientoCreate): Promise<Mantenimiento> 
       `)
     const mant = r.recordset[0]
     await linkPendientes(tx, mant.id, data.pendiente_ids ?? [], data.fecha, data.km_actual ?? null)
+    await setRazones(tx, mant.id, data.razones ?? [])
     // Las incidencias que este mantenimiento atiende quedan cerradas.
     await syncIncidenciaStatuses(tx, data.pendiente_ids ?? [])
     await tx.commit()
     // Se relee para traer el nombre del técnico resuelto por el join.
     return (await findById(mant.id))
-      ?? { ...mant, tecnico: null, pendiente_ids: data.pendiente_ids ?? [], piezas_total: 0 }
+      ?? {
+        ...mant, tecnico: null, pendiente_ids: data.pendiente_ids ?? [], piezas_total: 0,
+        razones: normalizarRazones(data.razones ?? []),
+      }
   } catch (err) {
     await tx.rollback()
     throw err
@@ -231,6 +307,12 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
     // los que se desvinculan y —si cambió la fecha— los que ya estaban, porque
     // la fecha pudo cruzar el umbral de "ya ocurrió".
     const afectados = new Set<number>()
+
+    // Llegan enteras o no llegan: el formulario las edita como un conjunto, no
+    // de una en una, así que un PATCH sin el campo las deja como estaban.
+    if ('razones' in data) {
+      await setRazones(tx, id, data.razones ?? [])
+    }
 
     if ('pendiente_ids' in data) {
       // Diferencial en vez de borrar todo y reinsertar: así no se tocan filas

@@ -23,7 +23,18 @@ export interface Mantenimiento {
    * ninguna, que es lo normal. Borrar el mantenimiento deshace ese avance.
    */
   servicio_programa_km: number | null
+  /**
+   * Por qué entró la unidad al taller. Varias a la vez: la visita de un
+   * servicio del programa entra por PREVENCIÓN y de paso se le atiende la fuga
+   * que traía. Es distinto de `tipo`, que clasifica el gasto.
+   *
+   * Hoy puede venir vacío; va a ser obligatorio.
+   */
+  razones:          string[]
 }
+
+/** Va siempre en el selector, aunque nadie la haya escrito todavía. */
+export const RAZON_PREVENCION = 'PREVENCIÓN'
 
 export interface MantenimientoPayload {
   fecha:              string
@@ -33,6 +44,7 @@ export interface MantenimientoPayload {
   km_actual?:         number
   observaciones?:     string | null
   pendiente_ids:  number[]
+  razones:            string[]
 }
 
 /** Mantenimiento con su unidad resuelta: el historial de toda la flota. */
@@ -69,6 +81,8 @@ function invalidarTrasBorrado(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
   qc.invalidateQueries({ queryKey: ['lotes'] })
   qc.invalidateQueries({ queryKey: ['refacciones'] })
+  // Si era el único que usaba una razón, esa razón deja de sugerirse.
+  qc.invalidateQueries({ queryKey: ['mantenimientos-razones'] })
 }
 
 export function useDeleteMantenimiento() {
@@ -87,6 +101,9 @@ export function useCreateMantenimiento(vehiculoId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mantenimientos'] })
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+      // Una razón escrita por primera vez tiene que salir en el siguiente
+      // formulario: el catálogo se arma con lo que se captura.
+      qc.invalidateQueries({ queryKey: ['mantenimientos-razones'] })
       // El mantenimiento cierra las incidencias que atendió, así que sus listas
       // (la del vehículo, la de la flota y la de pendientes) quedan obsoletas.
       qc.invalidateQueries({ queryKey: ['incidencias'] })
@@ -106,6 +123,7 @@ export function useUpdateMantenimiento(vehiculoId: number) {
     onSuccess: (_res, { id }) => {
       qc.invalidateQueries({ queryKey: ['mantenimientos'] })
       qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['mantenimientos-razones'] })
       // Cambiar qué atiende (o mover su fecha) abre o cierra incidencias.
       qc.invalidateQueries({ queryKey: ['incidencias'] })
       qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })
@@ -117,3 +135,13 @@ export function useUpdateMantenimiento(vehiculoId: number) {
   })
 }
 
+
+// Razones ya escritas en la flota, para sugerirlas en el formulario. No hay
+// catálogo: el vocabulario se arma con lo que se captura, igual que las
+// categorías y el "reportado por".
+export function useRazonesMantenimiento() {
+  return useQuery({
+    queryKey: ['mantenimientos-razones'],
+    queryFn: () => api.get<{ data: string[] }>('/mantenimientos/razones'),
+  })
+}

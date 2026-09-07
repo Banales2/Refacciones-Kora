@@ -12,7 +12,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   Stack, Group, Text, Textarea, Pill, Input,
-  Alert, Button, Select, MultiSelect,
+  Alert, Button, Select, MultiSelect, TagsInput,
   ActionIcon, Tooltip, NumberInput, Divider, Grid,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
@@ -32,6 +32,7 @@ import type { LoteDisponible } from '../hooks/useLotesDisponibles'
 import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
 import type { OrigenPendiente } from '../hooks/usePendientes'
 import { useIncidenciasVehiculo } from '../hooks/useIncidencias'
+import { useRazonesMantenimiento, RAZON_PREVENCION } from '../hooks/useMantenimientos'
 import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimientos'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import { useVehiculo } from '../hooks/useVehiculos'
@@ -52,6 +53,9 @@ type MantForm = {
   km_actual:         number | string
   observaciones:     string
   pendiente_ids:     string[]
+  // Por qué entró la unidad al taller. Varias a la vez, y texto libre: el
+  // vocabulario se arma con lo que se escribe (ver useRazonesMantenimiento).
+  razones:           string[]
   // Piezas usadas, capturadas al registrar. Puede quedar vacío: hay
   // mantenimientos que no consumen refacciones.
   piezas:            PiezaLinea[]
@@ -63,7 +67,12 @@ type PiezaLinea = {
   costo_unitario: number | string
 }
 
-function initMant(m?: Mantenimiento, prefillPendienteIds?: number[], kmVehiculo?: number | null): MantForm {
+function initMant(
+  m?: Mantenimiento,
+  prefillPendienteIds?: number[],
+  kmVehiculo?: number | null,
+  prefillRazones?: string[],
+): MantForm {
   return {
     fecha:             m?.fecha?.split('T')[0] ?? '',
     tipo:              m?.tipo          ?? '',
@@ -74,18 +83,25 @@ function initMant(m?: Mantenimiento, prefillPendienteIds?: number[], kmVehiculo?
     km_actual:         m?.km_actual     ?? kmVehiculo ?? '',
     observaciones:     m?.observaciones ?? '',
     pendiente_ids:     m?.pendiente_ids?.map(String) ?? prefillPendienteIds?.map(String) ?? [],
+    razones:           m?.razones ?? prefillRazones ?? [],
     piezas:            [],
   }
 }
 
 export default function MantenimientoForm({
-  vehiculoId, tipoVehiculo, initial, prefillPendienteIds, pendienteFijo,
+  vehiculoId, tipoVehiculo, initial, prefillPendienteIds, prefillRazones, pendienteFijo,
   isPending, error, onSubmit, onCancel,
 }: {
   vehiculoId:               number
   tipoVehiculo?:            TipoVehiculo
   initial?:                 Mantenimiento
   prefillPendienteIds?:     number[]
+  /**
+   * Razones con las que abre el formulario. La visita de un servicio del
+   * programa llega con PREVENCIÓN puesta, porque para eso existe el programa;
+   * se le pueden agregar las demás o quitarla si resultó ser otra cosa.
+   */
+  prefillRazones?:          string[]
   /**
    * Pendiente que este mantenimiento existe para cerrar y que por eso no se
    * puede quitar: se muestra fijo y va siempre en el alta. Los demás se siguen
@@ -180,8 +196,16 @@ export default function MantenimientoForm({
       .map((t) => ({ value: String(t.id), label: t.nombre }))
   }, [tecnicosData, tecnicosNuevos])
 
+  const { data: razonesData } = useRazonesMantenimiento()
+  const razonesSugeridas = useMemo(() => {
+    const todas = new Set<string>([RAZON_PREVENCION, ...(razonesData?.data ?? [])])
+    // Las del mantenimiento que se edita, por si alguna ya no la usa nadie más.
+    for (const r of initial?.razones ?? []) todas.add(r)
+    return [...todas].sort((a, b) => a.localeCompare(b, 'es-MX'))
+  }, [razonesData, initial])
+
   const form = useForm<MantForm>({
-    initialValues: initMant(initial, prefillPendienteIds, kmVehiculo),
+    initialValues: initMant(initial, prefillPendienteIds, kmVehiculo, prefillRazones),
     validate: {
       fecha:             (v) => !v ? 'Requerido' : null,
       tipo:              (v) => !v ? 'Requerido' : null,
@@ -289,6 +313,11 @@ export default function MantenimientoForm({
         costo:             vals.costo !== '' ? Number(vals.costo) : 0,
         km_actual:         vals.km_actual !== '' ? Number(vals.km_actual) : 0,
         observaciones:     vals.observaciones.trim(),
+        // En mayúsculas y sin repetidas, que es como las guarda la API: así el
+        // selector no acaba ofreciendo "Prevención" y "PREVENCIÓN" por separado.
+        razones: [...new Set(
+          vals.razones.map((r) => r.trim().toUpperCase()).filter(Boolean)
+        )],
         // El fijo no vive en el selector: se agrega aquí para que el alta lo
         // incluya sin que se haya podido quitar.
         pendiente_ids: [
@@ -365,6 +394,23 @@ export default function MantenimientoForm({
               label="Costo de mano de obra" placeholder="0.00" min={0} decimalScale={2}
               thousandSeparator="," prefix="$" required
               {...form.getInputProps('costo')}
+            />
+          </Grid.Col>
+          <Grid.Col span={12}>
+            {/* Texto libre con sugerencias: no hay catálogo, el vocabulario se
+                arma con lo que se captura. Todavía es opcional; va a dejar de
+                serlo (buscar "mantenimiento sin razón" en la API). */}
+            <TagsInput
+              label="Razones"
+              description="Por qué entró al taller. Pueden ser varias; escribe y presiona Enter para agregar una que no esté en la lista."
+              placeholder={form.values.razones.length ? undefined : 'Ej. PREVENCIÓN'}
+              data={razonesSugeridas}
+              maxTags={10}
+              clearable
+              value={form.values.razones}
+              onChange={(v) => form.setFieldValue(
+                'razones', v.map((r) => r.trim().toUpperCase()).filter(Boolean)
+              )}
             />
           </Grid.Col>
           <Grid.Col span={12}>

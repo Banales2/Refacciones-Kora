@@ -267,6 +267,22 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
                   value={data?.mantenimiento.km_actual ? `${data.mantenimiento.km_actual.toLocaleString('es-MX')} km` : null}
                 />
               </Grid.Col>
+              <Grid.Col span={12}>
+                {/* Por qué entró la unidad al taller. Es otra cosa que el tipo:
+                    el tipo clasifica el gasto, esto dice qué la trajo. */}
+                <InfoItem
+                  label="Razones"
+                  value={data?.mantenimiento.razones.length
+                    ? (
+                      <Group gap={4} wrap="wrap">
+                        {data.mantenimiento.razones.map((r) => (
+                          <Badge key={r} size="sm" variant="light">{r}</Badge>
+                        ))}
+                      </Group>
+                    )
+                    : null}
+                />
+              </Grid.Col>
               <Grid.Col span={12}><InfoItem label="Observaciones" value={data?.mantenimiento.observaciones} /></Grid.Col>
             </Grid>
 
