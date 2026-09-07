@@ -48,7 +48,7 @@ import { formatMXN, formatMXNCorto } from '../lib/formato'
 import { FechaInput } from './FechaInput'
 import ProgramaExcepcionesModal from './ProgramaExcepcionesModal'
 import MantenimientoForm from './MantenimientoForm'
-import { useCreateMantenimiento, RAZON_PREVENCION } from '../hooks/useMantenimientos'
+import { useCreateMantenimiento } from '../hooks/useMantenimientos'
 import type { MantenimientoPayload } from '../hooks/useMantenimientos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
@@ -675,18 +675,25 @@ export default function ProgramaVehiculoSection({
       >
         <Stack gap="sm">
           <Alert color="blue" variant="light">
-            Esto registra un mantenimiento y lo marca como el servicio de{' '}
-            {proxima ? `${nf.format(proxima.fase.km)} km` : 'esta columna'} del programa. Se dan
-            por hechas sus {proxima?.operaciones.length ?? 0} operaciones, y sus límites de meses
+            Se registra como un mantenimiento normal. Al guardarlo se dan por hechas las{' '}
+            {proxima?.operaciones.length ?? 0} operaciones de la columna, y sus límites de meses
             vuelven a contar desde esta fecha.
           </Alert>
           <MantenimientoForm
             vehiculoId={vehiculoId}
             tipoVehiculo={tipoVehiculo}
-            // Un servicio del programa entra por prevención: para eso existe el
-            // programa. Se puede quitar y se le pueden agregar las demás, si de
-            // paso se le atendió otra cosa.
-            prefillRazones={[RAZON_PREVENCION]}
+            // Este mantenimiento existe por el programa, así que su origen ya
+            // está dado y no se elige: se pinta fijo en "qué atiende", y lo
+            // demás que se haya aprovechado la entrada al taller se agrega
+            // encima con normalidad.
+            origenFijo={{
+              etiqueta: proxima
+                ? `PREVENCIÓN — servicio de ${nf.format(proxima.fase.km)} km`
+                : 'PREVENCIÓN',
+              ayuda:
+                'Este mantenimiento es la visita con la que la unidad cierra esa columna de su ' +
+                'programa: por eso su origen es la prevención y no se puede quitar.',
+            }}
             isPending={visitaMut.isPending || mantMut.isPending || piezasMut.isPending}
             error={error}
             onSubmit={registrarVisita}

@@ -4,7 +4,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
-import { TEXTO_LIBRE, TEXTO_SIMPLE, KM_MAX } from '../schemas/common'
+import { TEXTO_LIBRE, KM_MAX } from '../schemas/common'
 import * as service from '../services/mantenimientoService'
 
 const Schema = z.object({
@@ -16,20 +16,9 @@ const Schema = z.object({
   observaciones:     z.string().trim().min(1, 'Observaciones requeridas').max(255, 'Máximo 255 caracteres')
                        .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos').optional(),
   // TEMPORAL — mantenimiento sin origen. Igual que en el alta: el .min(1) se
-  // suspendió para los mantenimientos antiguos y volverá a ponerse.
+  // suspendió para los mantenimientos antiguos y volverá a ponerse, y con la
+  // misma salvedad de la visita del programa.
   pendiente_ids: z.array(z.number().int().positive()).optional(),
-  // Por qué entró la unidad al taller, varias a la vez: un servicio del
-  // programa entra por PREVENCIÓN y de paso se le atiende la fuga que traía.
-  // Es otra cosa que `tipo`, que clasifica el gasto.
-  //
-  // TEMPORAL — mantenimiento sin razón. Va a ser obligatorio (.min(1)) en
-  // cuanto el vocabulario se acomode; hoy se admite vacío para no bloquear la
-  // captura. Para exigirlo, agregar .min(1, 'Indica al menos una razón') aquí
-  // y en el alta: `grep -rn "mantenimiento sin razón"`.
-  razones: z.array(
-    z.string().trim().min(1).max(60, 'Máximo 60 caracteres')
-      .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones')
-  ).max(10, 'Máximo 10 razones').optional(),
 })
 
 export async function mantenimientoUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {

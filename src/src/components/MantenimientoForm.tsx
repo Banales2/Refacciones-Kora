@@ -12,7 +12,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   Stack, Group, Text, Textarea, Pill, Input,
-  Alert, Button, Select, MultiSelect, TagsInput,
+  Alert, Button, Select, MultiSelect,
   ActionIcon, Tooltip, NumberInput, Divider, Grid,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
@@ -32,7 +32,6 @@ import type { LoteDisponible } from '../hooks/useLotesDisponibles'
 import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
 import type { OrigenPendiente } from '../hooks/usePendientes'
 import { useIncidenciasVehiculo } from '../hooks/useIncidencias'
-import { useRazonesMantenimiento, RAZON_PREVENCION } from '../hooks/useMantenimientos'
 import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimientos'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import { useVehiculo } from '../hooks/useVehiculos'
@@ -53,9 +52,6 @@ type MantForm = {
   km_actual:         number | string
   observaciones:     string
   pendiente_ids:     string[]
-  // Por qué entró la unidad al taller. Varias a la vez, y texto libre: el
-  // vocabulario se arma con lo que se escribe (ver useRazonesMantenimiento).
-  razones:           string[]
   // Piezas usadas, capturadas al registrar. Puede quedar vacío: hay
   // mantenimientos que no consumen refacciones.
   piezas:            PiezaLinea[]
@@ -67,12 +63,7 @@ type PiezaLinea = {
   costo_unitario: number | string
 }
 
-function initMant(
-  m?: Mantenimiento,
-  prefillPendienteIds?: number[],
-  kmVehiculo?: number | null,
-  prefillRazones?: string[],
-): MantForm {
+function initMant(m?: Mantenimiento, prefillPendienteIds?: number[], kmVehiculo?: number | null): MantForm {
   return {
     fecha:             m?.fecha?.split('T')[0] ?? '',
     tipo:              m?.tipo          ?? '',
@@ -83,13 +74,12 @@ function initMant(
     km_actual:         m?.km_actual     ?? kmVehiculo ?? '',
     observaciones:     m?.observaciones ?? '',
     pendiente_ids:     m?.pendiente_ids?.map(String) ?? prefillPendienteIds?.map(String) ?? [],
-    razones:           m?.razones ?? prefillRazones ?? [],
     piezas:            [],
   }
 }
 
 export default function MantenimientoForm({
-  vehiculoId, tipoVehiculo, initial, prefillPendienteIds, prefillRazones, pendienteFijo,
+  vehiculoId, tipoVehiculo, initial, prefillPendienteIds, pendienteFijo, origenFijo,
   isPending, error, onSubmit, onCancel,
 }: {
   vehiculoId:               number
@@ -97,17 +87,19 @@ export default function MantenimientoForm({
   initial?:                 Mantenimiento
   prefillPendienteIds?:     number[]
   /**
-   * Razones con las que abre el formulario. La visita de un servicio del
-   * programa llega con PREVENCIÓN puesta, porque para eso existe el programa;
-   * se le pueden agregar las demás o quitarla si resultó ser otra cosa.
-   */
-  prefillRazones?:          string[]
-  /**
    * Pendiente que este mantenimiento existe para cerrar y que por eso no se
    * puede quitar: se muestra fijo y va siempre en el alta. Los demás se siguen
    * agregando y quitando con normalidad.
    */
   pendienteFijo?:           { id: number; nombre: string }
+  /**
+   * Un origen que no es un pendiente y que por eso no viaja en
+   * `pendiente_ids`: hoy, el servicio del programa de mantenimiento. Se pinta
+   * igual que `pendienteFijo` —fijo y sin poder quitarse— porque cumple el
+   * mismo papel: es la razón por la que este mantenimiento existe. Lo que lo
+   * amarra al programa se guarda aparte, al cerrar la columna.
+   */
+  origenFijo?:              { etiqueta: string; ayuda: string }
   isPending:                boolean
   error:                    string | null
   onSubmit:                 (p: MantenimientoPayload, piezas: DetalleMttoPayload[]) => void
@@ -130,6 +122,15 @@ export default function MantenimientoForm({
   // Solo el id: `pendienteFijo` llega como objeto nuevo en cada render y
   // recalcularía las opciones sin necesidad.
   const fijoId = pendienteFijo?.id ?? null
+
+  // Los dos orígenes fijos se pintan igual; lo único que cambia es de dónde
+  // salen el texto y la explicación.
+  const fijo = pendienteFijo
+    ? {
+      etiqueta: pendienteFijo.nombre,
+      ayuda: 'Esta incidencia se marcó como atendida, así que este mantenimiento es la que la cierra: no se puede quitar.',
+    }
+    : origenFijo ?? null
 
   const pendienteGroups = useMemo(() => {
     const porId = new Map<number, { id: number; nombre: string; origen: OrigenPendiente; activo: boolean }>()
@@ -196,16 +197,8 @@ export default function MantenimientoForm({
       .map((t) => ({ value: String(t.id), label: t.nombre }))
   }, [tecnicosData, tecnicosNuevos])
 
-  const { data: razonesData } = useRazonesMantenimiento()
-  const razonesSugeridas = useMemo(() => {
-    const todas = new Set<string>([RAZON_PREVENCION, ...(razonesData?.data ?? [])])
-    // Las del mantenimiento que se edita, por si alguna ya no la usa nadie más.
-    for (const r of initial?.razones ?? []) todas.add(r)
-    return [...todas].sort((a, b) => a.localeCompare(b, 'es-MX'))
-  }, [razonesData, initial])
-
   const form = useForm<MantForm>({
-    initialValues: initMant(initial, prefillPendienteIds, kmVehiculo, prefillRazones),
+    initialValues: initMant(initial, prefillPendienteIds, kmVehiculo),
     validate: {
       fecha:             (v) => !v ? 'Requerido' : null,
       tipo:              (v) => !v ? 'Requerido' : null,
@@ -313,11 +306,6 @@ export default function MantenimientoForm({
         costo:             vals.costo !== '' ? Number(vals.costo) : 0,
         km_actual:         vals.km_actual !== '' ? Number(vals.km_actual) : 0,
         observaciones:     vals.observaciones.trim(),
-        // En mayúsculas y sin repetidas, que es como las guarda la API: así el
-        // selector no acaba ofreciendo "Prevención" y "PREVENCIÓN" por separado.
-        razones: [...new Set(
-          vals.razones.map((r) => r.trim().toUpperCase()).filter(Boolean)
-        )],
         // El fijo no vive en el selector: se agrega aquí para que el alta lo
         // incluya sin que se haya podido quitar.
         pendiente_ids: [
@@ -397,23 +385,6 @@ export default function MantenimientoForm({
             />
           </Grid.Col>
           <Grid.Col span={12}>
-            {/* Texto libre con sugerencias: no hay catálogo, el vocabulario se
-                arma con lo que se captura. Todavía es opcional; va a dejar de
-                serlo (buscar "mantenimiento sin razón" en la API). */}
-            <TagsInput
-              label="Razones"
-              description="Por qué entró al taller. Pueden ser varias; escribe y presiona Enter para agregar una que no esté en la lista."
-              placeholder={form.values.razones.length ? undefined : 'Ej. PREVENCIÓN'}
-              data={razonesSugeridas}
-              maxTags={10}
-              clearable
-              value={form.values.razones}
-              onChange={(v) => form.setFieldValue(
-                'razones', v.map((r) => r.trim().toUpperCase()).filter(Boolean)
-              )}
-            />
-          </Grid.Col>
-          <Grid.Col span={12}>
             <Textarea
               label="Observaciones" autosize minRows={2} required maxLength={255}
               {...form.getInputProps('observaciones')}
@@ -421,23 +392,20 @@ export default function MantenimientoForm({
             />
           </Grid.Col>
           <Grid.Col span={12}>
-            {pendienteFijo ? (
+            {fijo ? (
               <Input.Wrapper
                 label="Qué atiende este mantenimiento"
-                description="Requerimientos preventivos e incidencias que quedan cubiertos"
+                description="Por qué se hizo: las incidencias que quedan cubiertas y, si es un servicio del programa, la columna que cierra"
                 error={form.errors.pendiente_ids as string}
               >
                 <Stack gap={6} mt={4}>
-                  <Tooltip
-                    multiline w={260} withArrow
-                    label="Esta incidencia se marcó como atendida, así que este mantenimiento es el que la cierra: no se puede quitar."
-                  >
+                  <Tooltip multiline w={260} withArrow label={fijo.ayuda}>
                     <Pill
                       // Difuminada y sin botón de quitar: es la razón de ser de
                       // este mantenimiento, no una opción más.
                       styles={{ root: { opacity: 0.65, cursor: 'not-allowed', alignSelf: 'flex-start' } }}
                     >
-                      {pendienteFijo.nombre}
+                      {fijo.etiqueta}
                     </Pill>
                   </Tooltip>
                   <MultiSelect
@@ -456,7 +424,7 @@ export default function MantenimientoForm({
               <Stack gap={6}>
                 <MultiSelect
                   label="Qué atiende este mantenimiento"
-                  description="Requerimientos preventivos e incidencias que quedan cubiertos"
+                  description="Por qué se hizo: las incidencias que quedan cubiertas y, si es un servicio del programa, la columna que cierra"
                   placeholder={hayPendientes ? 'Selecciona los pendientes…' : 'Esta unidad no tiene nada pendiente'}
                   data={pendienteGroups}
                   searchable

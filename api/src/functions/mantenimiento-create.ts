@@ -4,7 +4,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
-import { TEXTO_LIBRE, TEXTO_SIMPLE, KM_MAX } from '../schemas/common'
+import { TEXTO_LIBRE, KM_MAX } from '../schemas/common'
 import * as service from '../services/mantenimientoService'
 
 const Schema = z.object({
@@ -19,19 +19,12 @@ const Schema = z.object({
   // volverá a serlo: se suspendió para poder capturar mantenimientos antiguos
   // cuya razón ya no se conserva. Para reactivarlo, devolver el .min(1) aquí y
   // en los demás puntos marcados: `grep -rn "mantenimiento sin origen"`.
-  pendiente_ids: z.array(z.number().int().positive()),
-  // Por qué entró la unidad al taller, varias a la vez: un servicio del
-  // programa entra por PREVENCIÓN y de paso se le atiende la fuga que traía.
-  // Es otra cosa que `tipo`, que clasifica el gasto.
   //
-  // TEMPORAL — mantenimiento sin razón. Va a ser obligatorio (.min(1)) en
-  // cuanto el vocabulario se acomode; hoy se admite vacío para no bloquear la
-  // captura. Para exigirlo, agregar .min(1, 'Indica al menos una razón') aquí
-  // y en el alta: `grep -rn "mantenimiento sin razón"`.
-  razones: z.array(
-    z.string().trim().min(1).max(60, 'Máximo 60 caracteres')
-      .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones')
-  ).max(10, 'Máximo 10 razones').default([]),
+  // Ojo al reactivarlo: la visita de un servicio del programa NO viaja por aquí
+  // —su origen se guarda al cerrar la columna, en `mantenimiento_programa`—, así
+  // que exigir el vínculo sin más dejaría de poder registrarse. La condición es
+  // "tiene pendientes O cierra una columna del programa".
+  pendiente_ids: z.array(z.number().int().positive()),
 })
 
 export async function mantenimientoCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
