@@ -59,9 +59,18 @@ type MantForm = {
 
 type PiezaLinea = {
   lote_id:        string
+  // De qué sucursal sale la pieza. Desde el inventario por sucursal el lote
+  // solo ya no basta: el mismo lote puede estar repartido, y la API exige saber
+  // de dónde descontar.
+  sucursal_id:    string
   cantidad:       number | string
   costo_unitario: number | string
 }
+
+// El selector ofrece existencias, no lotes: la opción es la pareja
+// (lote, sucursal), así que su valor tiene que llevar las dos.
+const claveExistencia = (loteId: number | string, sucursalId: number | string) =>
+  `${loteId}:${sucursalId}`
 
 function initMant(m?: Mantenimiento, prefillPendienteIds?: number[], kmVehiculo?: number | null): MantForm {
   return {
@@ -174,8 +183,10 @@ export default function MantenimientoForm({
   const [lotesNuevos, setLotesNuevos] = useState<LoteDisponible[]>([])
   const lotes = useMemo(() => {
     const base = lotesData?.data ?? []
-    const ids = new Set(base.map(l => l.id))
-    return [...base, ...lotesNuevos.filter(l => !ids.has(l.id))]
+    // La llave es la pareja (lote, sucursal): el mismo lote puede aparecer una
+    // vez por sucursal, y deduplicar por el id solo lo escondería.
+    const ids = new Set(base.map(l => claveExistencia(l.id, l.sucursal_id)))
+    return [...base, ...lotesNuevos.filter(l => !ids.has(claveExistencia(l.id, l.sucursal_id)))]
   }, [lotesData, lotesNuevos])
 
   // El odómetro actual del vehículo precarga el campo de kilometraje al registrar.
@@ -220,7 +231,9 @@ export default function MantenimientoForm({
         cantidad: (v: number | string, vals: MantForm, path: string) => {
           if (v === '' || Number(v) < 1) return 'Mínimo 1'
           const linea = vals.piezas[Number(path.split('.')[1])]
-          const lote = lotes.find(l => String(l.id) === linea?.lote_id)
+          const lote = lotes.find(l =>
+            claveExistencia(l.id, l.sucursal_id) === claveExistencia(linea?.lote_id ?? '', linea?.sucursal_id ?? '')
+          )
           if (lote && Number(v) > lote.cantidad_disponible) return `Máx. ${lote.cantidad_disponible}`
           return null
         },
@@ -244,18 +257,22 @@ export default function MantenimientoForm({
   // Un lote ya elegido no se ofrece en las demás líneas: evita capturar dos
   // veces la misma pieza y que la suma de cantidades rebase el stock.
   function loteOptions(idx: number) {
-    const usados = new Set(piezas.filter((_, i) => i !== idx).map(p => p.lote_id))
+    const usados = new Set(
+      piezas.filter((_, i) => i !== idx).map(p => claveExistencia(p.lote_id, p.sucursal_id))
+    )
     return lotes
-      .filter(l => !usados.has(String(l.id)))
+      .filter(l => !usados.has(claveExistencia(l.id, l.sucursal_id)))
       .map(l => ({
-        value: String(l.id),
-        label: `${l.numero_serie} — ${l.descripcion} (disp: ${l.cantidad_disponible}, ${formatMXN(l.costo_unitario)})`,
+        value: claveExistencia(l.id, l.sucursal_id),
+        label: `${l.numero_serie} — ${l.descripcion} · ${l.sucursal} (disp: ${l.cantidad_disponible}, ${formatMXN(l.costo_unitario)})`,
       }))
   }
 
   function setLote(idx: number, value: string | null) {
-    form.setFieldValue(`piezas.${idx}.lote_id`, value ?? '')
-    const lote = lotes.find(l => String(l.id) === value)
+    const [loteId = '', sucursalId = ''] = (value ?? '').split(':')
+    form.setFieldValue(`piezas.${idx}.lote_id`, loteId)
+    form.setFieldValue(`piezas.${idx}.sucursal_id`, sucursalId)
+    const lote = lotes.find(l => claveExistencia(l.id, l.sucursal_id) === value)
     // El costo del lote es solo el valor de arranque: se puede ajustar a mano.
     if (lote) form.setFieldValue(`piezas.${idx}.costo_unitario`, lote.costo_unitario)
   }
@@ -273,7 +290,8 @@ export default function MantenimientoForm({
   function handleRefaccionCreada(lote: LoteDisponible) {
     setLotesNuevos((prev) => [...prev, lote])
     form.insertListItem('piezas', {
-      lote_id: String(lote.id), cantidad: 1, costo_unitario: lote.costo_unitario,
+      lote_id: String(lote.id), sucursal_id: String(lote.sucursal_id),
+      cantidad: 1, costo_unitario: lote.costo_unitario,
     })
   }
 
@@ -315,6 +333,7 @@ export default function MantenimientoForm({
       },
       vals.piezas.map(p => ({
         lote_id:        Number(p.lote_id),
+        sucursal_id:    Number(p.sucursal_id),
         cantidad:       Number(p.cantidad),
         costo_unitario: Number(p.costo_unitario),
       })),
@@ -480,7 +499,9 @@ export default function MantenimientoForm({
                             ? 'Nada con existencias: usa "Registrar compra" o "Dar de alta refacción"'
                             : 'Sin coincidencias: si existe pero no tiene stock, usa "Registrar compra"'
                         }
-                        value={piezas[idx].lote_id || null}
+                        value={piezas[idx].lote_id
+                          ? claveExistencia(piezas[idx].lote_id, piezas[idx].sucursal_id)
+                          : null}
                         onChange={(v) => setLote(idx, v)}
                         error={form.errors[`piezas.${idx}.lote_id`]}
                       />
@@ -522,7 +543,7 @@ export default function MantenimientoForm({
               <Group justify="space-between">
                 <Button
                   variant="light" size="sm" leftSection={<IconPlus size={16} />}
-                  onClick={() => form.insertListItem('piezas', { lote_id: '', cantidad: 1, costo_unitario: '' })}
+                  onClick={() => form.insertListItem('piezas', { lote_id: '', sucursal_id: '', cantidad: 1, costo_unitario: '' })}
                 >
                   Usar del inventario
                 </Button>
