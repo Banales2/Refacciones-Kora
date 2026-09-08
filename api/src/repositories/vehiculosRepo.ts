@@ -127,7 +127,10 @@ const WHERE_FILTER = `
     AND (@modeloId IS NULL OR v.modelo_id = @modeloId)
     AND (@search IS NULL
          OR m.marca LIKE @search OR m.nombre LIKE @search
-         OR v.numero_serie LIKE @search OR v.placas LIKE @search)
+         OR v.numero_serie LIKE @search OR v.placas LIKE @search
+         -- La categoría es como se le dice a la unidad en el patio ("torton"),
+         -- así que es de las primeras cosas por las que se busca.
+         OR v.categoria LIKE @search)
     AND (@alerta IS NULL
          OR (${NO_DADO_DE_BAJA}
              AND ((@alerta = 'sin_tenencia' AND ${SIN_TENENCIA})
