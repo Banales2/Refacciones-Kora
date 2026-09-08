@@ -9,10 +9,20 @@ import {
 } from '@mantine/core'
 import { FechaInput } from '../components/FechaInput'
 import { formatMXN, formatLitros } from '../lib/formato'
+import SelectorPeriodoReporte from '../components/SelectorPeriodoReporte'
+import {
+  type Periodo, PERIODO_DEFAULT, dentroDelPeriodo, periodoValido,
+} from '../lib/reportes/periodo'
+import {
+  exportConsumoGasolineraPdf, exportConsumoGasolineraExcel,
+} from '../lib/reportes/consumoGasolinera'
 import ConductorForm from '../components/ConductorForm'
 import { TIPOS_CON_PERMISO, TIPOS_CON_SEGURO } from '../lib/tipoVehiculo'
 import { useForm } from '@mantine/form'
-import { IconPencil, IconTrash, IconPlus, IconAlertTriangle, IconRefresh } from '@tabler/icons-react'
+import {
+  IconPencil, IconTrash, IconPlus, IconAlertTriangle, IconRefresh,
+  IconSearch, IconFileTypePdf, IconFileSpreadsheet,
+} from '@tabler/icons-react'
 import {
   useSucursales, useCreateSucursal, useUpdateSucursal, useDeleteSucursal,
 } from '../hooks/useSucursales'
@@ -375,10 +385,36 @@ function ConsumosGasolineraDrawer({
   onClose:    () => void
 }) {
   const { data, isLoading, isError } = useConsumosGasolinera(gasolinera?.id ?? null)
-  const consumos = data?.data ?? []
-  const anios    = agruparConsumoPorAnio(consumos)
-  const costo    = consumos.reduce((s, c) => s + c.costo, 0)
-  const litros   = consumos.reduce((s, c) => s + c.litros, 0)
+  const [periodo, setPeriodo]   = useState<Periodo>(PERIODO_DEFAULT)
+  const [busqueda, setBusqueda] = useState('')
+  const [exportando, setExportando] = useState<'pdf' | 'excel' | null>(null)
+
+  const todos = data?.data ?? []
+
+  // El corte se aplica en memoria: las recargas de una estación caben de sobra
+  // en una consulta, y así el filtro responde sin ir al servidor en cada tecla.
+  const consumos = todos.filter((c) => {
+    if (!dentroDelPeriodo(c.fecha, periodo)) return false
+    const q = busqueda.trim().toLowerCase()
+    if (!q) return true
+    return [c.vehiculo, c.conductor, c.vale_folio].some((x) => x?.toLowerCase().includes(q))
+  })
+
+  const anios  = agruparConsumoPorAnio(consumos)
+  const costo  = consumos.reduce((s, c) => s + c.costo, 0)
+  const litros = consumos.reduce((s, c) => s + c.litros, 0)
+  const listo  = periodoValido(periodo)
+
+  async function exportar(formato: 'pdf' | 'excel') {
+    if (!gasolinera) return
+    setExportando(formato)
+    try {
+      const datos = { gasolinera, consumos, periodo, busqueda }
+      await (formato === 'pdf' ? exportConsumoGasolineraPdf : exportConsumoGasolineraExcel)(datos)
+    } finally {
+      setExportando(null)
+    }
+  }
 
   return (
     <Drawer
@@ -397,7 +433,7 @@ function ConsumosGasolineraDrawer({
         <Center py="xl"><Loader /></Center>
       ) : isError ? (
         <Alert color="red" title="Error">No se pudieron obtener las recargas de esta gasolinera.</Alert>
-      ) : consumos.length === 0 ? (
+      ) : todos.length === 0 ? (
         <Center py="xl">
           <Stack align="center" gap="xs">
             <Text c="dimmed">Todavía no se ha cargado combustible en esta gasolinera.</Text>
@@ -408,6 +444,51 @@ function ConsumosGasolineraDrawer({
         </Center>
       ) : (
         <Stack gap="md">
+          {/* El filtro y la exportación juntos: lo que se exporta es exactamente
+              lo que quedó en pantalla. */}
+          <Paper withBorder p="md" radius="md">
+            <Stack gap="sm">
+              <SelectorPeriodoReporte
+                value={periodo}
+                onChange={setPeriodo}
+                etiquetaDefault="Todo el historial"
+                disabled={exportando !== null}
+              />
+              <TextInput
+                label="Buscar"
+                placeholder="Unidad, chofer o folio del vale…"
+                leftSection={<IconSearch size={14} />}
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.currentTarget.value)}
+              />
+              <Group gap="xs" justify="flex-end">
+                <Button
+                  variant="light" leftSection={<IconFileTypePdf size={16} />}
+                  loading={exportando === 'pdf'} disabled={!listo || exportando !== null}
+                  onClick={() => exportar('pdf')}
+                >
+                  PDF
+                </Button>
+                <Button
+                  variant="light" color="green" leftSection={<IconFileSpreadsheet size={16} />}
+                  loading={exportando === 'excel'} disabled={!listo || exportando !== null}
+                  onClick={() => exportar('excel')}
+                >
+                  Excel
+                </Button>
+              </Group>
+            </Stack>
+          </Paper>
+
+          {consumos.length === 0 ? (
+            <Center py="xl">
+              <Stack align="center" gap="xs">
+                <Text c="dimmed">Ninguna recarga cae en este corte.</Text>
+                <Text size="sm" c="dimmed">Amplía el periodo o limpia la búsqueda.</Text>
+              </Stack>
+            </Center>
+          ) : (
+            <>
           <Paper withBorder p="md" radius="md">
             <Group justify="space-between" wrap="wrap" gap="sm">
               <div>
@@ -451,6 +532,8 @@ function ConsumosGasolineraDrawer({
               </Accordion.Item>
             ))}
           </Accordion>
+            </>
+          )}
         </Stack>
       )}
     </Drawer>

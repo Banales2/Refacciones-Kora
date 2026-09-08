@@ -14,12 +14,19 @@
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert, Button, ActionIcon,
-  Modal, Badge, Accordion, Paper, Tooltip, Anchor, Tabs,
+  Modal, Badge, Accordion, Paper, Tooltip, Anchor, Tabs, TextInput,
 } from '@mantine/core'
 import {
   IconPencil, IconTrash, IconPlus, IconArrowLeft, IconPhone, IconUser,
-  IconTag, IconReceipt,
+  IconTag, IconReceipt, IconSearch, IconFileTypePdf, IconFileSpreadsheet,
 } from '@tabler/icons-react'
+import SelectorPeriodoReporte from '../components/SelectorPeriodoReporte'
+import {
+  type Periodo, PERIODO_DEFAULT, dentroDelPeriodo, periodoValido,
+} from '../lib/reportes/periodo'
+import {
+  exportGastosProveedorPdf, exportGastosProveedorExcel,
+} from '../lib/reportes/gastosProveedor'
 import {
   usePreciosProveedor, useCreatePrecioProveedor,
   useUpdatePrecioProveedor, useDeletePrecioProveedor,
@@ -253,11 +260,39 @@ function GastosTabla({ compras }: { compras: GastoProveedor[] }) {
   )
 }
 
-function GastosPanel({ proveedorId }: { proveedorId: number }) {
-  const { data, isLoading, isError } = useGastosProveedor(proveedorId)
-  const gastos = useMemo(() => data?.data ?? [], [data])
-  const anios  = useMemo(() => agruparPorAnio(gastos), [gastos])
-  const total  = gastos.reduce((s, g) => s + g.total, 0)
+function GastosPanel({ proveedor }: { proveedor: Proveedor }) {
+  const { data, isLoading, isError } = useGastosProveedor(proveedor.id)
+  const [periodo, setPeriodo]   = useState<Periodo>(PERIODO_DEFAULT)
+  const [busqueda, setBusqueda] = useState('')
+  const [exportando, setExportando] = useState<'pdf' | 'excel' | null>(null)
+
+  const todos = useMemo(() => data?.data ?? [], [data])
+
+  // El corte se aplica en memoria: las compras de un proveedor caben de sobra en
+  // una consulta, y así el filtro responde sin ir al servidor en cada tecla.
+  const gastos = useMemo(() => {
+    const q = busqueda.trim().toLowerCase()
+    return todos.filter((g) => {
+      if (!dentroDelPeriodo(g.fecha_compra, periodo)) return false
+      if (!q) return true
+      return [g.pieza, g.pieza_serie, g.tipo_pieza, g.num_factura, g.sucursal]
+        .some((c) => c?.toLowerCase().includes(q))
+    })
+  }, [todos, periodo, busqueda])
+
+  const anios = useMemo(() => agruparPorAnio(gastos), [gastos])
+  const total = gastos.reduce((s, g) => s + g.total, 0)
+  const listo = periodoValido(periodo)
+
+  async function exportar(formato: 'pdf' | 'excel') {
+    setExportando(formato)
+    try {
+      const datos = { proveedor, gastos, periodo, busqueda }
+      await (formato === 'pdf' ? exportGastosProveedorPdf : exportGastosProveedorExcel)(datos)
+    } finally {
+      setExportando(null)
+    }
+  }
 
   if (isLoading) return <Center py="xl"><Loader /></Center>
   if (isError) {
@@ -267,7 +302,7 @@ function GastosPanel({ proveedorId }: { proveedorId: number }) {
       </Alert>
     )
   }
-  if (gastos.length === 0) {
+  if (todos.length === 0) {
     return (
       <Center py="xl">
         <Stack align="center" gap="xs">
@@ -282,6 +317,54 @@ function GastosPanel({ proveedorId }: { proveedorId: number }) {
 
   return (
     <Stack gap="md">
+      {/* El filtro y la exportación juntos: lo que se exporta es exactamente lo
+          que quedó en pantalla, así que el corte se elige una sola vez. */}
+      <Paper withBorder p="md" radius="md">
+        <Group align="flex-end" gap="sm" wrap="wrap">
+          <div style={{ flex: '1 1 220px' }}>
+            <SelectorPeriodoReporte
+              value={periodo}
+              onChange={setPeriodo}
+              etiquetaDefault="Todo el historial"
+              disabled={exportando !== null}
+            />
+          </div>
+          <TextInput
+            style={{ flex: '1 1 220px' }}
+            label="Buscar"
+            placeholder="Refacción, serie, factura o sucursal…"
+            leftSection={<IconSearch size={14} />}
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.currentTarget.value)}
+          />
+          <Group gap="xs">
+            <Button
+              variant="light" leftSection={<IconFileTypePdf size={16} />}
+              loading={exportando === 'pdf'} disabled={!listo || exportando !== null}
+              onClick={() => exportar('pdf')}
+            >
+              PDF
+            </Button>
+            <Button
+              variant="light" color="green" leftSection={<IconFileSpreadsheet size={16} />}
+              loading={exportando === 'excel'} disabled={!listo || exportando !== null}
+              onClick={() => exportar('excel')}
+            >
+              Excel
+            </Button>
+          </Group>
+        </Group>
+      </Paper>
+
+      {gastos.length === 0 ? (
+        <Center py="xl">
+          <Stack align="center" gap="xs">
+            <Text c="dimmed">Ninguna compra cae en este corte.</Text>
+            <Text size="sm" c="dimmed">Amplía el periodo o limpia la búsqueda.</Text>
+          </Stack>
+        </Center>
+      ) : (
+        <>
       <Paper withBorder p="md" radius="md">
         <Group justify="space-between" wrap="wrap" gap="sm">
           <div>
@@ -316,6 +399,8 @@ function GastosPanel({ proveedorId }: { proveedorId: number }) {
           </Accordion.Item>
         ))}
       </Accordion>
+        </>
+      )}
     </Stack>
   )
 }
@@ -484,7 +569,7 @@ export default function ProveedorDetalle({
           </Tabs.Panel>
 
           <Tabs.Panel value="gastos" pt="md">
-            <GastosPanel proveedorId={proveedor.id} />
+            <GastosPanel proveedor={proveedor} />
           </Tabs.Panel>
         </Tabs>
       </Stack>
