@@ -81,3 +81,33 @@ export function useUnassignVehiculoSeguro() {
     },
   })
 }
+
+// Renovar una póliza. Dos maneras, porque así se renueva de verdad: la
+// aseguradora prolonga la misma póliza, o emite otra que cubre las mismas
+// unidades. En el segundo caso la anterior se queda como registro de lo que
+// estuvo vigente, y las unidades se pasan solas a la nueva.
+export type RenovacionPayload =
+  | { modo: 'extender'; fecha_expiracion: string }
+  | { modo: 'nueva_poliza'; poliza: string; compania?: string; fecha_expiracion: string }
+
+export interface Renovacion {
+  seguro:            Seguro
+  anterior:          Seguro
+  modo:              RenovacionPayload['modo']
+  vehiculos_movidos: number
+}
+
+export function useRenovarSeguro() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: RenovacionPayload }) =>
+      api.post<{ data: Renovacion }>(`/seguros/${id}/renovar`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['seguros'] })
+      // Con póliza nueva las unidades cambian de seguro, y el aviso de
+      // documentos por vencer del tablero deja de aplicar.
+      qc.invalidateQueries({ queryKey: ['vehiculos'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}

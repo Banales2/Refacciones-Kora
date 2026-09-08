@@ -60,6 +60,17 @@ export async function update(
   return r.recordset[0] ?? null
 }
 
+// Las unidades que cubre la póliza. `countVehiculos` responde cuántas son;
+// esto responde cuáles, que es lo que hace falta para pasarlas a la póliza
+// nueva al renovar.
+export async function findVehiculoIds(id: number): Promise<number[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query(`SELECT vehiculo_id FROM (${vehiculosConDocumento('seguro_id', '@id')}) x`)
+  return r.recordset.map((row: { vehiculo_id: number }) => row.vehiculo_id)
+}
+
 export async function countVehiculos(id: number): Promise<number> {
   const pool = await getPool()
   const r = await pool.request()

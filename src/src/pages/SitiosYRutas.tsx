@@ -5,13 +5,13 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Stack, Group, Text, TextInput, Select, Table, Tabs,
   Loader, Center, Alert, Button, ActionIcon,
-  Modal, Tooltip, Badge,
+  Modal, Tooltip, Badge, SegmentedControl,
 } from '@mantine/core'
 import { FechaInput } from '../components/FechaInput'
 import ConductorForm from '../components/ConductorForm'
 import { TIPOS_CON_PERMISO, TIPOS_CON_SEGURO } from '../lib/tipoVehiculo'
 import { useForm } from '@mantine/form'
-import { IconPencil, IconTrash, IconPlus, IconAlertTriangle } from '@tabler/icons-react'
+import { IconPencil, IconTrash, IconPlus, IconAlertTriangle, IconRefresh } from '@tabler/icons-react'
 import {
   useSucursales, useCreateSucursal, useUpdateSucursal, useDeleteSucursal,
 } from '../hooks/useSucursales'
@@ -26,7 +26,7 @@ import {
 } from '../hooks/useConductores'
 import {
   useSeguros, useCreateSeguro, useUpdateSeguro, useDeleteSeguro,
-  useAssignVehiculosSeguro, useUnassignVehiculoSeguro,
+  useAssignVehiculosSeguro, useUnassignVehiculoSeguro, useRenovarSeguro,
 } from '../hooks/useSeguros'
 import {
   usePermisosCirculacion, useCreatePermisoCirculacion,
@@ -46,7 +46,7 @@ import type { Ruta, RutaPayload } from '../hooks/useRutas'
 import type { Gasolinera, GasolineraPayload } from '../hooks/useGasolineras'
 import type { Conductor, ConductorPayload } from '../hooks/useConductores'
 import type { Tecnico, TecnicoPayload } from '../hooks/useTecnicos'
-import type { Seguro, SeguroPayload } from '../hooks/useSeguros'
+import type { Seguro, SeguroPayload, RenovacionPayload, Renovacion } from '../hooks/useSeguros'
 import type { PermisoCirculacion, PermisoCirculacionPayload } from '../hooks/usePermisosCirculacion'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 import Proveedores from './Proveedores'
@@ -767,6 +767,114 @@ function SeguroForm({
   )
 }
 
+
+// El día siguiente a una fecha "YYYY-MM-DD". Se ancla a mediodía porque leerla
+// como medianoche UTC la corre un día atrás en México.
+function diaSiguiente(ymd: string): string {
+  const d = new Date(`${ymd}T12:00:00`)
+  d.setDate(d.getDate() + 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Renovar una póliza. Las dos maneras viven en el mismo modal porque quien
+// renueva no siempre sabe de antemano cuál le tocó: llama a la aseguradora, y
+// según lo que le digan prolonga la que tiene o captura la nueva.
+function RenovarSeguroForm({
+  seguro, isPending, error, onSubmit, onCancel,
+}: {
+  seguro:    Seguro
+  isPending: boolean
+  error:     string | null
+  onSubmit:  (payload: RenovacionPayload) => void
+  onCancel:  () => void
+}) {
+  const [modo, setModo]         = useState<RenovacionPayload['modo']>('extender')
+  const [fecha, setFecha]       = useState<string>('')
+  const [poliza, setPoliza]     = useState('')
+  const [compania, setCompania] = useState(seguro.compania)
+  const [tocado, setTocado]     = useState(false)
+
+  const { options: companiaOptions, setSearch: setCompaniaSearch } =
+    useCompaniaOptions(compania, seguro.compania)
+
+  const esNueva = modo === 'nueva_poliza'
+  // La API rechaza una fecha que no sea posterior; decirlo aquí evita el viaje.
+  const fechaMala   = !fecha || fecha <= seguro.fecha_expiracion
+  const polizaMala  = esNueva && !poliza.trim()
+  const puedeEnviar = !fechaMala && !polizaMala
+
+  function enviar() {
+    setTocado(true)
+    if (!puedeEnviar) return
+    onSubmit(esNueva
+      ? { modo, poliza: poliza.trim(), compania: compania.trim() || undefined, fecha_expiracion: fecha }
+      : { modo, fecha_expiracion: fecha })
+  }
+
+  return (
+    <Stack gap="sm">
+      <Text size="sm" c="dimmed">
+        <strong>{seguro.poliza}</strong> · {seguro.compania} · vence el {seguro.fecha_expiracion}
+      </Text>
+
+      <SegmentedControl
+        fullWidth size="xs"
+        value={modo}
+        onChange={(v) => { setModo(v as RenovacionPayload['modo']); setTocado(false) }}
+        data={[
+          { value: 'extender',     label: 'Extender la misma' },
+          { value: 'nueva_poliza', label: 'Nueva póliza' },
+        ]}
+      />
+
+      <Text size="xs" c="dimmed">
+        {esNueva
+          ? 'Se da de alta la póliza nueva y se le pasan las unidades que cubría esta. La anterior se conserva como registro de lo que estuvo vigente hasta hoy.'
+          : 'La aseguradora prolongó la misma póliza: solo cambia la fecha. Las unidades no se tocan.'}
+      </Text>
+
+      {esNueva && (
+        <>
+          <TextInput
+            label="No. póliza nueva" placeholder="Ej. POL-123457" required
+            value={poliza}
+            onChange={(e) => setPoliza(e.currentTarget.value)}
+            error={tocado && polizaMala ? 'Requerido' : null}
+          />
+          <Select
+            label="Compañía" required
+            placeholder="Selecciona o escribe para crear una compañía"
+            description="Se conserva la misma salvo que hayas cambiado de aseguradora."
+            data={companiaOptions}
+            searchable
+            onSearchChange={(v) => setCompaniaSearch(limpiarTextoLibre(v, 120))}
+            nothingFoundMessage="Escribe para crear una nueva compañía"
+            value={compania}
+            onChange={(v) => { setCompania(v ?? ''); setCompaniaSearch('') }}
+          />
+        </>
+      )}
+
+      <FechaInput
+        label="Nueva fecha de expiración" required
+        // El mismo día de vencimiento no renueva nada: el mínimo es el siguiente.
+        minDate={diaSiguiente(seguro.fecha_expiracion)}
+        value={fecha}
+        onChange={(d) => setFecha(d)}
+        error={tocado && fechaMala
+          ? `Tiene que ser posterior al ${seguro.fecha_expiracion}`
+          : null}
+      />
+
+      {error && <Alert color="red" title="Error">{error}</Alert>}
+      <Group justify="flex-end" mt="xs">
+        <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
+        <Button loading={isPending} onClick={enviar}>Renovar</Button>
+      </Group>
+    </Stack>
+  )
+}
+
 function SegurosPanel({
   onNavigateVehiculo, openId, onOpenIdChange,
 }: {
@@ -777,12 +885,17 @@ function SegurosPanel({
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Seguro | null>(null)
   const [deleting, setDeleting]   = useState<Seguro | null>(null)
+  const [renovando, setRenovando] = useState<Seguro | null>(null)
+  // Lo que resultó de la última renovación, para decir qué pasó en vez de
+  // cerrar el modal y dejar al usuario adivinando si se movieron las unidades.
+  const [renovado, setRenovado]   = useState<Renovacion | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
   const { data, isLoading, isError } = useSeguros()
   const createMut = useCreateSeguro()
   const updateMut = useUpdateSeguro()
   const deleteMut = useDeleteSeguro()
+  const renovarMut = useRenovarSeguro()
   const assignMut = useAssignVehiculosSeguro()
   const unassignMut = useUnassignVehiculoSeguro()
   const items = data?.data ?? []
@@ -824,7 +937,7 @@ function SegurosPanel({
                   <Table.Th>Póliza</Table.Th>
                   <Table.Th>Compañía</Table.Th>
                   <Table.Th>Expiración</Table.Th>
-                  <Table.Th style={{ width: 80 }} />
+                  <Table.Th style={{ width: 110 }} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -843,6 +956,7 @@ function SegurosPanel({
                       </Table.Td>
                       <Table.Td onClick={(e) => e.stopPropagation()}>
                         <Group gap={4} justify="flex-end" wrap="nowrap">
+                          <Tooltip label="Renovar"><ActionIcon variant="subtle" color="teal" size="sm" onClick={() => { setFormError(null); setRenovando(s) }}><IconRefresh size={14} /></ActionIcon></Tooltip>
                           <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(s)}><IconPencil size={14} /></ActionIcon></Tooltip>
                           <Tooltip label="Eliminar"><ActionIcon variant="subtle" color="red"  size="sm" onClick={() => setDeleting(s)}><IconTrash  size={14} /></ActionIcon></Tooltip>
                         </Group>
@@ -865,6 +979,63 @@ function SegurosPanel({
           isPending={isPending} error={formError}
           onSubmit={handleSubmit} onCancel={() => setFormOpen(false)}
         />
+      </Modal>
+
+      <Modal
+        opened={renovando !== null} onClose={() => setRenovando(null)}
+        title={`Renovar — ${renovando?.poliza ?? ''}`} centered size="sm"
+      >
+        {renovando && (
+          <RenovarSeguroForm
+            seguro={renovando}
+            isPending={renovarMut.isPending}
+            error={formError}
+            onCancel={() => setRenovando(null)}
+            onSubmit={(payload) => {
+              setFormError(null)
+              renovarMut.mutate({ id: renovando.id, payload }, {
+                onSuccess: (r) => { setRenovando(null); setRenovado(r.data) },
+                onError:   (e: Error) => setFormError(e.message),
+              })
+            }}
+          />
+        )}
+      </Modal>
+
+      {/* Qué quedó. Con póliza nueva importa saber cuántas unidades se movieron
+          y que la anterior sigue ahí: si no, parece que se perdió. */}
+      <Modal
+        opened={renovado !== null} onClose={() => setRenovado(null)}
+        title="Póliza renovada" centered size="sm"
+      >
+        <Stack gap="md">
+          {renovado?.modo === 'extender' ? (
+            <Text>
+              <strong>{renovado.seguro.poliza}</strong> ahora vence el{' '}
+              <strong>{renovado.seguro.fecha_expiracion}</strong>.
+            </Text>
+          ) : renovado && (
+            <>
+              <Text>
+                Se dio de alta <strong>{renovado.seguro.poliza}</strong> ({renovado.seguro.compania}),
+                vigente hasta el <strong>{renovado.seguro.fecha_expiracion}</strong>.
+              </Text>
+              <Text size="sm">
+                {renovado.vehiculos_movidos === 0
+                  ? 'La póliza anterior no cubría ninguna unidad, así que no se movió nada.'
+                  : `${renovado.vehiculos_movidos} ${renovado.vehiculos_movidos === 1 ? 'unidad pasó' : 'unidades pasaron'} a la póliza nueva.`}
+              </Text>
+              <Text size="sm" c="dimmed">
+                <strong>{renovado.anterior.poliza}</strong> se conserva como registro de lo que
+                estuvo vigente hasta el {renovado.anterior.fecha_expiracion}. Ya no cubre unidades,
+                así que se puede eliminar si estorba.
+              </Text>
+            </>
+          )}
+          <Group justify="flex-end">
+            <Button onClick={() => setRenovado(null)}>Entendido</Button>
+          </Group>
+        </Stack>
       </Modal>
 
       <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar seguro" centered size="sm">
