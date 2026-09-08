@@ -1612,6 +1612,12 @@ function VehiculosTable({
                       </Tooltip>
                     ))}
                   </Group>
+                  {/* Debajo y en gris: es cómo se le dice a la unidad en el
+                      patio, no parte de su nombre. Sin columna propia para no
+                      volver a ensanchar la tabla. */}
+                  {v.categoria && (
+                    <Text size="xs" c="dimmed" fw={400}>{v.categoria}</Text>
+                  )}
                 </Table.Td>
                 {/* El año trae la versión pegada cuando el modelo la tiene ("2018-1"). */}
                 <Table.Td>{v.modelo_anio ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
