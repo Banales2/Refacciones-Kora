@@ -5,10 +5,10 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Stack, Group, Text, TextInput, Select, Table, Tabs,
   Loader, Center, Alert, Button, ActionIcon,
-  Modal, Tooltip, Badge, SegmentedControl, NumberInput,
+  Modal, Tooltip, Badge, SegmentedControl, NumberInput, Drawer, Accordion, Paper,
 } from '@mantine/core'
 import { FechaInput } from '../components/FechaInput'
-import { formatMXN } from '../lib/formato'
+import { formatMXN, formatLitros } from '../lib/formato'
 import ConductorForm from '../components/ConductorForm'
 import { TIPOS_CON_PERMISO, TIPOS_CON_SEGURO } from '../lib/tipoVehiculo'
 import { useForm } from '@mantine/form'
@@ -44,7 +44,8 @@ import { useCompaniaOptions } from '../hooks/useCompaniaOptions'
 import { estadoVigencia, parseVigencia } from '../lib/vigenciaLicencia'
 import type { Sucursal, SucursalPayload } from '../hooks/useSucursales'
 import type { Ruta, RutaPayload } from '../hooks/useRutas'
-import type { Gasolinera, GasolineraPayload } from '../hooks/useGasolineras'
+import { useConsumosGasolinera } from '../hooks/useGasolineras'
+import type { Gasolinera, GasolineraPayload, ConsumoGasolinera } from '../hooks/useGasolineras'
 import type { Conductor, ConductorPayload } from '../hooks/useConductores'
 import type { Tecnico, TecnicoPayload } from '../hooks/useTecnicos'
 import type { Seguro, SeguroPayload, RenovacionPayload, Renovacion } from '../hooks/useSeguros'
@@ -296,12 +297,173 @@ function RutasPanel() {
   )
 }
 
+// ── Consumo de una gasolinera ─────────────────────────────────────────────────
+
+// Lo que se ha gastado en una estación, agrupado por año: es la lectura que
+// sirve para decidir dónde conviene cargar, más que una recarga suelta.
+//
+// El vale de gasolina no guarda costo ni gasolinera —es el papel que autoriza
+// la carga—, así que el gasto sale de las recargas y el vale aparece como el
+// folio de cada una.
+type AnioDeConsumo = {
+  anio: string
+  costo: number
+  litros: number
+  recargas: ConsumoGasolinera[]
+}
+
+function agruparConsumoPorAnio(consumos: ConsumoGasolinera[]): AnioDeConsumo[] {
+  const map = new Map<string, AnioDeConsumo>()
+  for (const c of consumos) {
+    const anio = c.fecha.slice(0, 4)
+    const entry = map.get(anio) ?? { anio, costo: 0, litros: 0, recargas: [] }
+    entry.costo  += c.costo
+    entry.litros += c.litros
+    entry.recargas.push(c)
+    map.set(anio, entry)
+  }
+  // Llegan de la más reciente a la más vieja, así que los años salen en ese
+  // orden y las recargas de cada uno conservan el suyo.
+  return [...map.values()]
+}
+
+function ConsumosTabla({ recargas }: { recargas: ConsumoGasolinera[] }) {
+  return (
+    <Table.ScrollContainer minWidth={640}>
+      <Table striped withTableBorder verticalSpacing={4}>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th style={{ width: 110 }}>Fecha</Table.Th>
+            <Table.Th>Unidad</Table.Th>
+            <Table.Th style={{ width: 100, textAlign: 'right' }}>Litros</Table.Th>
+            <Table.Th style={{ width: 110, textAlign: 'right' }}>Costo</Table.Th>
+            <Table.Th style={{ width: 110 }}>Vale</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {recargas.map((r) => (
+            <Table.Tr key={r.id}>
+              <Table.Td><Text size="sm">{r.fecha}</Text></Table.Td>
+              <Table.Td>
+                <Text size="sm">{r.vehiculo}</Text>
+                <Text size="xs" c="dimmed">{r.conductor}</Text>
+              </Table.Td>
+              <Table.Td style={{ textAlign: 'right' }}>
+                <Text size="sm">{formatLitros(r.litros)}</Text>
+              </Table.Td>
+              <Table.Td style={{ textAlign: 'right' }}>
+                <Text size="sm" fw={600}>{formatMXN(r.costo)}</Text>
+              </Table.Td>
+              <Table.Td>
+                {/* Las recargas viejas no traen vale: era opcional entonces. */}
+                <Text size="xs" c={r.vale_folio ? undefined : 'dimmed'}>
+                  {r.vale_folio ?? 'Sin vale'}
+                </Text>
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
+  )
+}
+
+function ConsumosGasolineraDrawer({
+  gasolinera, onClose,
+}: {
+  gasolinera: Gasolinera | null
+  onClose:    () => void
+}) {
+  const { data, isLoading, isError } = useConsumosGasolinera(gasolinera?.id ?? null)
+  const consumos = data?.data ?? []
+  const anios    = agruparConsumoPorAnio(consumos)
+  const costo    = consumos.reduce((s, c) => s + c.costo, 0)
+  const litros   = consumos.reduce((s, c) => s + c.litros, 0)
+
+  return (
+    <Drawer
+      opened={gasolinera !== null}
+      onClose={onClose}
+      position="right"
+      size="xl"
+      title={
+        <div>
+          <Text fw={700}>{gasolinera?.nombre}</Text>
+          <Text size="xs" c="dimmed">{gasolinera?.ubicacion}</Text>
+        </div>
+      }
+    >
+      {isLoading ? (
+        <Center py="xl"><Loader /></Center>
+      ) : isError ? (
+        <Alert color="red" title="Error">No se pudieron obtener las recargas de esta gasolinera.</Alert>
+      ) : consumos.length === 0 ? (
+        <Center py="xl">
+          <Stack align="center" gap="xs">
+            <Text c="dimmed">Todavía no se ha cargado combustible en esta gasolinera.</Text>
+            <Text size="sm" c="dimmed">
+              Las recargas aparecen aquí en cuanto se registran desde la ficha de una unidad.
+            </Text>
+          </Stack>
+        </Center>
+      ) : (
+        <Stack gap="md">
+          <Paper withBorder p="md" radius="md">
+            <Group justify="space-between" wrap="wrap" gap="sm">
+              <div>
+                <Text size="xs" c="dimmed" fw={600} tt="uppercase">Total gastado</Text>
+                <Text size="xl" fw={700}>{formatMXN(costo)}</Text>
+              </div>
+              <div>
+                <Text size="xs" c="dimmed" fw={600} tt="uppercase">Litros</Text>
+                <Text size="lg" fw={600}>{formatLitros(litros)}</Text>
+              </div>
+              <div>
+                {/* Lo que de verdad se pagó por litro aquí, que es con lo que se
+                    compara una estación contra otra. */}
+                <Text size="xs" c="dimmed" fw={600} tt="uppercase">Promedio por litro</Text>
+                <Text size="lg" fw={600}>
+                  {litros > 0 ? formatMXN(costo / litros) : '—'}
+                </Text>
+              </div>
+              <Text size="sm" c="dimmed">
+                {consumos.length} recarga{consumos.length !== 1 ? 's' : ''} ·
+                {' '}desde {consumos[consumos.length - 1].fecha}
+              </Text>
+            </Group>
+          </Paper>
+
+          <Accordion variant="separated" multiple defaultValue={[anios[0].anio]}>
+            {anios.map((a) => (
+              <Accordion.Item key={a.anio} value={a.anio}>
+                <Accordion.Control>
+                  <Group justify="space-between" wrap="nowrap" pr="sm">
+                    <Text size="sm" fw={500}>{a.anio}</Text>
+                    <Group gap="sm" wrap="nowrap">
+                      <Text size="xs" c="dimmed">{formatLitros(a.litros)}</Text>
+                      <Text size="sm" fw={600}>{formatMXN(a.costo)}</Text>
+                    </Group>
+                  </Group>
+                </Accordion.Control>
+                <Accordion.Panel>
+                  <ConsumosTabla recargas={a.recargas} />
+                </Accordion.Panel>
+              </Accordion.Item>
+            ))}
+          </Accordion>
+        </Stack>
+      )}
+    </Drawer>
+  )
+}
+
 // ── Panel de gasolineras ──────────────────────────────────────────────────────
 
 function GasolinerasPanel() {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Gasolinera | null>(null)
   const [deleting, setDeleting]   = useState<Gasolinera | null>(null)
+  const [viendo, setViendo]       = useState<Gasolinera | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
   const { data, isLoading, isError } = useGasolineras()
@@ -333,7 +495,9 @@ function GasolinerasPanel() {
     <>
       <Stack gap="md">
         <Group justify="space-between">
-          <Text size="sm" c="dimmed">{items.length} gasolinera{items.length !== 1 ? 's' : ''}</Text>
+          <Text size="sm" c="dimmed">
+            {items.length} gasolinera{items.length !== 1 ? 's' : ''} · clic en un renglón para ver sus recargas
+          </Text>
           <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nueva gasolinera</Button>
         </Group>
 
@@ -352,10 +516,10 @@ function GasolinerasPanel() {
               </Table.Thead>
               <Table.Tbody>
                 {items.map((g) => (
-                  <Table.Tr key={g.id}>
+                  <Table.Tr key={g.id} onClick={() => setViendo(g)} style={{ cursor: 'pointer' }}>
                     <Table.Td fw={500}>{g.nombre}</Table.Td>
                     <Table.Td c="dimmed">{g.ubicacion}</Table.Td>
-                    <Table.Td>
+                    <Table.Td onClick={(e) => e.stopPropagation()}>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
                         <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(g)}><IconPencil size={14} /></ActionIcon></Tooltip>
                         <Tooltip label="Eliminar"><ActionIcon variant="subtle" color="red"  size="sm" onClick={() => setDeleting(g)}><IconTrash  size={14} /></ActionIcon></Tooltip>
@@ -368,6 +532,8 @@ function GasolinerasPanel() {
           </Table.ScrollContainer>
         )}
       </Stack>
+
+      <ConsumosGasolineraDrawer gasolinera={viendo} onClose={() => setViendo(null)} />
 
       <Modal opened={formOpen} onClose={() => setFormOpen(false)}
         title={editing ? `Editar — ${editing.nombre}` : 'Nueva gasolinera'} centered size="sm">

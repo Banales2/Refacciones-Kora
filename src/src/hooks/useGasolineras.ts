@@ -51,3 +51,26 @@ export function useDeleteGasolinera() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['gasolineras'] }),
   })
 }
+
+// Todo lo que se ha gastado en una gasolinera: sus recargas, con el folio del
+// vale que autorizó cada una. El gasto vive en la recarga —el vale no guarda
+// costo ni gasolinera—, así que esto es el consumo real de la estación.
+export interface ConsumoGasolinera {
+  id:          number
+  fecha:       string
+  vehiculo_id: number
+  vehiculo:    string
+  conductor:   string
+  vale_folio:  string | null
+  litros:      number
+  costo:       number
+  kilometraje: number | null
+}
+
+export function useConsumosGasolinera(gasolineraId: number | null) {
+  return useQuery({
+    queryKey: ['gasolinera-consumos', gasolineraId],
+    queryFn: () => api.get<{ data: ConsumoGasolinera[] }>(`/gasolineras/${gasolineraId}/consumos`),
+    enabled: gasolineraId != null && gasolineraId > 0,
+  })
+}

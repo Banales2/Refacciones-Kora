@@ -147,3 +147,53 @@ export async function vehiculoExists(id: number): Promise<boolean> {
     .query('SELECT 1 AS ok FROM vehiculos WHERE id = @id')
   return r.recordset.length > 0
 }
+
+/**
+ * Todo lo que se ha gastado en una gasolinera.
+ *
+ * El dinero vive en la recarga y solo ahí: el vale de gasolina no guarda costo
+ * ni gasolinera —es el papel que autoriza a cargar, con su folio, su chofer y
+ * su unidad—, así que sumar vales daría un gasto que no existe. Lo que sí hace
+ * el vale es identificar la carga, y por eso su folio viaja en cada renglón.
+ *
+ * Se devuelve plano y de lo más reciente a lo más viejo; los totales y el
+ * agrupado por año los arma la pantalla.
+ */
+export interface ConsumoGasolinera {
+  id:           number
+  fecha:        string
+  vehiculo_id:  number
+  vehiculo:     string
+  conductor:    string
+  vale_folio:   string | null
+  litros:       number
+  costo:        number
+  kilometraje:  number | null
+}
+
+export async function findConsumosDeGasolinera(
+  gasolineraId: number,
+): Promise<ConsumoGasolinera[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('gid', sql.Int, gasolineraId)
+    .query(`
+      SELECT r.id, CONVERT(char(10), r.fecha, 23) AS fecha,
+             r.vehiculo_id,
+             CONCAT(m.marca, ' ', m.nombre, ' — ', v.numero_serie) AS vehiculo,
+             c.nombre AS conductor, vg.folio AS vale_folio,
+             r.litros, r.costo, r.kilometraje
+      FROM recargas_combustible r
+      JOIN vehiculos   v  ON v.id = r.vehiculo_id
+      JOIN modelos     m  ON m.id = v.modelo_id
+      JOIN conductores c  ON c.id = r.conductor_id
+      LEFT JOIN vales_gasolina vg ON vg.id = r.vale_id
+      WHERE r.gasolinera_id = @gid
+      ORDER BY r.fecha DESC, r.id DESC`)
+  // mssql devuelve DECIMAL como string cuando no cabe en un number seguro.
+  return r.recordset.map((row) => ({
+    ...row,
+    litros: Number(row.litros),
+    costo:  Number(row.costo),
+  }))
+}
