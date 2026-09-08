@@ -193,3 +193,56 @@ export async function findProveedores(): Promise<{ id: number; nombre: string }[
     .query('SELECT id, nombre FROM proveedores ORDER BY nombre')
   return result.recordset
 }
+
+/**
+ * Todo lo que se le ha comprado a un proveedor.
+ *
+ * El gasto real vive en los lotes: `precios_proveedor` es lo que el proveedor
+ * pide —se le compre o no—, y confundirlos daría un "gasto" que nunca salió de
+ * la caja. Por eso esto sale de `lotes_pieza` y no de la lista de precios.
+ *
+ * Se devuelve plano y ordenado de lo más reciente a lo más viejo; los totales
+ * los suma la pantalla, que es donde se agrupan por año.
+ */
+export interface GastoProveedor {
+  lote_id:        number
+  fecha_compra:   string
+  pieza_id:       number
+  pieza:          string
+  pieza_serie:    string
+  tipo_pieza:     string | null
+  cantidad:       number
+  costo_unitario: number
+  /** Lo que costó la compra completa: cantidad por costo unitario. */
+  total:          number
+  num_factura:    string | null
+  sucursal:       string | null
+  comprado_por:   string
+}
+
+export async function findGastosDeProveedor(proveedorId: number): Promise<GastoProveedor[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('pid', sql.Int, proveedorId)
+    .query(`
+      SELECT l.id AS lote_id,
+             CONVERT(char(10), l.fecha_compra, 23) AS fecha_compra,
+             l.pieza_id, p.descripcion AS pieza, p.numero_serie AS pieza_serie,
+             tp.nombre AS tipo_pieza,
+             l.cantidad_inicial AS cantidad, l.costo_unitario,
+             l.cantidad_inicial * l.costo_unitario AS total,
+             l.num_factura, s.nombre AS sucursal, l.comprado_por
+      FROM lotes_pieza l
+      JOIN piezas p            ON p.id = l.pieza_id
+      LEFT JOIN tipos_pieza tp ON tp.id = p.tipo_pieza_id
+      LEFT JOIN sucursales s   ON s.id = l.sucursal_id
+      WHERE l.proveedor_id = @pid
+      ORDER BY l.fecha_compra DESC, l.id DESC`)
+  // mssql devuelve DECIMAL como string cuando no cabe en un number seguro; aquí
+  // siempre cabe, pero se normaliza para no dejar al consumidor adivinando.
+  return r.recordset.map((row) => ({
+    ...row,
+    costo_unitario: Number(row.costo_unitario),
+    total:          Number(row.total),
+  }))
+}

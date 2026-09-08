@@ -49,3 +49,30 @@ export function useDeleteProveedor() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['proveedores'] }),
   })
 }
+
+// Todo lo que se le ha comprado a un proveedor: los lotes que entraron con su
+// nombre. Es el gasto real, distinto de los precios que pide (usePreciosProveedor),
+// que existen aunque nunca se le haya comprado.
+export interface GastoProveedor {
+  lote_id:        number
+  fecha_compra:   string
+  pieza_id:       number
+  pieza:          string
+  pieza_serie:    string
+  tipo_pieza:     string | null
+  cantidad:       number
+  costo_unitario: number
+  /** Lo que costó la compra completa: cantidad por costo unitario. */
+  total:          number
+  num_factura:    string | null
+  sucursal:       string | null
+  comprado_por:   string
+}
+
+export function useGastosProveedor(proveedorId: number) {
+  return useQuery({
+    queryKey: ['proveedor-gastos', proveedorId],
+    queryFn: () => api.get<{ data: GastoProveedor[] }>(`/proveedores/${proveedorId}/gastos`),
+    enabled: proveedorId > 0,
+  })
+}

@@ -1,28 +1,32 @@
-// Página de un proveedor: sus datos de contacto y, sobre todo, los precios que
-// da por cada refacción.
+// Página de un proveedor, en dos pestañas que responden dos preguntas
+// distintas:
 //
-// Para qué sirve: los lotes solo dicen lo que costó una compra que ya se hizo,
-// así que del proveedor al que no se le compra no se sabe nada. Aquí se anota
-// lo que cada quien pide —se le compre o no— y la pantalla compara ese precio
-// contra el mejor que haya registrado cualquier otro proveedor.
+//   - PRECIOS: lo que pide por cada refacción, se le compre o no, comparado
+//     contra el mejor precio que haya registrado cualquier otro proveedor. Sin
+//     esto, del proveedor al que todavía no se le compra no se sabría nada.
+//   - GASTOS: lo que de verdad se le ha comprado. Sale de los lotes, no de la
+//     lista de precios: un precio cotizado nunca salió de la caja, y sumarlo
+//     como gasto sería inventar un número.
 //
-// Cada refacción es un grupo: arriba el precio vigente (el más reciente) con su
-// comparación, y adentro el historial, que es lo que enseña si un proveedor va
-// subiendo.
+// En la de precios cada refacción es un grupo: arriba el precio vigente (el más
+// reciente) con su comparación, y adentro el historial, que es lo que enseña si
+// un proveedor va subiendo.
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert, Button, ActionIcon,
-  Modal, Badge, Accordion, Paper, Tooltip, Anchor,
+  Modal, Badge, Accordion, Paper, Tooltip, Anchor, Tabs,
 } from '@mantine/core'
 import {
   IconPencil, IconTrash, IconPlus, IconArrowLeft, IconPhone, IconUser,
+  IconTag, IconReceipt,
 } from '@tabler/icons-react'
 import {
   usePreciosProveedor, useCreatePrecioProveedor,
   useUpdatePrecioProveedor, useDeletePrecioProveedor,
 } from '../hooks/usePreciosProveedor'
 import type { PrecioProveedor } from '../hooks/usePreciosProveedor'
-import type { Proveedor } from '../hooks/useProveedores'
+import { useGastosProveedor } from '../hooks/useProveedores'
+import type { Proveedor, GastoProveedor } from '../hooks/useProveedores'
 import PrecioProveedorForm from '../components/PrecioProveedorForm'
 
 function formatMXN(n: number) {
@@ -182,6 +186,140 @@ function HistorialTabla({
 
 // ── Página ────────────────────────────────────────────────────────────────────
 
+// ── Gastos ────────────────────────────────────────────────────────────────────
+
+// Las compras agrupadas por año. Es la lectura que sirve para negociar: no
+// interesa tanto una compra suelta como cuánto se le va a este proveedor al año
+// y si va subiendo.
+type AnioDeGastos = { anio: string; total: number; compras: GastoProveedor[] }
+
+function agruparPorAnio(gastos: GastoProveedor[]): AnioDeGastos[] {
+  const map = new Map<string, AnioDeGastos>()
+  for (const g of gastos) {
+    const anio = g.fecha_compra.slice(0, 4)
+    const entry = map.get(anio) ?? { anio, total: 0, compras: [] }
+    entry.total += g.total
+    entry.compras.push(g)
+    map.set(anio, entry)
+  }
+  // Los gastos ya vienen del más reciente al más viejo, así que los años salen
+  // en ese orden y las compras de cada uno conservan el suyo.
+  return [...map.values()]
+}
+
+function GastosTabla({ compras }: { compras: GastoProveedor[] }) {
+  return (
+    <Table.ScrollContainer minWidth={720}>
+      <Table striped withTableBorder verticalSpacing={4}>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th style={{ width: 110 }}>Fecha</Table.Th>
+            <Table.Th>Refacción</Table.Th>
+            <Table.Th style={{ width: 80, textAlign: 'right' }}>Cant.</Table.Th>
+            <Table.Th style={{ width: 110, textAlign: 'right' }}>Unitario</Table.Th>
+            <Table.Th style={{ width: 120, textAlign: 'right' }}>Total</Table.Th>
+            <Table.Th style={{ width: 130 }}>Factura</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {compras.map((c) => (
+            <Table.Tr key={c.lote_id}>
+              <Table.Td><Text size="sm">{formatFecha(c.fecha_compra)}</Text></Table.Td>
+              <Table.Td>
+                <Text size="sm">{c.pieza}</Text>
+                <Text size="xs" c="dimmed">
+                  {c.pieza_serie}
+                  {c.tipo_pieza && ` · ${c.tipo_pieza}`}
+                  {c.sucursal && ` · ${c.sucursal}`}
+                </Text>
+              </Table.Td>
+              <Table.Td style={{ textAlign: 'right' }}><Text size="sm">{c.cantidad}</Text></Table.Td>
+              <Table.Td style={{ textAlign: 'right' }}>
+                <Text size="sm">{formatMXN(c.costo_unitario)}</Text>
+              </Table.Td>
+              <Table.Td style={{ textAlign: 'right' }}>
+                <Text size="sm" fw={600}>{formatMXN(c.total)}</Text>
+              </Table.Td>
+              <Table.Td>
+                <Text size="xs" c={c.num_factura ? undefined : 'dimmed'}>
+                  {c.num_factura ?? 'Sin factura'}
+                </Text>
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
+  )
+}
+
+function GastosPanel({ proveedorId }: { proveedorId: number }) {
+  const { data, isLoading, isError } = useGastosProveedor(proveedorId)
+  const gastos = useMemo(() => data?.data ?? [], [data])
+  const anios  = useMemo(() => agruparPorAnio(gastos), [gastos])
+  const total  = gastos.reduce((s, g) => s + g.total, 0)
+
+  if (isLoading) return <Center py="xl"><Loader /></Center>
+  if (isError) {
+    return (
+      <Alert color="red" title="Error al cargar">
+        No se pudieron obtener las compras de este proveedor. Verifica la conexión.
+      </Alert>
+    )
+  }
+  if (gastos.length === 0) {
+    return (
+      <Center py="xl">
+        <Stack align="center" gap="xs">
+          <Text c="dimmed">A este proveedor todavía no se le ha comprado nada.</Text>
+          <Text size="sm" c="dimmed">
+            Las compras aparecen aquí en cuanto se registra un lote a su nombre.
+          </Text>
+        </Stack>
+      </Center>
+    )
+  }
+
+  return (
+    <Stack gap="md">
+      <Paper withBorder p="md" radius="md">
+        <Group justify="space-between" wrap="wrap" gap="sm">
+          <div>
+            <Text size="xs" c="dimmed" fw={600} tt="uppercase">Total comprado</Text>
+            <Text size="xl" fw={700}>{formatMXN(total)}</Text>
+          </div>
+          <Text size="sm" c="dimmed">
+            {gastos.length} compra{gastos.length !== 1 ? 's' : ''} ·
+            {' '}desde {formatFecha(gastos[gastos.length - 1].fecha_compra)}
+          </Text>
+        </Group>
+      </Paper>
+
+      {/* Un año por bloque, el más reciente abierto: es donde se mira primero. */}
+      <Accordion variant="separated" multiple defaultValue={[anios[0].anio]}>
+        {anios.map((a) => (
+          <Accordion.Item key={a.anio} value={a.anio}>
+            <Accordion.Control>
+              <Group justify="space-between" wrap="nowrap" pr="sm">
+                <Text size="sm" fw={500}>{a.anio}</Text>
+                <Group gap="sm" wrap="nowrap">
+                  <Text size="xs" c="dimmed">
+                    {a.compras.length} compra{a.compras.length !== 1 ? 's' : ''}
+                  </Text>
+                  <Text size="sm" fw={600}>{formatMXN(a.total)}</Text>
+                </Group>
+              </Group>
+            </Accordion.Control>
+            <Accordion.Panel>
+              <GastosTabla compras={a.compras} />
+            </Accordion.Panel>
+          </Accordion.Item>
+        ))}
+      </Accordion>
+    </Stack>
+  )
+}
+
 export default function ProveedorDetalle({
   proveedor, onBack,
 }: {
@@ -265,68 +403,90 @@ export default function ProveedorDetalle({
           </Group>
         </Paper>
 
-        {isLoading ? (
-          <Center py="xl"><Loader /></Center>
-        ) : isError ? (
-          <Alert color="red" title="Error al cargar">
-            No se pudieron obtener los precios de este proveedor. Verifica la conexión.
-          </Alert>
-        ) : grupos.length === 0 ? (
-          <Center py="xl">
-            <Stack align="center" gap="xs">
-              <Text c="dimmed">Este proveedor no tiene precios registrados.</Text>
-              <Text size="sm" c="dimmed">
-                Registra lo que pide por una refacción para poder compararlo con los demás.
-              </Text>
-              <Button size="xs" variant="light" leftSection={<IconPlus size={14} />}
-                onClick={() => abrirAlta()}>
-                Registrar precio
-              </Button>
+        {/* Dos preguntas distintas, dos pestañas: lo que pide y lo que se le ha
+            comprado. Juntarlas en una sola vista invitaba a sumar precios
+            cotizados como si fueran gasto. */}
+        <Tabs defaultValue="precios">
+          <Tabs.List>
+            <Tabs.Tab value="precios" leftSection={<IconTag size={14} />}>
+              Comparación de precios
+            </Tabs.Tab>
+            <Tabs.Tab value="gastos" leftSection={<IconReceipt size={14} />}>
+              Gastos
+            </Tabs.Tab>
+          </Tabs.List>
+
+          <Tabs.Panel value="precios" pt="md">
+            <Stack gap="md">
+              {isLoading ? (
+                <Center py="xl"><Loader /></Center>
+              ) : isError ? (
+                <Alert color="red" title="Error al cargar">
+                  No se pudieron obtener los precios de este proveedor. Verifica la conexión.
+                </Alert>
+              ) : grupos.length === 0 ? (
+                <Center py="xl">
+                  <Stack align="center" gap="xs">
+                    <Text c="dimmed">Este proveedor no tiene precios registrados.</Text>
+                    <Text size="sm" c="dimmed">
+                      Registra lo que pide por una refacción para poder compararlo con los demás.
+                    </Text>
+                    <Button size="xs" variant="light" leftSection={<IconPlus size={14} />}
+                      onClick={() => abrirAlta()}>
+                      Registrar precio
+                    </Button>
+                  </Stack>
+                </Center>
+              ) : (
+                <Accordion variant="separated" value={abierta} onChange={setAbierta}>
+                  {grupos.map((g) => {
+                    const vigente = g.historial[0]
+                    return (
+                      <Accordion.Item key={g.piezaId} value={String(g.piezaId)}>
+                        <Accordion.Control>
+                          <Group justify="space-between" wrap="nowrap" pr="sm">
+                            <div style={{ minWidth: 0 }}>
+                              <Text size="sm" fw={500} truncate>{g.label}</Text>
+                              <Text size="xs" c="dimmed">
+                                {g.tipo ?? 'Sin tipo'} · {g.historial.length} precio
+                                {g.historial.length !== 1 ? 's' : ''} · último {formatFecha(vigente.fecha)}
+                              </Text>
+                            </div>
+                            <Group gap="sm" wrap="nowrap">
+                              <ComparativaBadge vigente={vigente} />
+                              <Text size="sm" fw={600}>{formatMXN(vigente.precio)}</Text>
+                            </Group>
+                          </Group>
+                        </Accordion.Control>
+                        <Accordion.Panel>
+                          <Stack gap="xs">
+                            <HistorialTabla
+                              historial={g.historial}
+                              onEdit={(p) => { updateMut.reset(); setEditPrecio(p) }}
+                              onDelete={setDeletePrecio}
+                            />
+                            <Group justify="flex-end">
+                              <Button
+                                size="xs" variant="light" leftSection={<IconPlus size={14} />}
+                                onClick={() => abrirAlta({ id: g.piezaId, label: g.label })}
+                              >
+                                Registrar precio nuevo
+                              </Button>
+                            </Group>
+                          </Stack>
+                        </Accordion.Panel>
+                      </Accordion.Item>
+                    )
+                  })}
+                </Accordion>
+              )}
             </Stack>
-          </Center>
-        ) : (
-          <Accordion variant="separated" value={abierta} onChange={setAbierta}>
-            {grupos.map((g) => {
-              const vigente = g.historial[0]
-              return (
-                <Accordion.Item key={g.piezaId} value={String(g.piezaId)}>
-                  <Accordion.Control>
-                    <Group justify="space-between" wrap="nowrap" pr="sm">
-                      <div style={{ minWidth: 0 }}>
-                        <Text size="sm" fw={500} truncate>{g.label}</Text>
-                        <Text size="xs" c="dimmed">
-                          {g.tipo ?? 'Sin tipo'} · {g.historial.length} precio
-                          {g.historial.length !== 1 ? 's' : ''} · último {formatFecha(vigente.fecha)}
-                        </Text>
-                      </div>
-                      <Group gap="sm" wrap="nowrap">
-                        <ComparativaBadge vigente={vigente} />
-                        <Text size="sm" fw={600}>{formatMXN(vigente.precio)}</Text>
-                      </Group>
-                    </Group>
-                  </Accordion.Control>
-                  <Accordion.Panel>
-                    <Stack gap="xs">
-                      <HistorialTabla
-                        historial={g.historial}
-                        onEdit={(p) => { updateMut.reset(); setEditPrecio(p) }}
-                        onDelete={setDeletePrecio}
-                      />
-                      <Group justify="flex-end">
-                        <Button
-                          size="xs" variant="light" leftSection={<IconPlus size={14} />}
-                          onClick={() => abrirAlta({ id: g.piezaId, label: g.label })}
-                        >
-                          Registrar precio nuevo
-                        </Button>
-                      </Group>
-                    </Stack>
-                  </Accordion.Panel>
-                </Accordion.Item>
-              )
-            })}
-          </Accordion>
-        )}
+          </Tabs.Panel>
+
+          <Tabs.Panel value="gastos" pt="md">
+            <GastosPanel proveedorId={proveedor.id} />
+          </Tabs.Panel>
+        </Tabs>
       </Stack>
 
       {/* Modal: nuevo precio */}
