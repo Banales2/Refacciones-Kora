@@ -19,6 +19,11 @@ export interface VehiculoRow {
   modelo:       string
   serie:        string
   placas:       string | null
+  /**
+   * Cómo se le dice a la unidad en el patio: torton, rabon, camioneta, carro.
+   * Informativo: `tipo` es el que gobierna seguros, tenencia y odómetro.
+   */
+  categoria:    string | null
   status:       string | null
   kilometraje:  number | null
   combustible:  string | null
@@ -49,6 +54,7 @@ export interface VehiculoCreatePayload {
   modelo_id:     number
   serie:         string
   placas?:       string | null
+  categoria?:    string | null
   combustible?:  string
   kilometraje?:  number
   status?:       string
@@ -144,5 +150,15 @@ export function useDeleteVehiculo() {
   return useMutation({
     mutationFn: (id: number) => api.delete(`/vehiculos/${id}`),
     onSuccess: () => invalidarFlota(qc),
+  })
+}
+
+// Categorías de carrocería ya usadas en la flota, para sugerirlas al capturar.
+// No hay catálogo: el vocabulario se arma con lo que se escribe.
+export function useCategoriasVehiculo() {
+  return useQuery({
+    queryKey: ['vehiculos-categorias'],
+    queryFn: () => api.get<{ data: string[] }>('/vehiculos/categorias'),
+    staleTime: 5 * 60 * 1000,
   })
 }

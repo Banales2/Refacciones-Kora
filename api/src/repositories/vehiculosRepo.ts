@@ -16,6 +16,12 @@ export interface VehiculoRow {
   modelo:       string
   serie:        string
   placas:       string | null
+  /**
+   * Cómo se le dice a la unidad en el patio: torton, rabon, camioneta, carro.
+   * Es informativo y no gobierna nada —de eso se encarga `tipo`—; sirve para
+   * nombrarla y buscarla. Null = sin capturar.
+   */
+  categoria:    string | null
   status:       string | null
   kilometraje:  number | null
   combustible:  string | null
@@ -71,7 +77,7 @@ function conAlertas(row: VehiculoRowSql): VehiculoRow {
 
 const SELECT_COLS = `
   v.id, v.tipo, v.modelo_id, v.fecha_compra,
-  v.numero_serie AS serie, v.placas,
+  v.numero_serie AS serie, v.placas, v.categoria,
   m.marca, m.nombre AS modelo,
   CASE WHEN v.tipo='camion'       THEN c.status       WHEN v.tipo='tractocamion' THEN t.status
        WHEN v.tipo='caja_trailer' THEN ct.status      WHEN v.tipo='utilitario'   THEN u.status
@@ -239,7 +245,8 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
       .input('serie',        sql.NVarChar(80),  data.serie)
       .input('placas',       sql.NVarChar(20),  data.placas ?? null)
       .input('fechaCompra',  sql.Date,          data.fecha_compra ?? null)
-      .query('INSERT INTO vehiculos (modelo_id, tipo, numero_serie, placas, fecha_compra) OUTPUT INSERTED.id VALUES (@modelo_id, @tipo, @serie, @placas, @fechaCompra)')
+      .input('categoria',    sql.NVarChar(60),  data.categoria ?? null)
+      .query('INSERT INTO vehiculos (modelo_id, tipo, numero_serie, placas, fecha_compra, categoria) OUTPUT INSERTED.id VALUES (@modelo_id, @tipo, @serie, @placas, @fechaCompra, @categoria)')
     const vid = vRes.recordset[0].id
 
     // Seguro y permiso van en la tabla hija, y solo en las de los tipos que los
@@ -338,6 +345,7 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
   if (data.serie       !== undefined) { baseReq.input('serie',       sql.NVarChar(80),  data.serie);       baseSets.push('numero_serie=@serie') }
   if ('placas' in data)               { baseReq.input('placas',     sql.NVarChar(20),  data.placas ?? null); baseSets.push('placas=@placas') }
   if ('fecha_compra' in data)         { baseReq.input('fechaCompra', sql.Date,          data.fecha_compra ?? null); baseSets.push('fecha_compra=@fechaCompra') }
+  if ('categoria' in data)            { baseReq.input('categoria',   sql.NVarChar(60),  data.categoria ?? null);    baseSets.push('categoria=@categoria') }
   if (baseSets.length) await baseReq.query(`UPDATE vehiculos SET ${baseSets.join(',')} WHERE id=@id`)
 
   // Update subtable
@@ -445,4 +453,18 @@ export async function remove(id: number): Promise<void> {
     await tx.rollback()
     throw err
   }
+}
+
+/**
+ * Las categorías ya escritas en la flota, para sugerirlas en el formulario. No
+ * hay catálogo: el vocabulario se arma con lo capturado, igual que las
+ * categorías de pendiente y las compañías de seguro.
+ */
+export async function findCategorias(): Promise<string[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT DISTINCT categoria FROM vehiculos
+    WHERE categoria IS NOT NULL
+    ORDER BY categoria`)
+  return r.recordset.map((row: { categoria: string }) => row.categoria)
 }

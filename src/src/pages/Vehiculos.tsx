@@ -1358,6 +1358,13 @@ function VehiculoDetalle({
                   <InfoItem label="Placas" value={vehiculo.placas} />
                 </Grid.Col>
               )}
+              {/* Cómo se le dice a la unidad en el patio. Es informativa: no
+                  cambia ninguna regla, a diferencia del tipo. */}
+              {vehiculo.categoria && (
+                <Grid.Col span={{ base: 6, sm: 3 }}>
+                  <InfoItem label="Categoría" value={vehiculo.categoria} />
+                </Grid.Col>
+              )}
               {/* Una caja de trailer no se asegura y solo reparto y utilitarios
                   tramitan permiso: donde no aplica, el dato no se muestra en
                   blanco (parecía un pendiente por capturar). */}

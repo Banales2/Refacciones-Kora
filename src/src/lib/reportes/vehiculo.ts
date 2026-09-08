@@ -159,6 +159,7 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
   pdf.seccion('Datos de la unidad')
   pdf.datos([
     ['Tipo',            TIPO_LABELS[v.tipo] ?? v.tipo],
+    ['Categoría',       v.categoria ?? '—'],
     ['Marca y modelo',  `${v.marca} ${v.modelo}${v.modelo_anio ? ` (${v.modelo_anio})` : ''}`],
     ['Número de serie', v.serie],
     ['Placas',          v.placas ?? '—'],
@@ -471,6 +472,7 @@ export async function exportVehiculoExcel(d: DatosVehiculo) {
     // abajo cuentan desde aquí, así que mueven junto con este renglón.
     ['Periodo', etiquetaPeriodo(d.periodo ?? { modo: 'default' }, 'Historial completo')],
     ['Tipo', TIPO_LABELS[v.tipo] ?? v.tipo],
+    ['Categoría', v.categoria ?? '—'],
     ['Marca y modelo', `${v.marca} ${v.modelo}${v.modelo_anio ? ` (${v.modelo_anio})` : ''}`],
     ['Número de serie', v.serie],
     ['Placas', v.placas ?? '—'],

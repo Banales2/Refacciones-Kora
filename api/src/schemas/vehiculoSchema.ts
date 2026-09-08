@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { CODIGO, KM_MAX } from './common'
+import { CODIGO, KM_MAX, TEXTO_SIMPLE } from './common'
 
 export const TIPOS_VEHICULO = ['camion', 'tractocamion', 'caja_trailer', 'utilitario', 'montacargas'] as const
 export type TipoVehiculo = typeof TIPOS_VEHICULO[number]
@@ -35,8 +35,20 @@ export const VehiculoQuerySchema = z.object({
   alerta:    z.enum(ALERTAS_VEHICULO).optional(),
 })
 
+// Cómo se le dice a la unidad en el patio: torton, rabon, camioneta, carro. Es
+// informativo —`tipo` es el que gobierna seguros, tenencia y odómetro— y por
+// eso es texto libre y opcional, sin catálogo detrás.
+const categoria = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+  z.string().trim()
+    .max(60, 'Máximo 60 caracteres')
+    .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones')
+    .nullable().optional()
+)
+
 export const VehiculoCreateSchema = z.object({
   tipo:        z.enum(TIPOS_VEHICULO),
+  categoria,
   modelo_id:   z.coerce.number().int().min(1, 'Requerido'),
   serie: z
     .string()
@@ -92,6 +104,7 @@ export const VehiculoCreateSchema = z.object({
 
 export const VehiculoUpdateSchema = z.object({
   modelo_id:    z.coerce.number().int().min(1).optional(),
+  categoria,
   serie: z
     .string()
     .trim()

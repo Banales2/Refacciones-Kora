@@ -9,12 +9,14 @@ import {
 } from '@mantine/core'
 import { FechaInput } from './FechaInput'
 import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
+import { useCategoriasVehiculo } from '../hooks/useVehiculos'
 import { useModelos } from '../hooks/useModelos'
 import { useSucursales } from '../hooks/useSucursales'
 import { useRutas } from '../hooks/useRutas'
 import { useSeguros } from '../hooks/useSeguros'
 import { usePermisosCirculacion } from '../hooks/usePermisosCirculacion'
-import { CODIGO, limpiarCodigo, KM_MAX, validarKm } from '../lib/validaciones'
+import { CODIGO, limpiarCodigo, limpiarTextoSimple, KM_MAX, validarKm } from '../lib/validaciones'
+import { useOpcionesTexto } from '../hooks/useOpcionesTexto'
 import { hoyIso } from '../lib/fechas'
 import { llevaPermiso, llevaSeguro } from '../lib/tipoVehiculo'
 
@@ -41,6 +43,7 @@ type FormVals = {
   modelo_id:    string
   serie:        string
   placas:       string
+  categoria:    string
   combustible:  string
   kilometraje:  number | string
   status:       string
@@ -61,6 +64,7 @@ function init(v?: VehiculoRow): FormVals {
     modelo_id:    v?.modelo_id   != null ? String(v.modelo_id)   : '',
     serie:        v?.serie       ?? '',
     placas:       v?.placas      ?? '',
+    categoria:    v?.categoria   ?? '',
     combustible:  v?.combustible ?? '',
     kilometraje:  v?.kilometraje ?? '',
     status:       v?.status      ?? '',
@@ -109,6 +113,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
   const { data: rutasData } = useRutas()
   const { data: segurosData } = useSeguros()
   const { data: permisosData } = usePermisosCirculacion()
+  const { data: categoriasData } = useCategoriasVehiculo()
 
   const modelosOpts   = (modelosData?.data   ?? []).map((m) => ({ value: String(m.id), label: `${m.marca} ${m.nombre}${m.anio ? ` ${m.anio}` : ''}` }))
   const sucursalesOpts = (sucursalesData?.data ?? []).map((s) => ({ value: String(s.id), label: s.nombre }))
@@ -152,6 +157,15 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
     ? lockedModeloId
     : (form.values.modelo_id ? parseInt(form.values.modelo_id) : null)
   const selectedModelo = modelosData?.data.find((m) => m.id === selectedModeloId)
+
+  // Las categorías ya escritas en la flota más la que se esté tecleando,
+  // ofrecida para crearla al vuelo. Mismo mecanismo que la compañía de un
+  // seguro o la categoría de una incidencia.
+  const { options: categoriaOptions, setSearch: setCategoriaSearch } =
+    useOpcionesTexto(
+      categoriasData?.data, form.values.categoria, initial?.categoria,
+      (v) => `+ Crear categoría "${v}"`,
+    )
   const tiposPermitidos = selectedModelo?.tipos_permitidos ?? []
   const tiposOptions = tiposPermitidos.length > 0
     ? TIPOS_OPTIONS.filter((o) => tiposPermitidos.includes(o.value as TipoVehiculo))
@@ -193,6 +207,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
       modelo_id:    parseInt(vals.modelo_id),
       serie:        vals.serie,
       placas:       vals.placas.trim() || null,
+      categoria:    vals.categoria.trim() || null,
       fecha_compra: vals.fecha_compra || null,
       ...(llevaSeguro(t)  ? { seguro_id:  vals.seguro_id  ? parseInt(vals.seguro_id)  : null } : {}),
       ...(llevaPermiso(t) ? { permiso_id: vals.permiso_id ? parseInt(vals.permiso_id) : null } : {}),
@@ -320,6 +335,22 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
             </Grid.Col>
           )}
         </Grid>
+
+        {/* Informativa: no cambia ninguna regla, solo nombra a la unidad como
+            se le dice en el patio. Sin catálogo detrás —se escribe y queda
+            disponible para la siguiente—, igual que la compañía de un seguro. */}
+        <Select
+          label="Categoría"
+          placeholder="Opcional — ej. torton, rabon, camioneta"
+          description="Cómo se le dice a esta unidad. No afecta seguros ni mantenimiento."
+          data={categoriaOptions}
+          searchable
+          clearable
+          nothingFoundMessage="Escribe para crear una categoría"
+          onSearchChange={(v) => setCategoriaSearch(limpiarTextoSimple(v, 60))}
+          value={form.values.categoria || null}
+          onChange={(v) => { form.setFieldValue('categoria', v ?? ''); setCategoriaSearch('') }}
+        />
 
         <FechaInput
           label="Fecha de compra"
