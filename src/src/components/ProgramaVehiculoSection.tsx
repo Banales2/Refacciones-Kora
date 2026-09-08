@@ -32,7 +32,7 @@ import {
 } from '@mantine/core'
 import {
   IconChecklist, IconPencil, IconTrash, IconPlus, IconClockExclamation, IconArrowBackUp,
-  IconShieldExclamation, IconShieldCheck, IconAdjustments,
+  IconShieldExclamation, IconShieldCheck, IconAdjustments, IconExternalLink,
 } from '@tabler/icons-react'
 import {
   useProgramaVehiculo, useAsignarPrograma, useQuitarPrograma,
@@ -68,6 +68,24 @@ function fmtFecha(iso: string | null) {
   })
 }
 
+// El programa se captura en el modelo, no en la unidad: es la tabla que aplica
+// a todas las que salieron de esa máquina, y capturarla por unidad sería
+// repetirla decenas de veces. Desde aquí solo se puede ir a hacerlo, y este
+// botón es ese puente —sin él la pantalla dice "captúralo en el modelo" y deja
+// al usuario buscándolo a mano—.
+function IrAlModelo({ onNavigate }: { onNavigate?: () => void }) {
+  if (!onNavigate) return null
+  return (
+    <Button
+      size="xs" variant="light"
+      leftSection={<IconExternalLink size={14} />}
+      onClick={onNavigate}
+    >
+      Ir al modelo para capturarlo
+    </Button>
+  )
+}
+
 // ── Etapa y garantía ─────────────────────────────────────────────────────────
 
 // En qué programa va la unidad, por qué, y qué se está arriesgando si trae algo
@@ -75,11 +93,12 @@ function fmtFecha(iso: string | null) {
 // de todo lo de abajo: los mismos kilómetros vencidos son un pendiente más si
 // la unidad ya salió de garantía, y una garantía en riesgo si no.
 function BandaEtapa({
-  estado, isPending, onForzar,
+  estado, isPending, onForzar, onNavigateModelo,
 }: {
   estado:    EstadoProgramaVehiculo
   isPending: boolean
   onForzar:  (etapa: Etapa | null) => void
+  onNavigateModelo?: () => void
 }) {
   const { etapa, etapa_forzada, garantia, garantia_en_riesgo, falta_posgarantia } = estado
   const vigente = garantia?.estado.vigente ?? false
@@ -158,8 +177,13 @@ function BandaEtapa({
 
       {falta_posgarantia && (
         <Alert color="orange" variant="light" title="Sin programa de post-garantía">
-          A esta unidad ya se le acabó la garantía, pero su modelo no tiene capturado el programa
-          de después. Mientras tanto sigue el del fabricante. Se captura desde la ficha del modelo.
+          <Stack gap="xs" align="flex-start">
+            <Text size="sm">
+              A esta unidad ya se le acabó la garantía, pero su modelo no tiene capturado el
+              programa de después. Mientras tanto sigue el del fabricante.
+            </Text>
+            <IrAlModelo onNavigate={onNavigateModelo} />
+          </Stack>
         </Alert>
       )}
     </Stack>
@@ -254,13 +278,19 @@ function ProximaVisita({
 // ── Sección ──────────────────────────────────────────────────────────────────
 
 export default function ProgramaVehiculoSection({
-  vehiculoId, modeloId, kilometraje, tipoVehiculo,
+  vehiculoId, modeloId, kilometraje, tipoVehiculo, onNavigateModelo,
 }: {
   vehiculoId:  number
   modeloId:    number
   kilometraje: number | null
   /** Para el formulario de mantenimiento: define si la unidad lleva odómetro. */
   tipoVehiculo?: TipoVehiculo
+  /**
+   * Salto a la ficha del modelo. El programa se captura ahí; desde la unidad
+   * solo se puede ir. Sin este callback los botones no se pintan, que es lo
+   * correcto donde la sección se use fuera de una pantalla que navegue.
+   */
+  onNavigateModelo?: (modeloId: number) => void
 }) {
   const { data, isLoading } = useProgramaVehiculo(vehiculoId)
   const estado = data?.data ?? null
@@ -353,10 +383,14 @@ export default function ProgramaVehiculoSection({
                 </Text>
               </>
             ) : (
-              <Text size="sm" c="dimmed">
-                El modelo de esta unidad no tiene capturado ningún programa de mantenimiento. Se
-                capturan desde la ficha del modelo.
-              </Text>
+              <>
+                <Text size="sm" c="dimmed">
+                  El modelo de esta unidad no tiene capturado ningún programa de mantenimiento.
+                  No pasa nada: la unidad funciona sin él, solo que nadie le va a avisar cuándo
+                  toca cada servicio.
+                </Text>
+                <IrAlModelo onNavigate={() => onNavigateModelo?.(modeloId)} />
+              </>
             )}
             {error && <Alert color="red" title="Error">{error}</Alert>}
           </Stack>
@@ -426,6 +460,7 @@ export default function ProgramaVehiculoSection({
           setError(null)
           etapaMut.mutate(e, { onError: (err: Error) => setError(err.message) })
         }}
+        onNavigateModelo={onNavigateModelo && (() => onNavigateModelo(modeloId))}
       />
 
       <Paper withBorder p="md" radius="md">

@@ -266,6 +266,18 @@ export default function Layout() {
     if (mobileOpened) toggleMobile()
   }
 
+  // Salto al detalle de un modelo. No pasa por navigate() porque ese limpia
+  // `modeloDetalleId`, que es justo lo que aquí se quiere fijar: se entra al
+  // modelo concreto, no a la lista.
+  function navigateToModeloId(id: number) {
+    setPendingVehiculo(null)
+    setPendingVehiculoId(null)
+    setVehiculoOrigin(null)
+    setModeloDetalleId(id)
+    setSection('modelos')
+    if (mobileOpened) toggleMobile()
+  }
+
   function navigateToCatalogo(tab: string) {
     setSitiosTab(tab)
     navigate('sitios')
@@ -430,6 +442,7 @@ export default function Layout() {
             initialVehiculoId={pendingVehiculoId ?? undefined}
             onBack={vehiculoOrigin ? backFromVehiculo : undefined}
             backLabel={vehiculoOrigin ? SECTION_LABELS[vehiculoOrigin] : undefined}
+            onNavigateModelo={navigateToModeloId}
           />
         )}
         {section === 'incidencias' && <Incidencias onNavigateVehiculo={navigateToVehiculoId} />}

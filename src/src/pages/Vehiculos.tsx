@@ -1192,7 +1192,7 @@ function HistorialPiezasSection({ vehiculoId }: { vehiculoId: number }) {
 }
 
 function VehiculoDetalle({
-  vehiculo, onBack, backLabel, onEdit, onDelete, onVehiculoUpdate,
+  vehiculo, onBack, backLabel, onEdit, onDelete, onVehiculoUpdate, onNavigateModelo,
 }: {
   vehiculo: VehiculoRow
   onBack: () => void
@@ -1202,6 +1202,7 @@ function VehiculoDetalle({
   onEdit: (v: VehiculoRow) => void
   onDelete: (v: VehiculoRow) => void
   onVehiculoUpdate: (v: VehiculoRow) => void
+  onNavigateModelo?: (modeloId: number) => void
 }) {
   const ti = tipoInfo(vehiculo.tipo)
 
@@ -1514,6 +1515,7 @@ function VehiculoDetalle({
         modeloId={vehiculo.modelo_id}
         kilometraje={vehiculo.kilometraje}
         tipoVehiculo={vehiculo.tipo}
+        onNavigateModelo={onNavigateModelo}
       />
 
       {/* Incidencias reportadas */}
@@ -1750,7 +1752,7 @@ function VehiculosAgrupados({
 // ── Lista de vehículos ────────────────────────────────────────────────────────
 
 export default function Vehiculos({
-  initialVehiculo, initialVehiculoId, onBack, backLabel,
+  initialVehiculo, initialVehiculoId, onBack, backLabel, onNavigateModelo,
 }: {
   initialVehiculo?:   VehiculoRow
   initialVehiculoId?: number
@@ -1758,6 +1760,12 @@ export default function Vehiculos({
   // Catálogos…), onBack regresa exactamente ahí y backLabel la nombra.
   onBack?:    () => void
   backLabel?: string
+  /**
+   * Salto a la ficha del modelo de la unidad. El programa de mantenimiento se
+   * captura ahí y no aquí —es del modelo, no de la unidad—, así que desde el
+   * vehículo solo se puede ir a hacerlo.
+   */
+  onNavigateModelo?: (modeloId: number) => void
 }) {
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
@@ -1968,6 +1976,7 @@ export default function Vehiculos({
           onEdit={(v) => openEdit(v)}
           onDelete={(v) => { setDeleting(v); setDeleteOpen(true) }}
           onVehiculoUpdate={(v) => setSelected(v)}
+          onNavigateModelo={onNavigateModelo}
         />
         <Modal
           opened={formOpen} onClose={() => setFormOpen(false)}
