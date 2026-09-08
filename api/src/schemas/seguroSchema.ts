@@ -1,15 +1,24 @@
 import { z } from 'zod'
 
+// Lo que se pagó por la póliza. Opcional: muchas ya capturadas no traen el dato
+// y no hay de dónde sacarlo. Nulo es "no se capturó", que no es cero.
+const costo = z.coerce.number()
+  .min(0, 'No puede ser negativo')
+  .max(99_999_999, 'Máximo $99,999,999')
+  .nullable().optional()
+
 export const SeguroCreateSchema = z.object({
   poliza:           z.string().trim().min(1, 'Póliza requerida').max(60),
   compania:         z.string().trim().min(1, 'Compañía requerida').max(120),
   fecha_expiracion: z.string().date(),
+  costo,
 })
 
 export const SeguroUpdateSchema = z.object({
   poliza:           z.string().trim().min(1).max(60).optional(),
   compania:         z.string().trim().min(1).max(120).optional(),
   fecha_expiracion: z.string().date().optional(),
+  costo,
 })
 
 /**
@@ -28,6 +37,9 @@ export const SeguroRenovarSchema = z.discriminatedUnion('modo', [
   z.object({
     modo:             z.literal('extender'),
     fecha_expiracion: z.string().date(),
+    // Lo que costó la renovación. Al extender pisa al costo anterior: es una
+    // sola póliza y una sola fila (ver la migración 018).
+    costo,
   }),
   z.object({
     modo:             z.literal('nueva_poliza'),
@@ -35,6 +47,9 @@ export const SeguroRenovarSchema = z.discriminatedUnion('modo', [
     // Ausente = sigue siendo la misma aseguradora, que es lo habitual.
     compania:         z.string().trim().min(1).max(120).optional(),
     fecha_expiracion: z.string().date(),
+    // Va con la póliza nueva; el de la anterior se queda donde estaba, así que
+    // el historial de precios sale solo.
+    costo,
   }),
 ])
 

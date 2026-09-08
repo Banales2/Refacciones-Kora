@@ -7,15 +7,28 @@ export interface Seguro {
   poliza:           string
   compania:         string
   fecha_expiracion: string
+  /** Lo que se pagó por la póliza. Null = no se capturó, que no es lo mismo que gratis. */
+  costo:            number | null
 }
 
-const COLS = 'id, poliza, compania, CONVERT(char(10), fecha_expiracion, 23) AS fecha_expiracion'
+const COLS = `id, poliza, compania,
+  CONVERT(char(10), fecha_expiracion, 23) AS fecha_expiracion, costo`
+
+// mssql devuelve DECIMAL como string cuando no cabe en un number seguro; aquí
+// siempre cabe, pero se normaliza para que el consumidor no tenga que
+// preguntarse de qué tipo le llegó el dinero.
+function mapSeguro(row: Record<string, unknown>): Seguro {
+  return {
+    ...(row as unknown as Seguro),
+    costo: row.costo == null ? null : Number(row.costo),
+  }
+}
 
 export async function findAll(): Promise<Seguro[]> {
   const pool = await getPool()
   const r = await pool.request()
     .query(`SELECT ${COLS} FROM seguros ORDER BY fecha_expiracion`)
-  return r.recordset
+  return r.recordset.map(mapSeguro)
 }
 
 export async function findById(id: number): Promise<Seguro | null> {
@@ -23,27 +36,32 @@ export async function findById(id: number): Promise<Seguro | null> {
   const r = await pool.request()
     .input('id', sql.Int, id)
     .query(`SELECT ${COLS} FROM seguros WHERE id = @id`)
-  return r.recordset[0] ?? null
+  return r.recordset[0] ? mapSeguro(r.recordset[0]) : null
 }
 
 export async function create(
-  poliza: string, compania: string, fechaExpiracion: string
+  poliza: string, compania: string, fechaExpiracion: string, costo?: number | null
 ): Promise<Seguro> {
   const pool = await getPool()
   const r = await pool.request()
     .input('poliza',   sql.NVarChar(60),  poliza)
     .input('compania', sql.NVarChar(120), compania)
     .input('fecha',    sql.Date,          fechaExpiracion)
+    .input('costo',    sql.Decimal(18, 2), costo ?? null)
     .query(`
-      INSERT INTO seguros (poliza, compania, fecha_expiracion)
+      INSERT INTO seguros (poliza, compania, fecha_expiracion, costo)
       OUTPUT INSERTED.id, INSERTED.poliza, INSERTED.compania,
-             CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion
-      VALUES (@poliza, @compania, @fecha)`)
-  return r.recordset[0]
+             CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion,
+             INSERTED.costo
+      VALUES (@poliza, @compania, @fecha, @costo)`)
+  return mapSeguro(r.recordset[0])
 }
 
+// `costo` se distingue por presencia y no por valor: mandar null es borrarlo, y
+// no mandarlo es dejarlo como estaba.
 export async function update(
-  id: number, poliza?: string, compania?: string, fechaExpiracion?: string
+  id: number, poliza?: string, compania?: string, fechaExpiracion?: string,
+  costo?: number | null,
 ): Promise<Seguro | null> {
   const pool = await getPool()
   const sets: string[] = []
@@ -51,13 +69,15 @@ export async function update(
   if (poliza          !== undefined) { req.input('poliza',   sql.NVarChar(60),  poliza);          sets.push('poliza=@poliza')             }
   if (compania        !== undefined) { req.input('compania', sql.NVarChar(120), compania);        sets.push('compania=@compania')         }
   if (fechaExpiracion !== undefined) { req.input('fecha',    sql.Date,          fechaExpiracion); sets.push('fecha_expiracion=@fecha')    }
+  if (costo           !== undefined) { req.input('costo',    sql.Decimal(18, 2), costo ?? null);  sets.push('costo=@costo')               }
   if (!sets.length) return findById(id)
   const r = await req.query(`
     UPDATE seguros SET ${sets.join(',')}
     OUTPUT INSERTED.id, INSERTED.poliza, INSERTED.compania,
-           CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion
+           CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion,
+           INSERTED.costo
     WHERE id=@id`)
-  return r.recordset[0] ?? null
+  return r.recordset[0] ? mapSeguro(r.recordset[0]) : null
 }
 
 // Las unidades que cubre la póliza. `countVehiculos` responde cuántas son;

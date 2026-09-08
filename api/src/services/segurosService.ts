@@ -8,11 +8,14 @@ export async function getAll(): Promise<Seguro[]> {
 }
 
 export async function create(data: SeguroCreate): Promise<Seguro> {
-  return repo.create(data.poliza, data.compania, data.fecha_expiracion)
+  return repo.create(data.poliza, data.compania, data.fecha_expiracion, data.costo)
 }
 
 export async function update(id: number, data: SeguroUpdate): Promise<Seguro> {
-  const result = await repo.update(id, data.poliza, data.compania, data.fecha_expiracion)
+  const result = await repo.update(
+    id, data.poliza, data.compania, data.fecha_expiracion,
+    'costo' in data ? data.costo : undefined,
+  )
   if (!result) throw new NotFoundError('Seguro')
   return result
 }
@@ -58,7 +61,10 @@ export async function renovar(id: number, data: SeguroRenovar): Promise<Renovaci
   }
 
   if (data.modo === 'extender') {
-    const seguro = await repo.update(id, undefined, undefined, data.fecha_expiracion)
+    const seguro = await repo.update(
+      id, undefined, undefined, data.fecha_expiracion,
+      'costo' in data ? data.costo : undefined,
+    )
     if (!seguro) throw new NotFoundError('Seguro')
     return { seguro, anterior, modo: data.modo, vehiculos_movidos: 0 }
   }
@@ -74,7 +80,7 @@ export async function renovar(id: number, data: SeguroRenovar): Promise<Renovaci
     )
   }
 
-  const seguro = await repo.create(data.poliza, compania, data.fecha_expiracion)
+  const seguro = await repo.create(data.poliza, compania, data.fecha_expiracion, data.costo)
   // Las unidades se mueven de golpe: `assignVehiculos` las reasigna desde la
   // póliza que tuvieran, así que la anterior queda vacía sola.
   const vehiculos = await repo.findVehiculoIds(id)

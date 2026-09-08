@@ -9,12 +9,15 @@ export interface Seguro {
   poliza:           string
   compania:         string
   fecha_expiracion: string
+  /** Lo que se pagó. Null = no se capturó, que no es lo mismo que gratis. */
+  costo:            number | null
 }
 
 export interface SeguroPayload {
   poliza:           string
   compania:         string
   fecha_expiracion: string
+  costo:            number | null
 }
 
 export function useSeguros() {
@@ -87,8 +90,14 @@ export function useUnassignVehiculoSeguro() {
 // unidades. En el segundo caso la anterior se queda como registro de lo que
 // estuvo vigente, y las unidades se pasan solas a la nueva.
 export type RenovacionPayload =
-  | { modo: 'extender'; fecha_expiracion: string }
-  | { modo: 'nueva_poliza'; poliza: string; compania?: string; fecha_expiracion: string }
+  | { modo: 'extender'; fecha_expiracion: string; costo?: number | null }
+  | {
+    modo: 'nueva_poliza'
+    poliza: string
+    compania?: string
+    fecha_expiracion: string
+    costo?: number | null
+  }
 
 export interface Renovacion {
   seguro:            Seguro

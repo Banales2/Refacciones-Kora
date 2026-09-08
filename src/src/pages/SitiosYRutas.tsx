@@ -5,9 +5,10 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Stack, Group, Text, TextInput, Select, Table, Tabs,
   Loader, Center, Alert, Button, ActionIcon,
-  Modal, Tooltip, Badge, SegmentedControl,
+  Modal, Tooltip, Badge, SegmentedControl, NumberInput,
 } from '@mantine/core'
 import { FechaInput } from '../components/FechaInput'
+import { formatMXN } from '../lib/formato'
 import ConductorForm from '../components/ConductorForm'
 import { TIPOS_CON_PERMISO, TIPOS_CON_SEGURO } from '../lib/tipoVehiculo'
 import { useForm } from '@mantine/form'
@@ -719,7 +720,7 @@ function SeguroForm({
   onCancel: () => void
 }) {
   const form = useForm<SeguroPayload>({
-    initialValues: initial ?? { poliza: '', compania: '', fecha_expiracion: '' },
+    initialValues: initial ?? { poliza: '', compania: '', fecha_expiracion: '', costo: null },
     validate: {
       poliza:           (v) => (!v.trim() ? 'Requerido' : v.length > 60  ? 'Máximo 60 caracteres'  : null),
       compania:         (v) => (!v.trim() ? 'Requerido' : v.length > 120 ? 'Máximo 120 caracteres' : null),
@@ -738,6 +739,7 @@ function SeguroForm({
       poliza:           v.poliza.trim(),
       compania:         v.compania.trim(),
       fecha_expiracion: v.fecha_expiracion,
+      costo:            v.costo,
     }))}>
       <Stack gap="sm">
         <TextInput label="No. póliza" placeholder="Ej. POL-123456" required {...form.getInputProps('poliza')} />
@@ -757,6 +759,18 @@ function SeguroForm({
           onChange={(d) => form.setFieldValue('fecha_expiracion', d)}
           error={form.errors.fecha_expiracion as string}
         />
+        {/* Opcional: muchas pólizas ya capturadas no traen el dato, y exigirlo
+            obligaría a inventar un cero que se leería como "salió gratis". */}
+        <NumberInput
+          label="Costo de la póliza"
+          placeholder="Opcional"
+          description="Lo que se pagó. Déjalo vacío si no lo tienes."
+          min={0} max={99_999_999} decimalScale={2}
+          thousandSeparator="," prefix="$"
+          allowNegative={false} clampBehavior="strict"
+          value={form.values.costo ?? ''}
+          onChange={(v) => form.setFieldValue('costo', aMonto(v))}
+        />
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
@@ -767,6 +781,15 @@ function SeguroForm({
   )
 }
 
+
+// Lo que teclea el usuario en un campo de dinero. Mantine entrega número o
+// texto según lo que lleve escrito, y a medio teclear ("12." o vacío) no hay
+// monto: eso es "sin capturar", no cero ni NaN.
+function aMonto(v: number | string): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null
+  const n = parseFloat(v)
+  return Number.isFinite(n) ? n : null
+}
 
 // El día siguiente a una fecha "YYYY-MM-DD". Se ancla a mediodía porque leerla
 // como medianoche UTC la corre un día atrás en México.
@@ -792,6 +815,7 @@ function RenovarSeguroForm({
   const [fecha, setFecha]       = useState<string>('')
   const [poliza, setPoliza]     = useState('')
   const [compania, setCompania] = useState(seguro.compania)
+  const [costo, setCosto]       = useState<number | null>(null)
   const [tocado, setTocado]     = useState(false)
 
   const { options: companiaOptions, setSearch: setCompaniaSearch } =
@@ -807,8 +831,11 @@ function RenovarSeguroForm({
     setTocado(true)
     if (!puedeEnviar) return
     onSubmit(esNueva
-      ? { modo, poliza: poliza.trim(), compania: compania.trim() || undefined, fecha_expiracion: fecha }
-      : { modo, fecha_expiracion: fecha })
+      ? {
+        modo, poliza: poliza.trim(), compania: compania.trim() || undefined,
+        fecha_expiracion: fecha, costo,
+      }
+      : { modo, fecha_expiracion: fecha, costo })
   }
 
   return (
@@ -864,6 +891,21 @@ function RenovarSeguroForm({
         error={tocado && fechaMala
           ? `Tiene que ser posterior al ${seguro.fecha_expiracion}`
           : null}
+      />
+
+      <NumberInput
+        label="Costo de la renovación"
+        placeholder="Opcional"
+        description={esNueva
+          ? 'Queda en la póliza nueva; el de la anterior se conserva.'
+          : seguro.costo != null
+            ? `Sustituye al costo actual (${formatMXN(seguro.costo)}): es la misma póliza.`
+            : 'Lo que se pagó por prolongarla.'}
+        min={0} max={99_999_999} decimalScale={2}
+        thousandSeparator="," prefix="$"
+        allowNegative={false} clampBehavior="strict"
+        value={costo ?? ''}
+        onChange={(v) => setCosto(aMonto(v))}
       />
 
       {error && <Alert color="red" title="Error">{error}</Alert>}
@@ -937,6 +979,7 @@ function SegurosPanel({
                   <Table.Th>Póliza</Table.Th>
                   <Table.Th>Compañía</Table.Th>
                   <Table.Th>Expiración</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Costo</Table.Th>
                   <Table.Th style={{ width: 110 }} />
                 </Table.Tr>
               </Table.Thead>
@@ -953,6 +996,13 @@ function SegurosPanel({
                         fw={vencido || porExpirar ? 600 : undefined}
                       >
                         {s.fecha_expiracion}{vencido ? ' (vencido)' : porExpirar ? ' (por expirar)' : ''}
+                      </Table.Td>
+                      {/* Sin costo se deja el guion: un "$0" se leería como que
+                          salió gratis, y lo que pasa es que no se capturó. */}
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {s.costo != null
+                          ? formatMXN(s.costo)
+                          : <Text component="span" c="dimmed">—</Text>}
                       </Table.Td>
                       <Table.Td onClick={(e) => e.stopPropagation()}>
                         <Group gap={4} justify="flex-end" wrap="nowrap">
@@ -974,7 +1024,8 @@ function SegurosPanel({
         title={editing ? `Editar — ${editing.poliza}` : 'Nuevo seguro'} centered size="sm">
         <SeguroForm
           initial={editing ? {
-            poliza: editing.poliza, compania: editing.compania, fecha_expiracion: editing.fecha_expiracion,
+            poliza: editing.poliza, compania: editing.compania,
+            fecha_expiracion: editing.fecha_expiracion, costo: editing.costo,
           } : undefined}
           isPending={isPending} error={formError}
           onSubmit={handleSubmit} onCancel={() => setFormOpen(false)}
@@ -1012,13 +1063,15 @@ function SegurosPanel({
           {renovado?.modo === 'extender' ? (
             <Text>
               <strong>{renovado.seguro.poliza}</strong> ahora vence el{' '}
-              <strong>{renovado.seguro.fecha_expiracion}</strong>.
+              <strong>{renovado.seguro.fecha_expiracion}</strong>
+              {renovado.seguro.costo != null && <> · {formatMXN(renovado.seguro.costo)}</>}.
             </Text>
           ) : renovado && (
             <>
               <Text>
                 Se dio de alta <strong>{renovado.seguro.poliza}</strong> ({renovado.seguro.compania}),
-                vigente hasta el <strong>{renovado.seguro.fecha_expiracion}</strong>.
+                vigente hasta el <strong>{renovado.seguro.fecha_expiracion}</strong>
+                {renovado.seguro.costo != null && <> por {formatMXN(renovado.seguro.costo)}</>}.
               </Text>
               <Text size="sm">
                 {renovado.vehiculos_movidos === 0
