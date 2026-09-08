@@ -16,6 +16,18 @@ export const TIPO_LABELS: Record<string, string> = {
   montacargas:  'Montacargas',
 }
 
+// La forma corta, para las listas: en un renglón de tabla el nombre completo se
+// come el ancho que necesitan la serie y las placas, y el tipo es lo que menos
+// se lee de la fila —se reconoce por el color—. Donde hay lugar (la ficha de la
+// unidad) se sigue usando TIPO_LABELS.
+export const TIPO_ABREV: Record<string, string> = {
+  camion:       'UR',
+  tractocamion: 'UT',
+  caja_trailer: 'CT',
+  utilitario:   'VU',
+  montacargas:  'MC',
+}
+
 // Qué tipos llevan cada documento. Una caja de trailer no se asegura, y el
 // permiso de circulación solo lo tramitan reparto y utilitarios. Espeja
 // TIPOS_CON_SEGURO / TIPOS_CON_PERMISO del backend, que es quien manda: la API

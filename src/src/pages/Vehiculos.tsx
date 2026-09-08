@@ -68,12 +68,12 @@ import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const TIPOS: { value: TipoVehiculo; label: string; color: string }[] = [
-  { value: 'camion',       label: 'Unidad de reparto', color: 'blue'   },
-  { value: 'tractocamion', label: 'Unidad de translado', color: 'violet' },
-  { value: 'caja_trailer', label: 'Caja de trailer',   color: 'orange' },
-  { value: 'utilitario',   label: 'Vehículo utilitario', color: 'teal'   },
-  { value: 'montacargas',  label: 'Montacargas',       color: 'yellow' },
+const TIPOS: { value: TipoVehiculo; label: string; abrev: string; color: string }[] = [
+  { value: 'camion',       label: 'Unidad de reparto',   abrev: 'UR', color: 'blue'   },
+  { value: 'tractocamion', label: 'Unidad de translado', abrev: 'UT', color: 'violet' },
+  { value: 'caja_trailer', label: 'Caja de trailer',     abrev: 'CT', color: 'orange' },
+  { value: 'utilitario',   label: 'Vehículo utilitario', abrev: 'VU', color: 'teal'   },
+  { value: 'montacargas',  label: 'Montacargas',         abrev: 'MC', color: 'yellow' },
 ]
 
 function sinKilometraje(tipo: TipoVehiculo): boolean {
@@ -1569,11 +1569,11 @@ function VehiculosTable({
   }
   const sorted = [...items].sort(compareVehiculos)
   return (
-    <Table.ScrollContainer minWidth={showTipo ? 830 : 730}>
+    <Table.ScrollContainer minWidth={showTipo ? 780 : 730}>
       <Table striped highlightOnHover withTableBorder>
         <Table.Thead>
           <Table.Tr>
-            {showTipo && <Table.Th>Tipo</Table.Th>}
+            {showTipo && <Table.Th style={{ width: 60 }}>Tipo</Table.Th>}
             <Table.Th>Marca / Modelo</Table.Th>
             <Table.Th style={{ width: 90 }}>Año</Table.Th>
             <Table.Th>Serie</Table.Th>
@@ -1591,7 +1591,9 @@ function VehiculosTable({
               <Table.Tr key={v.id} onClick={() => onSelect(v)} style={{ cursor: 'pointer' }}>
                 {showTipo && (
                   <Table.Td>
-                    <Badge color={ti.color} variant="light" size="sm">{ti.label}</Badge>
+                    <Tooltip label={ti.label}>
+                      <Badge color={ti.color} variant="light" size="sm">{ti.abrev}</Badge>
+                    </Tooltip>
                   </Table.Td>
                 )}
                 <Table.Td fw={500}>
