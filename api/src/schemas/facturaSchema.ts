@@ -21,5 +21,16 @@ export const FacturaIvaSchema = z.object({
   tasa_iva: tasaIva,
 })
 
+// Corregir el folio mal capturado de una compra. Se reescribe en todos sus
+// lotes: la factura es el folio, así que cambiarlo en unos cuantos partiría la
+// compra en dos. El proveedor no se toca — mover la compra a otro proveedor es
+// otra cosa, y aquí solo se arregla un dato mal tecleado.
+export const FacturaFolioSchema = z.object({
+  num_factura: numFactura,
+  proveedor_id: z.coerce.number().int().min(1, 'Proveedor requerido'),
+  nuevo_num_factura: numFactura,
+})
+
 export type FacturaQuery = z.infer<typeof FacturaQuerySchema>
 export type FacturaIva = z.infer<typeof FacturaIvaSchema>
+export type FacturaFolio = z.infer<typeof FacturaFolioSchema>

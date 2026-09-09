@@ -29,3 +29,22 @@ export async function setIva(
 ): Promise<number> {
   return repo.setIva(numFactura, proveedorId, tasa)
 }
+
+/**
+ * Corrige el folio de una compra completa. Se niega a escribir sobre un folio
+ * que el mismo proveedor ya usa: eso no sería corregir sino fusionar dos
+ * compras, y no habría forma de volver a separarlas.
+ */
+export async function setFolio(
+  numFactura: string, proveedorId: number, nuevo: string,
+): Promise<number> {
+  if (nuevo === numFactura) return 0
+  if (await repo.existeFolio(nuevo, proveedorId)) {
+    throw new AppError(
+      `Ese proveedor ya tiene una compra con el folio ${nuevo}. ` +
+      'Renombrarla la juntaría con esta y no se podrían volver a separar.',
+      409, 'CONFLICT',
+    )
+  }
+  return repo.setFolio(numFactura, proveedorId, nuevo)
+}

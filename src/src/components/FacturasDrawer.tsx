@@ -12,13 +12,69 @@ import {
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import { IconSearch, IconAlertTriangle } from '@tabler/icons-react'
-import { useFacturas, useSetIvaFactura } from '../hooks/useFacturas'
+import { useFacturas, useSetIvaFactura, useSetFolioFactura } from '../hooks/useFacturas'
 import type { Factura } from '../hooks/useFacturas'
 import { FechaInput } from './FechaInput'
 import { formatMXN, formatFecha } from '../lib/formato'
 import { IVA_DEFAULT, importeIva } from '../lib/iva'
+import { limpiarFolio, normalizarFolio } from '../lib/validaciones'
 
 const PAGE_SIZE = 10
+
+/**
+ * Corregir el folio mal tecleado de una factura. Se reescribe en todos sus
+ * renglones a la vez: la factura ES el folio que comparten, y cambiárselo solo
+ * a unos cuantos partiría la compra en dos facturas distintas.
+ */
+function FolioDeFactura({ factura }: { factura: Factura }) {
+  const [folio, setFolio] = useState(factura.num_factura)
+  const mut = useSetFolioFactura()
+
+  const nuevo = normalizarFolio(folio)
+  const cambiado = nuevo !== factura.num_factura
+  const invalido = nuevo === ''
+
+  function guardar() {
+    mut.mutate({
+      num_factura:       factura.num_factura,
+      proveedor_id:      factura.proveedor_id,
+      nuevo_num_factura: nuevo,
+    })
+  }
+
+  return (
+    <Stack gap="xs">
+      <Group gap="sm" align="flex-end" wrap="nowrap">
+        <TextInput
+          label="Folio de la factura"
+          description={`Se corrige en los ${factura.renglones} renglones.`}
+          size="xs"
+          style={{ flex: 1 }}
+          value={folio}
+          error={invalido ? 'Requerido' : undefined}
+          onChange={(e) => setFolio(limpiarFolio(e.currentTarget.value, 30))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && cambiado && !invalido) guardar()
+          }}
+        />
+        <Button
+          size="xs"
+          variant="light"
+          disabled={!cambiado || invalido}
+          loading={mut.isPending}
+          onClick={guardar}
+        >
+          {cambiado ? 'Guardar folio' : 'Sin cambios'}
+        </Button>
+      </Group>
+      {mut.error && (
+        <Alert color="red" title="No se pudo cambiar el folio">
+          {(mut.error as Error).message}
+        </Alert>
+      )}
+    </Stack>
+  )
+}
 
 /** El bloque de IVA de una factura. Su estado vive por factura, no en el drawer. */
 function IvaDeFactura({ factura }: { factura: Factura }) {
@@ -175,8 +231,13 @@ export default function FacturasDrawer({
           <>
             <Text size="xs" c="dimmed">{total} factura{total === 1 ? '' : 's'}</Text>
             <Accordion variant="separated">
-              {facturas.map((f) => (
-                <Accordion.Item key={`${f.proveedor_id}:${f.num_factura}`} value={`${f.proveedor_id}:${f.num_factura}`}>
+              {facturas.map((f) => {
+                // La identidad del renglón no puede ser el folio: al corregirlo
+                // el acordeón vería otra factura y cerraría la que se acaba de
+                // editar. El primer lote sí sobrevive al cambio de nombre.
+                const id = `${f.proveedor_id}:${f.detalle[0]?.lote_id ?? f.num_factura}`
+                return (
+                <Accordion.Item key={id} value={id}>
                   <Accordion.Control>
                     <Group justify="space-between" wrap="nowrap" pr="sm">
                       <div>
@@ -236,13 +297,18 @@ export default function FacturasDrawer({
                         </Table>
                       </Table.ScrollContainer>
 
-                      {/* Se remonta por factura (`key`): el switch y la tasa de
-                          una no deben arrastrarse a la siguiente. */}
+                      {/* Ambos bloques se remontan por factura (`key`): lo
+                          tecleado en una no debe arrastrarse a la siguiente. */}
+                      <FolioDeFactura
+                        key={`${f.proveedor_id}:${f.num_factura}:folio`}
+                        factura={f}
+                      />
                       <IvaDeFactura key={`${f.proveedor_id}:${f.num_factura}:${f.tasa_iva}`} factura={f} />
                     </Stack>
                   </Accordion.Panel>
                 </Accordion.Item>
-              ))}
+                )
+              })}
             </Accordion>
             {paginas > 1 && (
               <Group justify="center">

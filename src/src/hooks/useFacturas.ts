@@ -89,3 +89,33 @@ export function useSetIvaFactura() {
     },
   })
 }
+
+export interface FacturaFolioPayload {
+  num_factura:       string
+  proveedor_id:      number
+  nuevo_num_factura: string
+}
+
+/**
+ * Corrige el folio mal capturado de la compra, reescribiéndolo en todos sus
+ * lotes. La API rechaza un folio que ese mismo proveedor ya use: sería fusionar
+ * dos compras, no corregir una.
+ */
+export function useSetFolioFactura() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: FacturaFolioPayload) =>
+      api.put<{ data: { num_factura: string; lotes_actualizados: number } }>(
+        '/facturas/folio', payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['facturas'] })
+      // El folio se ve en el drawer de la refacción, en el inventario y en las
+      // compras del proveedor: todas esas listas traen el viejo.
+      qc.invalidateQueries({ queryKey: ['lotes'] })
+      qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
+      qc.invalidateQueries({ queryKey: ['inventario-existencias'] })
+      qc.invalidateQueries({ queryKey: ['proveedor-gastos'] })
+    },
+  })
+}
