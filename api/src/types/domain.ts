@@ -34,4 +34,11 @@ export interface LoteConProveedor {
   // segundo es la cuenta que registró el lote: no llega del cliente ni se edita.
   comprado_por: string
   autorizado_por: string
+  /**
+   * Tasa de IVA que hay que SUMARLE a `costo_unitario`, en por ciento.
+   * `null` = el precio capturado ya lo incluye (o la compra es exenta), que es
+   * el caso de todo lo anterior a la migración 020. El importe no se guarda: se
+   * calcula donde se muestre. Ver `db/migrations/020_iva_del_lote.sql`.
+   */
+  tasa_iva: number | null
 }

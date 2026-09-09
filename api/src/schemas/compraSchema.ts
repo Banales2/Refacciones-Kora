@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-  cantidadInicial, compradoPor, costoUnitario, fechaCompra, numFactura,
+  cantidadInicial, compradoPor, costoUnitario, fechaCompra, numFactura, tasaIva,
 } from './loteSchema'
 import { RefaccionCreateSchema } from './refaccionSchema'
 
@@ -34,6 +34,10 @@ export const CompraCreateSchema = z.object({
   sucursal_id: z.coerce.number().int().min(1, 'Sucursal requerida'),
   fecha_compra: fechaCompra,
   num_factura: numFactura,
+  // El IVA es de la factura, no del renglón: una sola tasa que se escribe igual
+  // en los N lotes que la compra crea. Ausente = los precios capturados ya lo
+  // incluyen, que es el caso de toda compra que no active la casilla.
+  tasa_iva: tasaIva,
   comprado_por: compradoPor,
   // El tope no es arbitrario: cada renglón es un INSERT dentro de la misma
   // transacción, y una factura de más de 50 partidas capturada a mano es más

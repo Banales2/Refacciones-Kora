@@ -4,7 +4,7 @@
 // crearlo queda seleccionado.
 import { useState } from 'react'
 import {
-  Stack, Group, Alert, Button, Modal, TextInput, NumberInput, Select,
+  Stack, Group, Alert, Button, Modal, TextInput, NumberInput, Select, Switch, Text,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconPlus } from '@tabler/icons-react'
@@ -12,6 +12,8 @@ import { useProveedores, useCreateProveedor } from '../hooks/useProveedores'
 import { useSucursales } from '../hooks/useSucursales'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { TEXTO_SIMPLE, limpiarTextoSimple } from '../lib/validaciones'
+import { formatMXN } from '../lib/formato'
+import { IVA_DEFAULT, importeIva } from '../lib/iva'
 import { FechaInput } from './FechaInput'
 import ProveedorForm from './ProveedorForm'
 
@@ -25,6 +27,11 @@ export type LoteFormValues = {
   costo_unitario: number | string
   cantidad_inicial: number | string
   num_factura: string
+  // Apagado —el caso normal— significa que el precio capturado ya trae IVA y no
+  // hay nada que sumarle; encendido, la tasa se guarda en el lote y el importe
+  // se calcula al mostrarlo. Ver `lib/iva` y la migración 020.
+  sumar_iva: boolean
+  tasa_iva: number | string
   comprado_por: string
 }
 
@@ -76,6 +83,8 @@ export function LoteForm({
       costo_unitario: '',
       cantidad_inicial: '',
       num_factura: '',
+      sumar_iva: false,
+      tasa_iva: IVA_DEFAULT,
       comprado_por: '',
     },
     validate: {
@@ -104,6 +113,13 @@ export function LoteForm({
         if (!/^[A-Za-z0-9/-]+$/.test(v.trim())) return 'Solo letras, números, guiones y diagonales'
         return null
       },
+      // Solo cuenta con la casilla encendida: apagada, el campo ni se muestra.
+      tasa_iva: (v, vals) => {
+        if (!vals.sumar_iva) return null
+        if (v === '' || Number(v) <= 0) return 'La tasa debe ser mayor a 0'
+        if (Number(v) > 100) return 'La tasa no puede pasar de 100%'
+        return null
+      },
       comprado_por: (v) => {
         if (!v.trim()) return 'Requerido'
         if (v.trim().length > 120) return 'Máximo 120 caracteres'
@@ -112,6 +128,12 @@ export function LoteForm({
       },
     },
   })
+
+  const subtotalLote =
+    (Number(form.values.cantidad_inicial) || 0) * (Number(form.values.costo_unitario) || 0)
+  const ivaLote = importeIva(
+    subtotalLote, form.values.sumar_iva ? Number(form.values.tasa_iva) || 0 : null
+  )
 
   return (
     <>
@@ -190,6 +212,31 @@ export function LoteForm({
               form.setFieldValue('num_factura', e.currentTarget.value.replace(/[^A-Za-z0-9/-]/g, ''))
             }
           />
+          {/* El IVA se suma una sola vez, al total del lote: `costo_unitario`
+              se guarda como viene en la factura. Apagado —el caso normal—
+              significa que ese precio ya lo incluye. */}
+          <Group gap="md" align="flex-start" wrap="nowrap">
+            <Switch
+              label="Sumar IVA al total"
+              description="Actívalo si el costo capturado es el subtotal. Apagado, se toma como precio final."
+              checked={form.values.sumar_iva}
+              onChange={(e) => form.setFieldValue('sumar_iva', e.currentTarget.checked)}
+            />
+            {form.values.sumar_iva && (
+              <NumberInput
+                label="Tasa" size="xs" w={110}
+                min={0.01} max={100} clampBehavior="strict"
+                decimalScale={2} suffix="%"
+                {...form.getInputProps('tasa_iva')}
+              />
+            )}
+          </Group>
+          {form.values.sumar_iva && (
+            <Text size="xs" c="dimmed" ta="right">
+              Subtotal {formatMXN(subtotalLote)} · IVA {formatMXN(ivaLote)} ·{' '}
+              <Text component="span" fw={700}>Total {formatMXN(subtotalLote + ivaLote)}</Text>
+            </Text>
+          )}
           <TextInput
             label="Comprado por"
             placeholder="Quién hizo la compra"

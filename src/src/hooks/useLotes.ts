@@ -13,6 +13,12 @@ export interface Lote {
   cantidad_inicial: number
   cantidad_disponible: number
   num_factura: string | null
+  /**
+   * Tasa de IVA a SUMARLE a costo_unitario, en por ciento. null = el precio
+   * capturado ya lo incluye (o la compra es exenta), que es el caso de todo lo
+   * anterior a la migración 020. El importe no se guarda: sale de lib/iva.
+   */
+  tasa_iva: number | null
   proveedor: string
   // Sucursal de recepción. `cantidad_disponible` es la suma de lo que queda del
   // lote en todas las sucursales, no solo en esta.
@@ -38,6 +44,9 @@ export interface LotePayload {
   costo_unitario: number
   cantidad_inicial: number
   num_factura: string
+  // null vuelve el lote a "el precio ya incluye IVA": se manda explícito para
+  // que el update sepa distinguirlo de "no toques este campo".
+  tasa_iva: number | null
   comprado_por: string
 }
 

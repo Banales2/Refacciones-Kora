@@ -88,7 +88,9 @@ export async function findLotesByPiezaId(piezaId: number): Promise<LoteConProvee
       SELECT
         l.id, l.pieza_id, l.proveedor_id, l.fecha_compra, l.costo_unitario,
         l.cantidad_inicial, ${disponibleDelLote('l')} AS cantidad_disponible,
-        l.num_factura, l.sucursal_id, pr.nombre AS proveedor, s.nombre AS sucursal
+        l.num_factura, l.sucursal_id, l.tasa_iva,
+        l.comprado_por, l.autorizado_por,
+        pr.nombre AS proveedor, s.nombre AS sucursal
       FROM lotes_pieza l
       JOIN proveedores pr ON pr.id = l.proveedor_id
       LEFT JOIN sucursales s ON s.id = l.sucursal_id

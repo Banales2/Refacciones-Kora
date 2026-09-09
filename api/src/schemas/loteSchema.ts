@@ -44,6 +44,19 @@ export const costoUnitario = z.coerce
   .positive('Debe ser mayor a 0')
   .max(200000, 'No puede ser mayor a 200,000')
 
+// El IVA que hay que SUMARLE al precio capturado, en por ciento.
+//
+// Ausente (o null) significa que el precio ya lo incluye, no que la tasa sea
+// cero: es el valor de todo lo capturado antes de que existiera la casilla, y
+// el de toda compra que no la active. Por eso el cero no se admite — decir "sin
+// IVA que sumar" de dos formas distintas obligaría a comprobar las dos en cada
+// lectura. Ver `db/migrations/020_iva_del_lote.sql`.
+export const tasaIva = z.coerce
+  .number()
+  .positive('La tasa debe ser mayor a 0')
+  .max(100, 'La tasa no puede pasar de 100%')
+  .nullish()
+
 export const LoteCreateSchema = z.object({
   proveedor_id: z.coerce.number().int().min(1, 'Proveedor requerido'),
   // La sucursal que recibe la compra. Obligatoria: toda pieza tiene que estar
@@ -54,6 +67,7 @@ export const LoteCreateSchema = z.object({
   costo_unitario: costoUnitario,
   cantidad_inicial: cantidadInicial,
   num_factura: numFactura,
+  tasa_iva: tasaIva,
   comprado_por: compradoPor,
 })
 
@@ -63,6 +77,7 @@ export const LoteUpdateSchema = z.object({
   costo_unitario: costoUnitario.optional(),
   cantidad_inicial: cantidadInicial.optional(),
   num_factura: numFactura.optional(),
+  tasa_iva: tasaIva,
   comprado_por: compradoPor.optional(),
 })
 

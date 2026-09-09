@@ -34,12 +34,17 @@ export interface CompraPayload {
   sucursal_id:   number
   fecha_compra:  string
   num_factura:   string
+  // El IVA es de la factura, no del renglón: una sola tasa para todos. null =
+  // los precios capturados ya lo incluyen.
+  tasa_iva:      number | null
   comprado_por:  string
   renglones:     CompraRenglonPayload[]
 }
 
 /** Cada lote creado llega ya con forma de existencia consumible. */
 export interface CompraLote extends LoteDisponible {
+  /** La tasa de la factura, la misma en todos sus renglones. */
+  tasa_iva:    number | null
   /** Verdadero si la refacción se dio de alta en esta misma compra. */
   pieza_nueva: boolean
 }

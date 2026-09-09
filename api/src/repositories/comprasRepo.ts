@@ -16,6 +16,11 @@ export interface CompraLote {
   fecha_compra: string
   sucursal_id: number
   sucursal: string
+  /**
+   * Tasa de IVA a sumarle al costo, en por ciento. `null` = el precio ya lo
+   * incluye. Es la misma en los N renglones: el IVA es de la factura.
+   */
+  tasa_iva: number | null
   /** Verdadero si la refacción se dio de alta en esta misma compra. */
   pieza_nueva: boolean
 }
@@ -90,17 +95,18 @@ export async function crearCompra(
         .input('costo_unitario', sql.Decimal(18, 2), renglon.costo_unitario)
         .input('cantidad_inicial', sql.Int, renglon.cantidad_inicial)
         .input('num_factura', sql.NVarChar(100), data.num_factura)
+        .input('tasa_iva', sql.Decimal(5, 2), data.tasa_iva ?? null)
         .input('comprado_por', sql.NVarChar(120), data.comprado_por)
         .input('autorizado_por', sql.NVarChar(120), autorizadoPor)
         .query(`
           INSERT INTO lotes_pieza
             (pieza_id, proveedor_id, sucursal_id, fecha_compra, costo_unitario,
              cantidad_inicial, cantidad_disponible,
-             num_factura, comprado_por, autorizado_por)
+             num_factura, tasa_iva, comprado_por, autorizado_por)
           OUTPUT INSERTED.id
           VALUES (@pieza_id, @proveedor_id, @sucursal_id, @fecha_compra, @costo_unitario,
                   @cantidad_inicial, @cantidad_inicial,
-                  @num_factura, @comprado_por, @autorizado_por)`)
+                  @num_factura, @tasa_iva, @comprado_por, @autorizado_por)`)
       const loteId = insLote.recordset[0].id as number
 
       await tx.request()
@@ -122,6 +128,7 @@ export async function crearCompra(
         fecha_compra: data.fecha_compra,
         sucursal_id: data.sucursal_id,
         sucursal: nombreSucursal,
+        tasa_iva: data.tasa_iva ?? null,
         pieza_nueva: renglon.pieza_nueva !== undefined,
       })
     }

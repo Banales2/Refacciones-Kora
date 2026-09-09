@@ -9,7 +9,7 @@ import { disponibleDelLote } from './inventarioSql'
 const SELECT_LOTE = `
   SELECT l.id, l.pieza_id, l.proveedor_id, l.fecha_compra, l.costo_unitario,
          l.cantidad_inicial, ${disponibleDelLote('l')} AS cantidad_disponible,
-         l.num_factura, l.sucursal_id,
+         l.num_factura, l.sucursal_id, l.tasa_iva,
          l.comprado_por, l.autorizado_por,
          pr.nombre AS proveedor,
          s.nombre AS sucursal
@@ -46,17 +46,18 @@ export async function create(
       .input('costo_unitario', sql.Decimal(18, 2), data.costo_unitario)
       .input('cantidad_inicial', sql.Int, data.cantidad_inicial)
       .input('num_factura', sql.NVarChar(100), data.num_factura ?? null)
+      .input('tasa_iva', sql.Decimal(5, 2), data.tasa_iva ?? null)
       .input('comprado_por', sql.NVarChar(120), data.comprado_por)
       .input('autorizado_por', sql.NVarChar(120), autorizadoPor)
       .query(`
         INSERT INTO lotes_pieza
           (pieza_id, proveedor_id, sucursal_id, fecha_compra, costo_unitario,
            cantidad_inicial, cantidad_disponible,
-           num_factura, comprado_por, autorizado_por)
+           num_factura, tasa_iva, comprado_por, autorizado_por)
         OUTPUT INSERTED.id
         VALUES (@pieza_id, @proveedor_id, @sucursal_id, @fecha_compra, @costo_unitario,
                 @cantidad_inicial, @cantidad_inicial,
-                @num_factura, @comprado_por, @autorizado_por)
+                @num_factura, @tasa_iva, @comprado_por, @autorizado_por)
       `)
     const loteId = result.recordset[0].id as number
 
@@ -136,6 +137,12 @@ export async function update(
   if ('num_factura' in data) {
     req.input('num_factura', sql.NVarChar(100), data.num_factura ?? null)
     sets.push('num_factura = @num_factura')
+  }
+  // Se comprueba la presencia de la llave, no que traiga valor: mandarla en
+  // null es como se corrige un lote a "el precio ya incluye IVA".
+  if ('tasa_iva' in data) {
+    req.input('tasa_iva', sql.Decimal(5, 2), data.tasa_iva ?? null)
+    sets.push('tasa_iva = @tasa_iva')
   }
   // `autorizado_por` no está aquí a propósito: registra quién dio de alta la
   // compra y no cambia. `comprado_por` sí se corrige, es un dato del lote.

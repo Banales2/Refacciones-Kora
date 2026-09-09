@@ -18,6 +18,7 @@ import {
 import type { Lote, LotePayload } from '../hooks/useLotes'
 import { useComparativaPieza } from '../hooks/usePreciosProveedor'
 import { exportComparativaPiezaPdf } from '../lib/reportes/comparativaPieza'
+import { IVA_DEFAULT } from '../lib/iva'
 import LoteForm from './LoteForm'
 import type { LoteFormValues } from './LoteForm'
 
@@ -74,6 +75,9 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
       costo_unitario: Number(values.costo_unitario),
       cantidad_inicial: Number(values.cantidad_inicial),
       num_factura: values.num_factura.trim(),
+      // Sin la casilla no se guarda tasa: el precio ya la trae dentro. Va
+      // explícito en null para que el update sepa que hay que borrarla.
+      tasa_iva: values.sumar_iva ? Number(values.tasa_iva) : null,
       comprado_por: values.comprado_por.trim(),
     }
   }
@@ -197,6 +201,7 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                       <Table.Th>Compró</Table.Th>
                       <Table.Th>Autorizó</Table.Th>
                       <Table.Th style={{ textAlign: 'right' }}>Costo unit.</Table.Th>
+                      <Table.Th style={{ textAlign: 'right' }}>IVA</Table.Th>
                       <Table.Th style={{ textAlign: 'center' }}>Inicial</Table.Th>
                       <Table.Th style={{ textAlign: 'center' }}>Disponible</Table.Th>
                       <Table.Th style={{ width: 72 }} />
@@ -212,6 +217,12 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                         <Table.Td>{lote.autorizado_por || '—'}</Table.Td>
                         <Table.Td style={{ textAlign: 'right' }}>
                           {formatMXN(lote.costo_unitario)}
+                        </Table.Td>
+                        {/* Lo que hay que sumarle al costo. "Incluido" es el
+                            caso normal y el de todo lo histórico: el precio
+                            capturado ya lo trae dentro. */}
+                        <Table.Td style={{ textAlign: 'right' }} c="dimmed">
+                          {lote.tasa_iva != null ? `+${lote.tasa_iva}%` : 'Incluido'}
                         </Table.Td>
                         <Table.Td style={{ textAlign: 'center' }}>{lote.cantidad_inicial}</Table.Td>
                         <Table.Td style={{ textAlign: 'center' }}>
@@ -274,6 +285,8 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
               costo_unitario: editLote.costo_unitario,
               cantidad_inicial: editLote.cantidad_inicial,
               num_factura: editLote.num_factura ?? '',
+              sumar_iva: editLote.tasa_iva != null,
+              tasa_iva: editLote.tasa_iva ?? IVA_DEFAULT,
               comprado_por: editLote.comprado_por,
             }}
             autorizadoPor={editLote.autorizado_por}

@@ -196,6 +196,8 @@ export default function MontajePiezaModal({
         costo_unitario:   Number(v.costo_unitario),
         cantidad_inicial: Number(v.cantidad_inicial),
         num_factura:      v.num_factura.trim(),
+        // Sin la casilla no se guarda tasa: el precio ya la trae dentro.
+        tasa_iva:         v.sumar_iva ? Number(v.tasa_iva) : null,
         comprado_por:     v.comprado_por.trim(),
       },
       {
