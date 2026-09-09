@@ -78,10 +78,16 @@ type PiezaLinea = {
 const claveExistencia = (loteId: number | string, sucursalId: number | string) =>
   `${loteId}:${sucursalId}`
 
-function initMant(m?: Mantenimiento, prefillPendienteIds?: number[], kmVehiculo?: number | null): MantForm {
+function initMant(
+  m?: Mantenimiento, prefillPendienteIds?: number[], kmVehiculo?: number | null,
+  tipoInicial?: string,
+): MantForm {
   return {
     fecha:             m?.fecha?.split('T')[0] ?? '',
-    tipo:              m?.tipo          ?? '',
+    // Al editar manda lo guardado; al registrar, la razón por la que se abrió
+    // el formulario (atender una incidencia es correctivo). Sigue siendo un
+    // valor cualquiera del selector: se puede cambiar antes de guardar.
+    tipo:              m?.tipo          ?? tipoInicial ?? '',
     tecnico_id:        m?.tecnico_id != null ? String(m.tecnico_id) : '',
     costo:             m?.costo         ?? '',
     // Al registrar se parte del odómetro actual del vehículo; se ajusta si la
@@ -95,7 +101,7 @@ function initMant(m?: Mantenimiento, prefillPendienteIds?: number[], kmVehiculo?
 
 export default function MantenimientoForm({
   vehiculoId, tipoVehiculo, initial, prefillPendienteIds, pendienteFijo, origenFijo,
-  isPending, error, onSubmit, onCancel,
+  tipoInicial, isPending, error, onSubmit, onCancel,
 }: {
   vehiculoId:               number
   tipoVehiculo?:            TipoVehiculo
@@ -115,6 +121,12 @@ export default function MantenimientoForm({
    * amarra al programa se guarda aparte, al cerrar la columna.
    */
   origenFijo?:              { etiqueta: string; ayuda: string }
+  /**
+   * Con qué tipo llega el selector al abrirse (solo al registrar). Lo usa quien
+   * ya sabe la razón del servicio —atender una incidencia es correctivo— para
+   * no hacer elegir lo que ya se sabe. No lo fija: se puede cambiar.
+   */
+  tipoInicial?:             string
   isPending:                boolean
   error:                    string | null
   onSubmit:                 (p: MantenimientoPayload, piezas: DetalleMttoPayload[]) => void
@@ -218,7 +230,7 @@ export default function MantenimientoForm({
   }, [tecnicosData, tecnicosNuevos])
 
   const form = useForm<MantForm>({
-    initialValues: initMant(initial, prefillPendienteIds, kmVehiculo),
+    initialValues: initMant(initial, prefillPendienteIds, kmVehiculo, tipoInicial),
     validate: {
       fecha:             (v) => !v ? 'Requerido' : null,
       tipo:              (v) => !v ? 'Requerido' : null,

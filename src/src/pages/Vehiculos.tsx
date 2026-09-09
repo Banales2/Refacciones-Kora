@@ -15,7 +15,7 @@ import {
 import { useDebouncedValue } from '@mantine/hooks'
 import {
   IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight, IconAlertTriangle,
-  IconFileTypePdf, IconReportAnalytics,
+  IconFileTypePdf, IconReportAnalytics, IconTool,
 } from '@tabler/icons-react'
 import {
   useVehiculos, useVehiculo, useCreateVehiculo, useUpdateVehiculo, useDeleteVehiculo, vehiculoLabel,
@@ -196,6 +196,10 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
   // la cerró antes de darla por buena. `deshacer` dice cómo revertir el cambio
   // si se cancela: borrarla si nació así, o devolverle su status si se editó.
   const [atendiendo, setAtendiendo]   = useState<Incidencia | null>(null)
+  // La ficha que se abre al hacer clic en el renglón. Es aparte de `atendiendo`
+  // porque atender se dispara también desde el formulario (al marcarla como
+  // completada), sin pasar por aquí.
+  const [detalle, setDetalle]         = useState<Incidencia | null>(null)
   const [deshacer, setDeshacer]       = useState<DeshacerAtencion | null>(null)
   const [mantError, setMantError]     = useState<string | null>(null)
   const [detalleMttoId, setDetalleMttoId] = useState<number | null>(null)
@@ -214,6 +218,17 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
   function openEdit(item: Incidencia) { setEditing(item); setFormError(null); setFormOpen(true) }
+
+  // Atenderla es registrarle el mantenimiento que la cierra, con ella ya
+  // vinculada y en correctivo —una incidencia no se atiende con un preventivo—.
+  // No hay nada que deshacer: la incidencia sigue como está y es el alta del
+  // mantenimiento la que la cierra, así que cancelar solo cierra el modal.
+  function abrirAtender(i: Incidencia) {
+    setMantError(null)
+    setDeshacer(null)
+    setDetalle(null)
+    setAtendiendo(i)
+  }
 
   // Marcar una incidencia como atendida obliga a registrar el mantenimiento que
   // la cerró: si no, quedaría cerrada sin nada que explique cómo (y de hecho la
@@ -336,7 +351,7 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
                 <Table.Th>Reportada</Table.Th>
                 <Table.Th>Ubicación</Table.Th>
                 <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
-                <Table.Th style={{ width: 80 }} />
+                <Table.Th style={{ width: 110 }} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -347,7 +362,11 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
                 return (
                   <Table.Tr
                     key={i.id}
-                    style={{ backgroundColor: urge ? 'var(--mantine-color-red-0)' : undefined }}
+                    onClick={() => setDetalle(i)}
+                    style={{
+                      backgroundColor: urge ? 'var(--mantine-color-red-0)' : undefined,
+                      cursor: 'pointer',
+                    }}
                   >
                     <Table.Td fw={500}>
                       <Group gap={6} wrap="nowrap">
@@ -366,8 +385,19 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
                     <Table.Td style={{ textAlign: 'center' }}>
                       <Badge variant="light" color={st.color} size="sm">{st.label}</Badge>
                     </Table.Td>
-                    <Table.Td>
+                    {/* Los botones hacen lo suyo sin abrir además la ficha. */}
+                    <Table.Td onClick={(e) => e.stopPropagation()}>
                       <Group gap={4} justify="flex-end">
+                        {/* Solo las que siguen abiertas: registrarle un
+                            mantenimiento a una ya cerrada no cierra nada. */}
+                        {i.status === 'activo' && (
+                          <Tooltip label="Registrar el mantenimiento que la atiende">
+                            <ActionIcon variant="subtle" color="teal" size="sm"
+                              onClick={() => abrirAtender(i)}>
+                              <IconTool size={14} />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
                         <Tooltip label="Editar">
                           <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(i)}>
                             <IconPencil size={14} />
@@ -402,25 +432,98 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
         />
       </Modal>
 
-      {/* Incidencia marcada como atendida: falta el mantenimiento que la cierra. */}
+      {/* ── Ficha de la incidencia ── */}
+      <Modal
+        opened={detalle !== null} onClose={() => setDetalle(null)}
+        title="Detalle de la incidencia" centered size="lg"
+      >
+        {detalle && (
+          <Stack gap="md">
+            <div>
+              <Group gap="xs" align="center">
+                <Text fw={600} size="lg">{detalle.nombre}</Text>
+                <Badge variant="light" size="sm" color={SEVERIDAD_META[detalle.severidad].color}>
+                  {SEVERIDAD_META[detalle.severidad].label}
+                </Badge>
+                <Badge variant="light" size="sm" color={STATUS_INCIDENCIA_META[detalle.status].color}>
+                  {STATUS_INCIDENCIA_META[detalle.status].label}
+                </Badge>
+              </Group>
+              <Text size="sm" c="dimmed" mt={4}>
+                {detalle.descripcion || 'Sin descripción capturada.'}
+              </Text>
+            </div>
+
+            <Divider />
+
+            <Grid>
+              <Grid.Col span={{ base: 6, sm: 6 }}>
+                <InfoItem label="Categoría" value={detalle.categoria} />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, sm: 6 }}>
+                <InfoItem
+                  label="Ocurrió"
+                  value={`${fmtShort(detalle.fecha)}${detalle.hora ? `, ${detalle.hora.slice(0, 5)}` : ''}`}
+                />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, sm: 6 }}>
+                <InfoItem label="Ubicación" value={detalle.ubicacion} />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, sm: 6 }}>
+                <InfoItem label="Reportó" value={detalle.reportado_por} />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, sm: 6 }}>
+                <InfoItem label="Autorizó" value={detalle.autorizado_por} />
+              </Grid.Col>
+            </Grid>
+
+            <Group justify="space-between" mt="xs">
+              <Button variant="subtle" leftSection={<IconPencil size={16} />}
+                onClick={() => { setDetalle(null); openEdit(detalle) }}>
+                Editar
+              </Button>
+              {detalle.status === 'activo' && (
+                <Button color="teal" leftSection={<IconTool size={16} />}
+                  onClick={() => abrirAtender(detalle)}>
+                  Registrar mantenimiento
+                </Button>
+              )}
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+
+      {/* Atender la incidencia con el mantenimiento que la cierra. También se
+          llega aquí desde el formulario, al marcarla como atendida: en ese caso
+          `deshacer` trae cómo revertir el cambio si no se registra. */}
       <Modal
         opened={atendiendo !== null} onClose={cancelarAtencion}
-        title={atendiendo ? `Registra el mantenimiento — ${atendiendo.nombre}` : ''}
-        centered size="md" closeOnClickOutside={false} withCloseButton={false}
+        title={atendiendo
+          ? `${deshacer ? 'Registra el mantenimiento' : 'Atender'} — ${atendiendo.nombre}`
+          : ''}
+        centered size="md" closeOnClickOutside={false} withCloseButton={!deshacer}
       >
         {atendiendo && (
           <Stack gap="sm">
-            <Alert color="orange" variant="light" title="Falta el mantenimiento que la cierra">
-              Marcaste la incidencia como <strong>atendida</strong>, así que hay que registrar el
-              mantenimiento con el que se atendió. Si cancelas,{' '}
-              {deshacer?.tipo === 'revertir'
-                ? 'la incidencia vuelve a como estaba.'
-                : 'la incidencia se descarta y no queda registrada.'}
-            </Alert>
+            {deshacer ? (
+              <Alert color="orange" variant="light" title="Falta el mantenimiento que la cierra">
+                Marcaste la incidencia como <strong>atendida</strong>, así que hay que registrar el
+                mantenimiento con el que se atendió. Si cancelas,{' '}
+                {deshacer.tipo === 'revertir'
+                  ? 'la incidencia vuelve a como estaba.'
+                  : 'la incidencia se descarta y no queda registrada.'}
+              </Alert>
+            ) : (
+              <Alert color="teal" variant="light">
+                Al registrarlo, la incidencia queda atendida. Puedes agregarle los demás
+                pendientes que se hayan resuelto en el mismo servicio.
+              </Alert>
+            )}
             <MantenimientoForm
               vehiculoId={vehiculoId}
               tipoVehiculo={tipoVehiculo}
               pendienteFijo={{ id: atendiendo.id, nombre: atendiendo.nombre }}
+              tipoInicial="Correctivo"
               isPending={mantMut.isPending || piezasMut.isPending
                 || deleteMut.isPending || updateMut.isPending}
               error={mantError}
