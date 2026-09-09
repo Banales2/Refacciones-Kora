@@ -1,7 +1,7 @@
 // Drawer de detalle de un mantenimiento: datos generales (fecha, técnico,
 // costos) y las piezas usadas, que se descuentan de lotes con existencias.
 // Permite agregar, editar (solo cantidad/costo) y quitar piezas del detalle.
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import {
   Drawer, Stack, Group, Text, Table, Loader, Center, Alert,
@@ -15,7 +15,9 @@ import {
 import type { DetalleMttoPieza, DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import type { Mantenimiento } from '../hooks/useMantenimientos'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
+import type { LoteDisponible } from '../hooks/useLotesDisponibles'
 import MontarConsumoModal from './MontarConsumoModal'
+import CompraModal from './CompraModal'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -73,7 +75,18 @@ function DetalleForm({
   onCancel:    () => void
 }) {
   const { data: lotesData } = useLotesDisponibles(mode === 'create')
-  const loteOptions = (lotesData?.data ?? []).map((l) => ({
+
+  // Refacciones compradas desde este mismo modal: se agregan a mano porque la
+  // lista de lotes disponibles todavía puede estar refrescándose.
+  const [compraOpen, setCompraOpen] = useState(false)
+  const [lotesNuevos, setLotesNuevos] = useState<LoteDisponible[]>([])
+  const lotes = useMemo(() => {
+    const base = lotesData?.data ?? []
+    const claves = new Set(base.map((l) => claveExistencia(l.id, l.sucursal_id)))
+    return [...base, ...lotesNuevos.filter((l) => !claves.has(claveExistencia(l.id, l.sucursal_id)))]
+  }, [lotesData, lotesNuevos])
+
+  const loteOptions = lotes.map((l) => ({
     value: claveExistencia(l.id, l.sucursal_id),
     label: `${l.numero_serie} — ${l.descripcion} · ${l.sucursal} (disp: ${l.cantidad_disponible}, ${formatMXN(l.costo_unitario)})`,
   }))
@@ -94,7 +107,7 @@ function DetalleForm({
   const seleccion = form.values.lote_id
     ? claveExistencia(form.values.lote_id, form.values.sucursal_id)
     : null
-  const selectedLote = lotesData?.data.find((l) => claveExistencia(l.id, l.sucursal_id) === seleccion)
+  const selectedLote = lotes.find((l) => claveExistencia(l.id, l.sucursal_id) ===seleccion)
   const maxCantidad = mode === 'create' ? selectedLote?.cantidad_disponible : maxCantidadEdit
 
   function handleLoteChange(value: string | null) {
@@ -102,13 +115,26 @@ function DetalleForm({
     form.setFieldValue('lote_id', loteId)
     form.setFieldValue('sucursal_id', sucursalId)
 
-    const lote = lotesData?.data.find((l) => claveExistencia(l.id, l.sucursal_id) === value)
+    const lote = lotes.find((l) => claveExistencia(l.id, l.sucursal_id) ===value)
     if (lote) {
       form.setFieldValue('costo_unitario', lote.costo_unitario)
       if (Number(form.values.cantidad) > lote.cantidad_disponible) {
         form.setFieldValue('cantidad', lote.cantidad_disponible)
       }
     }
+  }
+
+  // La compra deja las refacciones disponibles y selecciona la primera, pero NO
+  // las da por consumidas: comprar seis y usar dos en esta reparación es lo
+  // normal, y descontarlas todas aquí falsearía el gasto del mantenimiento.
+  function handleCompraRegistrada(comprados: LoteDisponible[]) {
+    setLotesNuevos((prev) => [...prev, ...comprados])
+    const primero = comprados[0]
+    if (!primero) return
+    form.setFieldValue('lote_id', String(primero.id))
+    form.setFieldValue('sucursal_id', String(primero.sucursal_id))
+    form.setFieldValue('costo_unitario', primero.costo_unitario)
+    if (form.values.cantidad === '') form.setFieldValue('cantidad', 1)
   }
 
   function handleSubmit(values: DetalleFormValues) {
@@ -124,17 +150,41 @@ function DetalleForm({
       <Stack gap="sm">
         {error && <Alert color="red" title="Error">{error}</Alert>}
         {mode === 'create' ? (
-          <Select
-            label="Refacción / lote / sucursal"
-            description="De qué sucursal sale la pieza. El stock se descuenta de ahí."
-            placeholder="Selecciona la refacción usada"
-            data={loteOptions}
-            searchable
-            required
-            value={seleccion}
-            onChange={handleLoteChange}
-            error={form.errors.lote_id as string}
-          />
+          <div>
+            <Select
+              label="Refacción / lote / sucursal"
+              description="De qué sucursal sale la pieza. El stock se descuenta de ahí."
+              placeholder="Selecciona la refacción usada"
+              data={loteOptions}
+              searchable
+              required
+              nothingFoundMessage={
+                lotes.length === 0
+                  ? 'Nada con existencias: usa "Registrar compra"'
+                  : 'Sin coincidencias: si existe pero no tiene stock, usa "Registrar compra"'
+              }
+              value={seleccion}
+              onChange={handleLoteChange}
+              error={form.errors.lote_id as string}
+            />
+            {/* La refacción que hacía falta puede no estar todavía en el
+                catálogo, o estar sin existencias. La compra se registra sin
+                salir de aquí y la deja lista para consumirla. */}
+            <Group gap={6} align="center" wrap="nowrap" mt={4}>
+              <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>¿No aparece?</Text>
+              <Tooltip
+                multiline w={280}
+                label="Registra la factura de la compra, con todas las refacciones que traiga. Las que no estén en el catálogo se dan de alta ahí mismo."
+              >
+                <Button
+                  variant="subtle" size="compact-xs" leftSection={<IconPlus size={12} />}
+                  onClick={() => setCompraOpen(true)}
+                >
+                  Registrar compra
+                </Button>
+              </Tooltip>
+            </Group>
+          </div>
         ) : (
           <div>
             <Text size="xs" c="dimmed">Refacción</Text>
@@ -162,6 +212,15 @@ function DetalleForm({
           <Button type="submit" loading={isPending}>Guardar</Button>
         </Group>
       </Stack>
+
+      {/* Fuera del <form> no se puede: va dentro, pero como modal propio se
+          pinta por encima. Su botón de guardar no dispara este formulario
+          porque vive en otro árbol de DOM (Mantine lo saca con un portal). */}
+      <CompraModal
+        opened={compraOpen}
+        onClose={() => setCompraOpen(false)}
+        onCreated={handleCompraRegistrada}
+      />
     </form>
   )
 }

@@ -10,13 +10,14 @@ import {
   Button, ActionIcon, Modal, Select, Accordion,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconTrash, IconPlus, IconFileTypePdf } from '@tabler/icons-react'
+import { IconPencil, IconTrash, IconPlus, IconFileTypePdf, IconReceipt } from '@tabler/icons-react'
 import {
   useRefacciones, useTodasLasPiezas, useCreateRefaccion, useUpdateRefaccion, useDeleteRefaccion,
   fetchTodasLasPiezas,
 } from '../hooks/useRefacciones'
 import type { Pieza, SearchBy } from '../hooks/useRefacciones'
 import LotesDrawer from '../components/LotesDrawer'
+import FacturasDrawer from '../components/FacturasDrawer'
 import { exportPiezasReporteToPdf } from '../lib/exportPiezasReporte'
 import { agruparPorTipo, SIN_TIPO } from '../lib/piezasGrupos'
 import PiezaForm from '../components/PiezaForm'
@@ -126,6 +127,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
   const [selectedId, setSelectedId] = useState<number | null>(initialPiezaId ?? null)
 
   const [createOpen, setCreateOpen] = useState(false)
+  const [facturasOpen, setFacturasOpen] = useState(false)
   const [editPieza, setEditPieza] = useState<Pieza | null>(null)
   const [deletePieza, setDeletePieza] = useState<Pieza | null>(null)
   const [exportando, setExportando] = useState(false)
@@ -203,6 +205,16 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
                 {searching ? data?.pagination?.total : allData?.data?.length} refacciones
               </Text>
             )}
+            {/* Las compras vistas por factura, no por refacción: es donde se
+                cuadra contra el papel y donde se le pone el IVA a una compra
+                vieja sin ir lote por lote. */}
+            <Button
+              variant="default"
+              leftSection={<IconReceipt size={16} />}
+              onClick={() => setFacturasOpen(true)}
+            >
+              Facturas
+            </Button>
             <Button
               variant="default"
               leftSection={<IconFileTypePdf size={16} />}
@@ -370,6 +382,8 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
       </Modal>
 
       <LotesDrawer piezaId={selectedId} onClose={() => setSelectedId(null)} />
+
+      <FacturasDrawer opened={facturasOpen} onClose={() => setFacturasOpen(false)} />
     </>
   )
 }
