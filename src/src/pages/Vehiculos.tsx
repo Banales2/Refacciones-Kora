@@ -64,6 +64,7 @@ import EtiquetaEditable from '../components/EtiquetaEditable'
 import { useTiposPieza } from '../hooks/useTiposPieza'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
+import { avisarMontajes } from '../lib/montajes'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -280,7 +281,7 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
         setDeshacer(null)
         if (!piezas.length) { setAtendiendo(null); return }
         piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
-          onSuccess: () => setAtendiendo(null),
+          onSuccess: (avisos) => { avisarMontajes(avisos); setAtendiendo(null) },
           // El mantenimiento ya quedó registrado: no hay forma de deshacer el
           // alta, así que se abre su detalle para capturar a mano lo que faltó.
           onError: (e: Error) => {
@@ -599,7 +600,7 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
       onSuccess: (res) => {
         if (!piezas.length) { setFormOpen(false); return }
         piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
-          onSuccess: () => setFormOpen(false),
+          onSuccess: (avisos) => { avisarMontajes(avisos); setFormOpen(false) },
           // El mantenimiento ya quedó registrado: no se puede "deshacer" el alta,
           // así que se abre su detalle para completar a mano las piezas que faltaron.
           onError: (e: Error) => {

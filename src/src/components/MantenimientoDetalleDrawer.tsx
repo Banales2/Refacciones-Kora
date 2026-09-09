@@ -18,6 +18,10 @@ import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 import type { LoteDisponible } from '../hooks/useLotesDisponibles'
 import MontarConsumoModal from './MontarConsumoModal'
 import CompraModal from './CompraModal'
+import { avisarMontajes } from '../lib/montajes'
+import { POSICIONES_VACIAS, aMontajes } from '../lib/montajes'
+import type { PosicionesValue } from '../lib/montajes'
+import PosicionesMontaje from './PosicionesMontaje'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -55,6 +59,9 @@ type DetalleFormValues = {
   sucursal_id:    string
   cantidad:       number | string
   costo_unitario: number | string
+  // En qué renglones de la unidad queda puesta. Solo al agregar: al editar el
+  // montaje se corrige desde el botón de montar del propio renglón.
+  posiciones:     PosicionesValue
 }
 
 // El selector ofrece existencias, no lotes: la opción es la pareja
@@ -63,12 +70,15 @@ const claveExistencia = (loteId: number | string, sucursalId: number | string) =
   `${loteId}:${sucursalId}`
 
 function DetalleForm({
-  mode, lockedLabel, initial, maxCantidad: maxCantidadEdit, isPending, error, onSubmit, onCancel,
+  mode, lockedLabel, initial, maxCantidad: maxCantidadEdit, vehiculoId,
+  isPending, error, onSubmit, onCancel,
 }: {
   mode:        'create' | 'edit'
   lockedLabel?: string
   initial?:    DetalleFormValues
   maxCantidad?: number
+  /** La unidad del mantenimiento: de ella salen los renglones donde montar. */
+  vehiculoId:  number
   isPending:   boolean
   error:       string | null
   onSubmit:    (v: DetalleFormValues) => void
@@ -94,6 +104,7 @@ function DetalleForm({
   const form = useForm<DetalleFormValues>({
     initialValues: initial ?? {
       lote_id: '', sucursal_id: '', cantidad: '', costo_unitario: '',
+      posiciones: POSICIONES_VACIAS,
     },
     validate: {
       lote_id:        (v) => (mode === 'create' && !v ? 'Refacción requerida' : null),
@@ -114,6 +125,8 @@ function DetalleForm({
     const [loteId = '', sucursalId = ''] = (value ?? '').split(':')
     form.setFieldValue('lote_id', loteId)
     form.setFieldValue('sucursal_id', sucursalId)
+    // Cambiar de refacción cambia el tipo, y con él los renglones donde cabe.
+    form.setFieldValue('posiciones', POSICIONES_VACIAS)
 
     const lote = lotes.find((l) => claveExistencia(l.id, l.sucursal_id) ===value)
     if (lote) {
@@ -134,6 +147,7 @@ function DetalleForm({
     form.setFieldValue('lote_id', String(primero.id))
     form.setFieldValue('sucursal_id', String(primero.sucursal_id))
     form.setFieldValue('costo_unitario', primero.costo_unitario)
+    form.setFieldValue('posiciones', POSICIONES_VACIAS)
     if (form.values.cantidad === '') form.setFieldValue('cantidad', 1)
   }
 
@@ -207,6 +221,17 @@ function DetalleForm({
           required
           {...form.getInputProps('costo_unitario')}
         />
+        {/* Solo al agregar: al editar, el montaje se corrige desde el botón de
+            montar del propio renglón, que es donde se ve qué ya está puesto. */}
+        {mode === 'create' && (
+          <PosicionesMontaje
+            vehiculoId={vehiculoId}
+            tipoPiezaId={selectedLote?.tipo_pieza_id}
+            cantidad={Number(form.values.cantidad) || 1}
+            value={form.values.posiciones}
+            onChange={(v) => form.setFieldValue('posiciones', v)}
+          />
+        )}
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
           <Button type="submit" loading={isPending}>Guardar</Button>
@@ -252,11 +277,20 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
       sucursal_id:    values.sucursal_id ? Number(values.sucursal_id) : undefined,
       cantidad:        Number(values.cantidad),
       costo_unitario:  Number(values.costo_unitario),
+      // Dónde queda puesta. Vacío = solo se gasta, no se monta.
+      montajes:        aMontajes(values.posiciones),
     }
   }
 
   function handleCreate(values: DetalleFormValues) {
-    createMut.mutate(toPayload(values), { onSuccess: () => setCreateOpen(false) })
+    createMut.mutate(toPayload(values), {
+      // El consumo se guarda aunque el montaje falle: se avisa y el renglón
+      // queda como "sin montar", que se resuelve con su botón de montar.
+      onSuccess: (res) => {
+        avisarMontajes(res.montaje_error ? [res.montaje_error] : [])
+        setCreateOpen(false)
+      },
+    })
   }
 
   function handleUpdate(values: DetalleFormValues) {
@@ -429,6 +463,7 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
       <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title="Agregar refacción" centered>
         <DetalleForm
           mode="create"
+          vehiculoId={data?.mantenimiento.vehiculo_id ?? 0}
           isPending={createMut.isPending}
           error={createMut.error ? (createMut.error as Error).message : null}
           onSubmit={handleCreate}
@@ -447,7 +482,9 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
               sucursal_id:    editItem.sucursal_id != null ? String(editItem.sucursal_id) : '',
               cantidad:       editItem.cantidad,
               costo_unitario: editItem.costo_unitario,
+              posiciones:     POSICIONES_VACIAS,
             }}
+            vehiculoId={data?.mantenimiento.vehiculo_id ?? 0}
             isPending={updateMut.isPending}
             error={updateMut.error ? (updateMut.error as Error).message : null}
             onSubmit={handleUpdate}

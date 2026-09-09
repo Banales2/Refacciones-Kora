@@ -43,6 +43,8 @@ export interface CompraPayload {
 
 /** Cada lote creado llega ya con forma de existencia consumible. */
 export interface CompraLote extends LoteDisponible {
+  //  lo hereda de LoteDisponible: la compra lo devuelve para que
+  // una refacción recién dada de alta se pueda montar sin recargar la lista.
   /** La tasa de la factura, la misma en todos sus renglones. */
   tasa_iva:    number | null
   /** Verdadero si la refacción se dio de alta en esta misma compra. */

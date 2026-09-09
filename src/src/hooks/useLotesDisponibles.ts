@@ -9,6 +9,8 @@ import { api } from '../lib/api'
 export interface LoteDisponible {
   id:                  number
   pieza_id:            number
+  /** Dice en qué renglones del vehículo puede montarse. null = sin clasificar. */
+  tipo_pieza_id:       number | null
   numero_serie:        string
   descripcion:         string
   costo_unitario:      number

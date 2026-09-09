@@ -25,6 +25,9 @@ export interface DetalleMttoPieza {
 export interface LoteDisponible {
   id:                  number
   pieza_id:            number
+  // El tipo dice en qué renglones del vehículo puede montarse la refacción. Sin
+  // él la captura del mantenimiento no puede ofrecer la posición.
+  tipo_pieza_id:       number | null
   numero_serie:        string
   descripcion:         string
   costo_unitario:      number
@@ -78,7 +81,7 @@ export async function findById(id: number): Promise<DetalleMttoPieza | null> {
 export async function findDisponibles(): Promise<LoteDisponible[]> {
   const pool = await getPool()
   const r = await pool.request().query(`
-    SELECT l.id, l.pieza_id, p.numero_serie, p.descripcion, l.costo_unitario,
+    SELECT l.id, l.pieza_id, p.tipo_pieza_id, p.numero_serie, p.descripcion, l.costo_unitario,
            ex.cantidad AS cantidad_disponible, l.fecha_compra,
            ex.sucursal_id, s.nombre AS sucursal
     FROM existencias_lote ex

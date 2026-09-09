@@ -12,16 +12,20 @@ export async function detalleMttoCreate(req: HttpRequest, ctx: InvocationContext
     const mantenimientoId = parseInt(req.params.id, 10)
     if (isNaN(mantenimientoId)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const body = DetalleMttoPiezaCreateSchema.parse(await req.json())
-    const created = await service.create(mantenimientoId, body)
+    const { detalle, montajeError } = await service.create(mantenimientoId, body)
     await audit({
       user,
       accion: 'CREAR',
       tabla: 'detalle_mtto_pieza',
-      registroId: created.id,
-      despues: await capturar('detalle_mtto_pieza', created.id),
+      registroId: detalle.id,
+      despues: await capturar('detalle_mtto_pieza', detalle.id),
+      detalles: { montajes: body.montajes?.length ?? 0 },
       ipAddress: getClientIp(req),
     })
-    return { status: 201, jsonBody: { data: created } }
+    // El consumo se guardó aunque el montaje haya fallado: por eso es 201 con
+    // aviso y no un error. Devolverlo como 4xx haría que el front diera por
+    // perdido un gasto que sí quedó registrado.
+    return { status: 201, jsonBody: { data: detalle, montaje_error: montajeError } }
   } catch (err) { return handleError(err, ctx) }
 }
 

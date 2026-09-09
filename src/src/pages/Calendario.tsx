@@ -46,6 +46,7 @@ import type { Tecnico } from '../hooks/useTecnicos'
 import NuevoTecnicoModal from '../components/NuevoTecnicoModal'
 import type { MantenimientoPayload } from '../hooks/useMantenimientos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
+import { avisarMontajes } from '../lib/montajes'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
 interface VehiculoConServicios {
@@ -580,7 +581,7 @@ export default function Calendario({
       onSuccess: (res) => {
         if (!piezas.length) { setCompletarAgenda(null); return }
         piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
-          onSuccess: () => setCompletarAgenda(null),
+          onSuccess: (avisos) => { avisarMontajes(avisos); setCompletarAgenda(null) },
           // El mantenimiento ya quedó registrado: se avisa y se deja su detalle
           // abierto para completar a mano las piezas que no entraron.
           onError: (e: Error) => {

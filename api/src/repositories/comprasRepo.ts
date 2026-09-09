@@ -9,6 +9,8 @@ import { CompraCreate } from '../schemas/compraSchema'
 export interface CompraLote {
   id: number
   pieza_id: number
+  /** Para poder ofrecer la posición en la que se monta, sin recargar la lista. */
+  tipo_pieza_id: number | null
   numero_serie: string
   descripcion: string
   costo_unitario: number
@@ -62,6 +64,7 @@ export async function crearCompra(
       let piezaId = renglon.pieza_id
       let numeroSerie: string
       let descripcion: string
+      let tipoPiezaId: number | null
 
       if (renglon.pieza_nueva) {
         const nueva = await tx.request()
@@ -75,16 +78,18 @@ export async function crearCompra(
         piezaId = nueva.recordset[0].id as number
         numeroSerie = renglon.pieza_nueva.numero_serie
         descripcion = renglon.pieza_nueva.descripcion
+        tipoPiezaId = renglon.pieza_nueva.tipo_pieza_id
       } else {
         const pieza = await tx.request()
           .input('id', sql.Int, piezaId!)
-          .query('SELECT numero_serie, descripcion FROM piezas WHERE id = @id')
+          .query('SELECT numero_serie, descripcion, tipo_pieza_id FROM piezas WHERE id = @id')
         const fila = pieza.recordset[0]
         // El service ya verificó que existe; si desapareció entre la validación
         // y aquí, la transacción entera se cae y no queda media factura.
         if (!fila) throw new Error(`La refacción ${piezaId} ya no existe`)
         numeroSerie = fila.numero_serie
         descripcion = fila.descripcion
+        tipoPiezaId = fila.tipo_pieza_id
       }
 
       const insLote = await tx.request()
@@ -120,6 +125,7 @@ export async function crearCompra(
       lotes.push({
         id: loteId,
         pieza_id: piezaId!,
+        tipo_pieza_id: tipoPiezaId,
         numero_serie: numeroSerie,
         descripcion,
         costo_unitario: renglon.costo_unitario,

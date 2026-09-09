@@ -20,9 +20,12 @@ import { IconTrash, IconPlus } from '@tabler/icons-react'
 import { FechaInput } from './FechaInput'
 import ConfirmarAvanceKm from './ConfirmarAvanceKm'
 import CompraModal from './CompraModal'
+import PosicionesMontaje from './PosicionesMontaje'
 import NuevoTecnicoModal from './NuevoTecnicoModal'
 import { avanzaOdometro } from '../lib/odometro'
 import { formatMXN } from '../lib/formato'
+import { POSICIONES_VACIAS, aMontajes } from '../lib/montajes'
+import type { PosicionesValue } from '../lib/montajes'
 import { KM_MAX, validarKm, TEXTO_LIBRE, limpiarTextoLibre } from '../lib/validaciones'
 import { useTecnicos } from '../hooks/useTecnicos'
 import type { Tecnico } from '../hooks/useTecnicos'
@@ -64,6 +67,9 @@ type PiezaLinea = {
   sucursal_id:    string
   cantidad:       number | string
   costo_unitario: number | string
+  // En qué renglones de la unidad queda puesta, capturado aquí mismo para no
+  // tener que ir después al vehículo a declararlo. Vacío = no se monta.
+  posiciones:     PosicionesValue
 }
 
 // El selector ofrece existencias, no lotes: la opción es la pareja
@@ -266,10 +272,21 @@ export default function MantenimientoForm({
       }))
   }
 
+  /** La existencia elegida en ese renglón. De ella sale el tipo, que decide en
+   *  qué posiciones de la unidad puede montarse. */
+  function loteDe(idx: number) {
+    const linea = piezas[idx]
+    if (!linea?.lote_id) return undefined
+    return lotes.find(l => claveExistencia(l.id, l.sucursal_id) === claveExistencia(linea.lote_id, linea.sucursal_id))
+  }
+
   function setLote(idx: number, value: string | null) {
     const [loteId = '', sucursalId = ''] = (value ?? '').split(':')
     form.setFieldValue(`piezas.${idx}.lote_id`, loteId)
     form.setFieldValue(`piezas.${idx}.sucursal_id`, sucursalId)
+    // Cambiar de refacción cambia el tipo, y con él los renglones donde cabe:
+    // conservar las posiciones anteriores dejaría elegido algo de otro tipo.
+    form.setFieldValue(`piezas.${idx}.posiciones`, POSICIONES_VACIAS)
     const lote = lotes.find(l => claveExistencia(l.id, l.sucursal_id) === value)
     // El costo del lote es solo el valor de arranque: se puede ajustar a mano.
     if (lote) form.setFieldValue(`piezas.${idx}.costo_unitario`, lote.costo_unitario)
@@ -292,6 +309,7 @@ export default function MantenimientoForm({
       form.insertListItem('piezas', {
         lote_id: String(lote.id), sucursal_id: String(lote.sucursal_id),
         cantidad: 1, costo_unitario: lote.costo_unitario,
+        posiciones: POSICIONES_VACIAS,
       })
     }
   }
@@ -337,6 +355,8 @@ export default function MantenimientoForm({
         sucursal_id:    Number(p.sucursal_id),
         cantidad:       Number(p.cantidad),
         costo_unitario: Number(p.costo_unitario),
+        // Dónde queda puesta cada una. Vacío = solo se gasta, no se monta.
+        montajes:       aMontajes(p.posiciones),
       })),
     )
   }
@@ -488,7 +508,8 @@ export default function MantenimientoForm({
             ) : (
               <Stack gap="xs">
                 {piezas.map((_, idx) => (
-                  <Grid key={idx} align="flex-start" gap="xs">
+                  <div key={idx}>
+                  <Grid align="flex-start" gap="xs">
                     <Grid.Col span={6}>
                       <Select
                         label={idx === 0 ? 'Refacción / lote' : undefined}
@@ -532,6 +553,17 @@ export default function MantenimientoForm({
                       </ActionIcon>
                     </Grid.Col>
                   </Grid>
+
+                  {/* Solo aparece si la unidad lleva renglones de ese tipo: lo
+                      que se gasta sin instalarse no pregunta nada. */}
+                  <PosicionesMontaje
+                    vehiculoId={vehiculoId}
+                    tipoPiezaId={loteDe(idx)?.tipo_pieza_id}
+                    cantidad={Number(piezas[idx].cantidad) || 1}
+                    value={piezas[idx].posiciones}
+                    onChange={(v) => form.setFieldValue(`piezas.${idx}.posiciones`, v)}
+                  />
+                  </div>
                 ))}
               </Stack>
             )}
@@ -544,7 +576,10 @@ export default function MantenimientoForm({
               <Group justify="space-between">
                 <Button
                   variant="light" size="sm" leftSection={<IconPlus size={16} />}
-                  onClick={() => form.insertListItem('piezas', { lote_id: '', sucursal_id: '', cantidad: 1, costo_unitario: '' })}
+                  onClick={() => form.insertListItem('piezas', {
+                    lote_id: '', sucursal_id: '', cantidad: 1, costo_unitario: '',
+                    posiciones: POSICIONES_VACIAS,
+                  })}
                 >
                   Usar del inventario
                 </Button>
