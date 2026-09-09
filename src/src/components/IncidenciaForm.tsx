@@ -7,6 +7,7 @@ import { useForm } from '@mantine/form'
 import type { Incidencia, IncidenciaPayload, Severidad, StatusIncidencia } from '../hooks/useIncidencias'
 import { useCategoriaOptions } from '../hooks/useCategoriaOptions'
 import { useReportadorOptions } from '../hooks/useReportadorOptions'
+import SelectCatalogo from './SelectCatalogo'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre } from '../lib/validaciones'
 
@@ -62,11 +63,13 @@ export default function IncidenciaForm({
     },
   })
 
-  const { options: categoriaOptions, setSearch: setCategoriaSearch } =
-    useCategoriaOptions(form.values.categoria, initial?.categoria)
+  const {
+    options: categoriaOptions, setSearch: setCategoriaSearch, estado: categoriaEstado,
+  } = useCategoriaOptions(form.values.categoria, initial?.categoria)
 
-  const { options: reportadorOptions, setSearch: setReportadorSearch } =
-    useReportadorOptions(form.values.reportado_por, initial?.reportado_por)
+  const {
+    options: reportadorOptions, setSearch: setReportadorSearch, estado: reportadorEstado,
+  } = useReportadorOptions(form.values.reportado_por, initial?.reportado_por)
 
   // Sólo informativo: el valor real lo pone la API con la cuenta de la sesión.
   // Al editar se muestra el autorizador original, que no cambia.
@@ -102,11 +105,13 @@ export default function IncidenciaForm({
           {...form.getInputProps('descripcion')}
           onChange={(e) => form.setFieldValue('descripcion', limpiarTextoLibre(e.currentTarget.value, 255))}
         />
-        <Select
+        <SelectCatalogo
+          estado={categoriaEstado}
+          nombre="categorías"
+          creable
           label="Categoría" required
           placeholder="Selecciona o escribe para crear una categoría"
           data={categoriaOptions}
-          searchable
           onSearchChange={(v) => setCategoriaSearch(limpiarTextoSimple(v, 30))}
           nothingFoundMessage="Escribe para crear una nueva categoría"
           {...form.getInputProps('categoria')}
@@ -141,12 +146,14 @@ export default function IncidenciaForm({
           {...form.getInputProps('ubicacion')}
           onChange={(e) => form.setFieldValue('ubicacion', limpiarTextoLibre(e.currentTarget.value, 160))}
         />
-        <Select
+        <SelectCatalogo
+          estado={reportadorEstado}
+          nombre="reportadores"
+          creable
           label="Reportado por" required
           placeholder="Selecciona o escribe quién la reportó"
           description="El empleado que detectó el problema"
           data={reportadorOptions}
-          searchable
           onSearchChange={(v) => setReportadorSearch(limpiarTextoSimple(v, 120))}
           nothingFoundMessage="Escribe el nombre de quien la reportó"
           {...form.getInputProps('reportado_por')}

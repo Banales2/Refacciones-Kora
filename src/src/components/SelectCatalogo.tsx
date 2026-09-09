@@ -18,11 +18,18 @@ export interface EstadoCatalogo {
 }
 
 export function SelectCatalogo({
-  estado, nombre, ...props
+  estado, nombre, creable = false, ...props
 }: SelectProps & {
   estado: EstadoCatalogo
   /** Cómo se llama lo que se está cargando, en plural: "proveedores". */
   nombre: string
+  /**
+   * El campo también acepta lo que se escriba, aunque no esté en la lista
+   * (categorías, "reportado por", compañías aseguradoras). Cambia el tono de
+   * los avisos: que la lista no cargue estorba —se puede duplicar algo que ya
+   * existía— pero no impide capturar, y decir "falló, no se puede" sería falso.
+   */
+  creable?: boolean
 }) {
   const cargando = estado.isLoading
   const fallo = estado.isError
@@ -33,11 +40,18 @@ export function SelectCatalogo({
       {...props}
       placeholder={
         cargando ? `Cargando ${nombre}…`
-        : fallo   ? `No se pudieron cargar los ${nombre}`
+        // Sin artículo a propósito: `nombre` puede ser masculino o femenino
+        // ("proveedores", "sucursales") y no hay forma de concordarlo aquí.
+        : fallo   ? (creable
+            ? `No se pudo cargar la lista de ${nombre}; puedes escribir el valor`
+            : `No se pudo cargar la lista de ${nombre}`)
         : props.placeholder
       }
       nothingFoundMessage={
-        cargando ? `Cargando ${nombre}…`
+        // En un campo de texto libre el mensaje original es el que enseña que
+        // se puede crear escribiendo: ese no se pisa nunca.
+        creable ? props.nothingFoundMessage
+        : cargando ? `Cargando ${nombre}…`
         : fallo   ? 'Falló la carga. Usa el botón de recargar.'
         : props.nothingFoundMessage ?? 'Sin resultados'
       }

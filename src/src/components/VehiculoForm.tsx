@@ -117,7 +117,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
   const rutasQuery      = useRutas()
   const segurosQuery    = useSeguros()
   const permisosQuery   = usePermisosCirculacion()
-  const { data: categoriasData } = useCategoriasVehiculo()
+  const categoriasQuery = useCategoriasVehiculo()
+  const categoriasData = categoriasQuery.data
   const modelosData    = modelosQuery.data
   const sucursalesData = sucursalesQuery.data
   const rutasData      = rutasQuery.data
@@ -350,12 +351,14 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
         {/* Informativa: no cambia ninguna regla, solo nombra a la unidad como
             se le dice en el patio. Sin catálogo detrás —se escribe y queda
             disponible para la siguiente—, igual que la compañía de un seguro. */}
-        <Select
+        <SelectCatalogo
+          estado={categoriasQuery}
+          nombre="categorías"
+          creable
           label="Categoría"
           placeholder="Opcional — ej. torton, rabon, camioneta"
           description="Cómo se le dice a esta unidad. No afecta seguros ni mantenimiento."
           data={categoriaOptions}
-          searchable
           clearable
           nothingFoundMessage="Escribe para crear una categoría"
           onSearchChange={(v) => setCategoriaSearch(limpiarTextoSimple(v, 60))}

@@ -3,7 +3,7 @@
 // formulario genérico (nombre + ubicación) con CRUD.
 import { useEffect, useRef, useState } from 'react'
 import {
-  Stack, Group, Text, TextInput, Select, Table, Tabs,
+  Stack, Group, Text, TextInput, Table, Tabs,
   Loader, Center, Alert, Button, ActionIcon,
   Modal, Tooltip, Badge, SegmentedControl, NumberInput, Drawer, Accordion, Paper,
 } from '@mantine/core'
@@ -51,6 +51,7 @@ import { AsignarVehiculosDrawer } from '../components/AsignarVehiculosDrawer'
 import TecnicoForm from '../components/TecnicoForm'
 import { limpiarTextoLibre } from '../lib/validaciones'
 import { useCompaniaOptions } from '../hooks/useCompaniaOptions'
+import SelectCatalogo from '../components/SelectCatalogo'
 import { estadoVigencia, parseVigencia } from '../lib/vigenciaLicencia'
 import type { Sucursal, SucursalPayload } from '../hooks/useSucursales'
 import type { Ruta, RutaPayload } from '../hooks/useRutas'
@@ -980,8 +981,9 @@ function SeguroForm({
   // Las compañías ya usadas en otras pólizas, para no reescribirlas (ni con otra
   // ortografía) cada vez. Igual que la categoría de un requerimiento: si no está
   // en la lista, se crea escribiéndola.
-  const { options: companiaOptions, setSearch: setCompaniaSearch } =
-    useCompaniaOptions(form.values.compania, initial?.compania)
+  const {
+    options: companiaOptions, setSearch: setCompaniaSearch, estado: companiaEstado,
+  } = useCompaniaOptions(form.values.compania, initial?.compania)
 
   return (
     <form onSubmit={form.onSubmit((v) => onSubmit({
@@ -992,11 +994,13 @@ function SeguroForm({
     }))}>
       <Stack gap="sm">
         <TextInput label="No. póliza" placeholder="Ej. POL-123456" required {...form.getInputProps('poliza')} />
-        <Select
+        <SelectCatalogo
+          estado={companiaEstado}
+          nombre="compañías"
+          creable
           label="Compañía" required
           placeholder="Selecciona o escribe para crear una compañía"
           data={companiaOptions}
-          searchable
           onSearchChange={(v) => setCompaniaSearch(limpiarTextoLibre(v, 120))}
           nothingFoundMessage="Escribe para crear una nueva compañía"
           {...form.getInputProps('compania')}
@@ -1067,8 +1071,9 @@ function RenovarSeguroForm({
   const [costo, setCosto]       = useState<number | null>(null)
   const [tocado, setTocado]     = useState(false)
 
-  const { options: companiaOptions, setSearch: setCompaniaSearch } =
-    useCompaniaOptions(compania, seguro.compania)
+  const {
+    options: companiaOptions, setSearch: setCompaniaSearch, estado: companiaEstado,
+  } = useCompaniaOptions(compania, seguro.compania)
 
   const esNueva = modo === 'nueva_poliza'
   // La API rechaza una fecha que no sea posterior; decirlo aquí evita el viaje.
@@ -1117,12 +1122,14 @@ function RenovarSeguroForm({
             onChange={(e) => setPoliza(e.currentTarget.value)}
             error={tocado && polizaMala ? 'Requerido' : null}
           />
-          <Select
+          <SelectCatalogo
+            estado={companiaEstado}
+            nombre="compañías"
+            creable
             label="Compañía" required
             placeholder="Selecciona o escribe para crear una compañía"
             description="Se conserva la misma salvo que hayas cambiado de aseguradora."
             data={companiaOptions}
-            searchable
             onSearchChange={(v) => setCompaniaSearch(limpiarTextoLibre(v, 120))}
             nothingFoundMessage="Escribe para crear una nueva compañía"
             value={compania}

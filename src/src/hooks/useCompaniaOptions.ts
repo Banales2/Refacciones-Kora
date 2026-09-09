@@ -8,13 +8,19 @@ import { useOpcionesTexto } from './useOpcionesTexto'
 
 const etiquetaNueva = (v: string) => `+ Crear compañía "${v}"`
 
+// `estado` acompaña a las opciones para que el selector distinga "todavía no
+// llegan" de "no hay ninguna". Lo consume `SelectCatalogo`.
 export function useCompaniaOptions(valorActual: string, companiaInicial?: string | null) {
-  const { data } = useSeguros()
+  const query = useSeguros()
+  const data = query.data
   // Memoizado: `useOpcionesTexto` lo trae como dependencia y un arreglo nuevo en
   // cada render recalcularía las opciones de balde.
   const companias = useMemo(
     () => data?.data.map((s) => s.compania).filter(Boolean),
     [data],
   )
-  return useOpcionesTexto(companias, valorActual, companiaInicial, etiquetaNueva)
+  return {
+    ...useOpcionesTexto(companias, valorActual, companiaInicial, etiquetaNueva),
+    estado: query,
+  }
 }

@@ -7,7 +7,13 @@ import { useOpcionesTexto } from './useOpcionesTexto'
 
 const etiquetaNueva = (v: string) => `+ Usar "${v}"`
 
+// `estado` va junto a las opciones: sin la lista de quienes ya han reportado,
+// la misma persona acaba escrita de cinco formas, que es justo lo que este
+// selector existe para evitar. Lo consume `SelectCatalogo`.
 export function useReportadorOptions(valorActual: string, reportadorInicial?: string | null) {
-  const { data } = useIncidenciaReportadores()
-  return useOpcionesTexto(data?.data, valorActual, reportadorInicial, etiquetaNueva)
+  const query = useIncidenciaReportadores()
+  return {
+    ...useOpcionesTexto(query.data?.data, valorActual, reportadorInicial, etiquetaNueva),
+    estado: query,
+  }
 }
