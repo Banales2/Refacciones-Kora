@@ -23,13 +23,23 @@ export const fechaCompra = z
   .refine((v) => v <= todayIso(), 'No puede ser una fecha futura')
 
 // El folio de la factura de compra. La diagonal es común en ellos
-// ("A-123/2026"), así que va permitida.
+// ("A-123/2026") y el espacio también ("FAC 1234"), así que van permitidos.
+//
+// Se normaliza antes de validar: fuera los espacios de los extremos y los
+// internos colapsados a uno. No es cosmética — las facturas no son una tabla,
+// se agrupan por este texto exacto (ver `facturasRepo`), así que "FAC 12" y
+// "FAC  12" aparecerían como dos compras distintas siendo la misma. El largo
+// máximo se mide ya normalizado, que es lo que se guarda.
 export const numFactura = z
   .string()
-  .trim()
-  .min(1, 'Núm. factura requerido')
-  .max(30, 'Máximo 30 caracteres')
-  .regex(/^[A-Za-z0-9/-]+$/, 'Solo letras, números, guiones y diagonales')
+  .transform((v) => v.trim().replace(/\s+/g, ' '))
+  .pipe(
+    z
+      .string()
+      .min(1, 'Núm. factura requerido')
+      .max(30, 'Máximo 30 caracteres')
+      .regex(/^[A-Za-z0-9/\- ]+$/, 'Solo letras, números, espacios, guiones y diagonales')
+  )
 
 // Cuánto y a qué precio entró de una refacción. Lo comparten el alta de un lote
 // suelto y cada renglón de una compra de varias refacciones.

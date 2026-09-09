@@ -32,6 +32,7 @@ import type { Lote } from '../hooks/useLotes'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 import { useConsumosSinMontar } from '../hooks/usePiezasVehiculo'
 import LoteForm from './LoteForm'
+import { normalizarFolio } from '../lib/validaciones'
 import type { LoteFormValues } from './LoteForm'
 import type { DatosMontaje, DatosRetiro, MotivoRetiro, DestinoPieza } from '../hooks/usePiezasVehiculo'
 
@@ -195,7 +196,7 @@ export default function MontajePiezaModal({
         fecha_compra:     v.fecha_compra,
         costo_unitario:   Number(v.costo_unitario),
         cantidad_inicial: Number(v.cantidad_inicial),
-        num_factura:      v.num_factura.trim(),
+        num_factura:      normalizarFolio(v.num_factura),
         // Sin la casilla no se guarda tasa: el precio ya la trae dentro.
         tasa_iva:         v.sumar_iva ? Number(v.tasa_iva) : null,
         comprado_por:     v.comprado_por.trim(),

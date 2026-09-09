@@ -11,7 +11,9 @@ import { IconPlus } from '@tabler/icons-react'
 import { useProveedores, useCreateProveedor } from '../hooks/useProveedores'
 import { useSucursales } from '../hooks/useSucursales'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
-import { TEXTO_SIMPLE, limpiarTextoSimple } from '../lib/validaciones'
+import {
+  TEXTO_SIMPLE, FOLIO, limpiarTextoSimple, limpiarFolio, normalizarFolio,
+} from '../lib/validaciones'
 import { formatMXN } from '../lib/formato'
 import { IVA_DEFAULT, importeIva } from '../lib/iva'
 import { FechaInput } from './FechaInput'
@@ -107,10 +109,13 @@ export function LoteForm({
         if (Number(v) > 999) return 'Máximo 999 unidades'
         return null
       },
+      // Se valida sobre el folio ya normalizado, que es lo que se manda y lo
+      // que acaba en la base.
       num_factura: (v) => {
-        if (!v.trim()) return 'No. factura requerido'
-        if (v.trim().length > 30) return 'Máximo 30 caracteres'
-        if (!/^[A-Za-z0-9/-]+$/.test(v.trim())) return 'Solo letras, números, guiones y diagonales'
+        const folio = normalizarFolio(v)
+        if (!folio) return 'No. factura requerido'
+        if (folio.length > 30) return 'Máximo 30 caracteres'
+        if (!FOLIO.test(folio)) return 'Solo letras, números, espacios, guiones y diagonales'
         return null
       },
       // Solo cuenta con la casilla encendida: apagada, el campo ni se muestra.
@@ -202,15 +207,12 @@ export function LoteForm({
           />
           <TextInput
             label="No. factura"
-            placeholder="Ej. A-12345 o A-123/2026"
+            placeholder="Ej. A-12345, A-123/2026 o FAC 1234"
             maxLength={30}
             required
             spellCheck={false}
             {...form.getInputProps('num_factura')}
-            onChange={(e) =>
-              // Allowlist: solo letras, números, guiones y diagonales
-              form.setFieldValue('num_factura', e.currentTarget.value.replace(/[^A-Za-z0-9/-]/g, ''))
-            }
+            onChange={(e) => form.setFieldValue('num_factura', limpiarFolio(e.currentTarget.value, 30))}
           />
           {/* El IVA se suma una sola vez, al total del lote: `costo_unitario`
               se guarda como viene en la factura. Apagado —el caso normal—

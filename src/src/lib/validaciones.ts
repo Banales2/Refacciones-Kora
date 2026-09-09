@@ -44,6 +44,27 @@ export function limpiarCodigo(valor: string, max: number): string {
   return valor.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, max)
 }
 
+// Allowlist del folio de una factura de compra: letras, números, espacios,
+// guiones y diagonales. La diagonal es común en ellos ("A-123/2026") y el
+// espacio también ("FAC 1234"). Espeja numFactura del backend.
+export const FOLIO = /^[A-Za-z0-9/\- ]+$/
+
+// Limpia un folio para onChange: quita lo que la allowlist no acepta y recorta.
+// NO colapsa los espacios internos aquí —hacerlo mientras se teclea impediría
+// escribir uno—; de eso se encarga `normalizarFolio` al mandar.
+export function limpiarFolio(valor: string, max: number): string {
+  return valor.replace(/[^A-Za-z0-9/\- ]/g, '').slice(0, max)
+}
+
+// Deja el folio como se va a guardar: sin espacios en los extremos y con los
+// internos colapsados a uno. Las facturas se agrupan por el texto exacto, así
+// que "FAC 12" y "FAC  12" se verían como dos compras distintas siendo la
+// misma. El backend aplica esta misma normalización; aquí se adelanta para que
+// lo que se valida en pantalla sea lo que acaba en la base.
+export function normalizarFolio(valor: string): string {
+  return valor.trim().replace(/\s+/g, ' ')
+}
+
 // Quita lo que la allowlist no acepta y recorta al máximo permitido. Se usa en
 // onChange para que ni pegando texto entren símbolos.
 export function limpiarTextoSimple(valor: string, max: number): string {

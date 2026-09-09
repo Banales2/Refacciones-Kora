@@ -19,6 +19,7 @@ import type { Lote, LotePayload } from '../hooks/useLotes'
 import { useComparativaPieza } from '../hooks/usePreciosProveedor'
 import { exportComparativaPiezaPdf } from '../lib/reportes/comparativaPieza'
 import { IVA_DEFAULT } from '../lib/iva'
+import { normalizarFolio } from '../lib/validaciones'
 import LoteForm from './LoteForm'
 import type { LoteFormValues } from './LoteForm'
 
@@ -74,7 +75,7 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
       fecha_compra: values.fecha_compra,
       costo_unitario: Number(values.costo_unitario),
       cantidad_inicial: Number(values.cantidad_inicial),
-      num_factura: values.num_factura.trim(),
+      num_factura: normalizarFolio(values.num_factura),
       // Sin la casilla no se guarda tasa: el precio ya la trae dentro. Va
       // explícito en null para que el update sepa que hay que borrarla.
       tasa_iva: values.sumar_iva ? Number(values.tasa_iva) : null,

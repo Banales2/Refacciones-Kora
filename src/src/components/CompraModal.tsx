@@ -23,7 +23,10 @@ import ProveedorForm from './ProveedorForm'
 import TipoPiezaSelect from './TipoPiezaSelect'
 import { formatMXN } from '../lib/formato'
 import { IVA_DEFAULT, importeIva } from '../lib/iva'
-import { TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre } from '../lib/validaciones'
+import {
+  TEXTO_SIMPLE, TEXTO_LIBRE, FOLIO,
+  limpiarTextoSimple, limpiarTextoLibre, limpiarFolio, normalizarFolio,
+} from '../lib/validaciones'
 import { useProveedores, useCreateProveedor } from '../hooks/useProveedores'
 import { useSucursales } from '../hooks/useSucursales'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
@@ -110,10 +113,15 @@ export default function CompraModal({
       fecha_compra: (v) =>
         !v ? 'Fecha requerida' :
         v > hoy ? 'No puede ser una fecha futura' : null,
-      num_factura: (v) =>
-        !v.trim() ? 'No. factura requerido' :
-        v.trim().length > 30 ? 'Máximo 30 caracteres' :
-        !/^[A-Za-z0-9/-]+$/.test(v.trim()) ? 'Solo letras, números, guiones y diagonales' : null,
+      // Se valida sobre el folio ya normalizado, que es lo que se manda y lo
+      // que acaba en la base.
+      num_factura: (v) => {
+        const folio = normalizarFolio(v)
+        if (!folio) return 'No. factura requerido'
+        if (folio.length > 30) return 'Máximo 30 caracteres'
+        if (!FOLIO.test(folio)) return 'Solo letras, números, espacios, guiones y diagonales'
+        return null
+      },
       comprado_por: (v) =>
         !v.trim() ? 'Requerido' :
         v.trim().length > 120 ? 'Máximo 120 caracteres' :
@@ -210,7 +218,7 @@ export default function CompraModal({
         proveedor_id: Number(vals.proveedor_id),
         sucursal_id:  Number(vals.sucursal_id),
         fecha_compra: vals.fecha_compra,
-        num_factura:  vals.num_factura.trim(),
+        num_factura:  normalizarFolio(vals.num_factura),
         // Sin la casilla no se guarda tasa: el precio ya la trae dentro.
         tasa_iva:     vals.sumar_iva ? Number(vals.tasa_iva) : null,
         comprado_por: vals.comprado_por.trim(),
@@ -285,14 +293,11 @@ export default function CompraModal({
               <Grid.Col span={4}>
                 <TextInput
                   label="No. factura" required
-                  placeholder="Ej. A-12345 o A-123/2026"
+                  placeholder="Ej. A-12345, A-123/2026 o FAC 1234"
                   maxLength={30}
                   spellCheck={false}
                   {...form.getInputProps('num_factura')}
-                  onChange={(e) =>
-                    // Allowlist: solo letras, números, guiones y diagonales
-                    form.setFieldValue('num_factura', e.currentTarget.value.replace(/[^A-Za-z0-9/-]/g, ''))
-                  }
+                  onChange={(e) => form.setFieldValue('num_factura', limpiarFolio(e.currentTarget.value, 30))}
                 />
               </Grid.Col>
               <Grid.Col span={4}>
