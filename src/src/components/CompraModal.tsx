@@ -13,7 +13,7 @@
 // sabe que está incompleto.
 import { useState, useMemo } from 'react'
 import {
-  Modal, Stack, Group, Grid, Text, Alert, Button, Select, TextInput, Textarea,
+  Modal, Stack, Group, Grid, Text, Alert, Button, TextInput, Textarea,
   NumberInput, ActionIcon, Divider, Paper, Badge, Tooltip, Switch,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
@@ -21,6 +21,7 @@ import { IconPlus, IconTrash } from '@tabler/icons-react'
 import { FechaInput } from './FechaInput'
 import ProveedorForm from './ProveedorForm'
 import TipoPiezaSelect from './TipoPiezaSelect'
+import SelectCatalogo from './SelectCatalogo'
 import { formatMXN } from '../lib/formato'
 import { IVA_DEFAULT, importeIva } from '../lib/iva'
 import {
@@ -84,10 +85,16 @@ export default function CompraModal({
 }) {
   const hoy = hoyIso()
 
-  const { data: sucData }    = useSucursales()
-  const { data: provData }   = useProveedores()
-  const { data: piezasData } = useTodasLasPiezas(opened)
-  const { data: usuario }    = useUsuarioActual()
+  // Los catálogos se guardan completos, no solo su `data`: con internet malo
+  // hay que poder distinguir "todavía viene" de "se cayó", porque los dos se
+  // ven igual —el selector vacío— y solo uno se arregla esperando.
+  const sucQuery    = useSucursales()
+  const provQuery   = useProveedores()
+  const piezasQuery = useTodasLasPiezas(opened)
+  const { data: usuario } = useUsuarioActual()
+  const sucData    = sucQuery.data
+  const provData   = provQuery.data
+  const piezasData = piezasQuery.data
 
   const crearCompraMut = useCreateCompra()
   const crearProvMut   = useCreateProveedor()
@@ -255,11 +262,12 @@ export default function CompraModal({
 
             <Grid>
               <Grid.Col span={6}>
-                <Select
+                <SelectCatalogo
+                  estado={provQuery}
+                  nombre="proveedores"
                   label="Proveedor" required
                   placeholder="Selecciona un proveedor"
                   data={proveedores}
-                  searchable
                   nothingFoundMessage="Sin proveedores: da de alta uno nuevo"
                   {...form.getInputProps('proveedor_id')}
                 />
@@ -271,12 +279,13 @@ export default function CompraModal({
                 </Button>
               </Grid.Col>
               <Grid.Col span={6}>
-                <Select
+                <SelectCatalogo
+                  estado={sucQuery}
+                  nombre="sucursales"
                   label="Sucursal que recibe" required
                   description="Toda la factura entra aquí. Para repartirla, haz un traspaso desde Inventario."
                   placeholder="Selecciona la sucursal"
                   data={sucursales}
-                  searchable
                   nothingFoundMessage="Sin sucursales dadas de alta"
                   {...form.getInputProps('sucursal_id')}
                 />
@@ -391,11 +400,12 @@ export default function CompraModal({
                       </Grid.Col>
                     </Grid>
                   ) : (
-                    <Select
+                    <SelectCatalogo
+                      estado={piezasQuery}
+                      nombre="refacciones"
                       label="Refacción" size="xs" required
                       placeholder="Busca por serie o descripción"
                       data={piezaOptions}
-                      searchable
                       nothingFoundMessage='Sin coincidencias: agrégala con "Dar de alta una nueva"'
                       value={r.pieza_id || null}
                       onChange={(v) => form.setFieldValue(`renglones.${idx}.pieza_id`, v ?? '')}

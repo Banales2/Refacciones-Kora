@@ -4,7 +4,7 @@
 // crearlo queda seleccionado.
 import { useState } from 'react'
 import {
-  Stack, Group, Alert, Button, Modal, TextInput, NumberInput, Select, Switch, Text,
+  Stack, Group, Alert, Button, Modal, TextInput, NumberInput, Switch, Text,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconPlus } from '@tabler/icons-react'
@@ -18,6 +18,7 @@ import { formatMXN } from '../lib/formato'
 import { IVA_DEFAULT, importeIva } from '../lib/iva'
 import { FechaInput } from './FechaInput'
 import ProveedorForm from './ProveedorForm'
+import SelectCatalogo from './SelectCatalogo'
 
 export type LoteFormValues = {
   proveedor_id: string
@@ -60,10 +61,13 @@ export function LoteForm({
 }) {
   const hoy = todayIso()
   const esEdicion = initial !== undefined
-  const { data: sucData } = useSucursales()
-  const sucursales = (sucData?.data ?? []).map((s) => ({ value: String(s.id), label: s.nombre }))
-  const { data: provData } = useProveedores()
-  const proveedores = (provData?.data ?? []).map((p) => ({
+  // Se conserva el resultado completo, no solo `data`: con internet malo hace
+  // falta saber si el catálogo viene en camino o si se cayó, porque las dos
+  // cosas se ven igual —una lista vacía— y no lo son.
+  const sucQuery = useSucursales()
+  const sucursales = (sucQuery.data?.data ?? []).map((s) => ({ value: String(s.id), label: s.nombre }))
+  const provQuery = useProveedores()
+  const proveedores = (provQuery.data?.data ?? []).map((p) => ({
     value: String(p.id),
     label: p.nombre,
   }))
@@ -145,11 +149,12 @@ export function LoteForm({
       <form onSubmit={form.onSubmit(onSubmit)}>
         <Stack gap="sm">
           <Stack gap={4}>
-            <Select
+            <SelectCatalogo
+              estado={provQuery}
+              nombre="proveedores"
               label="Proveedor"
               placeholder="Selecciona un proveedor"
               data={proveedores}
-              searchable
               required
               nothingFoundMessage="Sin proveedores: da de alta uno nuevo"
               {...form.getInputProps('proveedor_id')}
@@ -164,12 +169,13 @@ export function LoteForm({
             </Group>
           </Stack>
           {!esEdicion && (
-            <Select
+            <SelectCatalogo
+              estado={sucQuery}
+              nombre="sucursales"
               label="Sucursal que recibe"
               description="El lote entra completo aquí. Para repartirlo, haz un traspaso desde Inventario."
               placeholder="Selecciona la sucursal"
               data={sucursales}
-              searchable
               required
               nothingFoundMessage="Sin sucursales dadas de alta"
               {...form.getInputProps('sucursal_id')}

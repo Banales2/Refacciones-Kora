@@ -14,8 +14,9 @@ import {
   Badge,
   Tooltip,
   ScrollArea,
+  Alert,
 } from '@mantine/core'
-import { useDisclosure } from '@mantine/hooks'
+import { useDisclosure, useNetwork } from '@mantine/hooks'
 import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import {
   IconRefresh, IconLayoutDashboard, IconTruck, IconCar, IconTool,
@@ -181,6 +182,25 @@ function CatalogosNavItem({
         ))}
       </NavLink>
     </Tooltip>
+  )
+}
+
+/**
+ * Aviso de conexión caída. Existe porque el síntoma —selectores vacíos,
+ * pantallas a medias— parecía una falla de la app, y la reacción era salirse.
+ * Diciéndolo, la espera se entiende: lo pendiente se reintenta solo y al volver
+ * la señal se recarga todo (ver `refetchOnReconnect` en main.tsx). No bloquea
+ * nada: lo que ya está en pantalla se sigue pudiendo capturar.
+ */
+function AvisoSinConexion() {
+  const { online } = useNetwork()
+  if (online) return null
+  return (
+    <Alert color="orange" variant="light" mb="md" title="Sin conexión">
+      No hay internet en este momento. Puedes seguir capturando: lo que falte
+      cargar se vuelve a pedir solo en cuanto regrese la señal. Evita cerrar la
+      página si dejaste algo a medias.
+    </Alert>
   )
 }
 
@@ -421,6 +441,7 @@ export default function Layout() {
 
       {/* ── Contenido ── */}
       <AppShell.Main>
+        <AvisoSinConexion />
         {section === 'dashboard' && (
           <Dashboard
             onNavigateVehiculo={navigateToVehiculoId}
