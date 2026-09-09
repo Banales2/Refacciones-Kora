@@ -3,10 +3,11 @@
 // El nombre es un campo largo y de texto libre a propósito: los renglones del
 // manual son frases enteras ("Soltura o daños en el tapón del tanque de
 // combustible y tubería de combustible"), no etiquetas de catálogo.
-import { Stack, Group, Text, Textarea, Button, NumberInput, Select, Alert, Autocomplete } from '@mantine/core'
+import { Stack, Group, Text, Textarea, Button, NumberInput, Alert, Autocomplete } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { TEXTO_LIBRE, TEXTO_SIMPLE, limpiarTextoLibre, limpiarTextoSimple } from '../lib/validaciones'
 import { useTiposPiezaModelo } from '../hooks/useTiposPiezaModelo'
+import SelectCatalogo from './SelectCatalogo'
 import type { OperacionPrograma, OperacionPayload } from '../hooks/usePrograma'
 
 export default function ProgramaOperacionForm({
@@ -21,8 +22,8 @@ export default function ProgramaOperacionForm({
   onSubmit:   (payload: OperacionPayload) => void
   onCancel:   () => void
 }) {
-  const { data: tiposData } = useTiposPiezaModelo(modeloId)
-  const tiposOpts = (tiposData?.data ?? []).map((t) => ({
+  const tiposQuery = useTiposPiezaModelo(modeloId)
+  const tiposOpts = (tiposQuery.data?.data ?? []).map((t) => ({
     value: String(t.id),
     label: t.etiqueta ? `${t.nombre} — ${t.etiqueta}` : t.nombre,
   }))
@@ -90,12 +91,16 @@ export default function ProgramaOperacionForm({
             {...form.getInputProps('limite_meses')}
           />
         </Group>
-        <Select
-          label="Tipo de pieza" clearable searchable
+        <SelectCatalogo
+          estado={tiposQuery}
+          nombre="tipos de pieza"
+          label="Tipo de pieza" clearable
           placeholder={tiposOpts.length ? 'Ninguna en particular' : 'El modelo no declara tipos de pieza'}
           description="Opcional: muchos renglones son revisiones que no tocan una pieza del inventario."
           data={tiposOpts}
-          disabled={!tiposOpts.length}
+          // Vacío por lento o por caído no es lo mismo que vacío de verdad:
+          // deshabilitarlo mientras carga esconde el aviso y el reintento.
+          disabled={!tiposQuery.isLoading && !tiposQuery.isError && !tiposOpts.length}
           {...form.getInputProps('tipo_pieza_id')}
           onChange={(v) => form.setFieldValue('tipo_pieza_id', v ?? '')}
         />

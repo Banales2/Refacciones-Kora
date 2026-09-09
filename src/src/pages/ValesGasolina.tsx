@@ -24,6 +24,7 @@ import { useAuth } from '../hooks/useAuth'
 import { FechaInput } from '../components/FechaInput'
 import { CODIGO, limpiarCodigo } from '../lib/validaciones'
 import NuevoConductorModal from '../components/NuevoConductorModal'
+import SelectCatalogo from '../components/SelectCatalogo'
 
 function todayIso() {
   const d = new Date()
@@ -119,7 +120,8 @@ function ValeForm({
 }) {
   const hoy = todayIso()
   const { user } = useAuth()
-  const { data: conData } = useConductores()
+  const conQuery = useConductores()
+  const conData = conQuery.data
 
   // Alta de chofer sin salir de aquí: el catálogo está en otra pantalla y salir
   // a darlo de alta costaba perder el vale a medio capturar.
@@ -216,11 +218,12 @@ function ValeForm({
             description="Se registra automáticamente con tu usuario"
           />
           <div>
-            <Select
+            <SelectCatalogo
+              estado={conQuery}
+              nombre="choferes"
               label="Chofer"
               placeholder={conductores.length ? 'Selecciona un chofer' : 'No hay choferes registrados'}
               data={conductores}
-              searchable
               required
               nothingFoundMessage='Sin coincidencias: usa "Nuevo chofer"'
               {...form.getInputProps('conductor_id')}

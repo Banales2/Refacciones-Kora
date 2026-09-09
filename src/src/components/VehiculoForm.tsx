@@ -3,6 +3,7 @@
 // pies para cajas de trailer). En edición el tipo no puede cambiarse.
 import { useState, useEffect } from 'react'
 import { useForm } from '@mantine/form'
+import SelectCatalogo from './SelectCatalogo'
 import {
   Stack, Grid, TextInput, NumberInput, Select, Divider,
   Badge, Text, Button, Group, Alert, Modal,
@@ -108,12 +109,20 @@ export interface VehiculoFormProps {
 
 export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lockedModeloId }: VehiculoFormProps) {
   const isEdit = !!initial
-  const { data: modelosData } = useModelos()
-  const { data: sucursalesData } = useSucursales()
-  const { data: rutasData } = useRutas()
-  const { data: segurosData } = useSeguros()
-  const { data: permisosData } = usePermisosCirculacion()
+  // De los catálogos se guarda el resultado entero, no solo `data`: con
+  // internet lento hace falta poder decir si la lista viene en camino o si se
+  // cayó, porque las dos cosas se ven igual —el selector vacío—.
+  const modelosQuery    = useModelos()
+  const sucursalesQuery = useSucursales()
+  const rutasQuery      = useRutas()
+  const segurosQuery    = useSeguros()
+  const permisosQuery   = usePermisosCirculacion()
   const { data: categoriasData } = useCategoriasVehiculo()
+  const modelosData    = modelosQuery.data
+  const sucursalesData = sucursalesQuery.data
+  const rutasData      = rutasQuery.data
+  const segurosData    = segurosQuery.data
+  const permisosData   = permisosQuery.data
 
   const modelosOpts   = (modelosData?.data   ?? []).map((m) => ({ value: String(m.id), label: `${m.marca} ${m.nombre}${m.anio ? ` ${m.anio}` : ''}` }))
   const sucursalesOpts = (sucursalesData?.data ?? []).map((s) => ({ value: String(s.id), label: s.nombre }))
@@ -275,7 +284,9 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
       <Stack gap="sm">
         {error && <Alert color="red" title="Error">{error}</Alert>}
 
-        <Select
+        <SelectCatalogo
+          estado={modelosQuery}
+          nombre="modelos"
           label="Marca / Modelo"
           placeholder="Selecciona un modelo"
           data={modelosOpts}
@@ -365,24 +376,26 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
             lo llevan reparto y utilitarios: donde no aplica, el campo no existe
             (tampoco la columna en la base). */}
         {needsField(tipo, 'seguro') && (
-          <Select
+          <SelectCatalogo
+            estado={segurosQuery}
+            nombre="seguros"
             label="Seguro"
             placeholder="Sin seguro asignado"
             data={segurosOpts}
             clearable
-            searchable
             nothingFoundMessage="No hay seguros — regístralos en Catálogos → Seguros"
             {...form.getInputProps('seguro_id')}
           />
         )}
 
         {needsField(tipo, 'permiso') && (
-          <Select
+          <SelectCatalogo
+            estado={permisosQuery}
+            nombre="permisos"
             label="Permiso de circulación"
             placeholder="Sin permiso asignado"
             data={permisosOpts}
             clearable
-            searchable
             nothingFoundMessage="No hay permisos — regístralos en Catálogos → Permisos"
             {...form.getInputProps('permiso_id')}
           />
@@ -408,7 +421,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 />
               </Grid.Col>
               <Grid.Col span={6}>
-                <Select label="Sucursal" data={sucursalesOpts} placeholder="Sucursal" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('sucursal_id')} />
+                <SelectCatalogo estado={sucursalesQuery} nombre="sucursales" label="Sucursal" data={sucursalesOpts} placeholder="Sucursal" required nothingFoundMessage="Sin resultados" {...form.getInputProps('sucursal_id')} />
               </Grid.Col>
               <Grid.Col span={12}>
                 <TextInput label="Ubicación" placeholder="Ubicación actual (opcional)" {...form.getInputProps('ubicacion')} />
@@ -440,7 +453,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 />
               </Grid.Col>
               <Grid.Col span={6}>
-                <Select label="Translado" data={rutasOpts} placeholder="Translado asignado" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
+                <SelectCatalogo estado={rutasQuery} nombre="traslados" label="Translado" data={rutasOpts} placeholder="Translado asignado" required nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
               </Grid.Col>
             </Grid>
           </>
@@ -458,7 +471,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
               </Grid.Col>
               <Grid.Col span={12}>
-                <Select label="Translado" data={rutasOpts} placeholder="Translado asignado" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
+                <SelectCatalogo estado={rutasQuery} nombre="traslados" label="Translado" data={rutasOpts} placeholder="Translado asignado" required nothingFoundMessage="Sin resultados" {...form.getInputProps('ruta_id')} />
               </Grid.Col>
             </Grid>
           </>
@@ -476,7 +489,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
               </Grid.Col>
               <Grid.Col span={6}>
-                <Select label="Sucursal" data={sucursalesOpts} placeholder="Sucursal" required searchable nothingFoundMessage="Sin resultados" {...form.getInputProps('sucursal_id')} />
+                <SelectCatalogo estado={sucursalesQuery} nombre="sucursales" label="Sucursal" data={sucursalesOpts} placeholder="Sucursal" required nothingFoundMessage="Sin resultados" {...form.getInputProps('sucursal_id')} />
               </Grid.Col>
               <Grid.Col span={6}>
                 <TextInput label="Ubicación" placeholder="Ubicación actual (opcional)" {...form.getInputProps('ubicacion')} />

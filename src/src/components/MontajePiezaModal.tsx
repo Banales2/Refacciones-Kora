@@ -27,6 +27,7 @@ import {
 } from '@mantine/core'
 import { IconPlus } from '@tabler/icons-react'
 import { FechaInput } from './FechaInput'
+import SelectCatalogo from './SelectCatalogo'
 import { useLotes, useCreateLote } from '../hooks/useLotes'
 import type { Lote } from '../hooks/useLotes'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
@@ -118,16 +119,20 @@ export default function MontajePiezaModal({
   // Todos los lotes de la refacción, no solo los que tienen existencias: una
   // pieza que ya está puesta pudo salir de un lote agotado, y capturarla
   // después es justo el caso que hay que poder registrar.
-  const { data: lotesData, isLoading: cargandoLotes } = useLotes(entra ? piezaEntranteId : null)
+  const lotesQuery = useLotes(entra ? piezaEntranteId : null)
+  const { data: lotesData, isLoading: cargandoLotes } = lotesQuery
 
   // Lo que de verdad hay en estantes, por (lote, sucursal). De aquí sale lo que
   // se puede descontar.
-  const { data: dispData, isLoading: cargandoDisp } = useLotesDisponibles(entra)
+  const dispQuery = useLotesDisponibles(entra)
+  const { data: dispData, isLoading: cargandoDisp } = dispQuery
 
   // Piezas de esta refacción ya descontadas en un mantenimiento de esta unidad
   // que siguen sin montarse.
-  const { data: consumosData, isLoading: cargandoConsumos } =
-    useConsumosSinMontar(entra ? vehiculoId : null, entra ? piezaEntranteId : null)
+  const consumosQuery = useConsumosSinMontar(
+    entra ? vehiculoId : null, entra ? piezaEntranteId : null,
+  )
+  const { data: consumosData, isLoading: cargandoConsumos } = consumosQuery
 
   const consumos = useMemo(() => consumosData?.data ?? [], [consumosData])
 
@@ -294,20 +299,23 @@ export default function MontajePiezaModal({
             </Radio.Group>
 
             {origen === 'consumo' && (
-              <Select
+              <SelectCatalogo
+                estado={consumosQuery}
+                nombre="consumos del mantenimiento"
                 label="Consumo del mantenimiento"
                 description="La compra ya salió del almacén en este servicio."
                 placeholder="Selecciona el consumo"
                 data={opcionesConsumo}
                 value={consumoId}
                 onChange={setConsumoId}
-                searchable
               />
             )}
 
             {origen === 'almacen' && (
               <>
-                <Select
+                <SelectCatalogo
+                  estado={dispQuery}
+                  nombre="existencias"
                   label="Existencia de la que sale"
                   description="Sucursal y compra concretas: de ahí se descuenta la pieza."
                   placeholder={
@@ -318,8 +326,9 @@ export default function MontajePiezaModal({
                   data={opcionesExistencia}
                   value={existencia}
                   onChange={setExistencia}
-                  disabled={opcionesExistencia.length === 0}
-                  searchable
+                  // Si la consulta falló hay que dejarlo vivo: deshabilitado no
+                  // se puede tocar el botón de reintentar.
+                  disabled={!dispQuery.isError && opcionesExistencia.length === 0}
                   clearable
                 />
                 {opcionesExistencia.length === 0 && (
@@ -332,7 +341,9 @@ export default function MontajePiezaModal({
 
             {origen === 'sin_descontar' && (
               <>
-                <Select
+                <SelectCatalogo
+                  estado={lotesQuery}
+                  nombre="lotes de la refacción"
                   label="Lote de compra"
                   description="Solo para la trazabilidad: es lo que permite reclamar la garantía al proveedor."
                   placeholder={
@@ -343,8 +354,7 @@ export default function MontajePiezaModal({
                   data={opcionesLote}
                   value={loteId}
                   onChange={setLoteId}
-                  disabled={opcionesLote.length === 0}
-                  searchable
+                  disabled={!lotesQuery.isError && opcionesLote.length === 0}
                   clearable
                 />
                 <Text size="xs" c="dimmed">

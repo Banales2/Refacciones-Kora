@@ -6,9 +6,9 @@
 // refacciones—, y el "escribe para crear el tipo" tiene que portarse igual en
 // los dos. Duplicarlo era la vía segura a que uno de los dos se quedara atrás.
 import { useState, useMemo } from 'react'
-import { Select } from '@mantine/core'
 import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
 import { limpiarTextoSimple } from '../lib/validaciones'
+import SelectCatalogo from './SelectCatalogo'
 
 // Valor centinela del selector: al elegirlo se crea el tipo escrito. Nunca se
 // guarda — se reemplaza por el id real que devuelve el backend.
@@ -26,7 +26,11 @@ export default function TipoPiezaSelect({
 }) {
   const [search, setSearch] = useState('')
 
-  const { data: tiposData } = useTiposPieza()
+  // El catálogo entero, no solo su `data`: hace falta distinguir "todavía
+  // viene" de "se cayó". Aquí importa más que en otros lados — con la lista sin
+  // cargar, el selector ofrece crear un tipo que quizá ya existe.
+  const tiposQuery = useTiposPieza()
+  const tiposData = tiposQuery.data
   const crearTipoMut = useCreateTipoPieza()
 
   const options = useMemo(() => {
@@ -53,13 +57,14 @@ export default function TipoPiezaSelect({
   }
 
   return (
-    <Select
+    <SelectCatalogo
+      estado={tiposQuery}
+      nombre="tipos de pieza"
       label={label ?? undefined}
       description={description}
       size={size}
       placeholder="Selecciona o escribe para crear un tipo"
       data={options}
-      searchable
       required
       searchValue={search}
       // Allowlist: solo letras, números, espacios y guiones (máx. 40)

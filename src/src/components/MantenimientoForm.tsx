@@ -38,6 +38,7 @@ import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimie
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import { useVehiculo } from '../hooks/useVehiculos'
 import type { TipoVehiculo } from '../hooks/useVehiculos'
+import SelectCatalogo from './SelectCatalogo'
 
 // Fecha local de hoy en "YYYY-MM-DD" (construirla con métodos UTC recorrería
 // el día en zonas horarias detrás de UTC).
@@ -179,7 +180,10 @@ export default function MantenimientoForm({
   // detalle del mantenimiento, que ya permite agregarlas, cambiarlas y quitarlas
   // devolviendo el stock al lote.
   const isEdit = !!initial
-  const { data: lotesData } = useLotesDisponibles(!isEdit)
+  // Resultado completo: con la red lenta hay que poder decir si los lotes
+  // vienen en camino o si la consulta se cayó. Vacío no significa lo mismo.
+  const lotesQuery = useLotesDisponibles(!isEdit)
+  const lotesData = lotesQuery.data
 
   // Refacciones compradas desde este mismo formulario: se agregan a mano porque
   // la lista de lotes disponibles todavía puede estar refrescándose.
@@ -199,7 +203,8 @@ export default function MantenimientoForm({
 
   // El técnico se guarda por id contra el catálogo. Si el técnico se eliminó,
   // el mantenimiento queda sin técnico y hay que elegir otro al editarlo.
-  const { data: tecnicosData } = useTecnicos()
+  const tecnicosQuery = useTecnicos()
+  const tecnicosData = tecnicosQuery.data
 
   // Técnicos dados de alta desde este mismo formulario: se agregan a mano
   // porque el catálogo todavía puede estar refrescándose.
@@ -388,11 +393,12 @@ export default function MantenimientoForm({
             />
           </Grid.Col>
           <Grid.Col span={6}>
-            <Select
+            <SelectCatalogo
+              estado={tecnicosQuery}
+              nombre="técnicos"
               label="Técnico" required
               placeholder="Selecciona un técnico"
               data={tecnicoOptions}
-              searchable
               nothingFoundMessage='Sin coincidencias: usa "Nuevo técnico"'
               {...form.getInputProps('tecnico_id')}
               onChange={(v) => form.setFieldValue('tecnico_id', v ?? '')}
@@ -511,11 +517,12 @@ export default function MantenimientoForm({
                   <div key={idx}>
                   <Grid align="flex-start" gap="xs">
                     <Grid.Col span={6}>
-                      <Select
+                      <SelectCatalogo
+                        estado={lotesQuery}
+                        nombre="refacciones con existencia"
                         label={idx === 0 ? 'Refacción / lote' : undefined}
                         placeholder="Selecciona la refacción"
                         data={loteOptions(idx)}
-                        searchable
                         nothingFoundMessage={
                           lotes.length === 0
                             ? 'Nada con existencias: usa "Registrar compra" o "Dar de alta refacción"'

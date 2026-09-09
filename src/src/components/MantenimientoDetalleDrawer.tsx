@@ -5,7 +5,7 @@ import { useState, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import {
   Drawer, Stack, Group, Text, Table, Loader, Center, Alert,
-  ActionIcon, Button, Modal, NumberInput, Select, Grid, Divider, Tooltip, Badge,
+  ActionIcon, Button, Modal, NumberInput, Grid, Divider, Tooltip, Badge,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconPencil, IconTrash, IconPlus, IconCar } from '@tabler/icons-react'
@@ -22,6 +22,7 @@ import { avisarMontajes } from '../lib/montajes'
 import { POSICIONES_VACIAS, aMontajes } from '../lib/montajes'
 import type { PosicionesValue } from '../lib/montajes'
 import PosicionesMontaje from './PosicionesMontaje'
+import SelectCatalogo from './SelectCatalogo'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -84,7 +85,8 @@ function DetalleForm({
   onSubmit:    (v: DetalleFormValues) => void
   onCancel:    () => void
 }) {
-  const { data: lotesData } = useLotesDisponibles(mode === 'create')
+  const lotesQuery = useLotesDisponibles(mode === 'create')
+  const lotesData = lotesQuery.data
 
   // Refacciones compradas desde este mismo modal: se agregan a mano porque la
   // lista de lotes disponibles todavía puede estar refrescándose.
@@ -165,12 +167,13 @@ function DetalleForm({
         {error && <Alert color="red" title="Error">{error}</Alert>}
         {mode === 'create' ? (
           <div>
-            <Select
+            <SelectCatalogo
+              estado={lotesQuery}
+              nombre="refacciones con existencia"
               label="Refacción / lote / sucursal"
               description="De qué sucursal sale la pieza. El stock se descuenta de ahí."
               placeholder="Selecciona la refacción usada"
               data={loteOptions}
-              searchable
               required
               nothingFoundMessage={
                 lotes.length === 0

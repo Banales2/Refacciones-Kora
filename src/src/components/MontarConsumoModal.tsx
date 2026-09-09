@@ -9,8 +9,9 @@
 // El montaje viaja ligado (`detalle_mtto_pieza_id`), así que NO vuelve a tocar
 // el inventario: la unidad ya salió del estante cuando se capturó el consumo.
 import { useMemo, useState } from 'react'
-import { Modal, Stack, Select, NumberInput, Alert, Button, Group, Text, Loader } from '@mantine/core'
+import { Modal, Stack, NumberInput, Alert, Button, Group, Text } from '@mantine/core'
 import { FechaInput } from './FechaInput'
+import SelectCatalogo from './SelectCatalogo'
 import { usePiezasVehiculo, useSetPiezaVehiculo } from '../hooks/usePiezasVehiculo'
 import type { DetalleMttoPieza } from '../hooks/useDetalleMtto'
 
@@ -37,7 +38,8 @@ export default function MontarConsumoModal({
   const [fecha, setFecha]     = useState(fechaMantenimiento?.slice(0, 10) ?? hoy())
   const [km, setKm]           = useState<number | ''>(kmMantenimiento ?? '')
 
-  const { data, isLoading } = usePiezasVehiculo(consumo ? vehiculoId : undefined)
+  const renglonesQuery = usePiezasVehiculo(consumo ? vehiculoId : undefined)
+  const { data, isLoading } = renglonesQuery
   const setMut = useSetPiezaVehiculo()
 
   // Solo los renglones que piden este tipo de pieza. Montar un filtro de aire
@@ -98,27 +100,24 @@ export default function MontarConsumoModal({
             </Text>
           </Alert>
 
-          {isLoading ? (
-            <Group gap="xs">
-              <Loader size="xs" />
-              <Text size="sm" c="dimmed">Cargando los renglones de la unidad…</Text>
-            </Group>
-          ) : (
-            <Select
-              label="¿En qué posición se montó?"
-              description="Si el renglón ya trae una refacción, esta la reemplaza."
-              placeholder={
-                opciones.length
-                  ? 'Selecciona la posición'
-                  : 'Esta unidad no pide ninguna pieza de este tipo'
-              }
-              data={opciones}
-              value={renglon}
-              onChange={setRenglon}
-              disabled={opciones.length === 0}
-              searchable
-            />
-          )}
+          {/* El campo se pinta siempre, también mientras cargan los renglones:
+              antes se cambiaba por un "Cargando…" que, si la consulta fallaba,
+              se quedaba en un selector vacío sin explicación ni reintento. */}
+          <SelectCatalogo
+            estado={renglonesQuery}
+            nombre="renglones de la unidad"
+            label="¿En qué posición se montó?"
+            description="Si el renglón ya trae una refacción, esta la reemplaza."
+            placeholder={
+              opciones.length
+                ? 'Selecciona la posición'
+                : 'Esta unidad no pide ninguna pieza de este tipo'
+            }
+            data={opciones}
+            value={renglon}
+            onChange={setRenglon}
+            disabled={!isLoading && !renglonesQuery.isError && opciones.length === 0}
+          />
 
           {!isLoading && opciones.length === 0 && (
             <Text size="xs" c="dimmed">

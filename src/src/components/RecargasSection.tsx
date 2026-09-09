@@ -9,7 +9,7 @@
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Divider, Loader, Center, Alert, Button,
-  ActionIcon, Modal, Tooltip, NumberInput, Select, Badge, Accordion,
+  ActionIcon, Modal, Tooltip, NumberInput, Badge, Accordion,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
@@ -22,6 +22,7 @@ import { useConductores } from '../hooks/useConductores'
 import { useValesGasolina } from '../hooks/useValesGasolina'
 import { KM_MAX, validarKm } from '../lib/validaciones'
 import { FechaInput } from './FechaInput'
+import SelectCatalogo from './SelectCatalogo'
 import ConfirmarAvanceKm from './ConfirmarAvanceKm'
 import { avanzaOdometro } from '../lib/odometro'
 import { formatLitros as fmtLitros } from '../lib/formato'
@@ -172,9 +173,15 @@ function RecargaForm({
   onCancel: () => void
 }) {
   const hoy = todayIso()
-  const { data: gasData } = useGasolineras()
-  const { data: conData } = useConductores()
-  const { data: valesData } = useValesGasolina()
+  // Los catálogos completos: hace falta separar "viene en camino" de "se cayó",
+  // porque los dos dejaban el selector vacío diciendo "no hay ninguna
+  // registrada", que con internet malo era mentira.
+  const gasQuery   = useGasolineras()
+  const conQuery   = useConductores()
+  const valesQuery = useValesGasolina()
+  const gasData   = gasQuery.data
+  const conData   = conQuery.data
+  const valesData = valesQuery.data
 
   const gasolineras = (gasData?.data ?? []).map((g) => ({
     value: String(g.id),
@@ -250,41 +257,46 @@ function RecargaForm({
     <>
     <form onSubmit={form.onSubmit(handleSubmit)}>
       <Stack gap="sm">
-        <Select
+        <SelectCatalogo
+          estado={gasQuery}
+          nombre="gasolineras"
           label="Gasolinera"
           placeholder={gasolineras.length ? 'Selecciona una gasolinera' : 'No hay gasolineras registradas'}
           data={gasolineras}
-          searchable
           required
           {...form.getInputProps('gasolinera_id')}
         />
-        {gasolineras.length === 0 && (
+        {/* El "no hay ninguna" solo se dice cuando de verdad se sabe: mientras
+            carga —o si la consulta falló— la lista está vacía por otra razón. */}
+        {!gasQuery.isLoading && !gasQuery.isError && gasolineras.length === 0 && (
           <Text size="xs" c="dimmed">
             Da de alta las gasolineras en Catálogos → Gasolineras.
           </Text>
         )}
-        <Select
+        <SelectCatalogo
+          estado={conQuery}
+          nombre="conductores"
           label="Conductor"
           placeholder={conductores.length ? 'Selecciona un conductor' : 'No hay conductores registrados'}
           data={conductores}
-          searchable
           required
           {...form.getInputProps('conductor_id')}
         />
-        {conductores.length === 0 && (
+        {!conQuery.isLoading && !conQuery.isError && conductores.length === 0 && (
           <Text size="xs" c="dimmed">
             Da de alta los conductores en Catálogos → Conductores.
           </Text>
         )}
-        <Select
+        <SelectCatalogo
+          estado={valesQuery}
+          nombre="vales"
           label="Vale de gasolina"
           placeholder={vales.length ? 'Selecciona el vale usado' : 'No hay vales para este vehículo'}
           data={vales}
-          searchable
           required
           {...form.getInputProps('vale_id')}
         />
-        {vales.length === 0 && (
+        {!valesQuery.isLoading && !valesQuery.isError && vales.length === 0 && (
           <Text size="xs" c="dimmed">
             No hay vales libres de este vehículo. Registra uno en Vales de gasolina.
           </Text>
