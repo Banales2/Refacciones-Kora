@@ -27,12 +27,12 @@ import {
 
 export default function Proveedores() {
   const [createOpen, setCreateOpen]       = useState(false)
-  const [editProveedor, setEditProveedor] = useState<Proveedor |  // Proveedor cuyo detalle está abierto; null = la lista.
-  const [detalleId, setDetalleId] = useState<number | null>(null)
-  const [busqueda, setBusqueda] = useState('')
+  const [editProveedor, setEditProveedor] = useState<Proveedor | null>(null)
   const [deleteProveedor, setDeleteProveedor] = useState<Proveedor | null>(null)
   // Proveedor cuyo detalle está abierto; null = la lista.
   const [detalleId, setDetalleId] = useState<number | null>(null)
+  // Filtro de la barra de búsqueda del catálogo.
+  const [busqueda, setBusqueda] = useState('')
 
   const { data, isLoading, isError } = useProveedores()
   // La comparativa cruza todas las refacciones contra todos los proveedores. Se
