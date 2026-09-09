@@ -13,6 +13,7 @@ import {
 } from '../hooks/useRegistrosCambios'
 import type { RegistroCambio, Cambio } from '../hooks/useRegistrosCambios'
 import { FechaInput } from '../components/FechaInput'
+import SelectCatalogo from '../components/SelectCatalogo'
 
 const TAMANO = 50
 
@@ -184,7 +185,8 @@ export default function RegistrosCambios() {
   const [debouncedTexto]      = useDebouncedValue(texto, 300)
   const [detalle, setDetalle] = useState<RegistroCambio | null>(null)
 
-  const { data: opciones } = useFiltrosRegistros()
+  const opcionesQuery = useFiltrosRegistros()
+  const opciones = opcionesQuery.data
   const { data, isLoading, error } = useRegistrosCambios({
     usuario: usuario ?? undefined,
     accion:  accion ?? undefined,
@@ -237,7 +239,9 @@ export default function RegistrosCambios() {
           onChange={(e) => filtrar(setTexto)(e.currentTarget.value)}
           w={220}
         />
-        <Select
+        <SelectCatalogo
+          estado={opcionesQuery}
+          nombre="usuarios"
           label="Usuario"
           placeholder="Todos"
           clearable
@@ -263,11 +267,12 @@ export default function RegistrosCambios() {
           ]}
           w={150}
         />
-        <Select
+        <SelectCatalogo
+          estado={opcionesQuery}
+          nombre="módulos"
           label="Módulo"
           placeholder="Todos"
           clearable
-          searchable
           value={tabla}
           onChange={filtrar(setTabla)}
           data={(opciones?.tablas ?? []).map((t) => ({ value: t.tabla, label: t.etiqueta }))}

@@ -6,7 +6,7 @@
 // listas de toda la flota que no ayudan a decidir nada.
 import { useMemo, useState } from 'react'
 import {
-  Stack, Group, Title, Text, Select, Tabs, Table, Badge, Button, Alert, Center,
+  Stack, Group, Title, Text, Tabs, Table, Badge, Button, Alert, Center,
   Loader, Modal, NumberInput, Textarea, ActionIcon, Paper,
 } from '@mantine/core'
 import { IconArrowsExchange, IconPlus, IconTrash, IconAlertTriangle } from '@tabler/icons-react'
@@ -18,6 +18,7 @@ import {
 } from '../hooks/useInventario'
 import type { ExistenciaEnSucursal, MinimoSucursal } from '../hooks/useInventario'
 import { FechaInput } from '../components/FechaInput'
+import SelectCatalogo from '../components/SelectCatalogo'
 import { formatearFecha } from '../lib/fechas'
 
 const formatMXN = (n: number) =>
@@ -26,7 +27,8 @@ const formatMXN = (n: number) =>
 const hoy = () => new Date().toISOString().slice(0, 10)
 
 export default function Inventario() {
-  const { data: sucData, isLoading: cargandoSuc } = useSucursales()
+  const sucQuery = useSucursales()
+  const { data: sucData, isLoading: cargandoSuc } = sucQuery
   const sucursales = useMemo(() => sucData?.data ?? [], [sucData])
 
   // Sin sucursal elegida no se asume ninguna: elegir por el usuario haría que
@@ -60,13 +62,14 @@ export default function Inventario() {
             Qué refacciones hay en cada sucursal y de qué compra salieron.
           </Text>
         </Stack>
-        <Select
+        <SelectCatalogo
+          estado={sucQuery}
+          nombre="sucursales"
           label="Sucursal"
           placeholder="Selecciona una sucursal"
           data={sucursales.map((s) => ({ value: String(s.id), label: s.nombre }))}
           value={sucursalId}
           onChange={setSucursalId}
-          searchable
           w={260}
         />
       </Group>
@@ -371,7 +374,8 @@ function TraspasoModal({
   existencia: ExistenciaEnSucursal
   onClose: () => void
 }) {
-  const { data: sucData } = useSucursales()
+  const sucQuery = useSucursales()
+  const sucData = sucQuery.data
   const crearMut = useCreateTraspaso()
 
   const [destino, setDestino] = useState<string | null>(null)
@@ -412,13 +416,14 @@ function TraspasoModal({
           </Text>
         </Paper>
 
-        <Select
+        <SelectCatalogo
+          estado={sucQuery}
+          nombre="sucursales"
           label="Sucursal de destino"
           placeholder="A dónde se mueven"
           data={destinos}
           value={destino}
           onChange={setDestino}
-          searchable
           required
           nothingFoundMessage="No hay otra sucursal dada de alta"
         />
@@ -456,7 +461,8 @@ function TraspasoModal({
 }
 
 function MinimoModal({ sucursalId, onClose }: { sucursalId: number; onClose: () => void }) {
-  const { data: piezasData } = useTodasLasPiezas()
+  const piezasQuery = useTodasLasPiezas()
+  const piezasData = piezasQuery.data
   const crearMut = useCreateMinimo()
 
   const [piezaId, setPiezaId] = useState<string | null>(null)
@@ -484,14 +490,15 @@ function MinimoModal({ sucursalId, onClose }: { sucursalId: number; onClose: () 
   return (
     <Modal opened onClose={onClose} title="Mínimo de una refacción" size="md">
       <Stack gap="sm">
-        <Select
+        <SelectCatalogo
+          estado={piezasQuery}
+          nombre="refacciones"
           label="Refacción"
           description="La refacción exacta que esta sucursal debe tener lista, no solo una de su tipo."
           placeholder="Selecciona la refacción"
           data={opciones}
           value={piezaId}
           onChange={setPiezaId}
-          searchable
           required
         />
         <NumberInput

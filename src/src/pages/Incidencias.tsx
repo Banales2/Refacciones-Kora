@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert, Badge, Button, ActionIcon,
-  Modal, Select, TextInput, Tooltip, SegmentedControl, Grid, Divider, Anchor,
+  Modal, TextInput, Tooltip, SegmentedControl, Grid, Divider, Anchor,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
@@ -27,6 +27,7 @@ import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer
 import MantenimientoForm from '../components/MantenimientoForm'
 import type { DeshacerAtencion } from './Vehiculos'
 import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
+import SelectCatalogo from '../components/SelectCatalogo'
 
 function fmtFechaHora(fecha: string, hora: string | null) {
   const f = new Date(`${fecha.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
@@ -50,7 +51,8 @@ export default function Incidencias({ onNavigateVehiculo }: {
   onNavigateVehiculo?: (vehiculoId: number) => void
 }) {
   const { data, isLoading, isError } = useIncidencias()
-  const { data: vehiculosData } = useVehiculos()
+  const vehiculosQuery = useVehiculos()
+  const vehiculosData = vehiculosQuery.data
 
   const [filtro, setFiltro]       = useState<'abiertas' | 'todas'>('abiertas')
   const [busqueda, setBusqueda]   = useState('')
@@ -365,11 +367,12 @@ export default function Incidencias({ onNavigateVehiculo }: {
         title="Nueva incidencia" centered size="md"
       >
         <Stack gap="sm">
-          <Select
+          <SelectCatalogo
+            estado={vehiculosQuery}
+            nombre="vehículos"
             label="Vehículo" required
             placeholder="¿De qué unidad es la incidencia?"
             data={vehiculoOptions}
-            searchable
             value={vehiculoNueva}
             onChange={setVehiculoNueva}
           />

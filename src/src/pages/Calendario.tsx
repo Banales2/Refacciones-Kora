@@ -48,6 +48,7 @@ import type { MantenimientoPayload } from '../hooks/useMantenimientos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import { avisarMontajes } from '../lib/montajes'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
+import SelectCatalogo from '../components/SelectCatalogo'
 
 interface VehiculoConServicios {
   vehiculo_id:     number
@@ -295,7 +296,8 @@ function AgendaForm({
 
   // El técnico se elige del catálogo y se guarda por id. Los dados de alta desde
   // aquí se agregan a mano porque el catálogo todavía puede estar refrescándose.
-  const { data: tecnicosData } = useTecnicos()
+  const tecnicosQuery = useTecnicos()
+  const tecnicosData = tecnicosQuery.data
   const [nuevoTecnicoOpen, setNuevoTecnicoOpen] = useState(false)
   const [tecnicosNuevos, setTecnicosNuevos] = useState<Tecnico[]>([])
   const tecnicoOptions = useMemo(() => {
@@ -361,11 +363,12 @@ function AgendaForm({
           onChange={(v) => form.setFieldValue('tipo', v ?? '')}
         />
         <div>
-          <Select
+          <SelectCatalogo
+            estado={tecnicosQuery}
+            nombre="técnicos"
             label="Técnico" required
             placeholder="Selecciona un técnico"
             data={tecnicoOptions}
-            searchable
             nothingFoundMessage='Sin coincidencias: usa "Nuevo técnico"'
             {...form.getInputProps('tecnico_id')}
             onChange={(v) => form.setFieldValue('tecnico_id', v ?? '')}
