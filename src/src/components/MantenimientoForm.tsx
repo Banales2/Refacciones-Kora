@@ -19,8 +19,7 @@ import { useForm } from '@mantine/form'
 import { IconTrash, IconPlus } from '@tabler/icons-react'
 import { FechaInput } from './FechaInput'
 import ConfirmarAvanceKm from './ConfirmarAvanceKm'
-import NuevaRefaccionModal from './NuevaRefaccionModal'
-import NuevoLoteModal from './NuevoLoteModal'
+import CompraModal from './CompraModal'
 import NuevoTecnicoModal from './NuevoTecnicoModal'
 import { avanzaOdometro } from '../lib/odometro'
 import { formatMXN } from '../lib/formato'
@@ -176,10 +175,9 @@ export default function MantenimientoForm({
   const isEdit = !!initial
   const { data: lotesData } = useLotesDisponibles(!isEdit)
 
-  // Refacciones dadas de alta desde este mismo formulario: se agregan a mano
-  // porque la lista de lotes disponibles todavía puede estar refrescándose.
-  const [nuevaRefOpen, setNuevaRefOpen] = useState(false)
-  const [nuevoLoteOpen, setNuevoLoteOpen] = useState(false)
+  // Refacciones compradas desde este mismo formulario: se agregan a mano porque
+  // la lista de lotes disponibles todavía puede estar refrescándose.
+  const [compraOpen, setCompraOpen] = useState(false)
   const [lotesNuevos, setLotesNuevos] = useState<LoteDisponible[]>([])
   const lotes = useMemo(() => {
     const base = lotesData?.data ?? []
@@ -284,15 +282,18 @@ export default function MantenimientoForm({
     form.setFieldValue('tecnico_id', String(tecnico.id))
   }
 
-  // Alta encadenada refacción → lote → proveedor: al terminar, la refacción
-  // nueva entra ya capturada como un renglón más del mantenimiento. Lo mismo
-  // vale para un lote suelto de una refacción que ya existía.
-  function handleRefaccionCreada(lote: LoteDisponible) {
-    setLotesNuevos((prev) => [...prev, lote])
-    form.insertListItem('piezas', {
-      lote_id: String(lote.id), sucursal_id: String(lote.sucursal_id),
-      cantidad: 1, costo_unitario: lote.costo_unitario,
-    })
+  // La compra que se acaba de registrar entra ya capturada: cada refacción de
+  // la factura queda como un renglón más del mantenimiento. Se compró para esta
+  // reparación, así que darla de alta y volver a buscarla en el selector sería
+  // hacer dos veces el mismo trabajo.
+  function handleCompraRegistrada(lotes: LoteDisponible[]) {
+    setLotesNuevos((prev) => [...prev, ...lotes])
+    for (const lote of lotes) {
+      form.insertListItem('piezas', {
+        lote_id: String(lote.id), sucursal_id: String(lote.sucursal_id),
+        cantidad: 1, costo_unitario: lote.costo_unitario,
+      })
+    }
   }
 
   const totalPiezas = piezas.reduce(
@@ -535,10 +536,10 @@ export default function MantenimientoForm({
               </Stack>
             )}
 
-            {/* Los tres botones tocan el inventario de formas distintas, así que
-                se nombran por lo que hacen con él: gastarlo, surtirlo o darle
-                algo que no tenía. El normal va solo en su renglón; los otros dos
-                quedan abajo, como la salida para cuando ese no alcanza. */}
+            {/* Los dos botones tocan el inventario de formas distintas, así que
+                se nombran por lo que hacen con él: gastarlo o surtirlo. El
+                normal va solo en su renglón; el otro queda abajo, como la salida
+                para cuando ese no alcanza. */}
             <Stack gap={8}>
               <Group justify="space-between">
                 <Button
@@ -556,25 +557,17 @@ export default function MantenimientoForm({
                 )}
               </Group>
 
-              {/* Etiquetas cortas y sin envolver: con los textos largos el
-                  segundo botón se iba al renglón de abajo. Los tooltips llevan
-                  la explicación completa. */}
               <Group gap={6} align="center" wrap="nowrap">
                 <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>¿No aparece?</Text>
-                <Tooltip label="La refacción existe pero se quedó sin existencias: registra la compra que la surte">
+                <Tooltip
+                  multiline w={280}
+                  label="Registra la factura de la compra, con todas las refacciones que traiga. Las que no estén en el catálogo se dan de alta ahí mismo."
+                >
                   <Button
                     variant="subtle" size="compact-xs" leftSection={<IconPlus size={12} />}
-                    onClick={() => setNuevoLoteOpen(true)}
+                    onClick={() => setCompraOpen(true)}
                   >
                     Registrar compra
-                  </Button>
-                </Tooltip>
-                <Tooltip label="La refacción no está en el catálogo todavía: se da de alta junto con su primera compra">
-                  <Button
-                    variant="subtle" size="compact-xs" leftSection={<IconPlus size={12} />}
-                    onClick={() => setNuevaRefOpen(true)}
-                  >
-                    Dar de alta
                   </Button>
                 </Tooltip>
               </Group>
@@ -589,18 +582,12 @@ export default function MantenimientoForm({
       </Stack>
     </form>
 
-    {/* Alta encadenada: refacción → su primer lote → proveedor si hace falta. */}
-    <NuevaRefaccionModal
-      opened={nuevaRefOpen}
-      onClose={() => setNuevaRefOpen(false)}
-      onCreated={handleRefaccionCreada}
-    />
-
-    {/* Refacción que ya existe pero se quedó sin existencias: solo el lote. */}
-    <NuevoLoteModal
-      opened={nuevoLoteOpen}
-      onClose={() => setNuevoLoteOpen(false)}
-      onCreated={handleRefaccionCreada}
+    {/* Una factura con todas sus partidas: las del catálogo y las que se dan de
+        alta en el propio renglón. */}
+    <CompraModal
+      opened={compraOpen}
+      onClose={() => setCompraOpen(false)}
+      onCreated={handleCompraRegistrada}
     />
 
     <NuevoTecnicoModal

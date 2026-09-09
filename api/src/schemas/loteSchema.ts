@@ -4,7 +4,7 @@ import { TEXTO_SIMPLE } from './common'
 // Quién hizo la compra. Es un empleado, no un catálogo: texto libre acotado.
 // `autorizado_por` no aparece en ningún schema a propósito: no se recibe del
 // cliente ni se edita, la API lo toma de la cuenta que registra el lote.
-const compradoPor = z
+export const compradoPor = z
   .string()
   .trim()
   .min(1, 'Requerido')
@@ -17,10 +17,32 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-const fechaCompra = z
+export const fechaCompra = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato inválido (YYYY-MM-DD)')
   .refine((v) => v <= todayIso(), 'No puede ser una fecha futura')
+
+// El folio de la factura de compra. La diagonal es común en ellos
+// ("A-123/2026"), así que va permitida.
+export const numFactura = z
+  .string()
+  .trim()
+  .min(1, 'Núm. factura requerido')
+  .max(30, 'Máximo 30 caracteres')
+  .regex(/^[A-Za-z0-9/-]+$/, 'Solo letras, números, guiones y diagonales')
+
+// Cuánto y a qué precio entró de una refacción. Lo comparten el alta de un lote
+// suelto y cada renglón de una compra de varias refacciones.
+export const cantidadInicial = z.coerce
+  .number()
+  .int()
+  .min(1, 'Mínimo 1 unidad')
+  .max(999, 'Máximo 999 unidades')
+
+export const costoUnitario = z.coerce
+  .number()
+  .positive('Debe ser mayor a 0')
+  .max(200000, 'No puede ser mayor a 200,000')
 
 export const LoteCreateSchema = z.object({
   proveedor_id: z.coerce.number().int().min(1, 'Proveedor requerido'),
@@ -29,47 +51,18 @@ export const LoteCreateSchema = z.object({
   // inventario. Repartirlo entre sucursales es un traspaso posterior.
   sucursal_id: z.coerce.number().int().min(1, 'Sucursal requerida'),
   fecha_compra: fechaCompra,
-  costo_unitario: z.coerce
-    .number()
-    .positive('Debe ser mayor a 0')
-    .max(200000, 'No puede ser mayor a 200,000'),
-  cantidad_inicial: z.coerce
-    .number()
-    .int()
-    .min(1, 'Mínimo 1 unidad')
-    .max(999, 'Máximo 999 unidades'),
-  num_factura: z
-    .string()
-    .trim()
-    .min(1, 'Núm. factura requerido')
-    .max(30, 'Máximo 30 caracteres')
-    // La diagonal es común en los folios ("A-123/2026"), así que va permitida.
-    .regex(/^[A-Za-z0-9/-]+$/, 'Solo letras, números, guiones y diagonales'),
+  costo_unitario: costoUnitario,
+  cantidad_inicial: cantidadInicial,
+  num_factura: numFactura,
   comprado_por: compradoPor,
 })
 
 export const LoteUpdateSchema = z.object({
   proveedor_id: z.coerce.number().int().min(1).optional(),
   fecha_compra: fechaCompra.optional(),
-  costo_unitario: z.coerce
-    .number()
-    .positive('Debe ser mayor a 0')
-    .max(200000, 'No puede ser mayor a 200,000')
-    .optional(),
-  cantidad_inicial: z.coerce
-    .number()
-    .int()
-    .min(1, 'Mínimo 1 unidad')
-    .max(999, 'Máximo 999 unidades')
-    .optional(),
-  num_factura: z
-    .string()
-    .trim()
-    .min(1, 'Núm. factura requerido')
-    .max(30, 'Máximo 30 caracteres')
-    // La diagonal es común en los folios ("A-123/2026"), así que va permitida.
-    .regex(/^[A-Za-z0-9/-]+$/, 'Solo letras, números, guiones y diagonales')
-    .optional(),
+  costo_unitario: costoUnitario.optional(),
+  cantidad_inicial: cantidadInicial.optional(),
+  num_factura: numFactura.optional(),
   comprado_por: compradoPor.optional(),
 })
 

@@ -2,8 +2,8 @@
 //
 // Se abre desde el registro de un precio de proveedor: cotizar no es comprar,
 // así que aquí la refacción se da de alta sola, sin lote. Es la diferencia con
-// NuevaRefaccionModal, que encadena la primera compra porque un mantenimiento
-// consume de un lote.
+// CompraModal, donde la refacción nueva nace con la compra que la surte porque
+// un mantenimiento consume de un lote.
 import { Modal } from '@mantine/core'
 import { useCreateRefaccion } from '../hooks/useRefacciones'
 import type { Pieza } from '../hooks/useRefacciones'
