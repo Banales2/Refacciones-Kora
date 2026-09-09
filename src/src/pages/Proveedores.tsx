@@ -8,10 +8,11 @@
 import { useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert,
-  Button, ActionIcon, Modal, Menu, Tooltip,
+  Button, ActionIcon, Modal, Menu, Tooltip, TextInput,
 } from '@mantine/core'
 import {
   IconPencil, IconTrash, IconPlus, IconFileTypePdf, IconFileSpreadsheet, IconScale,
+  IconSearch,
 } from '@tabler/icons-react'
 import {
   useProveedores, useCreateProveedor, useUpdateProveedor, useDeleteProveedor,
@@ -26,7 +27,9 @@ import {
 
 export default function Proveedores() {
   const [createOpen, setCreateOpen]       = useState(false)
-  const [editProveedor, setEditProveedor] = useState<Proveedor | null>(null)
+  const [editProveedor, setEditProveedor] = useState<Proveedor |  // Proveedor cuyo detalle está abierto; null = la lista.
+  const [detalleId, setDetalleId] = useState<number | null>(null)
+  const [busqueda, setBusqueda] = useState('')
   const [deleteProveedor, setDeleteProveedor] = useState<Proveedor | null>(null)
   // Proveedor cuyo detalle está abierto; null = la lista.
   const [detalleId, setDetalleId] = useState<number | null>(null)
@@ -63,17 +66,35 @@ export default function Proveedores() {
     return <ProveedorDetalle proveedor={detalle} onBack={() => setDetalleId(null)} />
   }
 
+  // El catálogo cabe entero en memoria, así que el filtro es local: responde
+  // sin ir al servidor en cada tecla, y busca en lo mismo que muestra la tabla.
+  const q = busqueda.trim().toLowerCase()
+  const visibles = q === ''
+    ? proveedores
+    : proveedores.filter((p) =>
+        [p.nombre, p.contacto, p.telefono].some((x) => x?.toLowerCase().includes(q))
+      )
+
   return (
     <>
       <Stack gap="md">
         {/* El título lo pone Catálogos (SitiosYRutas); aquí sólo el conteo y el
             alta, como en los demás paneles. */}
-        <Group justify="space-between">
+        <Group justify="space-between" wrap="wrap" gap="sm">
           {proveedores.length > 0 ? (
             <Text size="sm" c="dimmed">
-              {proveedores.length} proveedores · abre uno para ver y comparar sus precios
+              {q === ''
+                ? `${proveedores.length} proveedores · abre uno para ver y comparar sus precios`
+                : `${visibles.length} de ${proveedores.length} proveedores`}
             </Text>
           ) : <span />}
+          <TextInput
+            placeholder="Buscar proveedor, contacto o teléfono…"
+            leftSection={<IconSearch size={16} />}
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.currentTarget.value)}
+            w={280}
+          />
           <Group gap="xs">
             {/* La comparativa vive junto al catalogo de proveedores y no dentro
                 de uno: comparar precios es justamente mirar a todos a la vez. */}
@@ -131,9 +152,13 @@ export default function Proveedores() {
           <Alert color="red" title="Error al cargar">
             No se pudieron obtener los proveedores. Verifica la conexión.
           </Alert>
-        ) : proveedores.length === 0 ? (
+        ) : visibles.length === 0 ? (
           <Center py="xl">
-            <Text c="dimmed">No hay proveedores registrados.</Text>
+            <Text c="dimmed">
+              {proveedores.length === 0
+                ? 'No hay proveedores registrados.'
+                : 'Ningún proveedor coincide con la búsqueda.'}
+            </Text>
           </Center>
         ) : (
           <Table.ScrollContainer minWidth={560}>
@@ -147,7 +172,7 @@ export default function Proveedores() {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {proveedores.map((p) => (
+                {visibles.map((p) => (
                   <Table.Tr
                     key={p.id}
                     onClick={() => setDetalleId(p.id)}
