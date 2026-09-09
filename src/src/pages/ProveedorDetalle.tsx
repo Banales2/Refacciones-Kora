@@ -214,9 +214,43 @@ function agruparPorAnio(gastos: GastoProveedor[]): AnioDeGastos[] {
   return [...map.values()]
 }
 
+// Dentro de cada año las compras se seccionan por factura. Un lote suelto no es
+// la unidad con la que se revisa el gasto contra contabilidad ni con la que se
+// reclama al proveedor; el documento sí, y una factura casi siempre trae varias
+// refacciones. Las compras sin factura registrada no son un documento, así que
+// se juntan en un bloque aparte al final en vez de fingir que lo son.
+type FacturaDeGastos = {
+  /** null = compras sin factura registrada. */
+  folio:   string | null
+  total:   number
+  compras: GastoProveedor[]
+}
+
+function agruparPorFactura(compras: GastoProveedor[]): FacturaDeGastos[] {
+  const map = new Map<string, FacturaDeGastos>()
+  for (const c of compras) {
+    const folio = c.num_factura ?? null
+    // El prefijo evita que un folio llamado "sin-factura" caiga en el bloque
+    // de las compras que no la tienen.
+    const clave = folio === null ? 'sin-factura' : `f:${folio}`
+    const entry = map.get(clave) ?? { folio, total: 0, compras: [] }
+    entry.total += c.total
+    entry.compras.push(c)
+    map.set(clave, entry)
+  }
+  const facturas = [...map.values()]
+  // Las compras vienen de la más reciente a la más vieja, así que las facturas
+  // salen en ese mismo orden; el bloque sin factura se va hasta el final.
+  return [
+    ...facturas.filter((x) => x.folio !== null),
+    ...facturas.filter((x) => x.folio === null),
+  ]
+}
+
+// La columna de factura ya no va en la tabla: es el encabezado del bloque.
 function GastosTabla({ compras }: { compras: GastoProveedor[] }) {
   return (
-    <Table.ScrollContainer minWidth={720}>
+    <Table.ScrollContainer minWidth={620}>
       <Table striped withTableBorder verticalSpacing={4}>
         <Table.Thead>
           <Table.Tr>
@@ -225,7 +259,6 @@ function GastosTabla({ compras }: { compras: GastoProveedor[] }) {
             <Table.Th style={{ width: 80, textAlign: 'right' }}>Cant.</Table.Th>
             <Table.Th style={{ width: 110, textAlign: 'right' }}>Unitario</Table.Th>
             <Table.Th style={{ width: 120, textAlign: 'right' }}>Total</Table.Th>
-            <Table.Th style={{ width: 130 }}>Factura</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -247,16 +280,39 @@ function GastosTabla({ compras }: { compras: GastoProveedor[] }) {
               <Table.Td style={{ textAlign: 'right' }}>
                 <Text size="sm" fw={600}>{formatMXN(c.total)}</Text>
               </Table.Td>
-              <Table.Td>
-                <Text size="xs" c={c.num_factura ? undefined : 'dimmed'}>
-                  {c.num_factura ?? 'Sin factura'}
-                </Text>
-              </Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>
       </Table>
     </Table.ScrollContainer>
+  )
+}
+
+function FacturaBloque({ factura }: { factura: FacturaDeGastos }) {
+  // La compra más reciente del bloque ubica la factura en el tiempo; con una
+  // sola fecha basta, porque los renglones de una factura son del mismo día.
+  const fecha = factura.compras[0]?.fecha_compra
+  return (
+    <Paper withBorder radius="sm" p="xs">
+      <Group justify="space-between" wrap="wrap" gap="xs" mb="xs">
+        <Group gap="xs" wrap="nowrap">
+          <IconReceipt size={14} />
+          {factura.folio ? (
+            <Text size="sm" fw={600}>Factura {factura.folio}</Text>
+          ) : (
+            <Text size="sm" fw={600} c="dimmed">Sin factura</Text>
+          )}
+          {fecha && <Text size="xs" c="dimmed">{formatFecha(fecha)}</Text>}
+        </Group>
+        <Group gap="sm" wrap="nowrap">
+          <Text size="xs" c="dimmed">
+            {factura.compras.length} renglón{factura.compras.length !== 1 ? 'es' : ''}
+          </Text>
+          <Text size="sm" fw={600}>{formatMXN(factura.total)}</Text>
+        </Group>
+      </Group>
+      <GastosTabla compras={factura.compras} />
+    </Paper>
   )
 }
 
@@ -380,24 +436,34 @@ function GastosPanel({ proveedor }: { proveedor: Proveedor }) {
 
       {/* Un año por bloque, el más reciente abierto: es donde se mira primero. */}
       <Accordion variant="separated" multiple defaultValue={[anios[0].anio]}>
-        {anios.map((a) => (
-          <Accordion.Item key={a.anio} value={a.anio}>
-            <Accordion.Control>
-              <Group justify="space-between" wrap="nowrap" pr="sm">
-                <Text size="sm" fw={500}>{a.anio}</Text>
-                <Group gap="sm" wrap="nowrap">
-                  <Text size="xs" c="dimmed">
-                    {a.compras.length} compra{a.compras.length !== 1 ? 's' : ''}
-                  </Text>
-                  <Text size="sm" fw={600}>{formatMXN(a.total)}</Text>
+        {anios.map((a) => {
+          const facturas = agruparPorFactura(a.compras)
+          // El bloque sin factura no es un documento: no se cuenta como factura.
+          const conFolio = facturas.filter((x) => x.folio !== null).length
+          return (
+            <Accordion.Item key={a.anio} value={a.anio}>
+              <Accordion.Control>
+                <Group justify="space-between" wrap="nowrap" pr="sm">
+                  <Text size="sm" fw={500}>{a.anio}</Text>
+                  <Group gap="sm" wrap="nowrap">
+                    <Text size="xs" c="dimmed">
+                      {conFolio > 0 && `${conFolio} factura${conFolio !== 1 ? 's' : ''} · `}
+                      {a.compras.length} compra{a.compras.length !== 1 ? 's' : ''}
+                    </Text>
+                    <Text size="sm" fw={600}>{formatMXN(a.total)}</Text>
+                  </Group>
                 </Group>
-              </Group>
-            </Accordion.Control>
-            <Accordion.Panel>
-              <GastosTabla compras={a.compras} />
-            </Accordion.Panel>
-          </Accordion.Item>
-        ))}
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Stack gap="sm">
+                  {facturas.map((x) => (
+                    <FacturaBloque key={x.folio ?? 'sin-factura'} factura={x} />
+                  ))}
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          )
+        })}
       </Accordion>
         </>
       )}
