@@ -42,6 +42,27 @@ export default function Inventario() {
 
   if (cargandoSuc) return <Center py="xl"><Loader /></Center>
 
+  // Antes que el "no hay ninguna": si la consulta se cayó, la lista está vacía
+  // porque no llegó, no porque no existan. Mandar a dar de alta una sucursal
+  // que ya está dada de alta es el peor final posible para un internet malo.
+  if (sucQuery.isError) {
+    return (
+      <Stack gap="md">
+        <Title order={2}>Inventario</Title>
+        <Alert color="red" title="No se pudo cargar la lista de sucursales">
+          <Stack gap="xs" align="flex-start">
+            <Text size="sm">
+              Revisa tu conexión. Tus datos están a salvo: no se ha perdido nada.
+            </Text>
+            <Button size="xs" variant="light" onClick={() => sucQuery.refetch()}>
+              Reintentar
+            </Button>
+          </Stack>
+        </Alert>
+      </Stack>
+    )
+  }
+
   if (sucursales.length === 0) {
     return (
       <Stack gap="md">

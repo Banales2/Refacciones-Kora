@@ -119,7 +119,9 @@ export default function MontarConsumoModal({
             disabled={!isLoading && !renglonesQuery.isError && opciones.length === 0}
           />
 
-          {!isLoading && opciones.length === 0 && (
+          {/* Mismo cuidado: sin renglones porque no los pide la unidad, no
+              porque la consulta se haya caído. */}
+          {!isLoading && !renglonesQuery.isError && opciones.length === 0 && (
             <Text size="xs" c="dimmed">
               Agrega el tipo de pieza a la unidad (o a su modelo) para poder montarla aquí.
             </Text>

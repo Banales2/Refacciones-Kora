@@ -331,7 +331,11 @@ export default function MontajePiezaModal({
                   disabled={!dispQuery.isError && opcionesExistencia.length === 0}
                   clearable
                 />
-                {opcionesExistencia.length === 0 && (
+                {/* El consejo solo aplica si de verdad no hay existencias. Con
+                    la consulta caída la lista está vacía por otra razón, y
+                    mandar a registrar una compra que ya existe es peor que
+                    callar. */}
+                {!dispQuery.isError && opcionesExistencia.length === 0 && (
                   <Text size="xs" c="dimmed">
                     Registra la compra con la que llegó esta pieza, o móntala sin descontar.
                   </Text>
