@@ -18,16 +18,21 @@ class ApiError extends Error {
 }
 
 /**
- * Tope de espera de una llamada. Generoso a propósito: con la API dormida
- * (Azure la apaga si nadie la usa) y una conexión mala, una consulta puede
- * tardar de verdad, y cortarla a los 10 segundos convierte "lento" en "roto".
+ * Tope de espera de una llamada. Holgado a propósito: con la API dormida
+ * (Azure la apaga si nadie la usa) y una conexión mala, una consulta tarda de
+ * verdad, y cortarla a los 10 segundos convierte "lento" en "roto".
  *
  * Existe porque sin él una conexión que se cae sin avisar deja el fetch colgado
  * para siempre: nunca falla, así que nunca se reintenta y el formulario se
  * queda vacío hasta que el usuario cierra la pantalla. Con el tope falla, se
  * reintenta solo, y casi siempre la segunda entra.
+ *
+ * El número sale de medir el caso peor —una conexión que acepta y no contesta—
+ * contra los reintentos de React Query (ver main.tsx): con 60 s el campo se
+ * quedaba 5 min y medio diciendo "Cargando…" antes de rendirse. Con 30 s son
+ * unos 165 s, que sigue dando margen de sobra a una consulta lenta de verdad.
  */
-const TIMEOUT_MS = 60_000
+const TIMEOUT_MS = 30_000
 
 /** El status que se le da a lo que nunca llegó a la API. */
 export const SIN_RESPUESTA = 0
