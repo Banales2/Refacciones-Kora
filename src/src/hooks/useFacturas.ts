@@ -94,12 +94,20 @@ export interface FacturaFolioPayload {
   num_factura:       string
   proveedor_id:      number
   nuevo_num_factura: string
+  /**
+   * Usar un folio que ese proveedor ya tiene, a sabiendas: las dos compras
+   * quedan como una sola factura. Sin esto la API responde 409 con el código
+   * FOLIO_EXISTENTE, que es la señal para preguntarle al usuario.
+   */
+  confirmar_fusion?: boolean
 }
+
+/** El 409 que pide confirmar antes de juntar dos compras en una factura. */
+export const FOLIO_EXISTENTE = 'FOLIO_EXISTENTE'
 
 /**
  * Corrige el folio mal capturado de la compra, reescribiéndolo en todos sus
- * lotes. La API rechaza un folio que ese mismo proveedor ya use: sería fusionar
- * dos compras, no corregir una.
+ * lotes.
  */
 export function useSetFolioFactura() {
   const qc = useQueryClient()
@@ -112,6 +120,26 @@ export function useSetFolioFactura() {
       qc.invalidateQueries({ queryKey: ['facturas'] })
       // El folio se ve en el drawer de la refacción, en el inventario y en las
       // compras del proveedor: todas esas listas traen el viejo.
+      qc.invalidateQueries({ queryKey: ['lotes'] })
+      qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
+      qc.invalidateQueries({ queryKey: ['inventario-existencias'] })
+      qc.invalidateQueries({ queryKey: ['proveedor-gastos'] })
+    },
+  })
+}
+
+/**
+ * Cambia el folio de UN renglón. Es lo que permite sacar de la factura un lote
+ * que no pertenecía a ella —o que se juntó al fusionar dos compras— sin tocar
+ * los demás. Reusa el update del lote: el folio es un campo suyo.
+ */
+export function useSetFolioLote() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ lote_id, num_factura }: { lote_id: number; num_factura: string }) =>
+      api.put<{ data: { id: number } }>(`/lotes/${lote_id}`, { num_factura }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['facturas'] })
       qc.invalidateQueries({ queryKey: ['lotes'] })
       qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
       qc.invalidateQueries({ queryKey: ['inventario-existencias'] })

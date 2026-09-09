@@ -29,6 +29,13 @@ export const FacturaFolioSchema = z.object({
   num_factura: numFactura,
   proveedor_id: z.coerce.number().int().min(1, 'Proveedor requerido'),
   nuevo_num_factura: numFactura,
+  /**
+   * Sí, ya sé que el folio destino existe y aun así quiero usarlo: las dos
+   * compras van a quedar como una sola factura. Sin esta bandera el intento se
+   * rechaza — juntarlas es válido (un mismo papel capturado en dos tandas),
+   * pero no puede pasar por accidente al corregir una letra.
+   */
+  confirmar_fusion: z.boolean().optional().default(false),
 })
 
 export type FacturaQuery = z.infer<typeof FacturaQuerySchema>

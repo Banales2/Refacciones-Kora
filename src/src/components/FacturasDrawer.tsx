@@ -8,12 +8,15 @@
 import { useState } from 'react'
 import {
   Drawer, Stack, Group, Text, TextInput, Table, Loader, Center, Alert, Badge,
-  Accordion, Pagination, Switch, NumberInput, Button, Tooltip,
+  Accordion, Pagination, Switch, NumberInput, Button, Tooltip, Popover, ActionIcon,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconSearch, IconAlertTriangle } from '@tabler/icons-react'
-import { useFacturas, useSetIvaFactura, useSetFolioFactura } from '../hooks/useFacturas'
-import type { Factura } from '../hooks/useFacturas'
+import { IconSearch, IconAlertTriangle, IconPencil } from '@tabler/icons-react'
+import {
+  useFacturas, useSetIvaFactura, useSetFolioFactura, useSetFolioLote, FOLIO_EXISTENTE,
+} from '../hooks/useFacturas'
+import type { Factura, FacturaRenglon } from '../hooks/useFacturas'
+import { ApiError } from '../lib/api'
 import { FechaInput } from './FechaInput'
 import { formatMXN, formatFecha } from '../lib/formato'
 import { IVA_DEFAULT, importeIva } from '../lib/iva'
@@ -25,6 +28,11 @@ const PAGE_SIZE = 10
  * Corregir el folio mal tecleado de una factura. Se reescribe en todos sus
  * renglones a la vez: la factura ES el folio que comparten, y cambiárselo solo
  * a unos cuantos partiría la compra en dos facturas distintas.
+ *
+ * Si el folio que se escribe ya es de otra compra del mismo proveedor, la API
+ * no lo hace a la primera: responde FOLIO_EXISTENTE y aquí se pregunta, porque
+ * las dos van a quedar como una sola factura. Confirmado, se repite la llamada
+ * con la bandera. Para deshacerlo están los folios por renglón.
  */
 function FolioDeFactura({ factura }: { factura: Factura }) {
   const [folio, setFolio] = useState(factura.num_factura)
@@ -33,12 +41,19 @@ function FolioDeFactura({ factura }: { factura: Factura }) {
   const nuevo = normalizarFolio(folio)
   const cambiado = nuevo !== factura.num_factura
   const invalido = nuevo === ''
+  // La pregunta se arma con el error del intento anterior, no con un estado
+  // aparte: así desaparece sola en cuanto se vuelve a teclear o se reintenta.
+  const fusionPendiente =
+    mut.error instanceof ApiError && mut.error.code === FOLIO_EXISTENTE
+      ? mut.error.message
+      : null
 
-  function guardar() {
+  function guardar(confirmarFusion = false) {
     mut.mutate({
       num_factura:       factura.num_factura,
       proveedor_id:      factura.proveedor_id,
       nuevo_num_factura: nuevo,
+      confirmar_fusion:  confirmarFusion,
     })
   }
 
@@ -52,7 +67,11 @@ function FolioDeFactura({ factura }: { factura: Factura }) {
           style={{ flex: 1 }}
           value={folio}
           error={invalido ? 'Requerido' : undefined}
-          onChange={(e) => setFolio(limpiarFolio(e.currentTarget.value, 30))}
+          onChange={(e) => {
+            setFolio(limpiarFolio(e.currentTarget.value, 30))
+            // Lo tecleado ya no es lo que se preguntó: la pregunta se cae.
+            if (mut.error) mut.reset()
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && cambiado && !invalido) guardar()
           }}
@@ -62,17 +81,113 @@ function FolioDeFactura({ factura }: { factura: Factura }) {
           variant="light"
           disabled={!cambiado || invalido}
           loading={mut.isPending}
-          onClick={guardar}
+          onClick={() => guardar()}
         >
           {cambiado ? 'Guardar folio' : 'Sin cambios'}
         </Button>
       </Group>
-      {mut.error && (
+
+      {fusionPendiente ? (
+        <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
+          <Stack gap="xs">
+            <Text size="sm">
+              {fusionPendiente} Si es la misma factura capturada en dos partes, adelante;
+              si no, escribe otro folio. Después puedes volver a separar cualquier
+              renglón cambiándole el folio desde la tabla de arriba.
+            </Text>
+            <Group gap="xs">
+              <Button
+                size="xs" color="yellow"
+                loading={mut.isPending}
+                onClick={() => guardar(true)}
+              >
+                Sí, juntarlas en una factura
+              </Button>
+              <Button size="xs" variant="default" onClick={() => mut.reset()}>
+                Cancelar
+              </Button>
+            </Group>
+          </Stack>
+        </Alert>
+      ) : mut.error ? (
         <Alert color="red" title="No se pudo cambiar el folio">
           {(mut.error as Error).message}
         </Alert>
-      )}
+      ) : null}
     </Stack>
+  )
+}
+
+/**
+ * El folio de UN renglón. Sirve para lo contrario que el bloque de arriba:
+ * sacar de la factura el lote que no era de ella —o el que entró al juntar dos
+ * compras— sin tocar los demás. Al guardarlo el renglón desaparece de esta
+ * factura y aparece en la del folio que se le puso.
+ */
+function FolioDeLote({ renglon, folioActual }: {
+  renglon:     FacturaRenglon
+  folioActual: string
+}) {
+  const [abierto, setAbierto] = useState(false)
+  const [folio, setFolio] = useState('')
+  const mut = useSetFolioLote()
+
+  const nuevo = normalizarFolio(folio)
+  const listo = nuevo !== '' && nuevo !== folioActual
+
+  function abrir() {
+    setFolio(folioActual)
+    mut.reset()
+    setAbierto(true)
+  }
+
+  function guardar() {
+    mut.mutate(
+      { lote_id: renglon.lote_id, num_factura: nuevo },
+      { onSuccess: () => setAbierto(false) },
+    )
+  }
+
+  return (
+    <Popover
+      opened={abierto}
+      onDismiss={() => setAbierto(false)}
+      width={280} position="left" withArrow trapFocus
+    >
+      <Popover.Target>
+        <Tooltip label="Mover este renglón a otro folio">
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={abrir}>
+            <IconPencil size={15} />
+          </ActionIcon>
+        </Tooltip>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Stack gap="xs">
+          <TextInput
+            label="Folio de este renglón"
+            description="Solo cambia este lote; los demás se quedan en la factura."
+            size="xs"
+            data-autofocus
+            value={folio}
+            onChange={(e) => setFolio(limpiarFolio(e.currentTarget.value, 30))}
+            onKeyDown={(e) => { if (e.key === 'Enter' && listo) guardar() }}
+          />
+          {mut.error && (
+            <Alert color="red" p="xs">
+              <Text size="xs">{(mut.error as Error).message}</Text>
+            </Alert>
+          )}
+          <Group gap="xs" justify="flex-end">
+            <Button size="xs" variant="default" onClick={() => setAbierto(false)}>
+              Cancelar
+            </Button>
+            <Button size="xs" disabled={!listo} loading={mut.isPending} onClick={guardar}>
+              Mover
+            </Button>
+          </Group>
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
   )
 }
 
@@ -276,6 +391,7 @@ export default function FacturasDrawer({
                               <Table.Th style={{ textAlign: 'center' }}>Cant.</Table.Th>
                               <Table.Th style={{ textAlign: 'right' }}>Costo unit.</Table.Th>
                               <Table.Th style={{ textAlign: 'right' }}>Subtotal</Table.Th>
+                              <Table.Th w={40} />
                             </Table.Tr>
                           </Table.Thead>
                           <Table.Tbody>
@@ -290,6 +406,9 @@ export default function FacturasDrawer({
                                 <Table.Td style={{ textAlign: 'right' }}>{formatMXN(d.costo_unitario)}</Table.Td>
                                 <Table.Td style={{ textAlign: 'right' }}>
                                   {formatMXN(d.costo_unitario * d.cantidad_inicial)}
+                                </Table.Td>
+                                <Table.Td>
+                                  <FolioDeLote renglon={d} folioActual={f.num_factura} />
                                 </Table.Td>
                               </Table.Tr>
                             ))}

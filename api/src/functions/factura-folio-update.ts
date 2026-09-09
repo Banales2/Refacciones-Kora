@@ -26,7 +26,9 @@ export async function facturaFolioUpdate(
     const antes = new Map<number, Awaited<ReturnType<typeof capturar>>>()
     for (const id of ids) antes.set(id, await capturar('lotes_pieza', id))
 
-    await service.setFolio(body.num_factura, body.proveedor_id, body.nuevo_num_factura)
+    await service.setFolio(
+      body.num_factura, body.proveedor_id, body.nuevo_num_factura, body.confirmar_fusion,
+    )
 
     for (const id of ids) {
       await audit({
@@ -39,6 +41,7 @@ export async function facturaFolioUpdate(
         detalles: {
           num_factura: body.num_factura,
           nuevo_num_factura: body.nuevo_num_factura,
+          fusionada: body.confirmar_fusion,
           renglones_factura: ids.length,
         },
         ipAddress: getClientIp(request),

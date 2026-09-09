@@ -31,20 +31,31 @@ export async function setIva(
 }
 
 /**
- * Corrige el folio de una compra completa. Se niega a escribir sobre un folio
- * que el mismo proveedor ya usa: eso no sería corregir sino fusionar dos
- * compras, y no habría forma de volver a separarlas.
+ * Corrige el folio de una compra completa.
+ *
+ * Si el folio destino ya existe en ese proveedor, las dos compras quedan como
+ * una sola factura. Eso es legítimo —un mismo papel capturado en dos tandas—,
+ * pero no puede ocurrir por accidente al corregir una letra: hace falta
+ * `confirmar` para que pase. El código FOLIO_EXISTENTE es lo que el cliente
+ * usa para preguntar y reintentar.
+ *
+ * Juntarlas no es un camino sin retorno: cada renglón puede volver a salirse
+ * cambiándole el folio uno por uno (PUT /lotes/{id}).
  */
 export async function setFolio(
-  numFactura: string, proveedorId: number, nuevo: string,
+  numFactura: string, proveedorId: number, nuevo: string, confirmar = false,
 ): Promise<number> {
   if (nuevo === numFactura) return 0
-  if (await repo.existeFolio(nuevo, proveedorId)) {
-    throw new AppError(
-      `Ese proveedor ya tiene una compra con el folio ${nuevo}. ` +
-      'Renombrarla la juntaría con esta y no se podrían volver a separar.',
-      409, 'CONFLICT',
-    )
+  if (!confirmar) {
+    const existentes = await repo.renglonesConFolio(nuevo, proveedorId)
+    if (existentes > 0) {
+      throw new AppError(
+        `Ese proveedor ya tiene otra compra con el folio ${nuevo} ` +
+        `(${existentes} renglón${existentes === 1 ? '' : 'es'}). ` +
+        'Continuar dejaría las dos como una sola factura.',
+        409, 'FOLIO_EXISTENTE',
+      )
+    }
   }
   return repo.setFolio(numFactura, proveedorId, nuevo)
 }
