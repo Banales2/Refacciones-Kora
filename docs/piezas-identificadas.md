@@ -1,6 +1,6 @@
 # Piezas identificadas una por una
 
-Diseño de la fase 1 de la reestructuración del inventario. Este documento es la
+Diseño de la reestructuración del inventario. Este documento es la
 decisión; el código lo sigue.
 
 ## El problema
@@ -89,18 +89,16 @@ Arranca en `0` para todos. Encenderlo para un tipo que ya tiene existencias es
 parte de la fase 3: hay que decidir qué hacer con las unidades a granel que ya
 están en el estante.
 
-### `unidades_pieza` (fase 3, no se crea todavía)
+### `unidades_pieza` (migración 027)
 
-Una fila = una pieza física. La forma propuesta:
+Una fila = una pieza física. Lo que guarda es deliberadamente poco:
 
 | columna | por qué |
 |---|---|
-| `id` | la identidad que hoy no existe |
+| `id` | la identidad que no existía |
 | `pieza_id` | qué refacción es |
 | `lote_id` (nullable) | de qué compra salió: conserva factura, proveedor y costo. NULL en la que vino con el vehículo |
-| `estado` | `almacen` / `montada` / `desechada` / `vendida` / `devuelta` |
-| `sucursal_id` (nullable) | en qué estante está, cuando está en almacén |
-| `condicion` | `nueva` / `usada`. Lo que hoy no se puede distinguir |
+| `sucursal_id` (nullable) | en qué estante vive. Cambia con los traspasos y no hay otra tabla que lo diga por unidad |
 | `etiqueta` (nullable) | folio físico, si la pieza trae uno pegado |
 | `created_at` | |
 
@@ -108,7 +106,31 @@ Y `instalaciones_pieza` gana `unidad_id` nullable: los renglones históricos se
 quedan en NULL, y los nuevos de tipos rastreados apuntan a su unidad. Es lo que
 convierte la bitácora en la historia de una pieza concreta.
 
-**No lleva** `km_acumulado` ni `horas_acumuladas`, por lo dicho arriba.
+**Corrección respecto a la fase 1.** El primer borrador de esta tabla llevaba
+`estado` y `condicion` además de los contadores. Los tres se fueron por la misma
+razón que se fueron los contadores: son derivados, y este sistema ya sabe lo que
+cuesta guardarlos. `instalaciones_pieza` registra cada montaje y cada retiro, así
+que de ahí salen los tres sin poder desalinearse nunca:
+
+- **estado** — ¿hay una instalación abierta? Montada, y en qué vehículo. Si no,
+  el `destino` del último retiro dice dónde acabó. ¿Nunca instalada? En el estante.
+- **condición** — usada en cuanto tiene un montaje cerrado a sus espaldas.
+- **kilometraje** — suma de `km_retiro − km_instalacion` de sus tramos, más lo que
+  lleve recorrido el vehículo donde esté puesta ahora.
+
+Guardar `estado` obligaría a mantenerlo en cada montaje, cada retiro y cada
+corrección retroactiva. Basta que uno falle para que la unidad diga que está en
+el estante cuando lleva medio año en un camión.
+
+### Convivencia con las existencias
+
+`existencias_lote` sigue contando, también para los tipos rastreados. Las
+unidades son una capa de identidad encima, no un segundo inventario: se crean
+junto con la existencia y en la misma transacción.
+
+Que las unidades en estante cuadren con la existencia es una comprobación que se
+puede correr, no una regla que la base imponga. Imponerla obligaría a reescribir
+el inventario entero, y eso es la fase 4.
 
 ### Qué queda obsoleto, y qué no
 
@@ -120,11 +142,12 @@ Para los tipos a granel siguen siendo necesarios tal cual. No se borra nada.
 
 ## Orden de trabajo
 
-1. **El flag y el catálogo de tipos.** ← esta entrega
-   Migración del flag y una pantalla para administrar los tipos de pieza, que
-   hoy no existe (solo se pueden crear al vuelo desde un selector).
-2. **Facturas como tabla.** Independiente de las unidades; elimina la familia de
-   bugs de cabecera duplicada.
-3. **Unidades, solo llantas.** De punta a punta y en producción antes de tocar
-   otro tipo.
-4. **El resto de tipos rastreables,** cuando el primero haya aguantado.
+1. ~~**El flag y el catálogo de tipos.**~~ Migración 025. Hecho.
+2. ~~**Facturas como tabla.**~~ Migración 026. Hecho, y verificado contra la base.
+3. **Unidades.** ← migración 027. El modelo, el alta en la compra, el enganche
+   con la bitácora y la ficha por refacción. Enciende el rastreo en un solo tipo
+   —llantas— y déjalo correr antes de marcar otro.
+4. **El inventario sobre unidades.** Que para los tipos rastreados la existencia
+   SEA el conteo de unidades, en vez de convivir con `existencias_lote`. Es el
+   paso que quita la última duplicación, y el que conviene hacer solo cuando la
+   fase 3 lleve tiempo en pie.

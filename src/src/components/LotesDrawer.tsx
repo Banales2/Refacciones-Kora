@@ -21,6 +21,7 @@ import { exportComparativaPiezaPdf } from '../lib/reportes/comparativaPieza'
 import { IVA_DEFAULT } from '../lib/totales'
 import { normalizarFolio } from '../lib/validaciones'
 import LoteForm from './LoteForm'
+import UnidadesPiezaSection from './UnidadesPiezaSection'
 import type { LoteFormValues } from './LoteForm'
 
 function stockColor(qty: number) {
@@ -266,6 +267,11 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                 </Table>
               </Table.ScrollContainer>
             )}
+
+            {/* Las piezas físicas, si esta refacción se rastrea una por una.
+                Va debajo de las compras porque es el nivel de abajo: de cada
+                lote salen sus unidades. Si el tipo no se rastrea, no pinta nada. */}
+            {piezaId !== null && <UnidadesPiezaSection piezaId={piezaId} />}
           </Stack>
         )}
       </Drawer>

@@ -4,6 +4,7 @@ import { fechaDelLote, folioDelLote, joinFactura, joinProveedorDelLote } from '.
 import { fechaMexico } from '../shared/fechaMexico'
 import { moverExistencia, loteDeRecuperacion } from './inventarioSql'
 import * as descuadresRepo from './descuadresRepo'
+import * as unidadesRepo from './unidadesPiezaRepo'
 
 // Un renglón que necesita el vehículo, junto con la pieza que usa para
 // cubrirlo. pieza_id es null mientras nadie la haya elegido: el renglón se sigue
@@ -351,11 +352,20 @@ export async function setPieza(
         }
       }
 
+      // Qué pieza física es, si esta refacción se rastrea una por una. Sin
+      // unidad libre el montaje sigue adelante: el cambio ocurrió igual, y la
+      // ficha de la refacción deja ver que hay una instalación sin unidad.
+      const unidadId = (await unidadesRepo.piezaEsRastreada(tx, piezaId))
+        ? await unidadesRepo.tomarDisponible(
+            tx, piezaId, datos.lote_id ?? null, datos.sucursal_id ?? null)
+        : null
+
       await tx.request()
         .input('vehiculoId', sql.Int,          vehiculoId)
         .input('tipoId',     sql.Int,          tipoId)
         .input('etiqueta',   sql.NVarChar(40), etiqueta)
         .input('piezaId',    sql.Int,          piezaId)
+        .input('unidadId',   sql.Int,          unidadId)
         .input('loteId',     sql.Int,          datos.lote_id ?? null)
         .input('mttoId',     sql.Int,          datos.mantenimiento_id ?? null)
         .input('detId',      sql.Int,          datos.detalle_mtto_pieza_id ?? null)
@@ -367,10 +377,11 @@ export async function setPieza(
         .input('km',         sql.Int,          datos.km_instalacion ?? null)
         .query(`
           INSERT INTO instalaciones_pieza
-            (vehiculo_id, tipo_pieza_id, etiqueta, pieza_id, lote_id, sucursal_id,
-             mantenimiento_id, detalle_mtto_pieza_id, fecha_instalacion, km_instalacion)
+            (vehiculo_id, tipo_pieza_id, etiqueta, pieza_id, unidad_id, lote_id,
+             sucursal_id, mantenimiento_id, detalle_mtto_pieza_id,
+             fecha_instalacion, km_instalacion)
           VALUES
-            (@vehiculoId, @tipoId, @etiqueta, @piezaId, @loteId,
+            (@vehiculoId, @tipoId, @etiqueta, @piezaId, @unidadId, @loteId,
              COALESCE(@sucId, ${SUCURSAL_DEL_VEHICULO}),
              @mttoId, @detId, @fecha, @km)`)
 
@@ -502,8 +513,15 @@ async function montarRetroactivo(
   }
 
   // 2. El montaje, ya cerrado, en su lugar de la línea de tiempo.
+  // Igual que en el montaje normal: la unidad concreta, si el tipo se rastrea.
+  const unidadId = (await unidadesRepo.piezaEsRastreada(tx, piezaId))
+    ? await unidadesRepo.tomarDisponible(
+        tx, piezaId, datos.lote_id ?? null, datos.sucursal_id ?? null)
+    : null
+
   const insertado = await llave(tx.request())
-    .input('piezaId', sql.Int,  piezaId)
+    .input('piezaId',  sql.Int, piezaId)
+    .input('unidadId', sql.Int, unidadId)
     .input('loteId',  sql.Int,  datos.lote_id ?? null)
     .input('mttoId',  sql.Int,  datos.mantenimiento_id ?? null)
     .input('detId',   sql.Int,  datos.detalle_mtto_pieza_id ?? null)
@@ -513,12 +531,12 @@ async function montarRetroactivo(
     .input('retiro',  sql.Date, fechaRetiro)
     .query(`
       INSERT INTO instalaciones_pieza
-        (vehiculo_id, tipo_pieza_id, etiqueta, pieza_id, lote_id, sucursal_id,
-         mantenimiento_id, detalle_mtto_pieza_id, fecha_instalacion, km_instalacion,
-         fecha_retiro)
+        (vehiculo_id, tipo_pieza_id, etiqueta, pieza_id, unidad_id, lote_id,
+         sucursal_id, mantenimiento_id, detalle_mtto_pieza_id,
+         fecha_instalacion, km_instalacion, fecha_retiro)
       OUTPUT INSERTED.id
       VALUES
-        (@vehiculoId, @tipoId, @etiqueta, @piezaId, @loteId,
+        (@vehiculoId, @tipoId, @etiqueta, @piezaId, @unidadId, @loteId,
          COALESCE(@sucId, ${SUCURSAL_DEL_VEHICULO}),
          @mttoId, @detId, @fecha, @km, @retiro)`)
   const instalacionId = insertado.recordset[0].id as number

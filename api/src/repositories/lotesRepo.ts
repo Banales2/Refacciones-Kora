@@ -5,6 +5,7 @@ import { LoteCreate, LoteUpdate } from '../schemas/loteSchema'
 import { disponibleDelLote } from './inventarioSql'
 import { colsCabecera, joinFactura, joinProveedorDelLote } from './facturaSql'
 import * as facturasRepo from './facturasRepo'
+import * as unidadesRepo from './unidadesPiezaRepo'
 
 // `cantidad_disponible` ya no es una columna que se lea: es la suma de las
 // existencias del lote en todas las sucursales (migración 002).
@@ -82,6 +83,13 @@ export async function create(
       .query(`
         INSERT INTO existencias_lote (lote_id, sucursal_id, cantidad)
         VALUES (@lote_id, @sucursal_id, @cantidad)`)
+
+    // Ver `comprasRepo`: los tipos rastreados dan de alta una unidad por pieza.
+    if (await unidadesRepo.piezaEsRastreada(tx, piezaId)) {
+      await unidadesRepo.crearDeCompra(
+        tx, piezaId, loteId, data.sucursal_id, data.cantidad_inicial,
+      )
+    }
 
     await tx.commit()
     return findById(loteId) as Promise<LoteConProveedor>

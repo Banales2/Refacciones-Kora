@@ -2,6 +2,7 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { CompraCreate } from '../schemas/compraSchema'
 import * as facturasRepo from './facturasRepo'
+import * as unidadesRepo from './unidadesPiezaRepo'
 
 // Un renglón ya guardado, con la forma que el front necesita para ofrecerlo
 // como existencia consumible: es la misma que devuelve `lotes-disponibles`, así
@@ -135,6 +136,16 @@ export async function crearCompra(
         .query(`
           INSERT INTO existencias_lote (lote_id, sucursal_id, cantidad)
           VALUES (@lote_id, @sucursal_id, @cantidad)`)
+
+      // Si la refacción es de un tipo que se rastrea una por una, cada unidad
+      // que entra nace aquí con su identidad. Va en la misma transacción que la
+      // existencia: unidades sin existencia (o al revés) es justo la
+      // divergencia que hay que evitar mientras las dos capas convivan.
+      if (await unidadesRepo.piezaEsRastreada(tx, piezaId!)) {
+        await unidadesRepo.crearDeCompra(
+          tx, piezaId!, loteId, data.sucursal_id, renglon.cantidad_inicial,
+        )
+      }
 
       lotes.push({
         id: loteId,
