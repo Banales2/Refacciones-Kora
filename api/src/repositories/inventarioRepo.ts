@@ -7,6 +7,7 @@
 // identificar la pieza una por una.
 import * as sql from 'mssql'
 import { folioDelLote, fechaDelLote, joinFactura, joinProveedorDelLote } from './facturaSql'
+import * as unidadesRepo from './unidadesPiezaRepo'
 import { getPool } from '../shared/db'
 
 export interface ExistenciaEnSucursal {
@@ -169,6 +170,13 @@ export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string)
         IF @@ROWCOUNT = 0
           INSERT INTO existencias_lote (lote_id, sucursal_id, cantidad)
           VALUES (@lid, @suc, @cant);`)
+
+    // Las piezas identificadas se van con su stock. Sin esto, traspasar dejaba
+    // las unidades diciendo que siguen en el estante de origen. En los tipos a
+    // granel no hay unidades y no mueve nada.
+    await unidadesRepo.moverEntreSucursales(
+      tx, data.lote_id, data.origen_sucursal_id, data.destino_sucursal_id, data.cantidad,
+    )
 
     const ins = await tx.request()
       .input('lid',    sql.Int,           data.lote_id)

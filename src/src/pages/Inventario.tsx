@@ -18,6 +18,7 @@ import {
 } from '../hooks/useInventario'
 import type { ExistenciaEnSucursal, MinimoSucursal } from '../hooks/useInventario'
 import { useDescuadres, useResolverDescuadre } from '../hooks/useDescuadres'
+import { useCuadreUnidades } from '../hooks/useCuadreUnidades'
 import type { Descuadre, ResolucionDescuadre } from '../hooks/useDescuadres'
 import { FechaInput } from '../components/FechaInput'
 import SelectCatalogo from '../components/SelectCatalogo'
@@ -635,15 +636,19 @@ function PanelDescuadres({ sucursalId }: { sucursalId: number }) {
   }
   if (!filas.length) {
     return (
-      <Center py="xl">
-        <Text c="dimmed">Esta sucursal no tiene descuadres de inventario pendientes.</Text>
-      </Center>
+      <Stack gap="sm">
+        <CuadreUnidades sucursalId={sucursalId} />
+        <Center py="xl">
+          <Text c="dimmed">Esta sucursal no tiene descuadres de inventario pendientes.</Text>
+        </Center>
+      </Stack>
     )
   }
 
   return (
     <>
       <Stack gap="sm">
+        <CuadreUnidades sucursalId={sucursalId} />
         <Text size="sm" c="dimmed">
           Diferencias que el sistema detectó y no pudo corregir solas. Cada una sigue
           aquí hasta que alguien cuente el estante y diga qué encontró.
@@ -776,5 +781,49 @@ function CerrarDescuadreModal({ descuadre, status, onClose }: {
         </Group>
       </Stack>
     </Modal>
+  )
+}
+
+// ─── Cuadre de piezas identificadas ──────────────────────────────────────────
+
+/**
+ * Dónde las piezas identificadas no coinciden con la existencia de su estante.
+ *
+ * No es un descuadre registrado y por eso no se "resuelve": se calcula cada vez
+ * que se pregunta y desaparece solo en cuanto las dos cifras vuelven a
+ * coincidir. Está aquí porque es el mismo tipo de pregunta —algo no cuadra en
+ * este estante— y porque mientras las unidades y las existencias convivan, esta
+ * es la única forma de ver que se separaron.
+ */
+function CuadreUnidades({ sucursalId }: { sucursalId: number }) {
+  const { data } = useCuadreUnidades()
+  const filas = (data?.data ?? []).filter(
+    (c) => c.sucursal_id === sucursalId || c.sucursal_id === null,
+  )
+  if (!filas.length) return null
+
+  return (
+    <Alert
+      color="yellow"
+      variant="light"
+      icon={<IconAlertTriangle size={18} />}
+      title="Piezas identificadas que no cuadran con la existencia"
+    >
+      <Stack gap={4}>
+        <Text size="xs">
+          Estas refacciones se rastrean pieza por pieza, y el número de piezas
+          identificadas no coincide con lo que dice el inventario. Suele significar que
+          entró o salió stock sin que se registrara la unidad correspondiente.
+        </Text>
+        {filas.map((c) => (
+          <Text size="xs" key={`${c.pieza_id}-${c.sucursal_id}`}>
+            <Text component="span" fw={600}>{c.numero_serie}</Text>
+            {' — '}{c.unidades} identificada{c.unidades === 1 ? '' : 's'}
+            {' vs '}{c.existencia} en existencia
+            {c.sucursal ? ` (${c.sucursal})` : ' (sin sucursal)'}
+          </Text>
+        ))}
+      </Stack>
+    </Alert>
   )
 }

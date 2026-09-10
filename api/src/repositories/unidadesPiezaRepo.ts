@@ -197,6 +197,100 @@ export async function tomarDisponible(
   return r.recordset[0]?.id ?? null
 }
 
+/**
+ * Mueve N unidades de un lote de una sucursal a otra, para acompañar un traspaso
+ * de existencias.
+ *
+ * Sin esto, traspasar stock movía las piezas en `existencias_lote` y dejaba sus
+ * unidades diciendo que siguen en el estante de origen. Solo se mueven las que
+ * están libres: una unidad con instalación abierta está puesta en un vehículo y
+ * no es parte del stock que se traspasa.
+ *
+ * Puede mover menos de las pedidas si no hay tantas libres —los tipos a granel
+ * no tienen unidades en absoluto, y ahí mueve cero—. Eso no es un error: la
+ * existencia es la que manda, y el descuadre lo reporta la comprobación de
+ * `contarPorSucursal`.
+ */
+export async function moverEntreSucursales(
+  tx: sql.Transaction, loteId: number, origenId: number, destinoId: number, cuantas: number,
+): Promise<number> {
+  const r = await tx.request()
+    .input('lote',    sql.Int, loteId)
+    .input('origen',  sql.Int, origenId)
+    .input('destino', sql.Int, destinoId)
+    .input('n',       sql.Int, cuantas)
+    .query(`
+      UPDATE u SET u.sucursal_id = @destino
+      FROM unidades_pieza u
+      JOIN (
+        SELECT TOP (@n) up.id
+        FROM unidades_pieza up
+        WHERE up.lote_id = @lote AND up.sucursal_id = @origen
+          AND NOT EXISTS (
+            SELECT 1 FROM instalaciones_pieza i
+            WHERE i.unidad_id = up.id AND i.fecha_retiro IS NULL)
+        ORDER BY up.id
+      ) elegidas ON elegidas.id = u.id`)
+  return r.rowsAffected[0] ?? 0
+}
+
+/**
+ * Cuántas unidades libres hay por (refacción, sucursal) frente a lo que dice la
+ * existencia. Es la comprobación que las dos capas necesitan mientras convivan:
+ * las unidades son identidad, `existencias_lote` es quien cuenta, y que
+ * discrepen significa que algún movimiento tocó una y no la otra.
+ */
+export interface CuadreUnidades {
+  pieza_id: number
+  numero_serie: string
+  descripcion: string
+  sucursal_id: number | null
+  sucursal: string | null
+  /** Unidades libres —sin instalación abierta— en ese estante. */
+  unidades: number
+  /** Lo que dice `existencias_lote` para esa refacción en ese estante. */
+  existencia: number
+}
+
+export async function contarPorSucursal(): Promise<CuadreUnidades[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    WITH libres AS (
+      SELECT u.pieza_id, u.sucursal_id, COUNT(*) AS unidades
+      FROM unidades_pieza u
+      WHERE NOT EXISTS (
+        SELECT 1 FROM instalaciones_pieza i
+        WHERE i.unidad_id = u.id AND i.fecha_retiro IS NULL)
+      GROUP BY u.pieza_id, u.sucursal_id
+    ),
+    stock AS (
+      SELECT l.pieza_id, ex.sucursal_id, SUM(ex.cantidad) AS existencia
+      FROM existencias_lote ex
+      JOIN lotes_pieza l ON l.id = ex.lote_id
+      GROUP BY l.pieza_id, ex.sucursal_id
+    )
+    SELECT COALESCE(lb.pieza_id, st.pieza_id)       AS pieza_id,
+           p.numero_serie, p.descripcion,
+           COALESCE(lb.sucursal_id, st.sucursal_id) AS sucursal_id,
+           s.nombre AS sucursal,
+           COALESCE(lb.unidades, 0)    AS unidades,
+           COALESCE(st.existencia, 0)  AS existencia
+    FROM libres lb
+    FULL OUTER JOIN stock st
+      ON st.pieza_id = lb.pieza_id
+     AND (st.sucursal_id = lb.sucursal_id
+          OR (st.sucursal_id IS NULL AND lb.sucursal_id IS NULL))
+    JOIN piezas p           ON p.id = COALESCE(lb.pieza_id, st.pieza_id)
+    JOIN tipos_pieza t      ON t.id = p.tipo_pieza_id
+    LEFT JOIN sucursales s  ON s.id = COALESCE(lb.sucursal_id, st.sucursal_id)
+    -- Solo los tipos rastreados: en los de granel no hay unidades que cuadrar y
+    -- saldrían todos como si faltaran.
+    WHERE t.rastreo_individual = 1
+      AND COALESCE(lb.unidades, 0) <> COALESCE(st.existencia, 0)
+    ORDER BY p.numero_serie, s.nombre`)
+  return r.recordset
+}
+
 /** Dónde vive la unidad ahora. Se mueve al montarla y al devolverla al estante. */
 export async function setSucursal(
   tx: sql.Transaction, unidadId: number, sucursalId: number | null,

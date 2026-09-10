@@ -318,7 +318,7 @@ export async function setPieza(
         .input('tipoId',     sql.Int, tipoId)
         .input('etiqueta',   sql.NVarChar(40), etiqueta)
         .query(`
-          SELECT lote_id, sucursal_id FROM instalaciones_pieza
+          SELECT lote_id, sucursal_id, unidad_id FROM instalaciones_pieza
           WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
             AND etiqueta = @etiqueta AND fecha_retiro IS NULL`)
 
@@ -341,6 +341,18 @@ export async function setPieza(
       // llevan por la pareja (lote, sucursal), y una pieza que vino con la
       // unidad nunca tuvo compra. Antes esto no hacía nada y nadie se enteraba;
       // ahora queda como descuadre para que alguien decida dónde entra.
+      // La unidad que sale vuelve a un estante, así que hay que decir a cuál:
+      // su `sucursal_id` es lo único de una unidad que no se puede derivar de la
+      // bitácora. Se hace antes de mover existencias para que la unidad quede
+      // colocada aunque la devolución acabe siendo un descuadre.
+      if (datos.destino === 'stock' && saliente.recordset[0]?.unidad_id != null) {
+        await unidadesRepo.setSucursal(
+          tx,
+          saliente.recordset[0].unidad_id,
+          saliente.recordset[0].sucursal_id ?? await sucursalDelVehiculo(tx, vehiculoId),
+        )
+      }
+
       const sal = saliente.recordset[0]
       if (datos.destino === 'stock' && anterior != null) {
         if (sal?.lote_id != null && sal?.sucursal_id != null) {

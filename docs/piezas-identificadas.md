@@ -129,8 +129,29 @@ unidades son una capa de identidad encima, no un segundo inventario: se crean
 junto con la existencia y en la misma transacción.
 
 Que las unidades en estante cuadren con la existencia es una comprobación que se
-puede correr, no una regla que la base imponga. Imponerla obligaría a reescribir
-el inventario entero, y eso es la fase 4.
+corre, no una regla que la base imponga. Imponerla obligaría a reescribir el
+inventario entero, y eso es la fase 4.
+
+La comprobación vive en `GET /unidades/cuadre` y sale en Inventario → Descuadres:
+compara, por (refacción, sucursal), las unidades libres contra la existencia, y
+lista solo lo que discrepa. Como se calcula al preguntarla, no se "resuelve":
+desaparece sola en cuanto las dos cifras vuelven a coincidir.
+
+Los movimientos que tocan las dos capas a la vez, y que por tanto no la
+descuadran:
+
+| movimiento | qué hace con las unidades |
+|---|---|
+| compra de un tipo rastreado | crea una unidad por pieza, en la misma transacción |
+| montaje | la instalación apunta a la unidad; deja de contar como libre |
+| retiro a almacén | la unidad vuelve al estante que se le indique |
+| traspaso entre sucursales | mueve N unidades libres de ese lote |
+
+El hueco conocido que queda: un consumo de mantenimiento descuenta existencia al
+capturarse, pero la unidad no deja de estar libre hasta que se monta. Entre esos
+dos momentos la comprobación reporta una diferencia — que es exactamente lo que
+debe hacer, porque hay una pieza fuera del estante que nadie ha dicho dónde
+quedó. Se cierra al montarla.
 
 ### Qué queda obsoleto, y qué no
 
