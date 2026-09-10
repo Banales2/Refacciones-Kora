@@ -9,6 +9,21 @@ on:
     branches:
       - main
 
+# Un push mientras el anterior sigue desplegandose acaba en "Deployment
+# Canceled": Azure cancela el despliegue viejo cuando le llega uno nuevo del
+# mismo entorno, y el run de GitHub lo reporta como fallo aunque no haya nada
+# roto. Pasa con solo unos minutos de diferencia, porque el despliegue sigue
+# trabajando del lado de Azure mucho despues de que la accion termino de subir.
+#
+# Con esto es GitHub quien cancela el run superado, antes de gastar tres minutos
+# compilando algo que va a quedar pisado. El resultado es el mismo -gana el
+# ultimo push- pero deja de aparecer como error.
+#
+# El grupo lleva la rama: los runs de un PR no deben cancelar los de main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_and_deploy_job:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
