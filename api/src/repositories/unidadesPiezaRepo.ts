@@ -184,61 +184,122 @@ export async function crearDeCompra(
 }
 
 /**
- * Da identidad al stock que ya estaba en el estante cuando se encendió el
- * rastreo de su tipo.
+ * El stock que ya estaba en el estante cuando se encendió el rastreo de su tipo,
+ * y que por eso no tiene identidad.
  *
  * Es el hueco que la migración 025 dejó anotado: encender el flag no hace
- * aparecer unidades para lo que ya se había comprado, así que esas piezas
- * existen en la existencia pero no se pueden identificar. Esto crea las que
- * faltan, por (lote, sucursal), hasta igualar lo que dice el inventario — que es
- * exactamente la diferencia que reporta `contarPorSucursal`.
+ * aparecer unidades para lo que ya se había comprado. Esto dice CUÁNTAS faltan y
+ * de dónde salieron, para poder pedir el identificador de cada una — que es lo
+ * único que hace útil identificarlas.
  *
- * Nacen sin etiqueta: nadie sabe cuál es cuál hasta que alguien vaya al estante
- * y las rotule. Eso es correcto y es el punto — primero existen, luego se
- * identifican.
- *
- * Es idempotente: si ya cuadran, no crea nada.
+ * Se agrupa por (refacción, lote, sucursal) porque es lo que distingue a un
+ * grupo de piezas del siguiente: mismo estante, misma compra, mismo costo.
  */
-export async function generarFaltantes(piezaId: number): Promise<number> {
+export interface GrupoSinIdentificar {
+  pieza_id: number
+  numero_serie: string
+  descripcion: string
+  lote_id: number
+  num_factura: string | null
+  proveedor: string | null
+  sucursal_id: number | null
+  sucursal: string | null
+  /** Cuántas piezas de ese grupo están en existencia sin unidad propia. */
+  faltan: number
+}
+
+export async function findSinIdentificar(
+  filtro: { tipoPiezaId?: number; piezaId?: number },
+): Promise<GrupoSinIdentificar[]> {
   const pool = await getPool()
-  const r = await pool.request()
-    .input('piezaId', sql.Int, piezaId)
-    .query(`
-      WITH stock AS (
-        SELECT ex.lote_id, ex.sucursal_id, SUM(ex.cantidad) AS cantidad
-        FROM existencias_lote ex
-        JOIN lotes_pieza l ON l.id = ex.lote_id
-        WHERE l.pieza_id = @piezaId AND ex.cantidad > 0
-        GROUP BY ex.lote_id, ex.sucursal_id
-      ),
-      libres AS (
-        SELECT u.lote_id, u.sucursal_id, COUNT(*) AS n
-        FROM unidades_pieza u
-        WHERE u.pieza_id = @piezaId
-          AND NOT EXISTS (
-            SELECT 1 FROM instalaciones_pieza i
-            WHERE i.unidad_id = u.id AND i.fecha_retiro IS NULL)
-        GROUP BY u.lote_id, u.sucursal_id
-      ),
-      faltan AS (
-        SELECT st.lote_id, st.sucursal_id,
-               st.cantidad - COALESCE(lb.n, 0) AS faltan
-        FROM stock st
-        LEFT JOIN libres lb
-          ON lb.lote_id = st.lote_id
-         AND (lb.sucursal_id = st.sucursal_id
-              OR (lb.sucursal_id IS NULL AND st.sucursal_id IS NULL))
-      ),
-      numeros AS (
-        SELECT TOP 1000 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS n
-        FROM sys.all_objects
-      )
-      INSERT INTO unidades_pieza (pieza_id, lote_id, sucursal_id)
-      SELECT @piezaId, f.lote_id, f.sucursal_id
-      FROM faltan f
-      JOIN numeros nm ON nm.n <= f.faltan
-      WHERE f.faltan > 0`)
-  return r.rowsAffected[0] ?? 0
+  const req = pool.request()
+    .input('tipoId',  sql.Int, filtro.tipoPiezaId ?? null)
+    .input('piezaId', sql.Int, filtro.piezaId ?? null)
+  const r = await req.query(`
+    WITH stock AS (
+      SELECT ex.lote_id, ex.sucursal_id, l.pieza_id, SUM(ex.cantidad) AS cantidad
+      FROM existencias_lote ex
+      JOIN lotes_pieza l ON l.id = ex.lote_id
+      JOIN piezas p      ON p.id = l.pieza_id
+      JOIN tipos_pieza t ON t.id = p.tipo_pieza_id
+      WHERE ex.cantidad > 0
+        AND t.rastreo_individual = 1
+        AND (@tipoId  IS NULL OR t.id = @tipoId)
+        AND (@piezaId IS NULL OR p.id = @piezaId)
+      GROUP BY ex.lote_id, ex.sucursal_id, l.pieza_id
+    ),
+    libres AS (
+      SELECT u.lote_id, u.sucursal_id, COUNT(*) AS n
+      FROM unidades_pieza u
+      WHERE NOT EXISTS (
+        SELECT 1 FROM instalaciones_pieza i
+        WHERE i.unidad_id = u.id AND i.fecha_retiro IS NULL)
+      GROUP BY u.lote_id, u.sucursal_id
+    )
+    SELECT st.pieza_id, p.numero_serie, p.descripcion,
+           st.lote_id, fac.folio AS num_factura, pr.nombre AS proveedor,
+           st.sucursal_id, s.nombre AS sucursal,
+           st.cantidad - COALESCE(lb.n, 0) AS faltan
+    FROM stock st
+    JOIN piezas p            ON p.id = st.pieza_id
+    LEFT JOIN lotes_pieza l  ON l.id = st.lote_id
+    LEFT JOIN facturas fac   ON fac.id = l.factura_id
+    LEFT JOIN proveedores pr ON pr.id = fac.proveedor_id
+    LEFT JOIN sucursales s   ON s.id = st.sucursal_id
+    LEFT JOIN libres lb
+      ON lb.lote_id = st.lote_id
+     AND (lb.sucursal_id = st.sucursal_id
+          OR (lb.sucursal_id IS NULL AND st.sucursal_id IS NULL))
+    WHERE st.cantidad - COALESCE(lb.n, 0) > 0
+    ORDER BY p.numero_serie, s.nombre, st.lote_id`)
+  return r.recordset
+}
+
+/** Un grupo de piezas existentes a las que se les está poniendo nombre. */
+export interface GrupoAIdentificar {
+  pieza_id: number
+  lote_id: number
+  sucursal_id?: number | null
+  /** Un folio por pieza. Los vacíos crean la unidad sin etiqueta. */
+  etiquetas: string[]
+}
+
+/**
+ * Le da identidad —y nombre— al stock que ya estaba en el estante.
+ *
+ * Se llama con los identificadores ya capturados, no antes: una unidad en blanco
+ * no sirve para nada más que para volver a buscarla después. Los folios que se
+ * dejen vacíos sí crean la unidad, porque la pieza existe aunque no traiga
+ * número; lo que no se hace es crearlas todas en blanco de un golpe.
+ *
+ * Va en una transacción: identificar veinte llantas a medias, con la pantalla
+ * cerrada por un error en la diecinueve, sería peor que no haber empezado.
+ */
+export async function crearIdentificadas(grupos: GrupoAIdentificar[]): Promise<number> {
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  let creadas = 0
+  try {
+    for (const g of grupos) {
+      for (const etiqueta of g.etiquetas) {
+        await tx.request()
+          .input('piezaId', sql.Int, g.pieza_id)
+          .input('loteId',  sql.Int, g.lote_id)
+          .input('suc',     sql.Int, g.sucursal_id ?? null)
+          .input('et',      sql.NVarChar(40), etiqueta.trim() || null)
+          .query(`
+            INSERT INTO unidades_pieza (pieza_id, lote_id, sucursal_id, etiqueta)
+            VALUES (@piezaId, @loteId, @suc, @et)`)
+        creadas++
+      }
+    }
+    await tx.commit()
+    return creadas
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
 }
 
 /**

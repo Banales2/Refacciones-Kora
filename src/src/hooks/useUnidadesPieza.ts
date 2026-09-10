@@ -56,21 +56,61 @@ export function useUnidadesPieza(piezaId: number | null) {
 }
 
 /**
- * Le da identidad al stock que ya estaba en el estante cuando se encendió el
- * rastreo de este tipo.
+ * El stock que está en el estante sin identidad, porque se compró antes de que
+ * se encendiera el rastreo de su tipo.
  *
- * Encender el interruptor no hace aparecer unidades para lo ya comprado: esas
- * piezas están en la existencia pero no se pueden identificar. Esto crea las que
- * faltan, sin etiqueta, para poder rotularlas una por una.
+ * Se agrupa por (refacción, lote, sucursal): mismo estante, misma compra, mismo
+ * costo. Es lo que hace falta para poder preguntar el folio de cada pieza.
  */
-export function useGenerarUnidades(piezaId: number | null) {
+export interface GrupoSinIdentificar {
+  pieza_id:     number
+  numero_serie: string
+  descripcion:  string
+  lote_id:      number
+  num_factura:  string | null
+  proveedor:    string | null
+  sucursal_id:  number | null
+  sucursal:     string | null
+  faltan:       number
+}
+
+export function useSinIdentificar(
+  filtro: { tipoPiezaId?: number; piezaId?: number },
+  enabled = true,
+) {
+  const qs = filtro.tipoPiezaId !== undefined
+    ? `tipo_pieza_id=${filtro.tipoPiezaId}`
+    : `pieza_id=${filtro.piezaId}`
+  return useQuery({
+    queryKey: ['unidades-sin-identificar', filtro.tipoPiezaId ?? null, filtro.piezaId ?? null],
+    queryFn: () => api.get<{ data: GrupoSinIdentificar[] }>(`/unidades/sin-identificar?${qs}`),
+    enabled: enabled && (filtro.tipoPiezaId !== undefined || filtro.piezaId !== undefined),
+  })
+}
+
+export interface GrupoAIdentificar {
+  pieza_id:     number
+  lote_id:      number
+  sucursal_id:  number | null
+  /** Un folio por pieza. Los vacíos crean la unidad sin etiqueta. */
+  etiquetas:    string[]
+}
+
+/**
+ * Le da identidad —y nombre— al stock que ya estaba en el estante.
+ *
+ * Se manda con los folios ya capturados, no antes: una unidad en blanco no sirve
+ * más que para volver a buscarla después. Los que se dejen vacíos sí crean la
+ * unidad, porque la pieza existe aunque no traiga número grabado.
+ */
+export function useIdentificarExistentes() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => api.post<{ data: { creadas: number } }>(
-      `/piezas/${piezaId}/unidades/generar`, {},
-    ),
+    mutationFn: (grupos: GrupoAIdentificar[]) =>
+      api.post<{ data: { creadas: number } }>('/unidades/identificar', { grupos }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['unidades-pieza', piezaId] })
+      qc.invalidateQueries({ queryKey: ['unidades-pieza'] })
+      qc.invalidateQueries({ queryKey: ['unidades-sin-identificar'] })
       qc.invalidateQueries({ queryKey: ['unidades-cuadre'] })
     },
   })

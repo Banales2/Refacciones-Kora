@@ -146,13 +146,27 @@ Encender el flag de un tipo no hace aparecer unidades para lo que ya se había
 comprado: esas piezas están en la existencia pero no se pueden identificar. Es el
 hueco que la migración 025 dejó anotado.
 
-`POST /piezas/{id}/unidades/generar` las crea, por (lote, sucursal), hasta igualar
-lo que dice el inventario — exactamente la diferencia que reporta
-`contarPorSucursal`. Nacen **sin etiqueta**, y eso es el punto: primero existen,
-después alguien va al estante y las rotula. Es idempotente.
+Se resuelve **preguntando el folio de cada una**, no creándolas en blanco. Una
+unidad sin nombre no sirve más que para volver a buscarla después, así que
+generarlas de golpe solo mueve el problema: quedarían N piezas idénticas en la
+pantalla y alguien tendría que ir a rotularlas una por una de todos modos, sin
+saber cuál es cuál.
 
-En la pantalla sale como un aviso en la ficha de la refacción: *"Hay N piezas en
-existencia sin identificar"* con el botón que las crea.
+El momento de preguntarlo es **al activar el interruptor**, que es cuando alguien
+está tomando esa decisión y tiene el estante presente. Al encenderlo se abre la
+captura con el stock existente agrupado por (refacción, lote, sucursal) —mismo
+estante, misma compra, mismo costo— y una casilla por pieza. El botón
+*"Identificar piezas existentes"* queda disponible después, para lo que se haya
+saltado.
+
+Los folios que se dejen vacíos **sí** crean su unidad: la pieza existe aunque no
+traiga número grabado, y obligar a inventarle uno sería peor. Lo que se evita es
+que ese sea el camino por omisión.
+
+- `GET /unidades/sin-identificar?tipo_pieza_id=` (o `pieza_id=`) — qué falta y de
+  dónde salió.
+- `POST /unidades/identificar` — los crea con sus folios, en una transacción:
+  identificar veinte llantas a medias sería peor que no haber empezado.
 
 ### Convivencia con las existencias
 

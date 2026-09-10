@@ -14,17 +14,23 @@ import {
   Drawer, Stack, Group, Text, TextInput, Switch, Button, Alert, Loader, Center,
   Paper, ActionIcon, Tooltip, Modal, Badge,
 } from '@mantine/core'
-import { IconPencil, IconTrash, IconCheck, IconX } from '@tabler/icons-react'
+import { IconPencil, IconTrash, IconCheck, IconX, IconTag } from '@tabler/icons-react'
 import {
   useTiposPieza, useUpdateTipoPieza, useDeleteTipoPieza,
 } from '../hooks/useTiposPieza'
 import type { TipoPieza } from '../hooks/useTiposPieza'
 import { limpiarTextoSimple } from '../lib/validaciones'
+import IdentificarExistentesModal from './IdentificarExistentesModal'
 
 /** Un renglón del catálogo: nombre editable en sitio y su interruptor. */
 function TipoRow({ tipo, onBorrar }: { tipo: TipoPieza; onBorrar: () => void }) {
   const [editando, setEditando] = useState(false)
   const [nombre, setNombre] = useState(tipo.nombre)
+  // Al encender el rastreo se abre la captura de lo que ya estaba en el estante.
+  // Es el momento en que tiene sentido preguntarlo: encender el interruptor y no
+  // decir nada dejaría todo el stock existente sin poder identificarse, y nadie
+  // volvería a acordarse.
+  const [identificando, setIdentificando] = useState(false)
   const mut = useUpdateTipoPieza()
 
   const limpio = nombre.trim()
@@ -104,10 +110,26 @@ function TipoRow({ tipo, onBorrar }: { tipo: TipoPieza; onBorrar: () => void }) 
           description="Para lo que vale la pena seguirle la pista: llantas, baterías. Lo que se gasta a granel —aceite, tornillos— déjalo apagado."
           checked={tipo.rastreo_individual}
           disabled={mut.isPending}
-          onChange={(e) =>
-            mut.mutate({ id: tipo.id, rastreo_individual: e.currentTarget.checked })
-          }
+          onChange={(e) => {
+            const encendiendo = e.currentTarget.checked
+            mut.mutate(
+              { id: tipo.id, rastreo_individual: encendiendo },
+              { onSuccess: () => { if (encendiendo) setIdentificando(true) } },
+            )
+          }}
         />
+
+        {/* Ya está encendido: se puede volver a abrir la captura para lo que
+            haya quedado pendiente, o para el stock que entró por otra vía. */}
+        {tipo.rastreo_individual && (
+          <Button
+            variant="subtle" size="compact-xs" w="fit-content"
+            leftSection={<IconTag size={12} />}
+            onClick={() => setIdentificando(true)}
+          >
+            Identificar piezas existentes
+          </Button>
+        )}
 
         {mut.error && (
           <Alert color="red" p="xs">
@@ -115,6 +137,13 @@ function TipoRow({ tipo, onBorrar }: { tipo: TipoPieza; onBorrar: () => void }) 
           </Alert>
         )}
       </Stack>
+
+      <IdentificarExistentesModal
+        opened={identificando}
+        onClose={() => setIdentificando(false)}
+        tipoPiezaId={tipo.id}
+        tipoNombre={tipo.nombre}
+      />
     </Paper>
   )
 }

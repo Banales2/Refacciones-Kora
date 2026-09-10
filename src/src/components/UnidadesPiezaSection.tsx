@@ -17,10 +17,10 @@ import {
 } from '@mantine/core'
 import { IconPencil, IconCheck, IconX, IconTag } from '@tabler/icons-react'
 import {
-  useUnidadesPieza, useSetEtiquetaUnidad, useGenerarUnidades, ESTADO_UNIDAD,
+  useUnidadesPieza, useSetEtiquetaUnidad, useSinIdentificar, ESTADO_UNIDAD,
 } from '../hooks/useUnidadesPieza'
 import type { UnidadPieza } from '../hooks/useUnidadesPieza'
-import { useCuadreUnidades } from '../hooks/useCuadreUnidades'
+import IdentificarExistentesModal from './IdentificarExistentesModal'
 
 function fmtKm(km: number | null) {
   if (km == null) return '—'
@@ -87,16 +87,13 @@ function Etiqueta({ unidad, piezaId }: { unidad: UnidadPieza; piezaId: number })
 
 export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
   const { data, isLoading, isError } = useUnidadesPieza(piezaId)
-  const { data: cuadreData } = useCuadreUnidades()
-  const generarMut = useGenerarUnidades(piezaId)
+  // Lo que está en el estante sin identidad: se compró antes de encender el
+  // rastreo. La existencia las cuenta, pero no se pueden seguir.
+  const { data: pendientes } = useSinIdentificar({ piezaId })
+  const [identificando, setIdentificando] = useState(false)
   const unidades = data?.data ?? []
 
-  // Piezas de esta refacción que están en la existencia pero no tienen unidad.
-  // Es el stock que ya estaba en el estante cuando se encendió el rastreo: la
-  // existencia las cuenta, pero no se pueden identificar hasta darles una.
-  const faltantes = (cuadreData?.data ?? [])
-    .filter((c) => c.pieza_id === piezaId && c.existencia > c.unidades)
-    .reduce((n, c) => n + (c.existencia - c.unidades), 0)
+  const faltantes = (pendientes?.data ?? []).reduce((n, g) => n + g.faltan, 0)
 
   if (isLoading) return <Center py="md"><Loader size="sm" /></Center>
   if (isError) {
@@ -136,20 +133,16 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
             <Text size="xs">
               Hay <Text component="span" fw={600}>{faltantes}</Text> pieza
               {faltantes === 1 ? '' : 's'} en existencia sin identificar: se compraron
-              antes de encender el rastreo de este tipo. Dales identidad para poder
-              etiquetarlas y seguirles la pista.
+              antes de encender el rastreo de este tipo. Captura el número de cada una
+              para poder seguirles la pista.
             </Text>
             <Button
               size="compact-xs"
               leftSection={<IconTag size={13} />}
-              loading={generarMut.isPending}
-              onClick={() => generarMut.mutate()}
+              onClick={() => setIdentificando(true)}
             >
-              Identificar las {faltantes} existentes
+              Identificar {faltantes === 1 ? 'esa pieza' : `esas ${faltantes} piezas`}
             </Button>
-            {generarMut.error && (
-              <Text size="xs" c="red">{(generarMut.error as Error).message}</Text>
-            )}
           </Stack>
         </Alert>
       )}
@@ -208,6 +201,12 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
         </Table>
       </Table.ScrollContainer>
       )}
+
+      <IdentificarExistentesModal
+        opened={identificando}
+        onClose={() => setIdentificando(false)}
+        piezaId={piezaId}
+      />
     </Stack>
   )
 }
