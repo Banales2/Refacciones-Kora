@@ -13,13 +13,14 @@
 import { useState } from 'react'
 import {
   Stack, Group, Text, Table, Badge, Loader, Center, Alert, ActionIcon,
-  TextInput, Tooltip, Divider,
+  TextInput, Tooltip, Divider, Button,
 } from '@mantine/core'
-import { IconPencil, IconCheck, IconX } from '@tabler/icons-react'
+import { IconPencil, IconCheck, IconX, IconTag } from '@tabler/icons-react'
 import {
-  useUnidadesPieza, useSetEtiquetaUnidad, ESTADO_UNIDAD,
+  useUnidadesPieza, useSetEtiquetaUnidad, useGenerarUnidades, ESTADO_UNIDAD,
 } from '../hooks/useUnidadesPieza'
 import type { UnidadPieza } from '../hooks/useUnidadesPieza'
+import { useCuadreUnidades } from '../hooks/useCuadreUnidades'
 
 function fmtKm(km: number | null) {
   if (km == null) return '—'
@@ -86,15 +87,24 @@ function Etiqueta({ unidad, piezaId }: { unidad: UnidadPieza; piezaId: number })
 
 export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
   const { data, isLoading, isError } = useUnidadesPieza(piezaId)
+  const { data: cuadreData } = useCuadreUnidades()
+  const generarMut = useGenerarUnidades(piezaId)
   const unidades = data?.data ?? []
 
-  // Sin unidades no es un error: es una refacción que se cuenta a granel. No se
-  // pinta nada para no sugerir que falta capturar algo.
+  // Piezas de esta refacción que están en la existencia pero no tienen unidad.
+  // Es el stock que ya estaba en el estante cuando se encendió el rastreo: la
+  // existencia las cuenta, pero no se pueden identificar hasta darles una.
+  const faltantes = (cuadreData?.data ?? [])
+    .filter((c) => c.pieza_id === piezaId && c.existencia > c.unidades)
+    .reduce((n, c) => n + (c.existencia - c.unidades), 0)
+
   if (isLoading) return <Center py="md"><Loader size="sm" /></Center>
   if (isError) {
     return <Alert color="red" title="Error">No se pudieron cargar las piezas identificadas.</Alert>
   }
-  if (!unidades.length) return null
+  // Sin unidades y sin faltantes: la refacción se cuenta a granel. No se pinta
+  // nada, para no sugerir que falta capturar algo.
+  if (!unidades.length && faltantes === 0) return null
 
   const enAlmacen = unidades.filter((u) => u.estado === 'almacen').length
   const montadas  = unidades.filter((u) => u.estado === 'montada').length
@@ -117,6 +127,34 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
         quitarla de una unidad.
       </Text>
 
+      {/* Stock que ya estaba en el estante cuando se encendió el rastreo:
+          existe en el inventario pero no tiene identidad. Se le da aquí, sin
+          etiqueta, y se rotula después yendo a leer las piezas. */}
+      {faltantes > 0 && (
+        <Alert color="yellow" variant="light" py={8}>
+          <Stack gap={6} align="flex-start">
+            <Text size="xs">
+              Hay <Text component="span" fw={600}>{faltantes}</Text> pieza
+              {faltantes === 1 ? '' : 's'} en existencia sin identificar: se compraron
+              antes de encender el rastreo de este tipo. Dales identidad para poder
+              etiquetarlas y seguirles la pista.
+            </Text>
+            <Button
+              size="compact-xs"
+              leftSection={<IconTag size={13} />}
+              loading={generarMut.isPending}
+              onClick={() => generarMut.mutate()}
+            >
+              Identificar las {faltantes} existentes
+            </Button>
+            {generarMut.error && (
+              <Text size="xs" c="red">{(generarMut.error as Error).message}</Text>
+            )}
+          </Stack>
+        </Alert>
+      )}
+
+      {unidades.length > 0 && (
       <Table.ScrollContainer minWidth={720}>
         <Table withTableBorder striped>
           <Table.Thead>
@@ -169,6 +207,7 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
+      )}
     </Stack>
   )
 }

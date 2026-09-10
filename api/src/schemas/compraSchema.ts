@@ -21,7 +21,16 @@ export const CompraRenglonSchema = z
     pieza_nueva: RefaccionCreateSchema.optional(),
     cantidad_inicial: cantidadInicial,
     costo_unitario: costoUnitario,
+    // El folio físico de cada pieza, cuando la refacción es de un tipo que se
+    // rastrea una por una. Opcional y puede venir a medias: etiquetar cuatro
+    // llantas de las que solo dos traen número es normal, y obligar a inventar
+    // los otros dos sería peor que dejarlos en blanco.
+    identificadores: z.array(z.string().trim().max(40)).max(999).optional(),
   })
+  .refine(
+    (r) => !r.identificadores || r.identificadores.length <= r.cantidad_inicial,
+    { message: 'Hay más identificadores que piezas en el renglón' },
+  )
   .refine(
     (r) => (r.pieza_id === undefined) !== (r.pieza_nueva === undefined),
     { message: 'Cada renglón lleva una refacción del catálogo o una nueva, no ambas' },

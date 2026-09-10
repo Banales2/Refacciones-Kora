@@ -146,23 +146,99 @@ export async function findByPieza(piezaId: number): Promise<UnidadPieza[]> {
  */
 export async function crearDeCompra(
   tx: sql.Transaction, piezaId: number, loteId: number,
-  sucursalId: number | null, cuantas: number,
+  sucursalId: number | null, cuantas: number, etiquetas: (string | null)[] = [],
 ): Promise<void> {
   if (cuantas < 1) return
-  const req = tx.request()
+
+  // Con identificadores capturados hay que ir una por una: cada fila lleva el
+  // suyo. Son pocas —lo que se rastrea llega de cuatro en cuatro, no de mil—, y
+  // etiquetar es justo el momento en que alguien está mirando cada pieza.
+  if (etiquetas.some((e) => e)) {
+    for (let i = 0; i < cuantas; i++) {
+      await tx.request()
+        .input('piezaId', sql.Int, piezaId)
+        .input('loteId',  sql.Int, loteId)
+        .input('suc',     sql.Int, sucursalId)
+        .input('et',      sql.NVarChar(40), etiquetas[i] || null)
+        .query(`
+          INSERT INTO unidades_pieza (pieza_id, lote_id, sucursal_id, etiqueta)
+          VALUES (@piezaId, @loteId, @suc, @et)`)
+    }
+    return
+  }
+
+  // Sin identificadores, todas las filas son iguales y entran de un golpe. El
+  // generador evita mandar N INSERT por separado.
+  await tx.request()
     .input('piezaId', sql.Int, piezaId)
     .input('loteId',  sql.Int, loteId)
     .input('suc',     sql.Int, sucursalId)
     .input('n',       sql.Int, cuantas)
-  // Una fila por unidad. El generador evita mandar N INSERT por separado cuando
-  // llegan cuatro llantas de un tirón.
-  await req.query(`
-    WITH numeros AS (
-      SELECT TOP (@n) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS n
-      FROM sys.all_objects
-    )
-    INSERT INTO unidades_pieza (pieza_id, lote_id, sucursal_id)
-    SELECT @piezaId, @loteId, @suc FROM numeros`)
+    .query(`
+      WITH numeros AS (
+        SELECT TOP (@n) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS n
+        FROM sys.all_objects
+      )
+      INSERT INTO unidades_pieza (pieza_id, lote_id, sucursal_id)
+      SELECT @piezaId, @loteId, @suc FROM numeros`)
+}
+
+/**
+ * Da identidad al stock que ya estaba en el estante cuando se encendió el
+ * rastreo de su tipo.
+ *
+ * Es el hueco que la migración 025 dejó anotado: encender el flag no hace
+ * aparecer unidades para lo que ya se había comprado, así que esas piezas
+ * existen en la existencia pero no se pueden identificar. Esto crea las que
+ * faltan, por (lote, sucursal), hasta igualar lo que dice el inventario — que es
+ * exactamente la diferencia que reporta `contarPorSucursal`.
+ *
+ * Nacen sin etiqueta: nadie sabe cuál es cuál hasta que alguien vaya al estante
+ * y las rotule. Eso es correcto y es el punto — primero existen, luego se
+ * identifican.
+ *
+ * Es idempotente: si ya cuadran, no crea nada.
+ */
+export async function generarFaltantes(piezaId: number): Promise<number> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('piezaId', sql.Int, piezaId)
+    .query(`
+      WITH stock AS (
+        SELECT ex.lote_id, ex.sucursal_id, SUM(ex.cantidad) AS cantidad
+        FROM existencias_lote ex
+        JOIN lotes_pieza l ON l.id = ex.lote_id
+        WHERE l.pieza_id = @piezaId AND ex.cantidad > 0
+        GROUP BY ex.lote_id, ex.sucursal_id
+      ),
+      libres AS (
+        SELECT u.lote_id, u.sucursal_id, COUNT(*) AS n
+        FROM unidades_pieza u
+        WHERE u.pieza_id = @piezaId
+          AND NOT EXISTS (
+            SELECT 1 FROM instalaciones_pieza i
+            WHERE i.unidad_id = u.id AND i.fecha_retiro IS NULL)
+        GROUP BY u.lote_id, u.sucursal_id
+      ),
+      faltan AS (
+        SELECT st.lote_id, st.sucursal_id,
+               st.cantidad - COALESCE(lb.n, 0) AS faltan
+        FROM stock st
+        LEFT JOIN libres lb
+          ON lb.lote_id = st.lote_id
+         AND (lb.sucursal_id = st.sucursal_id
+              OR (lb.sucursal_id IS NULL AND st.sucursal_id IS NULL))
+      ),
+      numeros AS (
+        SELECT TOP 1000 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS n
+        FROM sys.all_objects
+      )
+      INSERT INTO unidades_pieza (pieza_id, lote_id, sucursal_id)
+      SELECT @piezaId, f.lote_id, f.sucursal_id
+      FROM faltan f
+      JOIN numeros nm ON nm.n <= f.faltan
+      WHERE f.faltan > 0`)
+  return r.rowsAffected[0] ?? 0
 }
 
 /**

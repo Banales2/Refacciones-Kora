@@ -122,6 +122,38 @@ Guardar `estado` obligaría a mantenerlo en cada montaje, cada retiro y cada
 corrección retroactiva. Basta que uno falle para que la unidad diga que está en
 el estante cuando lleva medio año en un camión.
 
+### Cómo una pieza consigue su identificador
+
+La `etiqueta` es el folio físico —grabado o pegado— que permite casar la pieza
+del estante con la del sistema. Se captura en dos momentos, y los dos importan:
+
+**Al comprar.** El renglón de una refacción rastreada pide un identificador por
+pieza. Es el único momento en que alguien tiene las piezas delante; después hay
+que ir al estante a leerlas una por una. Son opcionales y pueden ir a medias:
+etiquetar cuatro llantas de las que solo dos traen número es normal, y obligar a
+inventar los otros dos sería peor que dejarlos en blanco. Los huecos conservan la
+posición, así que la tercera llanta sigue siendo la tercera.
+
+**Después, desde la ficha.** Cada unidad tiene su etiqueta editable en sitio, que
+es como se rotula lo que llegó sin número o lo que se generó retroactivamente.
+
+Dos piezas de la misma refacción no pueden compartir folio: lo impone un índice
+único filtrado, y el alta lo comprueba antes para poder decir cuál choca.
+
+### El stock que ya estaba cuando se encendió el rastreo
+
+Encender el flag de un tipo no hace aparecer unidades para lo que ya se había
+comprado: esas piezas están en la existencia pero no se pueden identificar. Es el
+hueco que la migración 025 dejó anotado.
+
+`POST /piezas/{id}/unidades/generar` las crea, por (lote, sucursal), hasta igualar
+lo que dice el inventario — exactamente la diferencia que reporta
+`contarPorSucursal`. Nacen **sin etiqueta**, y eso es el punto: primero existen,
+después alguien va al estante y las rotula. Es idempotente.
+
+En la pantalla sale como un aviso en la ficha de la refacción: *"Hay N piezas en
+existencia sin identificar"* con el botón que las crea.
+
 ### Convivencia con las existencias
 
 `existencias_lote` sigue contando, también para los tipos rastreados. Las

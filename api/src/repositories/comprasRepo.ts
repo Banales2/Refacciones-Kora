@@ -144,6 +144,7 @@ export async function crearCompra(
       if (await unidadesRepo.piezaEsRastreada(tx, piezaId!)) {
         await unidadesRepo.crearDeCompra(
           tx, piezaId!, loteId, data.sucursal_id, renglon.cantidad_inicial,
+          renglon.identificadores ?? [],
         )
       }
 

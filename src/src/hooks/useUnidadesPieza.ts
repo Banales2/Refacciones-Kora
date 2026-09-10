@@ -55,6 +55,27 @@ export function useUnidadesPieza(piezaId: number | null) {
   })
 }
 
+/**
+ * Le da identidad al stock que ya estaba en el estante cuando se encendió el
+ * rastreo de este tipo.
+ *
+ * Encender el interruptor no hace aparecer unidades para lo ya comprado: esas
+ * piezas están en la existencia pero no se pueden identificar. Esto crea las que
+ * faltan, sin etiqueta, para poder rotularlas una por una.
+ */
+export function useGenerarUnidades(piezaId: number | null) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<{ data: { creadas: number } }>(
+      `/piezas/${piezaId}/unidades/generar`, {},
+    ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['unidades-pieza', piezaId] })
+      qc.invalidateQueries({ queryKey: ['unidades-cuadre'] })
+    },
+  })
+}
+
 export function useSetEtiquetaUnidad(piezaId: number | null) {
   const qc = useQueryClient()
   return useMutation({

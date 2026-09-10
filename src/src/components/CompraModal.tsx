@@ -32,6 +32,7 @@ import { useProveedores, useCreateProveedor } from '../hooks/useProveedores'
 import { useSucursales } from '../hooks/useSucursales'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
+import { useTiposPieza } from '../hooks/useTiposPieza'
 import { useCreateCompra } from '../hooks/useCompras'
 import type { CompraLote, CompraRenglonPayload } from '../hooks/useCompras'
 
@@ -44,6 +45,12 @@ type RenglonValues = {
   tipo_pieza_id:    string
   cantidad_inicial: number | string
   costo_unitario:   number | string
+  /**
+   * El folio físico de cada pieza, solo para los tipos que se rastrean una por
+   * una. Se captura aquí porque es el único momento en que alguien tiene las
+   * piezas delante; después hay que ir al estante a leerlas.
+   */
+  identificadores:  string[]
 }
 
 type CompraFormValues = {
@@ -68,7 +75,7 @@ type CompraFormValues = {
 
 const RENGLON_VACIO: Omit<RenglonValues, 'nueva'> = {
   pieza_id: '', numero_serie: '', descripcion: '', tipo_pieza_id: '',
-  cantidad_inicial: 1, costo_unitario: '',
+  cantidad_inicial: 1, costo_unitario: '', identificadores: [],
 }
 
 function hoyIso() {
@@ -109,6 +116,27 @@ export default function CompraModal({
   const sucursales = (sucData?.data ?? []).map((s) => ({ value: String(s.id), label: s.nombre }))
   const proveedores = (provData?.data ?? []).map((p) => ({ value: String(p.id), label: p.nombre }))
   const piezas = useMemo(() => piezasData?.data ?? [], [piezasData])
+
+  // Qué tipos se identifican pieza por pieza. Sin esto no hay forma de saber si
+  // un renglón debe pedir folios: la decisión vive en el tipo, no en la
+  // refacción (ver `docs/piezas-identificadas.md`).
+  const { data: tiposData } = useTiposPieza()
+  const tiposRastreados = useMemo(
+    () => new Set((tiposData?.data ?? []).filter((t) => t.rastreo_individual).map((t) => t.id)),
+    [tiposData],
+  )
+
+  /** El tipo del renglón: el de la refacción elegida, o el que se está capturando. */
+  function tipoDelRenglon(r: RenglonValues): number | null {
+    if (r.nueva) return r.tipo_pieza_id ? Number(r.tipo_pieza_id) : null
+    const pieza = piezas.find((p) => String(p.id) === r.pieza_id)
+    return pieza?.tipo_pieza_id ?? null
+  }
+
+  function seRastrea(r: RenglonValues): boolean {
+    const tipo = tipoDelRenglon(r)
+    return tipo !== null && tiposRastreados.has(tipo)
+  }
   const piezaOptions = useMemo(
     () => piezas.map((p) => ({ value: String(p.id), label: `${p.numero_serie} — ${p.descripcion}` })),
     [piezas],
@@ -238,6 +266,13 @@ export default function CompraModal({
         : { pieza_id: Number(r.pieza_id) }),
       cantidad_inicial: Number(r.cantidad_inicial),
       costo_unitario:   Number(r.costo_unitario),
+      // Solo lo que de verdad se escribió, y solo si el tipo se rastrea. Los
+      // huecos van como cadena vacía para que cada folio siga cuadrando con su
+      // pieza: la tercera llanta es la tercera aunque la segunda no traiga
+      // número.
+      ...(seRastrea(r) && r.identificadores.some((x) => x.trim())
+        ? { identificadores: r.identificadores.slice(0, Number(r.cantidad_inicial)).map((x) => x.trim()) }
+        : {}),
     }))
 
     crearCompraMut.mutate(
@@ -462,6 +497,45 @@ export default function CompraModal({
                       </Text>
                     </Grid.Col>
                   </Grid>
+
+                  {/* Los folios físicos, solo para lo que se rastrea pieza por
+                      pieza. Se piden aquí porque es el único momento en que
+                      alguien tiene las piezas delante — después hay que ir al
+                      estante a leerlas una por una. Son opcionales: la unidad
+                      se crea igual y se puede rotular más tarde. */}
+                  {seRastrea(r) && Number(r.cantidad_inicial) > 0 && (
+                    <Stack gap={4} mt={8}>
+                      <Text size="xs" fw={500}>
+                        Identificador de cada pieza{' '}
+                        <Text component="span" c="dimmed" fw={400}>
+                          (opcional — el número grabado o la etiqueta que traiga)
+                        </Text>
+                      </Text>
+                      <Group gap={6} wrap="wrap">
+                        {Array.from({ length: Math.min(Number(r.cantidad_inicial), 20) }).map((_, i) => (
+                          <TextInput
+                            key={i}
+                            size="xs"
+                            w={140}
+                            placeholder={`Pieza ${i + 1}`}
+                            maxLength={40}
+                            value={r.identificadores[i] ?? ''}
+                            onChange={(e) => {
+                              const vals = [...r.identificadores]
+                              vals[i] = e.currentTarget.value.slice(0, 40)
+                              form.setFieldValue(`renglones.${idx}.identificadores`, vals)
+                            }}
+                          />
+                        ))}
+                      </Group>
+                      {Number(r.cantidad_inicial) > 20 && (
+                        <Text size="xs" c="dimmed">
+                          Son {r.cantidad_inicial} piezas: aquí se etiquetan las primeras 20.
+                          El resto se rotula desde la ficha de la refacción.
+                        </Text>
+                      )}
+                    </Stack>
+                  )}
                 </Paper>
               ))}
             </Stack>

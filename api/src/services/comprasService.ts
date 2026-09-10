@@ -15,9 +15,24 @@ export async function crearCompra(
   data: CompraCreate, autorizadoPor: string,
 ): Promise<repo.CompraCreada> {
   const vistos = new Set<string>()
+  // Los folios físicos de toda la factura. Dos piezas no pueden llevar el mismo
+  // número, ni dentro de un renglón ni entre renglones: el índice único lo
+  // rechazaría de todos modos, pero solo después de haber hecho media compra y
+  // sin decir cuál de los folios choca.
+  const folios = new Set<string>()
 
   for (const [i, renglon] of data.renglones.entries()) {
     const donde = `Renglón ${i + 1}`
+
+    for (const ident of renglon.identificadores ?? []) {
+      const folio = ident.trim()
+      if (!folio) continue
+      const clave = folio.toUpperCase()
+      if (folios.has(clave)) {
+        throw new ConflictError(`${donde}: el identificador ${folio} se repite en esta compra`)
+      }
+      folios.add(clave)
+    }
 
     if (renglon.pieza_id !== undefined) {
       const pieza = await refaccionesRepo.findById(renglon.pieza_id)

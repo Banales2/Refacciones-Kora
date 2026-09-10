@@ -27,6 +27,12 @@ export interface CompraRenglonPayload {
   pieza_nueva?:      PiezaNuevaPayload
   cantidad_inicial:  number
   costo_unitario:    number
+  /**
+   * El folio físico de cada pieza, para las refacciones de un tipo que se
+   * rastrea una por una. Puede venir a medias o no venir: etiquetar cuatro
+   * llantas de las que solo dos traen número es normal.
+   */
+  identificadores?:  string[]
 }
 
 export interface CompraPayload {
