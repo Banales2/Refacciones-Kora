@@ -132,6 +132,31 @@ export interface DatosMontaje {
   km_retiro?:         number | null
 }
 
+/**
+ * El resultado de montar. `historico` distingue los dos desenlaces posibles, y
+ * el que llama tiene que poder decírselo al usuario: en un montaje retroactivo
+ * la unidad NO cambia lo que trae puesto, y callarlo haría pensar que el
+ * montaje no se guardó.
+ */
+export interface MontajeResultado {
+  /**
+   * El montaje entró como renglón cerrado de la bitácora, sin tocar la pieza
+   * vigente, porque su fecha es anterior a la del cambio más reciente.
+   */
+  historico: boolean
+  /** Lo que la unidad sigue trayendo puesto, y desde cuándo. Solo si `historico`. */
+  vigenteDesde?: string | null
+}
+
+// Las columnas DATE llegan del driver como Date a medianoche UTC, así que la
+// parte de fecha del ISO es el día de calendario correcto. Se normaliza para
+// poder comparar contra las fechas que vienen del cliente, que son texto.
+function aIso(v: unknown): string | null {
+  if (v == null) return null
+  if (v instanceof Date) return v.toISOString().slice(0, 10)
+  return String(v).slice(0, 10)
+}
+
 // Dónde se hizo el trabajo. Sale de la tabla hija del vehículo, y solo camiones
 // y montacargas la tienen; en los demás tipos queda NULL hasta que exista el
 // inventario por sucursal y se decida de dónde sacarla.
@@ -154,10 +179,19 @@ const SUCURSAL_DEL_VEHICULO = `
 // Reasignar la MISMA pieza no es un reemplazo: no cierra nada ni abre renglón
 // nuevo, solo corrige los datos del que ya está abierto. Tratarlo como cambio
 // fabricaría una sustitución que nunca ocurrió y ensuciaría la vida útil.
+//
+// MONTAJE RETROACTIVO. Un mantenimiento viejo se captura tarde, y la pieza que
+// puso ya fue reemplazada por otra desde entonces. Ese montaje ocurrió —tiene
+// que quedar en la bitácora— pero no es lo que la unidad trae puesto hoy:
+// tratarlo como el cambio más reciente borraría de la ficha la pieza que sí
+// está montada. Por eso, cuando la fecha del montaje es anterior a la del
+// renglón vigente, entra como renglón YA CERRADO en medio de la historia y
+// `piezas_vehiculo` no se toca. El resultado lo dice para que la pantalla pueda
+// avisarlo.
 export async function setPieza(
   vehiculoId: number, tipoId: number, etiqueta: string, piezaId: number,
   datos: DatosMontaje = {},
-): Promise<void> {
+): Promise<MontajeResultado> {
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
@@ -172,6 +206,31 @@ export async function setPieza(
           AND etiqueta = @etiqueta`)
     const anterior: number | null = actual.recordset[0]?.pieza_id ?? null
     const esCambioDePieza = anterior !== piezaId
+
+    // El renglón vigente de la bitácora, con la fecha desde la que la unidad
+    // trae puesto lo que trae. Es contra esa fecha que se decide si este
+    // montaje es el más reciente o uno que quedó atrás.
+    const vigenteQ = await tx.request()
+      .input('vehiculoId', sql.Int, vehiculoId)
+      .input('tipoId',     sql.Int, tipoId)
+      .input('etiqueta',   sql.NVarChar(40), etiqueta)
+      .query(`
+        SELECT fecha_instalacion FROM instalaciones_pieza
+        WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+          AND etiqueta = @etiqueta AND fecha_retiro IS NULL`)
+    const vigenteDesde = aIso(vigenteQ.recordset[0]?.fecha_instalacion)
+    const fechaMontaje = aIso(datos.fecha_instalacion)
+
+    // Estrictamente anterior: montar el MISMO día que el cambio vigente es la
+    // captura normal de ese mismo servicio, no una corrección retroactiva.
+    const esRetroactivo =
+      fechaMontaje !== null && vigenteDesde !== null && fechaMontaje < vigenteDesde
+
+    if (esRetroactivo) {
+      await montarRetroactivo(tx, vehiculoId, tipoId, etiqueta, piezaId, datos, fechaMontaje)
+      await tx.commit()
+      return { historico: true, vigenteDesde }
+    }
 
     await tx.request()
       .input('vehiculoId', sql.Int, vehiculoId)
@@ -274,9 +333,109 @@ export async function setPieza(
     }
 
     await tx.commit()
+    return { historico: false }
   } catch (err) {
     await tx.rollback()
     throw err
+  }
+}
+
+/**
+ * El montaje que quedó atrás: se intercala en la bitácora sin tocar lo que la
+ * unidad trae puesto hoy.
+ *
+ * Tres escrituras, todas dentro de la transacción de `setPieza`:
+ *
+ *   1. Se cierra el renglón que cubría esa fecha —la pieza que estaba puesta el
+ *      día del servicio— con la fecha del montaje. El motivo y el destino que
+ *      capturó el usuario son de ESA pieza, la que salió ese día, no de la que
+ *      trae la unidad ahora.
+ *   2. Se inserta el montaje como renglón ya cerrado: entra el día del servicio
+ *      y sale el día del siguiente cambio, que es cuando otra pieza lo relevó.
+ *   3. `piezas_vehiculo` no se toca. La pieza vigente sigue siendo la que está
+ *      puesta de verdad.
+ *
+ * El renglón entra cerrado, así que no puede chocar contra el índice único de
+ * renglones abiertos: por definición hay uno posterior que sigue vigente.
+ *
+ * La existencia NO se devuelve al almacén aunque el destino diga "stock": esa
+ * devolución ya ocurrió (o no) el día que se hizo el cambio, y aplicarla ahora
+ * sumaría al inventario de hoy una pieza que salió hace meses.
+ */
+async function montarRetroactivo(
+  tx: sql.Transaction, vehiculoId: number, tipoId: number, etiqueta: string,
+  piezaId: number, datos: DatosMontaje, fechaMontaje: string,
+): Promise<void> {
+  const llave = (r: sql.Request) => r
+    .input('vehiculoId', sql.Int, vehiculoId)
+    .input('tipoId',     sql.Int, tipoId)
+    .input('etiqueta',   sql.NVarChar(40), etiqueta)
+
+  // Quién relevó a esta pieza: el montaje más temprano de los que vinieron
+  // después. Siempre hay al menos uno —el vigente—, porque eso es justamente lo
+  // que hace retroactivo a este montaje.
+  const siguiente = await llave(tx.request())
+    .input('fecha', sql.Date, fechaMontaje)
+    .query(`
+      SELECT TOP 1 fecha_instalacion FROM instalaciones_pieza
+      WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+        AND etiqueta = @etiqueta AND fecha_instalacion >= @fecha
+      ORDER BY fecha_instalacion ASC`)
+  const fechaRetiro = aIso(siguiente.recordset[0]?.fecha_instalacion) ?? fechaMontaje
+
+  // 1. La pieza que estaba puesta ese día sale ese día. Puede no haber ninguna
+  //    (la unidad venía sin nada en ese renglón): entonces no hay nada que
+  //    cerrar y el UPDATE no toca ninguna fila.
+  await llave(tx.request())
+    .input('fecha',   sql.Date, fechaMontaje)
+    .input('km',      sql.Int, datos.km_retiro ?? datos.km_instalacion ?? null)
+    .input('motivo',  sql.NVarChar(30), datos.motivo_retiro ?? null)
+    .input('destino', sql.NVarChar(30), datos.destino ?? null)
+    // El renglón se elige con ORDER BY y se actualiza por id: en una línea de
+    // tiempo sana el filtro casa con uno solo, pero un `UPDATE TOP (1)` a secas
+    // elegiría cualquiera de ellos si alguna vez se solaparan.
+    .query(`
+      UPDATE instalaciones_pieza SET
+        fecha_retiro  = @fecha,
+        km_retiro     = COALESCE(@km, km_retiro),
+        motivo_retiro = COALESCE(@motivo, motivo_retiro),
+        destino       = COALESCE(@destino, destino)
+      WHERE id = (
+        SELECT TOP 1 id FROM instalaciones_pieza
+        WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+          AND etiqueta = @etiqueta
+          AND fecha_instalacion IS NOT NULL
+          AND fecha_instalacion <= @fecha
+          AND (fecha_retiro IS NULL OR fecha_retiro > @fecha)
+        ORDER BY fecha_instalacion DESC, id DESC
+      )`)
+
+  // 2. El montaje, ya cerrado, en su lugar de la línea de tiempo.
+  await llave(tx.request())
+    .input('piezaId', sql.Int,  piezaId)
+    .input('loteId',  sql.Int,  datos.lote_id ?? null)
+    .input('mttoId',  sql.Int,  datos.mantenimiento_id ?? null)
+    .input('detId',   sql.Int,  datos.detalle_mtto_pieza_id ?? null)
+    .input('sucId',   sql.Int,  datos.sucursal_id ?? null)
+    .input('fecha',   sql.Date, fechaMontaje)
+    .input('km',      sql.Int,  datos.km_instalacion ?? null)
+    .input('retiro',  sql.Date, fechaRetiro)
+    .query(`
+      INSERT INTO instalaciones_pieza
+        (vehiculo_id, tipo_pieza_id, etiqueta, pieza_id, lote_id, sucursal_id,
+         mantenimiento_id, detalle_mtto_pieza_id, fecha_instalacion, km_instalacion,
+         fecha_retiro)
+      VALUES
+        (@vehiculoId, @tipoId, @etiqueta, @piezaId, @loteId,
+         COALESCE(@sucId, ${SUCURSAL_DEL_VEHICULO}),
+         @mttoId, @detId, @fecha, @km, @retiro)`)
+
+  // 3. La pieza salió del almacén el día del servicio: el stock de hoy ya no la
+  //    tiene que tener. Se descuenta igual que en un montaje normal, salvo que
+  //    venga ligada a un consumo —ese renglón ya la descontó—.
+  if (datos.detalle_mtto_pieza_id == null &&
+      datos.lote_id != null && datos.sucursal_id != null) {
+    await moverExistencia(tx, datos.lote_id, datos.sucursal_id, -1)
   }
 }
 

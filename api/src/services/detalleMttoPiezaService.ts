@@ -43,9 +43,11 @@ export async function create(mantenimientoId: number, data: DetalleMttoPiezaCrea
 
   const costoUnitario = data.costo_unitario ?? lote.costo_unitario
   const creado = await repo.create(mantenimientoId, data, costoUnitario)
-  if (montajes.length === 0) return { detalle: creado, montajeError: null }
+  if (montajes.length === 0) {
+    return { detalle: creado, montajeError: null, montajeAviso: null }
+  }
 
-  return { detalle: creado, montajeError: await montar(mantenimientoId, creado, montajes) }
+  return { detalle: creado, ...(await montar(mantenimientoId, creado, montajes)) }
 }
 
 /**
@@ -58,15 +60,25 @@ export async function create(mantenimientoId: number, data: DetalleMttoPiezaCrea
  * recapturarlo entero; en vez de eso se devuelve el aviso y la pieza queda como
  * "sin montar", que es exactamente lo que era antes de todo esto y se resuelve
  * desde el propio detalle.
+ *
+ * Devuelve dos avisos distintos y por eso no son uno solo: `montajeError` es lo
+ * que NO se pudo montar y hay que resolver; `montajeAviso` es lo que SÍ se
+ * montó pero quedó en el historial, sin reemplazar la pieza vigente, porque
+ * este servicio es anterior al último cambio de ese renglón. Mezclarlos
+ * mandaría a arreglar algo que ya está bien.
  */
 async function montar(
   mantenimientoId: number,
   consumo: repo.DetalleMttoPieza,
   montajes: NonNullable<DetalleMttoPiezaCreate['montajes']>,
-): Promise<string | null> {
+): Promise<{ montajeError: string | null; montajeAviso: string | null }> {
   if (consumo.tipo_pieza_id == null) {
-    return `${consumo.numero_serie} no tiene tipo de pieza, así que no se puede montar en la unidad. ` +
-      'Asígnale uno en el catálogo de refacciones.'
+    return {
+      montajeError:
+        `${consumo.numero_serie} no tiene tipo de pieza, así que no se puede montar en la unidad. ` +
+        'Asígnale uno en el catálogo de refacciones.',
+      montajeAviso: null,
+    }
   }
   const mantenimiento = await mantenimientoRepo.findById(mantenimientoId)
   if (!mantenimiento) throw new NotFoundError('Mantenimiento')
@@ -80,9 +92,11 @@ async function montar(
     : undefined
 
   const fallos: string[] = []
+  // Los que se guardaron en el historial sin reemplazar la pieza actual.
+  const historicos: string[] = []
   for (const m of montajes) {
     try {
-      await piezasVehiculoService.setPieza(
+      const res = await piezasVehiculoService.setPieza(
         mantenimiento.vehiculo_id, consumo.tipo_pieza_id, m.etiqueta, consumo.pieza_id,
         {
           // La liga: el consumo ya descontó del almacén, así que montar no
@@ -97,13 +111,27 @@ async function montar(
           km_retiro:             mantenimiento.km_actual || undefined,
         },
       )
+      if (res.historico) {
+        const donde = m.etiqueta ? `"${m.etiqueta}"` : 'la posición única'
+        historicos.push(
+          `${donde} (esa posición se volvió a cambiar el ${res.vigenteDesde})`
+        )
+      }
     } catch (err) {
       const donde = m.etiqueta ? `"${m.etiqueta}"` : 'la posición única'
       fallos.push(`${donde}: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
-  if (fallos.length === 0) return null
-  return `El consumo se guardó, pero no se pudo montar en ${fallos.join('; ')}`
+  return {
+    montajeError: fallos.length
+      ? `El consumo se guardó, pero no se pudo montar en ${fallos.join('; ')}`
+      : null,
+    montajeAviso: historicos.length
+      ? 'Este mantenimiento es anterior al último cambio de esa posición, así que ' +
+        'la pieza quedó registrada en el historial de la unidad pero NO reemplaza a ' +
+        `la que trae puesta ahora: ${historicos.join('; ')}.`
+      : null,
+  }
 }
 
 export async function update(id: number, data: DetalleMttoPiezaUpdate) {

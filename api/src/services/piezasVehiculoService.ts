@@ -1,5 +1,7 @@
 import * as repo from '../repositories/piezasVehiculoRepo'
-import type { PiezaDeVehiculo, DatosMontaje, InstalacionHistorial } from '../repositories/piezasVehiculoRepo'
+import type {
+  PiezaDeVehiculo, DatosMontaje, InstalacionHistorial, MontajeResultado,
+} from '../repositories/piezasVehiculoRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import * as refaccionesRepo from '../repositories/refaccionesRepo'
 import * as lotesRepo from '../repositories/lotesRepo'
@@ -19,10 +21,18 @@ export async function getHistorial(vehiculoId: number): Promise<InstalacionHisto
   return repo.findHistorial(vehiculoId)
 }
 
+/**
+ * Monta una pieza en un renglón de la unidad.
+ *
+ * El resultado dice si entró como el cambio vigente o como un renglón
+ * histórico: un montaje con fecha anterior al último cambio se registra en la
+ * bitácora pero no reemplaza lo que la unidad trae puesto hoy. Ver
+ * `piezasVehiculoRepo.setPieza`.
+ */
 export async function setPieza(
   vehiculoId: number, tipoId: number, etiqueta: string, piezaId: number,
   datosEntrada: DatosMontaje = {},
-): Promise<void> {
+): Promise<MontajeResultado> {
   let datos = datosEntrada
   const vehiculo = await vehiculosRepo.findById(vehiculoId)
   if (!vehiculo) throw new NotFoundError('Vehículo')
@@ -133,7 +143,7 @@ export async function setPieza(
 
   // Sin fecha explícita, hoy en México. Se resuelve aquí y no en SQL porque el
   // server corre en UTC y por la tarde ya está en el día siguiente.
-  await repo.setPieza(vehiculoId, tipoId, etiqueta, piezaId, {
+  return repo.setPieza(vehiculoId, tipoId, etiqueta, piezaId, {
     ...datos,
     fecha_instalacion: datos.fecha_instalacion ?? fechaMexico(),
   })

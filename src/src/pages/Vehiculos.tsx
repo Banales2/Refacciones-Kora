@@ -64,7 +64,7 @@ import EtiquetaEditable from '../components/EtiquetaEditable'
 import { useTiposPieza } from '../hooks/useTiposPieza'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
-import { avisarMontajes } from '../lib/montajes'
+import { avisarMontajes, avisarHistoricos } from '../lib/montajes'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -296,7 +296,11 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
         setDeshacer(null)
         if (!piezas.length) { setAtendiendo(null); return }
         piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
-          onSuccess: (avisos) => { avisarMontajes(avisos); setAtendiendo(null) },
+          onSuccess: ({ avisos, historicos }) => {
+            avisarMontajes(avisos)
+            avisarHistoricos(historicos)
+            setAtendiendo(null)
+          },
           // El mantenimiento ya quedó registrado: no hay forma de deshacer el
           // alta, así que se abre su detalle para capturar a mano lo que faltó.
           onError: (e: Error) => {
@@ -591,13 +595,18 @@ function groupByYearMonth<T>(
   return { sinFecha, anios: [...porAnio.entries()] }
 }
 
+// El lápiz NO abre el formulario: abre el detalle del mantenimiento, que es
+// donde está todo lo que se hace con uno ya registrado —agregar refacciones,
+// comprarlas si faltan y montarlas en la unidad—. Cambiar fecha, técnico o
+// costo es solo una parte, y se llega desde el propio detalle con su lápiz.
+// Antes se entraba directo al formulario y lo demás quedaba escondido detrás de
+// un clic en la fila que nadie descubría.
 function MantenimientoTable({
-  items, mostrarKm = true, onOpenDetalle, onEdit, onDelete,
+  items, mostrarKm = true, onOpenDetalle, onDelete,
 }: {
   items:         Mantenimiento[]
   mostrarKm?:    boolean
   onOpenDetalle: (id: number) => void
-  onEdit:        (m: Mantenimiento) => void
   onDelete:      (m: Mantenimiento) => void
 }) {
   function fmtFecha(iso: string | null) {
@@ -652,8 +661,8 @@ function MantenimientoTable({
               </Table.Td>
               <Table.Td onClick={(e) => e.stopPropagation()}>
                 <Group gap={4} justify="flex-end">
-                  <Tooltip label="Editar">
-                    <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => onEdit(m)}>
+                  <Tooltip label="Ver detalle y editar">
+                    <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => onOpenDetalle(m.id)}>
                       <IconPencil size={14} />
                     </ActionIcon>
                   </Tooltip>
@@ -703,7 +712,11 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
       onSuccess: (res) => {
         if (!piezas.length) { setFormOpen(false); return }
         piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
-          onSuccess: (avisos) => { avisarMontajes(avisos); setFormOpen(false) },
+          onSuccess: ({ avisos, historicos }) => {
+            avisarMontajes(avisos)
+            avisarHistoricos(historicos)
+            setFormOpen(false)
+          },
           // El mantenimiento ya quedó registrado: no se puede "deshacer" el alta,
           // así que se abre su detalle para completar a mano las piezas que faltaron.
           onError: (e: Error) => {
@@ -779,7 +792,7 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
                             <MantenimientoTable
                               items={mesItems}
                               mostrarKm={!tipoVehiculo || !sinKilometraje(tipoVehiculo)}
-                              onOpenDetalle={setDetalleId} onEdit={openEdit} onDelete={setDeleting}
+                              onOpenDetalle={setDetalleId} onDelete={setDeleting}
                             />
                           </div>
                         ))}

@@ -57,3 +57,18 @@ export function avisarMontajes(avisos: string[]): void {
   const texto = textoAvisoMontajes(avisos)
   if (texto) alert(texto)
 }
+
+// ─── Aviso de los montajes que quedaron en el historial ──────────────────────
+
+/**
+ * Lo que SÍ se montó pero no reemplaza a la pieza actual.
+ *
+ * Es distinto de un fallo y por eso no comparte el aviso: la pieza quedó
+ * registrada donde va, solo que este mantenimiento es anterior al último cambio
+ * de esa posición y la unidad sigue trayendo puesta la de después. Sin decirlo,
+ * quien captura ve que la ficha no cambió y vuelve a intentarlo.
+ */
+export function avisarHistoricos(avisos: string[]): void {
+  if (!avisos.length) return
+  alert(avisos.join('\n\n'))
+}

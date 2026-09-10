@@ -20,7 +20,7 @@ import type { TipoVehiculo } from '../hooks/useVehiculos'
 import { useCreateMantenimiento } from '../hooks/useMantenimientos'
 import type { MantenimientoPayload } from '../hooks/useMantenimientos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
-import { avisarMontajes } from '../lib/montajes'
+import { avisarMontajes, avisarHistoricos } from '../lib/montajes'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import IncidenciaForm from '../components/IncidenciaForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
@@ -187,7 +187,11 @@ export default function Incidencias({ onNavigateVehiculo }: {
         setDeshacer(null)
         if (!piezas.length) { setAtendiendo(null); return }
         piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
-          onSuccess: (avisos) => { avisarMontajes(avisos); setAtendiendo(null) },
+          onSuccess: ({ avisos, historicos }) => {
+            avisarMontajes(avisos)
+            avisarHistoricos(historicos)
+            setAtendiendo(null)
+          },
           // El mantenimiento ya quedó registrado: no hay forma de deshacer el
           // alta, así que se abre su detalle para capturar a mano lo que faltó.
           onError: (e: Error) => {

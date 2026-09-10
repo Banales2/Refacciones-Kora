@@ -76,6 +76,13 @@ export function useDetalleMtto(mantenimientoId: number | null) {
 interface DetalleCreado {
   data:           DetalleMttoPieza
   montaje_error?: string | null
+  /**
+   * El montaje se guardó en el historial de la unidad pero NO reemplazó a la
+   * pieza vigente, porque este mantenimiento es anterior al último cambio de esa
+   * posición. No es un fallo: va aparte de `montaje_error` para no mandar a
+   * arreglar algo que quedó bien.
+   */
+  montaje_aviso?: string | null
 }
 
 // Montar una pieza cambia lo que la unidad trae puesto y su historial, además
@@ -109,11 +116,15 @@ export function useCreateDetallesMtto() {
       // que sí quedó guardado pero que no se pudo montar, y callarlos dejaría
       // la pieza sin poner sin que nadie se entere.
       const avisos: string[] = []
+      // Los que sí se montaron pero quedaron en el historial, sin reemplazar la
+      // pieza actual. Se juntan aparte porque no hay nada que arreglar.
+      const historicos: string[] = []
       for (const pieza of piezas) {
         const res = await api.post<DetalleCreado>(`/mantenimientos/${mantenimientoId}/detalle`, pieza)
         if (res.montaje_error) avisos.push(res.montaje_error)
+        if (res.montaje_aviso) historicos.push(res.montaje_aviso)
       }
-      return avisos
+      return { avisos, historicos }
     },
     onSettled: (_data, _err, { mantenimientoId }) => {
       // Incluso si una pieza falla a medias, las anteriores sí se guardaron:

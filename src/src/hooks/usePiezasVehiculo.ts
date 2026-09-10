@@ -78,13 +78,25 @@ function invalidar(qc: ReturnType<typeof useQueryClient>, vehiculoId: number) {
   qc.invalidateQueries({ queryKey: ['detalle-mtto'] })
 }
 
+/**
+ * Qué pasó con el montaje. `historico` es el montaje con fecha anterior al
+ * último cambio de esa posición: queda en la bitácora de la unidad, pero la
+ * pieza vigente no se toca. Decirlo importa — si no, se ve como si no hubiera
+ * pasado nada.
+ */
+export interface MontajeResultado {
+  historico:     boolean
+  /** Desde cuándo trae puesta la unidad la pieza que sigue vigente. */
+  vigenteDesde?: string | null
+}
+
 export function useSetPiezaVehiculo() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ vehiculoId, tipoId, etiqueta, piezaId, datos }: {
       vehiculoId: number; tipoId: number; etiqueta?: string; piezaId: number; datos?: DatosMontaje
     }) =>
-      api.put<void>(`/vehiculos/${vehiculoId}/piezas/${tipoId}`, {
+      api.put<{ data: MontajeResultado }>(`/vehiculos/${vehiculoId}/piezas/${tipoId}`, {
         pieza_id: piezaId, etiqueta: etiqueta ?? '', ...datos,
       }),
     onSuccess: (_d, { vehiculoId }) => invalidar(qc, vehiculoId),

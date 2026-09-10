@@ -13,6 +13,7 @@ import { Modal, Stack, NumberInput, Alert, Button, Group, Text } from '@mantine/
 import { FechaInput } from './FechaInput'
 import SelectCatalogo from './SelectCatalogo'
 import { usePiezasVehiculo, useSetPiezaVehiculo } from '../hooks/usePiezasVehiculo'
+import { avisarHistoricos } from '../lib/montajes'
 import type { DetalleMttoPieza } from '../hooks/useDetalleMtto'
 
 const hoy = () => new Date().toISOString().slice(0, 10)
@@ -76,7 +77,22 @@ export default function MontarConsumoModal({
           ...(km !== '' ? { km_instalacion: Number(km) } : {}),
         },
       },
-      { onSuccess: onClose },
+      {
+        onSuccess: (res) => {
+          // Montado, pero en el historial: este mantenimiento es anterior al
+          // último cambio de esa posición, así que la unidad sigue trayendo la
+          // pieza de después. Sin decirlo se ve como si no hubiera pasado nada.
+          if (res.data.historico) {
+            avisarHistoricos([
+              'Este mantenimiento es anterior al último cambio de esa posición' +
+              (res.data.vigenteDesde ? ` (${res.data.vigenteDesde})` : '') +
+              ', así que la pieza quedó registrada en el historial de la unidad ' +
+              'pero NO reemplaza a la que trae puesta ahora.',
+            ])
+          }
+          onClose()
+        },
+      },
     )
   }
 

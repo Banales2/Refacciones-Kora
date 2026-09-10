@@ -18,7 +18,7 @@ import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 import type { LoteDisponible } from '../hooks/useLotesDisponibles'
 import MontarConsumoModal from './MontarConsumoModal'
 import CompraModal from './CompraModal'
-import { avisarMontajes } from '../lib/montajes'
+import { avisarMontajes, avisarHistoricos } from '../lib/montajes'
 import { POSICIONES_VACIAS, aMontajes } from '../lib/montajes'
 import type { PosicionesValue } from '../lib/montajes'
 import PosicionesMontaje from './PosicionesMontaje'
@@ -71,7 +71,7 @@ const claveExistencia = (loteId: number | string, sucursalId: number | string) =
   `${loteId}:${sucursalId}`
 
 function DetalleForm({
-  mode, lockedLabel, initial, maxCantidad: maxCantidadEdit, vehiculoId,
+  mode, lockedLabel, initial, maxCantidad: maxCantidadEdit, vehiculoId, fechaServicio,
   isPending, error, onSubmit, onCancel,
 }: {
   mode:        'create' | 'edit'
@@ -80,6 +80,12 @@ function DetalleForm({
   maxCantidad?: number
   /** La unidad del mantenimiento: de ella salen los renglones donde montar. */
   vehiculoId:  number
+  /**
+   * El día del servicio. Con él, el selector de posiciones puede advertir antes
+   * de guardar que el montaje va a quedar en el historial sin reemplazar a la
+   * pieza actual, en vez de que se descubra al ver que la ficha no cambió.
+   */
+  fechaServicio?: string | null
   isPending:   boolean
   error:       string | null
   onSubmit:    (v: DetalleFormValues) => void
@@ -231,6 +237,7 @@ function DetalleForm({
             vehiculoId={vehiculoId}
             tipoPiezaId={selectedLote?.tipo_pieza_id}
             cantidad={Number(form.values.cantidad) || 1}
+            fechaServicio={fechaServicio}
             value={form.values.posiciones}
             onChange={(v) => form.setFieldValue('posiciones', v)}
           />
@@ -291,6 +298,10 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
       // queda como "sin montar", que se resuelve con su botón de montar.
       onSuccess: (res) => {
         avisarMontajes(res.montaje_error ? [res.montaje_error] : [])
+        // Se montó, pero en el historial: este mantenimiento es anterior al
+        // último cambio de esa posición y la unidad sigue trayendo la de
+        // después. Sin decirlo se ve como si no hubiera pasado nada.
+        avisarHistoricos(res.montaje_aviso ? [res.montaje_aviso] : [])
         setCreateOpen(false)
       },
     })
@@ -467,6 +478,7 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
         <DetalleForm
           mode="create"
           vehiculoId={data?.mantenimiento.vehiculo_id ?? 0}
+          fechaServicio={data?.mantenimiento.fecha ?? null}
           isPending={createMut.isPending}
           error={createMut.error ? (createMut.error as Error).message : null}
           onSubmit={handleCreate}

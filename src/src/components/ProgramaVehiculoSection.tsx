@@ -51,7 +51,7 @@ import MantenimientoForm from './MantenimientoForm'
 import { useCreateMantenimiento } from '../hooks/useMantenimientos'
 import type { MantenimientoPayload } from '../hooks/useMantenimientos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
-import { avisarMontajes } from '../lib/montajes'
+import { avisarMontajes, avisarHistoricos } from '../lib/montajes'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import type { TipoVehiculo } from '../hooks/useVehiculos'
 
@@ -435,7 +435,11 @@ export default function ProgramaVehiculoSection({
         )
         if (!piezas.length) { ligar(); return }
         piezasMut.mutate({ mantenimientoId: res.data.id, piezas }, {
-          onSuccess: (avisos) => { avisarMontajes(avisos); ligar() },
+          onSuccess: ({ avisos, historicos }) => {
+            avisarMontajes(avisos)
+            avisarHistoricos(historicos)
+            ligar()
+          },
           // El mantenimiento ya quedó: lo que falló son las refacciones, y esas
           // se agregan desde su detalle. La columna se marca de todos modos.
           onError: (e: Error) => {

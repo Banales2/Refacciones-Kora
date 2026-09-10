@@ -579,6 +579,7 @@ export default function MantenimientoForm({
                     vehiculoId={vehiculoId}
                     tipoPiezaId={loteDe(idx)?.tipo_pieza_id}
                     cantidad={Number(piezas[idx].cantidad) || 1}
+                    fechaServicio={form.values.fecha || null}
                     value={piezas[idx].posiciones}
                     onChange={(v) => form.setFieldValue(`piezas.${idx}.posiciones`, v)}
                   />

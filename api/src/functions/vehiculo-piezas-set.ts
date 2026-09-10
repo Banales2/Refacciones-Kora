@@ -43,15 +43,19 @@ export async function vehiculoPiezasSet(
     if (isNaN(id) || isNaN(tipoId)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 
     const { pieza_id, etiqueta, ...datos } = Schema.parse(await request.json())
-    await service.setPieza(id, tipoId, etiqueta, pieza_id, datos)
+    const resultado = await service.setPieza(id, tipoId, etiqueta, pieza_id, datos)
 
     await audit({
       user, accion: 'EDITAR', tabla: 'piezas_vehiculo',
-      registroId: id, detalles: { tipo_pieza_id: tipoId, etiqueta, pieza_id, ...datos },
+      registroId: id,
+      detalles: { tipo_pieza_id: tipoId, etiqueta, pieza_id, ...datos, historico: resultado.historico },
       ipAddress: getClientIp(request),
     })
 
-    return { status: 204 }
+    // 200 con cuerpo y no 204: el montaje pudo entrar como renglón histórico
+    // —sin reemplazar la pieza vigente— y quien llama tiene que poder decírselo
+    // al usuario. Un 204 mudo haría pensar que la ficha no se actualizó.
+    return { status: 200, jsonBody: { data: resultado } }
   } catch (err) {
     return handleError(err, context)
   }
