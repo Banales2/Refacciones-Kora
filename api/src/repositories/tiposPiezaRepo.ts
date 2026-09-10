@@ -6,38 +6,70 @@ import { getPool } from '../shared/db'
 export interface TipoPieza {
   id:     number
   nombre: string
+  /**
+   * Las piezas de este tipo se identifican una por una, en vez de contarse a
+   * granel. Decide cómo se lleva su existencia. Ver `docs/piezas-identificadas.md`.
+   */
+  rastreo_individual: boolean
+}
+
+// Las tres consultas devuelven lo mismo, y el flag llega del driver como 0/1.
+const COLS = 'id, nombre, rastreo_individual'
+
+// `bit` no es booleano en JS: sin esto, `rastreo_individual` viajaría como 0 o 1
+// y cualquier `if` del cliente trataría el 0 como falso por accidente, no por
+// diseño. Se normaliza en la frontera, una sola vez.
+function aTipo(r: Record<string, unknown>): TipoPieza {
+  return { ...r, rastreo_individual: !!r.rastreo_individual } as TipoPieza
 }
 
 export async function findAll(): Promise<TipoPieza[]> {
   const pool = await getPool()
   const r = await pool.request()
-    .query('SELECT id, nombre FROM tipos_pieza ORDER BY nombre')
-  return r.recordset
+    .query(`SELECT ${COLS} FROM tipos_pieza ORDER BY nombre`)
+  return r.recordset.map(aTipo)
 }
 
 export async function findById(id: number): Promise<TipoPieza | null> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, id)
-    .query('SELECT id, nombre FROM tipos_pieza WHERE id = @id')
-  return r.recordset[0] ?? null
+    .query(`SELECT ${COLS} FROM tipos_pieza WHERE id = @id`)
+  return r.recordset[0] ? aTipo(r.recordset[0]) : null
 }
 
-export async function create(nombre: string): Promise<TipoPieza> {
+export async function create(nombre: string, rastreo = false): Promise<TipoPieza> {
   const pool = await getPool()
   const r = await pool.request()
-    .input('nombre', sql.NVarChar(80), nombre)
-    .query('INSERT INTO tipos_pieza (nombre) OUTPUT INSERTED.id, INSERTED.nombre VALUES (@nombre)')
-  return r.recordset[0]
+    .input('nombre',  sql.NVarChar(80), nombre)
+    .input('rastreo', sql.Bit,          rastreo)
+    .query(`
+      INSERT INTO tipos_pieza (nombre, rastreo_individual)
+      OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.rastreo_individual
+      VALUES (@nombre, @rastreo)`)
+  return aTipo(r.recordset[0])
 }
 
-export async function update(id: number, nombre: string): Promise<TipoPieza | null> {
+/**
+ * Solo pisa lo que viene. El nombre y el flag se editan por separado —renombrar
+ * un tipo desde el catálogo no debe apagarle el rastreo sin querer— así que
+ * cada uno se manda solo cuando cambia.
+ */
+export async function update(
+  id: number, nombre?: string, rastreo?: boolean,
+): Promise<TipoPieza | null> {
   const pool = await getPool()
   const r = await pool.request()
-    .input('id',     sql.Int,          id)
-    .input('nombre', sql.NVarChar(80), nombre)
-    .query('UPDATE tipos_pieza SET nombre = @nombre OUTPUT INSERTED.id, INSERTED.nombre WHERE id = @id')
-  return r.recordset[0] ?? null
+    .input('id',      sql.Int,          id)
+    .input('nombre',  sql.NVarChar(80), nombre ?? null)
+    .input('rastreo', sql.Bit,          rastreo ?? null)
+    .query(`
+      UPDATE tipos_pieza SET
+        nombre             = COALESCE(@nombre, nombre),
+        rastreo_individual = COALESCE(@rastreo, rastreo_individual)
+      OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.rastreo_individual
+      WHERE id = @id`)
+  return r.recordset[0] ? aTipo(r.recordset[0]) : null
 }
 
 // ¿Ya existe un tipo con este nombre? exceptId excluye el propio al editar.

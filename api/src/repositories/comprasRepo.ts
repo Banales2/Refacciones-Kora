@@ -1,6 +1,7 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { CompraCreate } from '../schemas/compraSchema'
+import * as facturasRepo from './facturasRepo'
 
 // Un renglón ya guardado, con la forma que el front necesita para ofrecerlo
 // como existencia consumible: es la misma que devuelve `lotes-disponibles`, así
@@ -59,6 +60,20 @@ export async function crearCompra(
   const tx = pool.transaction()
   await tx.begin()
   try {
+    // La cabecera, una sola vez. Antes se copiaba en los N renglones, y esa
+    // copia era la que dejaba facturas con la tasa o el descuento disparejos.
+    // Si el proveedor ya tiene ese folio, los renglones entran en la factura que
+    // ya existe: es el mismo papel capturado en dos tandas.
+    const facturaId = await facturasRepo.findOrCreate(tx, {
+      proveedor_id:   data.proveedor_id,
+      folio:          data.num_factura,
+      fecha_compra:   data.fecha_compra,
+      tasa_iva:       data.tasa_iva ?? null,
+      descuento_pct:  data.descuento_pct ?? null,
+      comprado_por:   data.comprado_por,
+      autorizado_por: autorizadoPor,
+    })
+
     const sucursal = await tx.request()
       .input('id', sql.Int, data.sucursal_id)
       .query('SELECT nombre FROM sucursales WHERE id = @id')
@@ -100,25 +115,17 @@ export async function crearCompra(
 
       const insLote = await tx.request()
         .input('pieza_id', sql.Int, piezaId!)
-        .input('proveedor_id', sql.Int, data.proveedor_id)
+        .input('factura_id', sql.Int, facturaId)
         .input('sucursal_id', sql.Int, data.sucursal_id)
-        .input('fecha_compra', sql.Date, data.fecha_compra)
         .input('costo_unitario', sql.Decimal(18, 2), renglon.costo_unitario)
         .input('cantidad_inicial', sql.Int, renglon.cantidad_inicial)
-        .input('num_factura', sql.NVarChar(100), data.num_factura)
-        .input('tasa_iva', sql.Decimal(5, 2), data.tasa_iva ?? null)
-        .input('descuento_pct', sql.Decimal(5, 2), data.descuento_pct ?? null)
-        .input('comprado_por', sql.NVarChar(120), data.comprado_por)
-        .input('autorizado_por', sql.NVarChar(120), autorizadoPor)
         .query(`
           INSERT INTO lotes_pieza
-            (pieza_id, proveedor_id, sucursal_id, fecha_compra, costo_unitario,
-             cantidad_inicial, cantidad_disponible,
-             num_factura, tasa_iva, descuento_pct, comprado_por, autorizado_por)
+            (pieza_id, factura_id, sucursal_id, costo_unitario,
+             cantidad_inicial, cantidad_disponible)
           OUTPUT INSERTED.id
-          VALUES (@pieza_id, @proveedor_id, @sucursal_id, @fecha_compra, @costo_unitario,
-                  @cantidad_inicial, @cantidad_inicial,
-                  @num_factura, @tasa_iva, @descuento_pct, @comprado_por, @autorizado_por)`)
+          VALUES (@pieza_id, @factura_id, @sucursal_id, @costo_unitario,
+                  @cantidad_inicial, @cantidad_inicial)`)
       const loteId = insLote.recordset[0].id as number
 
       await tx.request()

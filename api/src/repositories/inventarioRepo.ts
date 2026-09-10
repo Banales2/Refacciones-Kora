@@ -6,6 +6,7 @@
 // pieza de una sucursal — proveedor, factura y costo — sin llegar todavía a
 // identificar la pieza una por una.
 import * as sql from 'mssql'
+import { folioDelLote, fechaDelLote, joinFactura, joinProveedorDelLote } from './facturaSql'
 import { getPool } from '../shared/db'
 
 export interface ExistenciaEnSucursal {
@@ -38,17 +39,20 @@ export async function findExistencias(sucursalId?: number): Promise<ExistenciaEn
     SELECT ex.lote_id, ex.sucursal_id, s.nombre AS sucursal, ex.cantidad,
            p.id AS pieza_id, p.numero_serie, p.descripcion,
            p.tipo_pieza_id, t.nombre AS tipo_pieza,
-           pr.nombre AS proveedor, l.num_factura, l.costo_unitario, l.fecha_compra
+           pr.nombre AS proveedor, l.costo_unitario,
+           ${folioDelLote()} AS num_factura,
+           ${fechaDelLote()} AS fecha_compra
     FROM existencias_lote ex
     JOIN sucursales s      ON s.id  = ex.sucursal_id
     JOIN lotes_pieza l     ON l.id  = ex.lote_id
     JOIN piezas p          ON p.id  = l.pieza_id
-    -- LEFT: el lote de recuperación va sin proveedor (migración 024) y aquí
-    -- tiene que aparecer — es stock real en el estante.
-    LEFT JOIN proveedores pr ON pr.id = l.proveedor_id
+    ${joinFactura()}
+    -- LEFT: el lote de recuperación va sin factura ni proveedor (024 y 026) y
+    -- aquí tiene que aparecer — es stock real en el estante.
+    ${joinProveedorDelLote()}
     LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id
     ${where}
-    ORDER BY s.nombre, p.numero_serie, l.fecha_compra`)
+    ORDER BY s.nombre, p.numero_serie, ${fechaDelLote()}`)
   return r.recordset
 }
 

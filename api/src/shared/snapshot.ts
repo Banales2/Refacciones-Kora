@@ -48,13 +48,24 @@ const CONSULTAS: Record<string, string> = {
     LEFT JOIN tipos_pieza tp ON tp.id = p.tipo_pieza_id
     WHERE p.id = @id`,
 
+  // Desde la migración 026 la cabecera vive en `facturas`, así que el renglón
+  // por sí solo ya no dice de qué compra es. Se trae de la factura para que la
+  // bitácora siga siendo legible sin ir a buscarla.
   lotes_pieza: `
     SELECT l.*, p.numero_serie AS pieza_serie, p.descripcion AS pieza,
+           COALESCE(f.folio, l.num_factura) AS factura_folio,
            pr.nombre AS proveedor
     FROM lotes_pieza l
     LEFT JOIN piezas p       ON p.id = l.pieza_id
-    LEFT JOIN proveedores pr ON pr.id = l.proveedor_id
+    LEFT JOIN facturas f     ON f.id = l.factura_id
+    LEFT JOIN proveedores pr ON pr.id = COALESCE(f.proveedor_id, l.proveedor_id)
     WHERE l.id = @id`,
+
+  facturas: `
+    SELECT f.*, pr.nombre AS proveedor
+    FROM facturas f
+    LEFT JOIN proveedores pr ON pr.id = f.proveedor_id
+    WHERE f.id = @id`,
 
   mantenimiento: `
     SELECT mt.*, v.numero_serie AS vehiculo_serie, v.placas AS vehiculo_placas,

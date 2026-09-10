@@ -267,12 +267,15 @@ export async function findLotesEnRango(start: string, end: string): Promise<Lote
     .input('end',   sql.Date, end)
     .query(`
       SELECT l.id, l.pieza_id, p.numero_serie, p.descripcion, pr.nombre AS proveedor,
-             l.fecha_compra, l.cantidad_inicial, l.costo_unitario
+             fac.fecha_compra, l.cantidad_inicial, l.costo_unitario
       FROM lotes_pieza l
+      -- JOIN y no LEFT: esto son las COMPRAS recientes. El lote de recuperación
+      -- (024) no es una compra y queda fuera.
+      JOIN facturas fac ON fac.id = l.factura_id
       JOIN piezas p ON p.id = l.pieza_id
-      JOIN proveedores pr ON pr.id = l.proveedor_id
-      WHERE l.fecha_compra >= @start AND l.fecha_compra < @end
-      ORDER BY l.fecha_compra DESC
+      JOIN proveedores pr ON pr.id = fac.proveedor_id
+      WHERE fac.fecha_compra >= @start AND fac.fecha_compra < @end
+      ORDER BY fac.fecha_compra DESC
     `)
   return r.recordset
 }

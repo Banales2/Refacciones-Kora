@@ -235,10 +235,13 @@ export async function findVigentesGlobal(piezaId?: number): Promise<PrecioVigent
       FROM precios_proveedor pp
     ),
     ultima_compra AS (
-      SELECT l.pieza_id, l.costo_unitario, l.fecha_compra, l.proveedor_id,
+      SELECT l.pieza_id, l.costo_unitario, fac.fecha_compra, fac.proveedor_id,
              ROW_NUMBER() OVER (PARTITION BY l.pieza_id
-                                ORDER BY l.fecha_compra DESC, l.id DESC) AS rn
+                                ORDER BY fac.fecha_compra DESC, l.id DESC) AS rn
       FROM lotes_pieza l
+      -- JOIN y no LEFT: "lo último que se pagó" solo tiene sentido sobre una
+      -- compra real. El lote de recuperación (024) vale $0 y no es un precio.
+      JOIN facturas fac ON fac.id = l.factura_id
     )
     SELECT v.pieza_id, p.numero_serie, p.descripcion, tp.nombre AS tipo_pieza,
            v.proveedor_id, pr.nombre AS proveedor,

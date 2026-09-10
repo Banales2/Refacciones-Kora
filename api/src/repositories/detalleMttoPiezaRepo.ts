@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { fechaDelLote, joinFactura } from './facturaSql'
 import { DetalleMttoPiezaCreate, DetalleMttoPiezaUpdate } from '../schemas/detalleMttoPiezaSchema'
 import { moverExistencia } from './inventarioSql'
 
@@ -82,14 +83,16 @@ export async function findDisponibles(): Promise<LoteDisponible[]> {
   const pool = await getPool()
   const r = await pool.request().query(`
     SELECT l.id, l.pieza_id, p.tipo_pieza_id, p.numero_serie, p.descripcion, l.costo_unitario,
-           ex.cantidad AS cantidad_disponible, l.fecha_compra,
+           ex.cantidad AS cantidad_disponible,
+           ${fechaDelLote()} AS fecha_compra,
            ex.sucursal_id, s.nombre AS sucursal
     FROM existencias_lote ex
     JOIN lotes_pieza l ON l.id = ex.lote_id
+    ${joinFactura()}
     JOIN piezas p      ON p.id = l.pieza_id
     JOIN sucursales s  ON s.id = ex.sucursal_id
     WHERE ex.cantidad > 0
-    ORDER BY p.numero_serie, s.nombre, l.fecha_compra
+    ORDER BY p.numero_serie, s.nombre, ${fechaDelLote()}
   `)
   return r.recordset
 }

@@ -162,18 +162,21 @@ export async function findComprasComparadas(start: string, end: string): Promise
       )
       SELECT l.id AS lote_id, l.pieza_id, p.numero_serie, p.descripcion,
              pr.id AS proveedor_id, pr.nombre AS proveedor,
-             CONVERT(char(10), l.fecha_compra, 23) AS fecha_compra,
+             CONVERT(char(10), fac.fecha_compra, 23) AS fecha_compra,
              l.cantidad_inicial AS cantidad, l.costo_unitario,
              mj.precio       AS mejor_precio,
              mj.proveedor_id AS mejor_proveedor_id,
              prm.nombre      AS mejor_proveedor
       FROM lotes_pieza l
+      -- JOIN y no LEFT: esto son las COMPRAS. El lote de recuperación (024) no
+      -- es una compra y queda fuera a propósito.
+      JOIN facturas fac ON fac.id = l.factura_id
       JOIN piezas      p  ON p.id  = l.pieza_id
-      JOIN proveedores pr ON pr.id = l.proveedor_id
+      JOIN proveedores pr ON pr.id = fac.proveedor_id
       LEFT JOIN mejor  mj  ON mj.pieza_id = l.pieza_id AND mj.rn = 1
       LEFT JOIN proveedores prm ON prm.id = mj.proveedor_id
-      WHERE l.fecha_compra >= @start AND l.fecha_compra < @end
-      ORDER BY l.fecha_compra DESC, l.id DESC
+      WHERE fac.fecha_compra >= @start AND fac.fecha_compra < @end
+      ORDER BY fac.fecha_compra DESC, l.id DESC
     `)
   return r.recordset
 }
@@ -214,12 +217,13 @@ export async function findGastoMensual(desde: string): Promise<GastoMes[]> {
 
         UNION ALL
 
-        SELECT CONVERT(char(7), l.fecha_compra, 126),
+        SELECT CONVERT(char(7), fac.fecha_compra, 126),
                CAST(0 AS DECIMAL(18,2)),
                l.cantidad_inicial * l.costo_unitario,
                CAST(0 AS DECIMAL(18,2))
         FROM lotes_pieza l
-        WHERE l.fecha_compra >= @desde
+        JOIN facturas fac ON fac.id = l.factura_id
+        WHERE fac.fecha_compra >= @desde
 
         UNION ALL
 

@@ -12,20 +12,26 @@ export async function create(data: TipoPiezaCreate): Promise<TipoPieza> {
   if (await repo.existsNombre(nombre)) {
     throw new ConflictError(`Ya existe un tipo de pieza con el nombre ${nombre}`)
   }
-  return repo.create(nombre)
+  return repo.create(nombre, data.rastreo_individual)
 }
 
 export async function update(id: number, data: TipoPiezaUpdate): Promise<TipoPieza> {
   const nombre = data.nombre?.trim()
-  if (nombre === undefined) {
+  const rastreo = data.rastreo_individual
+
+  // Ni nombre ni flag: no hay nada que escribir. Se devuelve lo que hay en vez
+  // de un UPDATE que no cambia nada.
+  if (nombre === undefined && rastreo === undefined) {
     const actual = await repo.findById(id)
     if (!actual) throw new NotFoundError('Tipo de pieza')
     return actual
   }
-  if (await repo.existsNombre(nombre, id)) {
+
+  if (nombre !== undefined && await repo.existsNombre(nombre, id)) {
     throw new ConflictError(`Ya existe un tipo de pieza con el nombre ${nombre}`)
   }
-  const result = await repo.update(id, nombre)
+
+  const result = await repo.update(id, nombre, rastreo)
   if (!result) throw new NotFoundError('Tipo de pieza')
   return result
 }

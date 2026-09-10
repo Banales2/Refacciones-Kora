@@ -213,12 +213,16 @@ export async function findComprasDelDia(fecha: string): Promise<CompraDia[]> {
     .query(`
       SELECT l.id, l.pieza_id, p.numero_serie, p.descripcion,
              pr.nombre AS proveedor, s.nombre AS sucursal,
-             l.cantidad_inicial, l.costo_unitario, l.num_factura, l.comprado_por
+             l.cantidad_inicial, l.costo_unitario, fac.folio AS num_factura,
+             fac.comprado_por
       FROM lotes_pieza l
+      -- JOIN y no LEFT: esto son las COMPRAS del día. El lote de recuperación
+      -- (024) no es una compra y queda fuera, que es lo correcto.
+      JOIN facturas fac ON fac.id = l.factura_id
       JOIN piezas p       ON p.id = l.pieza_id
-      JOIN proveedores pr ON pr.id = l.proveedor_id
+      JOIN proveedores pr ON pr.id = fac.proveedor_id
       LEFT JOIN sucursales s ON s.id = l.sucursal_id
-      WHERE l.fecha_compra = @fecha
+      WHERE fac.fecha_compra = @fecha
       ORDER BY (l.cantidad_inicial * l.costo_unitario) DESC
     `)
   return r.recordset
@@ -334,10 +338,11 @@ export async function findActividadPorDia(start: string, end: string): Promise<A
 
         UNION ALL
 
-        SELECT CONVERT(char(10), l.fecha_compra, 23), 0, 0, 0, 0, 0, 1, 0,
+        SELECT CONVERT(char(10), fac.fecha_compra, 23), 0, 0, 0, 0, 0, 1, 0,
                CAST(0 AS DECIMAL(18,2)), l.cantidad_inicial * l.costo_unitario, CAST(0 AS DECIMAL(18,2))
         FROM lotes_pieza l
-        WHERE l.fecha_compra BETWEEN @start AND @end
+        JOIN facturas fac ON fac.id = l.factura_id
+        WHERE fac.fecha_compra BETWEEN @start AND @end
 
         UNION ALL
 

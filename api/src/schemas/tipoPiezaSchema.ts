@@ -10,6 +10,15 @@ export const TipoPiezaCreateSchema = z.object({
       /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 -]+$/,
       'Solo letras, números, espacios y guiones',
     ),
+  /**
+   * Si las piezas de este tipo se identifican una por una (una llanta con su
+   * propia historia) o se cuentan a granel (aceite, tornillos).
+   *
+   * Ausente = false: todo lo que existe hoy se cuenta a granel, y encenderlo es
+   * una decisión que se toma tipo por tipo. Ver
+   * `db/migrations/025_tipo_pieza_rastreo_individual.sql`.
+   */
+  rastreo_individual: z.boolean().optional().default(false),
 })
 
 export const TipoPiezaUpdateSchema = TipoPiezaCreateSchema.partial()

@@ -3,6 +3,7 @@ import { getPool } from '../shared/db'
 import { Pieza, PiezaConCantidad, LoteConProveedor } from '../types/domain'
 import { RefaccionCreate, RefaccionUpdate, SearchBy } from '../schemas/refaccionSchema'
 import { disponibleDelLote } from './inventarioSql'
+import { colsCabecera, fechaDelLote, joinFactura, joinProveedorDelLote } from './facturaSql'
 
 export async function findAll(params: {
   offset: number
@@ -86,17 +87,18 @@ export async function findLotesByPiezaId(piezaId: number): Promise<LoteConProvee
     .input('piezaId', sql.Int, piezaId)
     .query(`
       SELECT
-        l.id, l.pieza_id, l.proveedor_id, l.fecha_compra, l.costo_unitario,
+        l.id, l.pieza_id, l.costo_unitario, l.factura_id,
         l.cantidad_inicial, ${disponibleDelLote('l')} AS cantidad_disponible,
-        l.num_factura, l.sucursal_id, l.tasa_iva, l.descuento_pct,
-        l.comprado_por, l.autorizado_por,
+        l.sucursal_id,
+        ${colsCabecera()},
         pr.nombre AS proveedor, s.nombre AS sucursal
       FROM lotes_pieza l
-      -- LEFT: el lote de recuperación va sin proveedor (migración 024).
-      LEFT JOIN proveedores pr ON pr.id = l.proveedor_id
+      ${joinFactura()}
+      -- LEFT: el lote de recuperación va sin factura ni proveedor (024 y 026).
+      ${joinProveedorDelLote()}
       LEFT JOIN sucursales s ON s.id = l.sucursal_id
       WHERE l.pieza_id = @piezaId
-      ORDER BY l.fecha_compra DESC
+      ORDER BY ${fechaDelLote()} DESC
     `)
   return result.recordset
 }

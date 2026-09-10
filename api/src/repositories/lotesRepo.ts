@@ -3,20 +3,26 @@ import { getPool } from '../shared/db'
 import { LoteConProveedor } from '../types/domain'
 import { LoteCreate, LoteUpdate } from '../schemas/loteSchema'
 import { disponibleDelLote } from './inventarioSql'
+import { colsCabecera, joinFactura, joinProveedorDelLote } from './facturaSql'
+import * as facturasRepo from './facturasRepo'
 
 // `cantidad_disponible` ya no es una columna que se lea: es la suma de las
 // existencias del lote en todas las sucursales (migración 002).
+// La cabecera —folio, proveedor, fecha, IVA, descuento, quién compró— vive en
+// `facturas` desde la migración 026, pero se devuelve con los mismos nombres que
+// tenía en el lote: cambió dónde se guarda, no lo que se ve.
 const SELECT_LOTE = `
-  SELECT l.id, l.pieza_id, l.proveedor_id, l.fecha_compra, l.costo_unitario,
+  SELECT l.id, l.pieza_id, l.costo_unitario, l.factura_id,
          l.cantidad_inicial, ${disponibleDelLote('l')} AS cantidad_disponible,
-         l.num_factura, l.sucursal_id, l.tasa_iva, l.descuento_pct,
-         l.comprado_por, l.autorizado_por,
+         l.sucursal_id,
+         ${colsCabecera()},
          pr.nombre AS proveedor,
          s.nombre AS sucursal
   FROM lotes_pieza l
+  ${joinFactura()}
   -- LEFT: el lote de recuperación va sin proveedor (migración 024) y tiene que
   -- salir en el historial de la refacción como cualquier otro.
-  LEFT JOIN proveedores pr ON pr.id = l.proveedor_id
+  ${joinProveedorDelLote()}
   LEFT JOIN sucursales s ON s.id = l.sucursal_id
 `
 
@@ -40,26 +46,32 @@ export async function create(
   const tx = pool.transaction()
   await tx.begin()
   try {
+    // Un lote suelto también es una compra, así que también tiene factura. Si
+    // ese proveedor ya tiene ese folio, el renglón entra en la factura que ya
+    // existe en vez de crear una segunda: es el mismo papel.
+    const facturaId = await facturasRepo.findOrCreate(tx, {
+      proveedor_id:   data.proveedor_id,
+      folio:          data.num_factura,
+      fecha_compra:   data.fecha_compra,
+      tasa_iva:       data.tasa_iva ?? null,
+      descuento_pct:  null,
+      comprado_por:   data.comprado_por,
+      autorizado_por: autorizadoPor,
+    })
+
     const result = await tx.request()
       .input('pieza_id', sql.Int, piezaId)
-      .input('proveedor_id', sql.Int, data.proveedor_id)
+      .input('factura_id', sql.Int, facturaId)
       .input('sucursal_id', sql.Int, data.sucursal_id)
-      .input('fecha_compra', sql.Date, data.fecha_compra)
       .input('costo_unitario', sql.Decimal(18, 2), data.costo_unitario)
       .input('cantidad_inicial', sql.Int, data.cantidad_inicial)
-      .input('num_factura', sql.NVarChar(100), data.num_factura ?? null)
-      .input('tasa_iva', sql.Decimal(5, 2), data.tasa_iva ?? null)
-      .input('comprado_por', sql.NVarChar(120), data.comprado_por)
-      .input('autorizado_por', sql.NVarChar(120), autorizadoPor)
       .query(`
         INSERT INTO lotes_pieza
-          (pieza_id, proveedor_id, sucursal_id, fecha_compra, costo_unitario,
-           cantidad_inicial, cantidad_disponible,
-           num_factura, tasa_iva, comprado_por, autorizado_por)
+          (pieza_id, factura_id, sucursal_id, costo_unitario,
+           cantidad_inicial, cantidad_disponible)
         OUTPUT INSERTED.id
-        VALUES (@pieza_id, @proveedor_id, @sucursal_id, @fecha_compra, @costo_unitario,
-                @cantidad_inicial, @cantidad_inicial,
-                @num_factura, @tasa_iva, @comprado_por, @autorizado_por)
+        VALUES (@pieza_id, @factura_id, @sucursal_id, @costo_unitario,
+                @cantidad_inicial, @cantidad_inicial)
       `)
     const loteId = result.recordset[0].id as number
 
@@ -110,19 +122,25 @@ export async function getRaw(id: number): Promise<{
 export async function update(
   id: number, data: LoteUpdate, deltaCantidad?: number,
 ): Promise<LoteConProveedor | null> {
+  // Los campos de cabecera ya no son del renglón: se aplican a su factura, que
+  // es la que los tiene. Editar el proveedor "de un lote" es editar el de su
+  // compra, y que eso se vea en sus otros renglones es lo correcto — antes se
+  // quedaba solo en uno y la factura acababa dispareja.
+  const cabecera: string[] = []
   const sets: string[] = []
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
   const req = tx.request().input('id', sql.Int, id)
+  const reqFac = tx.request().input('id', sql.Int, id)
 
   if (data.proveedor_id !== undefined) {
-    req.input('proveedor_id', sql.Int, data.proveedor_id)
-    sets.push('proveedor_id = @proveedor_id')
+    reqFac.input('proveedor_id', sql.Int, data.proveedor_id)
+    cabecera.push('proveedor_id = @proveedor_id')
   }
   if (data.fecha_compra !== undefined) {
-    req.input('fecha_compra', sql.Date, data.fecha_compra)
-    sets.push('fecha_compra = @fecha_compra')
+    reqFac.input('fecha_compra', sql.Date, data.fecha_compra)
+    cabecera.push('fecha_compra = @fecha_compra')
   }
   if (data.costo_unitario !== undefined) {
     req.input('costo_unitario', sql.Decimal(18, 2), data.costo_unitario)
@@ -136,30 +154,39 @@ export async function update(
     sets.push('cantidad_disponible = cantidad_disponible + @delta')
     req.input('delta', sql.Int, deltaCantidad ?? 0)
   }
-  if ('num_factura' in data) {
-    req.input('num_factura', sql.NVarChar(100), data.num_factura ?? null)
-    sets.push('num_factura = @num_factura')
-  }
   // Se comprueba la presencia de la llave, no que traiga valor: mandarla en
-  // null es como se corrige un lote a "el precio ya incluye IVA".
+  // null es como se corrige una compra a "el precio ya incluye IVA".
   if ('tasa_iva' in data) {
-    req.input('tasa_iva', sql.Decimal(5, 2), data.tasa_iva ?? null)
-    sets.push('tasa_iva = @tasa_iva')
+    reqFac.input('tasa_iva', sql.Decimal(5, 2), data.tasa_iva ?? null)
+    cabecera.push('tasa_iva = @tasa_iva')
   }
   // `autorizado_por` no está aquí a propósito: registra quién dio de alta la
-  // compra y no cambia. `comprado_por` sí se corrige, es un dato del lote.
+  // compra y no cambia. `comprado_por` sí se corrige.
   if (data.comprado_por !== undefined) {
-    req.input('comprado_por', sql.NVarChar(120), data.comprado_por)
-    sets.push('comprado_por = @comprado_por')
+    reqFac.input('comprado_por', sql.NVarChar(120), data.comprado_por)
+    cabecera.push('comprado_por = @comprado_por')
   }
 
-  if (sets.length === 0) {
+  // El folio no se edita aquí: cambiárselo a UN renglón es sacarlo de su
+  // factura y meterlo en otra, que es una operación distinta y tiene la suya.
+  const folioNuevo = 'num_factura' in data ? data.num_factura : undefined
+
+  if (sets.length === 0 && cabecera.length === 0 && folioNuevo === undefined) {
     await tx.rollback()
     return findById(id)
   }
 
   try {
-    await req.query(`UPDATE lotes_pieza SET ${sets.join(', ')} WHERE id = @id`)
+    if (sets.length > 0) {
+      await req.query(`UPDATE lotes_pieza SET ${sets.join(', ')} WHERE id = @id`)
+    }
+    if (cabecera.length > 0) {
+      await reqFac.query(`
+        UPDATE f SET ${cabecera.join(', ')}
+        FROM facturas f
+        JOIN lotes_pieza l ON l.factura_id = f.id
+        WHERE l.id = @id`)
+    }
 
     if (deltaCantidad) {
       // Puede no haber fila de existencia todavía (lote agotado al que se le
@@ -185,6 +212,13 @@ export async function update(
     await tx.rollback()
     throw err
   }
+
+  // Cambiarle el folio a UN renglón es sacarlo de su factura y meterlo en la de
+  // ese folio, creándola si no existe y borrando la de origen si se queda
+  // vacía. Va fuera de la transacción de arriba porque abre la suya, y después
+  // de ella porque solo tiene sentido si lo demás se guardó.
+  if (folioNuevo) await facturasRepo.moverLoteAFolio(id, folioNuevo)
+
   return findById(id)
 }
 
@@ -235,18 +269,21 @@ export async function findGastosDeProveedor(proveedorId: number): Promise<GastoP
     .input('pid', sql.Int, proveedorId)
     .query(`
       SELECT l.id AS lote_id,
-             CONVERT(char(10), l.fecha_compra, 23) AS fecha_compra,
+             CONVERT(char(10), fac.fecha_compra, 23) AS fecha_compra,
              l.pieza_id, p.descripcion AS pieza, p.numero_serie AS pieza_serie,
              tp.nombre AS tipo_pieza,
              l.cantidad_inicial AS cantidad, l.costo_unitario,
              l.cantidad_inicial * l.costo_unitario AS total,
-             l.num_factura, s.nombre AS sucursal, l.comprado_por
+             fac.folio AS num_factura, s.nombre AS sucursal, fac.comprado_por
       FROM lotes_pieza l
+      -- JOIN y no LEFT: es el gasto CON este proveedor, así que solo cuentan
+      -- los renglones que salieron de una factura suya.
+      JOIN facturas fac        ON fac.id = l.factura_id
       JOIN piezas p            ON p.id = l.pieza_id
       LEFT JOIN tipos_pieza tp ON tp.id = p.tipo_pieza_id
       LEFT JOIN sucursales s   ON s.id = l.sucursal_id
-      WHERE l.proveedor_id = @pid
-      ORDER BY l.fecha_compra DESC, l.id DESC`)
+      WHERE fac.proveedor_id = @pid
+      ORDER BY fac.fecha_compra DESC, l.id DESC`)
   // mssql devuelve DECIMAL como string cuando no cabe en un number seguro; aquí
   // siempre cabe, pero se normaliza para no dejar al consumidor adivinando.
   return r.recordset.map((row) => ({

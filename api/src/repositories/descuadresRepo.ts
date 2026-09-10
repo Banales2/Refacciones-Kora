@@ -92,7 +92,7 @@ export async function crear(tx: sql.Transaction, d: DescuadreCreate): Promise<nu
 const SELECT_DESCUADRE = `
   SELECT d.id, d.pieza_id, p.numero_serie, p.descripcion,
          d.sucursal_id, s.nombre AS sucursal,
-         d.lote_id, l.num_factura,
+         d.lote_id, COALESCE(fac.folio, l.num_factura) AS num_factura,
          d.diferencia, d.origen, d.motivo,
          d.vehiculo_id,
          COALESCE(NULLIF(v.placas, ''), v.numero_serie) AS vehiculo,
@@ -103,6 +103,7 @@ const SELECT_DESCUADRE = `
   JOIN piezas p           ON p.id = d.pieza_id
   LEFT JOIN sucursales s  ON s.id = d.sucursal_id
   LEFT JOIN lotes_pieza l ON l.id = d.lote_id
+  LEFT JOIN facturas fac  ON fac.id = l.factura_id
   LEFT JOIN vehiculos   v ON v.id = d.vehiculo_id`
 
 /**

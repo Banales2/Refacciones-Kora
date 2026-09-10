@@ -7,10 +7,15 @@ import { FacturaFolioSchema } from '../schemas/facturaSchema'
 import * as service from '../services/facturasService'
 
 /**
- * Corrige el folio mal capturado de una compra, en todos sus lotes de una vez.
- * La factura no es una tabla —es el folio que comparten sus lotes—, así que
- * renombrarla es un UPDATE sobre todos ellos; cambiar solo unos cuantos la
- * partiría en dos compras.
+ * Corrige el folio mal capturado de una compra.
+ *
+ * Desde la migración 026 el folio es una columna de la factura, así que
+ * corregirlo es un UPDATE de una fila en vez de reescribirlo en todos sus lotes.
+ *
+ * Si el folio destino ya es de otra factura del mismo proveedor, las dos son el
+ * mismo papel capturado en dos tandas: se fusionan moviendo los renglones. Eso
+ * requiere `confirmar_fusion` — es legítimo, pero no puede pasar por accidente
+ * al corregir una letra.
  */
 export async function facturaFolioUpdate(
   request: HttpRequest,
@@ -20,37 +25,40 @@ export async function facturaFolioUpdate(
     const user = requireRole(request, 'admin', 'editor')
     const body = FacturaFolioSchema.parse(await request.json())
 
-    // El "antes" se captura lote por lote y ANTES de escribir: es lo que deja
-    // ver después con qué folio había entrado cada uno.
-    const ids = await service.getIds(body.num_factura, body.proveedor_id)
-    const antes = new Map<number, Awaited<ReturnType<typeof capturar>>>()
-    for (const id of ids) antes.set(id, await capturar('lotes_pieza', id))
+    const facturaId = await service.getId(body.num_factura, body.proveedor_id)
+    const antes = await capturar('facturas', facturaId)
 
-    await service.setFolio(
-      body.num_factura, body.proveedor_id, body.nuevo_num_factura, body.confirmar_fusion,
+    const resultado = await service.setFolio(
+      facturaId, body.proveedor_id, body.nuevo_num_factura, body.confirmar_fusion,
     )
 
-    for (const id of ids) {
-      await audit({
-        user,
-        accion: 'EDITAR',
-        tabla: 'lotes_pieza',
-        registroId: id,
-        antes: antes.get(id),
-        despues: await capturar('lotes_pieza', id),
-        detalles: {
-          num_factura: body.num_factura,
-          nuevo_num_factura: body.nuevo_num_factura,
-          fusionada: body.confirmar_fusion,
-          renglones_factura: ids.length,
-        },
-        ipAddress: getClientIp(request),
-      })
-    }
+    await audit({
+      user,
+      accion: resultado.fusionada ? 'ELIMINAR' : 'EDITAR',
+      tabla: 'facturas',
+      registroId: facturaId,
+      antes,
+      // Al fusionar, la factura de origen deja de existir: no hay "después" que
+      // capturar y el renglón de la bitácora se queda con lo que era.
+      despues: resultado.fusionada ? undefined : await capturar('facturas', facturaId),
+      detalles: {
+        num_factura: body.num_factura,
+        nuevo_num_factura: body.nuevo_num_factura,
+        fusionada: resultado.fusionada,
+        renglones_movidos: resultado.renglones,
+      },
+      ipAddress: getClientIp(request),
+    })
 
     return {
       status: 200,
-      jsonBody: { data: { num_factura: body.nuevo_num_factura, lotes_actualizados: ids.length } },
+      jsonBody: {
+        data: {
+          num_factura: body.nuevo_num_factura,
+          fusionada: resultado.fusionada,
+          lotes_actualizados: resultado.renglones,
+        },
+      },
     }
   } catch (err) {
     return handleError(err, context)

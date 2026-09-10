@@ -7,6 +7,12 @@ import { api } from '../lib/api'
 export interface TipoPieza {
   id:     number
   nombre: string
+  /**
+   * Las piezas de este tipo se identifican una por una —cada llanta con su
+   * historia— en vez de contarse a granel. Decide cómo se lleva su existencia.
+   * Ver `docs/piezas-identificadas.md`.
+   */
+  rastreo_individual: boolean
 }
 
 export function useTiposPieza() {
@@ -24,11 +30,17 @@ export function useCreateTipoPieza() {
   })
 }
 
+/**
+ * Corrige un tipo. Nombre e interruptor viajan por separado y solo cuando
+ * cambian: renombrar desde el catálogo no debe apagarle el rastreo sin querer,
+ * ni al revés.
+ */
 export function useUpdateTipoPieza() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, nombre }: { id: number; nombre: string }) =>
-      api.put<{ data: TipoPieza }>(`/tipos-pieza/${id}`, { nombre }),
+    mutationFn: ({ id, ...campos }: {
+      id: number; nombre?: string; rastreo_individual?: boolean
+    }) => api.put<{ data: TipoPieza }>(`/tipos-pieza/${id}`, campos),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tipos-pieza'] }),
   })
 }

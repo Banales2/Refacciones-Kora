@@ -10,7 +10,7 @@ import {
   Button, ActionIcon, Modal, Select, Accordion,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconTrash, IconPlus, IconFileTypePdf, IconReceipt } from '@tabler/icons-react'
+import { IconPencil, IconTrash, IconPlus, IconFileTypePdf, IconReceipt, IconTags } from '@tabler/icons-react'
 import {
   useRefacciones, useTodasLasPiezas, useCreateRefaccion, useUpdateRefaccion, useDeleteRefaccion,
   fetchTodasLasPiezas,
@@ -18,6 +18,7 @@ import {
 import type { Pieza, SearchBy } from '../hooks/useRefacciones'
 import LotesDrawer from '../components/LotesDrawer'
 import FacturasDrawer from '../components/FacturasDrawer'
+import TiposPiezaDrawer from '../components/TiposPiezaDrawer'
 import { exportPiezasReporteToPdf } from '../lib/exportPiezasReporte'
 import { agruparPorTipo, SIN_TIPO } from '../lib/piezasGrupos'
 import PiezaForm from '../components/PiezaForm'
@@ -128,6 +129,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
 
   const [createOpen, setCreateOpen] = useState(false)
   const [facturasOpen, setFacturasOpen] = useState(false)
+  const [tiposOpen, setTiposOpen] = useState(false)
   const [editPieza, setEditPieza] = useState<Pieza | null>(null)
   const [deletePieza, setDeletePieza] = useState<Pieza | null>(null)
   const [exportando, setExportando] = useState(false)
@@ -214,6 +216,17 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
               onClick={() => setFacturasOpen(true)}
             >
               Facturas
+            </Button>
+            {/* El catálogo de tipos: hasta ahora solo se podían crear al vuelo
+                desde el formulario de una refacción, así que un nombre mal
+                escrito se quedaba así. Y es donde se decide qué tipos se
+                rastrean pieza por pieza. */}
+            <Button
+              variant="default"
+              leftSection={<IconTags size={16} />}
+              onClick={() => setTiposOpen(true)}
+            >
+              Tipos de pieza
             </Button>
             <Button
               variant="default"
@@ -384,6 +397,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
       <LotesDrawer piezaId={selectedId} onClose={() => setSelectedId(null)} />
 
       <FacturasDrawer opened={facturasOpen} onClose={() => setFacturasOpen(false)} />
+      <TiposPiezaDrawer opened={tiposOpen} onClose={() => setTiposOpen(false)} />
     </>
   )
 }

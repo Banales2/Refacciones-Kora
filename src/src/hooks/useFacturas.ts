@@ -1,13 +1,14 @@
 // Las facturas de compra de refacciones.
 //
-// No son una tabla: son los lotes que comparten folio y proveedor (ver
-// `useCompras`). Esta vista los vuelve a juntar, que es lo que hace falta para
-// cuadrar contra el papel y, sobre todo, para meterle el IVA a una compra vieja
-// —capturada cuando la casilla no existía y que por eso quedó como "el precio
-// ya lo incluye"—.
+// Desde la migración 026 son una tabla, con su cabecera —folio, proveedor,
+// fecha, IVA, descuento— guardada una sola vez. Antes eran el conjunto de lotes
+// que compartían folio, con esa cabecera copiada en cada renglón, y de ahí venían
+// las tasas disparejas entre renglones de una misma factura. Eso ya no puede
+// pasar.
 //
-// La llave es (folio, proveedor), no el folio solo: dos proveedores pueden
-// emitir un "A-100" cada uno y no son la misma compra.
+// La llave sigue siendo (folio, proveedor), ahora impuesta por un UNIQUE en la
+// base: dos proveedores pueden emitir un "A-100" cada uno y no son la misma
+// compra, pero el mismo proveedor no puede emitirlo dos veces.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
@@ -23,6 +24,7 @@ export interface FacturaRenglon {
 }
 
 export interface Factura {
+  id:           number
   num_factura:  string
   proveedor_id: number
   proveedor:    string
@@ -38,12 +40,8 @@ export interface Factura {
    * `totalesFactura` en `lib/totales`.
    */
   descuento_pct: number | null
-  /**
-   * Sus lotes no coinciden en la tasa o en el descuento. Pasa si alguien
-   * corrigió un lote suelto desde el drawer de la refacción; se emparejan
-   * volviendo a fijarlos aquí.
-   */
-  totales_dispares: boolean
+  comprado_por:  string
+  autorizado_por: string
   detalle:      FacturaRenglon[]
 }
 
@@ -84,7 +82,8 @@ export interface FacturaTotalesPayload {
 }
 
 /**
- * Fija la tasa y el descuento en todos los lotes de la factura de un golpe.
+ * Fija la tasa y el descuento de la factura. Desde que la cabecera es una fila,
+ * es un UPDATE de un renglón y no de N.
  *
  * Los dos viajan siempre juntos, aunque solo cambie uno: la API escribe ambos
  * y el que no cambia se manda con el valor que ya tenía. Juntos son el total de

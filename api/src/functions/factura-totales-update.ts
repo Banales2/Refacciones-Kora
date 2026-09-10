@@ -6,6 +6,13 @@ import { capturar } from '../shared/snapshot'
 import { FacturaTotalesSchema } from '../schemas/facturaSchema'
 import * as service from '../services/facturasService'
 
+/**
+ * Fija el IVA y el descuento de una compra.
+ *
+ * Desde la migración 026 es un UPDATE de una fila: la cabecera vive en
+ * `facturas`. Antes había que escribirlo en los N lotes, y eso es lo que dejaba
+ * facturas con la tasa dispareja entre sus renglones.
+ */
 export async function facturaTotalesUpdate(
   request: HttpRequest,
   context: InvocationContext
@@ -14,31 +21,23 @@ export async function facturaTotalesUpdate(
     const user = requireRole(request, 'admin', 'editor')
     const body = FacturaTotalesSchema.parse(await request.json())
 
-    // El "antes" se captura lote por lote y ANTES de escribir: es lo que permite
-    // ver después qué tasa y qué descuento traía cada uno, sobre todo si venían
-    // disparejos.
-    const ids = await service.getIds(body.num_factura, body.proveedor_id)
-    const antes = new Map<number, Awaited<ReturnType<typeof capturar>>>()
-    for (const id of ids) antes.set(id, await capturar('lotes_pieza', id))
+    const facturaId = await service.getId(body.num_factura, body.proveedor_id)
+    const antes = await capturar('facturas', facturaId)
 
-    await service.setTotales(
-      body.num_factura, body.proveedor_id, body.tasa_iva ?? null, body.descuento_pct ?? null,
-    )
+    await service.setTotales(facturaId, body.tasa_iva ?? null, body.descuento_pct ?? null)
 
-    for (const id of ids) {
-      await audit({
-        user,
-        accion: 'EDITAR',
-        tabla: 'lotes_pieza',
-        registroId: id,
-        antes: antes.get(id),
-        despues: await capturar('lotes_pieza', id),
-        detalles: { num_factura: body.num_factura, renglones_factura: ids.length },
-        ipAddress: getClientIp(request),
-      })
-    }
+    await audit({
+      user,
+      accion: 'EDITAR',
+      tabla: 'facturas',
+      registroId: facturaId,
+      antes,
+      despues: await capturar('facturas', facturaId),
+      detalles: { num_factura: body.num_factura },
+      ipAddress: getClientIp(request),
+    })
 
-    return { status: 200, jsonBody: { data: { lotes_actualizados: ids.length } } }
+    return { status: 200, jsonBody: { data: { id: facturaId } } }
   } catch (err) {
     return handleError(err, context)
   }
@@ -46,8 +45,6 @@ export async function facturaTotalesUpdate(
 
 app.http('factura-totales-update', {
   methods: ['PUT'],
-  // Sustituye a 'facturas/iva': ahora fija los dos números de la factura —la
-  // tasa y el descuento— en la misma llamada, porque juntos son su total.
   route: 'facturas/totales',
   authLevel: 'anonymous',
   handler: facturaTotalesUpdate,

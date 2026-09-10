@@ -1,11 +1,14 @@
 // Las facturas de compra de refacciones, agrupadas por folio y proveedor.
 //
 // Existe para dos cosas: rastrear qué trajo cada factura sin ir refacción por
-// refacción, y corregirle los totales a las compras viejas. Esas se capturaron
-// cuando las casillas no existían, así que quedaron sin descuento y con "el
-// precio ya incluye IVA"; aquí se busca la factura y se le fijan la tasa y el
-// descuento a todos sus renglones de un golpe, que es lo correcto — los dos son
-// de la factura, no del renglón.
+// refacción, y corregirle los totales a las compras viejas — las capturadas
+// cuando las casillas no existían, que quedaron sin descuento y con "el precio
+// ya incluye IVA".
+//
+// Desde la migración 026 la factura es una tabla con su cabecera propia, así que
+// corregirle el folio, la tasa o el descuento es escribir una fila. Antes había
+// que reescribirlo en todos sus lotes, y de ahí venía la bandera de "totales
+// dispares" que ya no existe: no hay dos valores que puedan discrepar.
 import { useState } from 'react'
 import {
   Drawer, Stack, Group, Text, TextInput, Table, Loader, Center, Alert, Badge,
@@ -63,7 +66,7 @@ function FolioDeFactura({ factura }: { factura: Factura }) {
       <Group gap="sm" align="flex-end" wrap="nowrap">
         <TextInput
           label="Folio de la factura"
-          description={`Se corrige en los ${factura.renglones} renglones.`}
+          description="Es de la factura, así que sus renglones lo siguen solos."
           size="xs"
           style={{ flex: 1 }}
           value={folio}
@@ -235,14 +238,6 @@ function TotalesDeFactura({ factura }: { factura: Factura }) {
 
   return (
     <Stack gap="xs">
-      {factura.totales_dispares && (
-        <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
-          <Text size="sm">
-            Los renglones de esta factura no traen la misma tasa o el mismo descuento.
-            Fíjalos aquí para emparejarlos: se escriben en todos.
-          </Text>
-        </Alert>
-      )}
       {/* En el orden en que se aplican: primero el descuento, y el IVA sobre lo
           que queda. */}
       <Group gap="md" align="flex-start" wrap="nowrap">
@@ -314,7 +309,7 @@ function TotalesDeFactura({ factura }: { factura: Factura }) {
           loading={mut.isPending}
           onClick={guardar}
         >
-          {cambiada ? `Aplicar a los ${factura.renglones} renglones` : 'Sin cambios'}
+          {cambiada ? 'Guardar totales' : 'Sin cambios'}
         </Button>
       </Group>
 
@@ -400,10 +395,10 @@ export default function FacturasDrawer({
             <Text size="xs" c="dimmed">{total} factura{total === 1 ? '' : 's'}</Text>
             <Accordion variant="separated">
               {facturas.map((f) => {
-                // La identidad del renglón no puede ser el folio: al corregirlo
-                // el acordeón vería otra factura y cerraría la que se acaba de
-                // editar. El primer lote sí sobrevive al cambio de nombre.
-                const id = `${f.proveedor_id}:${f.detalle[0]?.lote_id ?? f.num_factura}`
+                // El id de la factura, que ahora existe y sobrevive a que le
+                // corrijan el folio. Antes había que usar el primer lote como
+                // sustituto para que el acordeón no se cerrara al renombrarla.
+                const id = String(f.id)
                 return (
                 <Accordion.Item key={id} value={id}>
                   <Accordion.Control>
@@ -411,30 +406,22 @@ export default function FacturasDrawer({
                       <div>
                         <Group gap={6}>
                           <Text fw={600} size="sm">{f.num_factura}</Text>
-                          {f.totales_dispares ? (
-                            <Tooltip label="Sus renglones no traen la misma tasa o el mismo descuento">
-                              <Badge size="xs" variant="light" color="yellow">Totales dispares</Badge>
+                          {/* El descuento solo se anuncia cuando lo hay: la
+                              mayoría de las facturas no trae ninguno y una
+                              insignia de más en cada renglón no dice nada. */}
+                          {f.descuento_pct != null && (
+                            <Tooltip label="Se resta del subtotal antes del IVA">
+                              <Badge size="xs" variant="light" color="grape">
+                                −{f.descuento_pct}% desc.
+                              </Badge>
                             </Tooltip>
+                          )}
+                          {f.tasa_iva != null ? (
+                            <Badge size="xs" variant="light" color="teal">+{f.tasa_iva}% IVA</Badge>
                           ) : (
-                            <>
-                              {/* El descuento solo se anuncia cuando lo hay: la
-                                  mayoría de las facturas no trae ninguno y una
-                                  insignia de más en cada renglón no dice nada. */}
-                              {f.descuento_pct != null && (
-                                <Tooltip label="Se resta del subtotal antes del IVA">
-                                  <Badge size="xs" variant="light" color="grape">
-                                    −{f.descuento_pct}% desc.
-                                  </Badge>
-                                </Tooltip>
-                              )}
-                              {f.tasa_iva != null ? (
-                                <Badge size="xs" variant="light" color="teal">+{f.tasa_iva}% IVA</Badge>
-                              ) : (
-                                <Tooltip label="El precio capturado se toma como precio final">
-                                  <Badge size="xs" variant="light" color="gray">IVA incluido</Badge>
-                                </Tooltip>
-                              )}
-                            </>
+                            <Tooltip label="El precio capturado se toma como precio final">
+                              <Badge size="xs" variant="light" color="gray">IVA incluido</Badge>
+                            </Tooltip>
                           )}
                         </Group>
                         <Text size="xs" c="dimmed">
@@ -485,12 +472,9 @@ export default function FacturasDrawer({
 
                       {/* Ambos bloques se remontan por factura (`key`): lo
                           tecleado en una no debe arrastrarse a la siguiente. */}
-                      <FolioDeFactura
-                        key={`${f.proveedor_id}:${f.num_factura}:folio`}
-                        factura={f}
-                      />
+                      <FolioDeFactura key={`${f.id}:${f.num_factura}`} factura={f} />
                       <TotalesDeFactura
-                        key={`${f.proveedor_id}:${f.num_factura}:${f.tasa_iva}:${f.descuento_pct}`}
+                        key={`${f.id}:${f.tasa_iva}:${f.descuento_pct}`}
                         factura={f}
                       />
                     </Stack>

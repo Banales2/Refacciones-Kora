@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { fechaDelLote, folioDelLote, joinFactura, joinProveedorDelLote } from './facturaSql'
 import { fechaMexico } from '../shared/fechaMexico'
 import { moverExistencia, loteDeRecuperacion } from './inventarioSql'
 import * as descuadresRepo from './descuadresRepo'
@@ -662,8 +663,8 @@ export async function findHistorial(vehiculoId: number): Promise<InstalacionHist
       SELECT
         i.id, i.tipo_pieza_id, t.nombre AS tipo_nombre, i.etiqueta,
         i.pieza_id, p.numero_serie, p.descripcion,
-        i.lote_id, l.num_factura, pr.nombre AS proveedor,
-        l.costo_unitario, l.fecha_compra,
+        i.lote_id, ${folioDelLote()} AS num_factura, pr.nombre AS proveedor,
+        l.costo_unitario, ${fechaDelLote()} AS fecha_compra,
         s.nombre AS sucursal,
         i.mantenimiento_id, i.detalle_mtto_pieza_id,
         i.fecha_instalacion, i.km_instalacion,
@@ -672,7 +673,8 @@ export async function findHistorial(vehiculoId: number): Promise<InstalacionHist
       JOIN piezas p            ON p.id  = i.pieza_id
       JOIN tipos_pieza t       ON t.id  = i.tipo_pieza_id
       LEFT JOIN lotes_pieza l  ON l.id  = i.lote_id
-      LEFT JOIN proveedores pr ON pr.id = l.proveedor_id
+      ${joinFactura()}
+      ${joinProveedorDelLote()}
       LEFT JOIN sucursales s   ON s.id  = i.sucursal_id
       WHERE i.vehiculo_id = @vehiculoId
       ORDER BY
@@ -823,12 +825,14 @@ export async function findConsumosSinMontar(
              m.tipo AS tipo_mantenimiento,
              d.lote_id, ${SUCURSAL_DEL_CONSUMO} AS sucursal_id,
              s.nombre AS sucursal, d.costo_unitario,
-             l.num_factura, pr.nombre AS proveedor, l.fecha_compra,
+             ${folioDelLote()} AS num_factura, pr.nombre AS proveedor,
+             ${fechaDelLote()} AS fecha_compra,
              d.cantidad, d.cantidad - ${YA_MONTADAS} AS sin_montar
       FROM detalle_mtto_pieza d
       JOIN mantenimiento m     ON m.id  = d.mantenimiento_id
       JOIN lotes_pieza l       ON l.id  = d.lote_id
-      LEFT JOIN proveedores pr ON pr.id = l.proveedor_id
+      ${joinFactura()}
+      ${joinProveedorDelLote()}
       LEFT JOIN sucursales s   ON s.id  = ${SUCURSAL_DEL_CONSUMO}
       WHERE m.vehiculo_id = @vehiculoId
         AND l.pieza_id    = @piezaId
