@@ -2,6 +2,7 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { fechaMexico } from '../shared/fechaMexico'
 import { moverExistencia } from './inventarioSql'
+import * as descuadresRepo from './descuadresRepo'
 
 // Un renglón que necesita el vehículo, junto con la pieza que usa para
 // cubrirlo. pieza_id es null mientras nadie la haya elegido: el renglón se sigue
@@ -358,9 +359,9 @@ export async function setPieza(
  * El renglón entra cerrado, así que no puede chocar contra el índice único de
  * renglones abiertos: por definición hay uno posterior que sigue vigente.
  *
- * La existencia NO se devuelve al almacén aunque el destino diga "stock": esa
- * devolución ya ocurrió (o no) el día que se hizo el cambio, y aplicarla ahora
- * sumaría al inventario de hoy una pieza que salió hace meses.
+ * La devolución al almacén de la pieza que sale SÍ se aplica, pero solo si no
+ * se aplicó ya: el renglón que se re-cierra pudo haberse cerrado antes con
+ * destino "stock", y en ese caso su +1 ya está puesto. Ver el paso 4.
  */
 async function montarRetroactivo(
   tx: sql.Transaction, vehiculoId: number, tipoId: number, etiqueta: string,
@@ -383,35 +384,53 @@ async function montarRetroactivo(
       ORDER BY fecha_instalacion ASC`)
   const fechaRetiro = aIso(siguiente.recordset[0]?.fecha_instalacion) ?? fechaMontaje
 
-  // 1. La pieza que estaba puesta ese día sale ese día. Puede no haber ninguna
-  //    (la unidad venía sin nada en ese renglón): entonces no hay nada que
-  //    cerrar y el UPDATE no toca ninguna fila.
-  await llave(tx.request())
-    .input('fecha',   sql.Date, fechaMontaje)
-    .input('km',      sql.Int, datos.km_retiro ?? datos.km_instalacion ?? null)
-    .input('motivo',  sql.NVarChar(30), datos.motivo_retiro ?? null)
-    .input('destino', sql.NVarChar(30), datos.destino ?? null)
-    // El renglón se elige con ORDER BY y se actualiza por id: en una línea de
-    // tiempo sana el filtro casa con uno solo, pero un `UPDATE TOP (1)` a secas
-    // elegiría cualquiera de ellos si alguna vez se solaparan.
+  // El renglón que cubría esa fecha: la pieza que estaba puesta el día del
+  // servicio, y que por tanto salió ese día. Se lee entero —no solo su id—
+  // porque su `destino` decide si su devolución al almacén ya se aplicó.
+  //
+  // Puede no haber ninguno: la unidad venía sin nada en ese renglón. Entonces no
+  // hay nada que cerrar ni nada que devolver.
+  const cubria = await llave(tx.request())
+    .input('fecha', sql.Date, fechaMontaje)
     .query(`
-      UPDATE instalaciones_pieza SET
-        fecha_retiro  = @fecha,
-        km_retiro     = COALESCE(@km, km_retiro),
-        motivo_retiro = COALESCE(@motivo, motivo_retiro),
-        destino       = COALESCE(@destino, destino)
-      WHERE id = (
-        SELECT TOP 1 id FROM instalaciones_pieza
-        WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
-          AND etiqueta = @etiqueta
-          AND fecha_instalacion IS NOT NULL
-          AND fecha_instalacion <= @fecha
-          AND (fecha_retiro IS NULL OR fecha_retiro > @fecha)
-        ORDER BY fecha_instalacion DESC, id DESC
-      )`)
+      SELECT TOP 1 id, pieza_id, lote_id, sucursal_id, destino FROM instalaciones_pieza
+      WHERE vehiculo_id = @vehiculoId AND tipo_pieza_id = @tipoId
+        AND etiqueta = @etiqueta
+        AND fecha_instalacion IS NOT NULL
+        AND fecha_instalacion <= @fecha
+        AND (fecha_retiro IS NULL OR fecha_retiro > @fecha)
+      ORDER BY fecha_instalacion DESC, id DESC`)
+  const saliente = cubria.recordset[0] as {
+    id: number
+    pieza_id: number
+    lote_id: number | null
+    sucursal_id: number | null
+    destino: string | null
+  } | undefined
+  // La pieza que salió, que es la del descuadre: la que el almacén puede estar
+  // contando de más. No es la que se está montando.
+  const salientePiezaId = saliente?.pieza_id ?? 0
+
+  // 1. La pieza que estaba puesta ese día sale ese día. Se actualiza por id, no
+  //    con el filtro de fechas: ya se resolvió cuál es.
+  if (saliente) {
+    await tx.request()
+      .input('id',      sql.Int, saliente.id)
+      .input('fecha',   sql.Date, fechaMontaje)
+      .input('km',      sql.Int, datos.km_retiro ?? datos.km_instalacion ?? null)
+      .input('motivo',  sql.NVarChar(30), datos.motivo_retiro ?? null)
+      .input('destino', sql.NVarChar(30), datos.destino ?? null)
+      .query(`
+        UPDATE instalaciones_pieza SET
+          fecha_retiro  = @fecha,
+          km_retiro     = COALESCE(@km, km_retiro),
+          motivo_retiro = COALESCE(@motivo, motivo_retiro),
+          destino       = COALESCE(@destino, destino)
+        WHERE id = @id`)
+  }
 
   // 2. El montaje, ya cerrado, en su lugar de la línea de tiempo.
-  await llave(tx.request())
+  const insertado = await llave(tx.request())
     .input('piezaId', sql.Int,  piezaId)
     .input('loteId',  sql.Int,  datos.lote_id ?? null)
     .input('mttoId',  sql.Int,  datos.mantenimiento_id ?? null)
@@ -425,10 +444,12 @@ async function montarRetroactivo(
         (vehiculo_id, tipo_pieza_id, etiqueta, pieza_id, lote_id, sucursal_id,
          mantenimiento_id, detalle_mtto_pieza_id, fecha_instalacion, km_instalacion,
          fecha_retiro)
+      OUTPUT INSERTED.id
       VALUES
         (@vehiculoId, @tipoId, @etiqueta, @piezaId, @loteId,
          COALESCE(@sucId, ${SUCURSAL_DEL_VEHICULO}),
          @mttoId, @detId, @fecha, @km, @retiro)`)
+  const instalacionId = insertado.recordset[0].id as number
 
   // 3. La pieza salió del almacén el día del servicio: el stock de hoy ya no la
   //    tiene que tener. Se descuenta igual que en un montaje normal, salvo que
@@ -436,6 +457,56 @@ async function montarRetroactivo(
   if (datos.detalle_mtto_pieza_id == null &&
       datos.lote_id != null && datos.sucursal_id != null) {
     await moverExistencia(tx, datos.lote_id, datos.sucursal_id, -1)
+  }
+
+  // 4. La que salió, si regresó al estante. La condición NO es solo el destino
+  //    que se capturó ahora, sino que su devolución no se haya aplicado ya:
+  //
+  //      destino previo distinto de 'stock' -> nadie la devolvió. Se devuelve
+  //        aquí, y esto es el caso normal — el renglón viejo casi siempre viene
+  //        sin destino capturado, así que sin esto la pieza se quedaría fuera
+  //        del inventario para siempre.
+  //      destino previo 'stock'             -> ya se le sumó 1 el día en que se
+  //        retiró de verdad. Volver a sumarlo contaría dos veces la misma pieza
+  //        física.
+  //
+  //    El único descuadre que queda sin arreglar es el contrario: pasar de
+  //    'stock' a otro destino deja un +1 viejo que habría que revertir, y
+  //    revertir movimientos de inventario de hace meses es peor que el
+  //    descuadre. Ese caso se anota abajo.
+  if (datos.destino === 'stock' && saliente && saliente.destino !== 'stock' &&
+      saliente.lote_id != null && saliente.sucursal_id != null) {
+    await moverExistencia(tx, saliente.lote_id, saliente.sucursal_id, 1)
+  }
+
+  // 5. El descuadre que no se puede arreglar solo: la pieza que salió ya estaba
+  //    registrada como devuelta al almacén —su +1 se aplicó el día en que se
+  //    retiró de verdad— y ahora se le pone otro destino. El almacén sigue
+  //    contando una unidad que, según el destino nuevo, nunca volvió al estante.
+  //
+  //    Queda como pendiente y no como aviso de pantalla a propósito: quien
+  //    captura el mantenimiento no es quien cuenta el almacén, y un alert se lo
+  //    come sin dejar rastro. Así sigue ahí hasta que alguien vaya al estante y
+  //    diga qué encontró.
+  if (saliente && saliente.destino === 'stock' && datos.destino != null &&
+      datos.destino !== 'stock' && saliente.sucursal_id != null) {
+    await descuadresRepo.crear(tx, {
+      pieza_id:         salientePiezaId,
+      sucursal_id:      saliente.sucursal_id,
+      lote_id:          saliente.lote_id,
+      // El almacén cuenta de más: tiene sumada una pieza que ya no regresó.
+      diferencia:       1,
+      origen:           'montaje_retroactivo',
+      motivo:
+        `Al capturar un mantenimiento del ${fechaMontaje} se cambió el destino de la ` +
+        `pieza que salió: estaba registrada como "regresa a almacén" y quedó como ` +
+        `"${datos.destino}". Esa unidad ya se le había sumado al almacén el día en que ` +
+        'se retiró, y ese movimiento no se revierte. Cuenta el estante: si la pieza no ' +
+        'está, ajusta la existencia; si sí está, el conteo ya era correcto.',
+      vehiculo_id:      vehiculoId,
+      instalacion_id:   instalacionId,
+      mantenimiento_id: datos.mantenimiento_id ?? null,
+    })
   }
 }
 

@@ -17,6 +17,8 @@ import {
   useMinimos, useCreateMinimo, useUpdateMinimo, useDeleteMinimo,
 } from '../hooks/useInventario'
 import type { ExistenciaEnSucursal, MinimoSucursal } from '../hooks/useInventario'
+import { useDescuadres, useResolverDescuadre } from '../hooks/useDescuadres'
+import type { Descuadre, ResolucionDescuadre } from '../hooks/useDescuadres'
 import { FechaInput } from '../components/FechaInput'
 import SelectCatalogo from '../components/SelectCatalogo'
 import { formatearFecha } from '../lib/fechas'
@@ -39,6 +41,11 @@ export default function Inventario() {
 
   const [traspasoDe, setTraspasoDe] = useState<ExistenciaEnSucursal | null>(null)
   const [minimoOpen, setMinimoOpen] = useState(false)
+  // Los de TODA la flota, no los de la sucursal elegida: el aviso existe para
+  // mandar a la sucursal donde está el problema, que casi nunca es la que se
+  // está mirando.
+  const { data: descuadresData } = useDescuadres()
+  const descuadres = descuadresData?.data ?? []
 
   if (cargandoSuc) return <Center py="xl"><Loader /></Center>
 
@@ -95,6 +102,25 @@ export default function Inventario() {
         />
       </Group>
 
+      {descuadres.length > 0 && (
+        <Alert
+          color="orange"
+          variant="light"
+          icon={<IconAlertTriangle size={18} />}
+          title={
+            descuadres.length === 1
+              ? 'Hay 1 descuadre de inventario sin resolver'
+              : `Hay ${descuadres.length} descuadres de inventario sin resolver`
+          }
+        >
+          <Text size="sm">
+            {resumenPorSucursal(descuadres)}. Ábrelos en la pestaña
+            {' '}<Text component="span" fw={600}>Descuadres</Text> de esa sucursal: hay que
+            contar el estante y decir qué se encontró.
+          </Text>
+        </Alert>
+      )}
+
       {idNum === undefined ? (
         <Text c="dimmed" py="lg">Elige una sucursal para ver su inventario.</Text>
       ) : (
@@ -103,6 +129,16 @@ export default function Inventario() {
             <Tabs.Tab value="existencias">Existencias</Tabs.Tab>
             <Tabs.Tab value="minimos">Mínimos</Tabs.Tab>
             <Tabs.Tab value="traspasos">Traspasos</Tabs.Tab>
+            <Tabs.Tab
+              value="descuadres"
+              rightSection={
+                descuadresDe(descuadres, idNum) > 0 ? (
+                  <Badge size="xs" circle color="orange">{descuadresDe(descuadres, idNum)}</Badge>
+                ) : undefined
+              }
+            >
+              Descuadres
+            </Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="existencias" pt="md">
@@ -113,6 +149,9 @@ export default function Inventario() {
           </Tabs.Panel>
           <Tabs.Panel value="traspasos" pt="md">
             <PanelTraspasos sucursalId={idNum} />
+          </Tabs.Panel>
+          <Tabs.Panel value="descuadres" pt="md">
+            <PanelDescuadres sucursalId={idNum} />
           </Tabs.Panel>
         </Tabs>
       )}
@@ -546,6 +585,180 @@ function MinimoModal({ sucursalId, onClose }: { sucursalId: number; onClose: () 
           <Button variant="default" onClick={onClose} disabled={crearMut.isPending}>Cancelar</Button>
           <Button onClick={confirmar} loading={crearMut.isPending} disabled={!piezaId}>
             Guardar
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  )
+}
+
+// ─── Descuadres ──────────────────────────────────────────────────────────────
+
+// Cuántos hay abiertos en una sucursal, para la insignia de la pestaña.
+function descuadresDe(descuadres: Descuadre[], sucursalId: number) {
+  return descuadres.filter((d) => d.sucursal_id === sucursalId).length
+}
+
+// "Vallarta (2), Centro (1)". Se dice en qué sucursal están porque el aviso vive
+// arriba del selector, antes de elegir ninguna.
+function resumenPorSucursal(descuadres: Descuadre[]) {
+  const porSuc = new Map<string, number>()
+  for (const d of descuadres) porSuc.set(d.sucursal, (porSuc.get(d.sucursal) ?? 0) + 1)
+  return [...porSuc.entries()].map(([suc, n]) => `${suc} (${n})`).join(', ')
+}
+
+/**
+ * Los descuadres abiertos de una sucursal, y las dos formas de cerrarlos.
+ *
+ * No se cierran con un botón de "listo": las dos salidas dicen cosas distintas
+ * —el sistema estaba mal y se corrigió, o el sistema estaba bien y la sospecha
+ * era infundada— y guardar cuál fue es lo que permite después saber si esta
+ * clase de descuadre vale la pena perseguirla.
+ */
+function PanelDescuadres({ sucursalId }: { sucursalId: number }) {
+  const { data, isLoading, isError } = useDescuadres(sucursalId)
+  const [cerrando, setCerrando] = useState<{ d: Descuadre; status: ResolucionDescuadre } | null>(null)
+
+  const filas = data?.data ?? []
+
+  if (isLoading) return <Center py="xl"><Loader /></Center>
+  if (isError) {
+    return <Alert color="red" title="Error">No se pudieron cargar los descuadres.</Alert>
+  }
+  if (!filas.length) {
+    return (
+      <Center py="xl">
+        <Text c="dimmed">Esta sucursal no tiene descuadres de inventario pendientes.</Text>
+      </Center>
+    )
+  }
+
+  return (
+    <>
+      <Stack gap="sm">
+        <Text size="sm" c="dimmed">
+          Diferencias que el sistema detectó y no pudo corregir solas. Cada una sigue
+          aquí hasta que alguien cuente el estante y diga qué encontró.
+        </Text>
+        {filas.map((d) => (
+          <Paper key={d.id} withBorder p="sm" radius="sm">
+            <Stack gap={6}>
+              <Group justify="space-between" wrap="nowrap" align="flex-start">
+                <div>
+                  <Group gap={6}>
+                    <Text fw={600} size="sm">{d.numero_serie}</Text>
+                    <Badge size="xs" variant="light" color="orange">
+                      {d.diferencia > 0
+                        ? `Sobra${d.diferencia === 1 ? '' : 'n'} ${d.diferencia}`
+                        : `Falta${d.diferencia === -1 ? '' : 'n'} ${Math.abs(d.diferencia)}`}
+                    </Badge>
+                  </Group>
+                  <Text size="xs" c="dimmed">{d.descripcion}</Text>
+                </div>
+                <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                  {formatearFecha(d.created_at)}
+                </Text>
+              </Group>
+
+              <Text size="xs">{d.motivo}</Text>
+
+              <Text size="xs" c="dimmed">
+                {d.num_factura ? `Factura ${d.num_factura}` : 'Sin factura'}
+                {d.vehiculo ? ` · Unidad ${d.vehiculo}` : ''}
+              </Text>
+
+              <Group gap="xs" mt={2}>
+                <Button size="compact-xs" onClick={() => setCerrando({ d, status: 'ajustado' })}>
+                  Ya ajusté la existencia
+                </Button>
+                <Button
+                  size="compact-xs" variant="default"
+                  onClick={() => setCerrando({ d, status: 'aceptado' })}
+                >
+                  Conté y sí estaba: era correcto
+                </Button>
+              </Group>
+            </Stack>
+          </Paper>
+        ))}
+      </Stack>
+
+      {cerrando && (
+        <CerrarDescuadreModal
+          descuadre={cerrando.d}
+          status={cerrando.status}
+          onClose={() => setCerrando(null)}
+        />
+      )}
+    </>
+  )
+}
+
+function CerrarDescuadreModal({ descuadre, status, onClose }: {
+  descuadre: Descuadre
+  status:    ResolucionDescuadre
+  onClose:   () => void
+}) {
+  const [nota, setNota] = useState('')
+  const mut = useResolverDescuadre()
+
+  const ajuste = status === 'ajustado'
+
+  return (
+    <Modal opened onClose={onClose} title="Cerrar descuadre" centered size="md">
+      <Stack gap="sm">
+        <Text size="sm">
+          {ajuste ? (
+            <>
+              Vas a cerrar el descuadre de{' '}
+              <Text component="span" fw={600}>{descuadre.numero_serie}</Text> como{' '}
+              <Text component="span" fw={600}>ajustado</Text>: contaste el estante, el
+              sistema estaba mal y ya corregiste la existencia.
+            </>
+          ) : (
+            <>
+              Vas a cerrar el descuadre de{' '}
+              <Text component="span" fw={600}>{descuadre.numero_serie}</Text> como{' '}
+              <Text component="span" fw={600}>correcto</Text>: contaste el estante, la
+              pieza sí estaba y no había nada que ajustar.
+            </>
+          )}
+        </Text>
+
+        {/* El ajuste de la existencia se hace en Existencias, con un traspaso o
+            corrigiendo el lote: cerrarlo aquí NO mueve inventario. Decirlo evita
+            que alguien lo cierre creyendo que el número se arregla solo. */}
+        {ajuste && (
+          <Alert color="blue" variant="light" py={6}>
+            <Text size="xs">
+              Cerrarlo aquí no mueve el inventario: solo quita el pendiente. El ajuste
+              de la cantidad se hace desde Existencias.
+            </Text>
+          </Alert>
+        )}
+
+        <Textarea
+          label="¿Qué encontraste?"
+          description="Opcional. Queda guardado con quién lo cerró y cuándo."
+          placeholder="Ej. Se contaron 3 en el estante, el sistema decía 4."
+          autosize minRows={2} maxRows={5}
+          maxLength={500}
+          value={nota}
+          onChange={(e) => setNota(e.currentTarget.value.slice(0, 500))}
+        />
+
+        {mut.error && <Alert color="red" title="Error">{(mut.error as Error).message}</Alert>}
+
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose} disabled={mut.isPending}>Cancelar</Button>
+          <Button
+            loading={mut.isPending}
+            onClick={() => mut.mutate(
+              { id: descuadre.id, status, nota },
+              { onSuccess: onClose },
+            )}
+          >
+            Cerrar descuadre
           </Button>
         </Group>
       </Stack>
