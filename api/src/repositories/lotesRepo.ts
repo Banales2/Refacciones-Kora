@@ -9,7 +9,7 @@ import { disponibleDelLote } from './inventarioSql'
 const SELECT_LOTE = `
   SELECT l.id, l.pieza_id, l.proveedor_id, l.fecha_compra, l.costo_unitario,
          l.cantidad_inicial, ${disponibleDelLote('l')} AS cantidad_disponible,
-         l.num_factura, l.sucursal_id, l.tasa_iva,
+         l.num_factura, l.sucursal_id, l.tasa_iva, l.descuento_pct,
          l.comprado_por, l.autorizado_por,
          pr.nombre AS proveedor,
          s.nombre AS sucursal

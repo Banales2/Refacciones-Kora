@@ -3,24 +3,27 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
-import { FacturaIvaSchema } from '../schemas/facturaSchema'
+import { FacturaTotalesSchema } from '../schemas/facturaSchema'
 import * as service from '../services/facturasService'
 
-export async function facturaIvaUpdate(
+export async function facturaTotalesUpdate(
   request: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
     const user = requireRole(request, 'admin', 'editor')
-    const body = FacturaIvaSchema.parse(await request.json())
+    const body = FacturaTotalesSchema.parse(await request.json())
 
     // El "antes" se captura lote por lote y ANTES de escribir: es lo que permite
-    // ver después qué tasa traía cada uno, sobre todo si venía dispareja.
+    // ver después qué tasa y qué descuento traía cada uno, sobre todo si venían
+    // disparejos.
     const ids = await service.getIds(body.num_factura, body.proveedor_id)
     const antes = new Map<number, Awaited<ReturnType<typeof capturar>>>()
     for (const id of ids) antes.set(id, await capturar('lotes_pieza', id))
 
-    await service.setIva(body.num_factura, body.proveedor_id, body.tasa_iva ?? null)
+    await service.setTotales(
+      body.num_factura, body.proveedor_id, body.tasa_iva ?? null, body.descuento_pct ?? null,
+    )
 
     for (const id of ids) {
       await audit({
@@ -41,9 +44,11 @@ export async function facturaIvaUpdate(
   }
 }
 
-app.http('factura-iva-update', {
+app.http('factura-totales-update', {
   methods: ['PUT'],
-  route: 'facturas/iva',
+  // Sustituye a 'facturas/iva': ahora fija los dos números de la factura —la
+  // tasa y el descuento— en la misma llamada, porque juntos son su total.
+  route: 'facturas/totales',
   authLevel: 'anonymous',
-  handler: facturaIvaUpdate,
+  handler: facturaTotalesUpdate,
 })

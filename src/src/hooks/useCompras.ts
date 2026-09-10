@@ -37,6 +37,9 @@ export interface CompraPayload {
   // El IVA es de la factura, no del renglón: una sola tasa para todos. null =
   // los precios capturados ya lo incluyen.
   tasa_iva:      number | null
+  // El descuento del proveedor sobre el total, también de la factura. Se resta
+  // al subtotal ANTES del IVA. null = la factura no trae descuento.
+  descuento_pct: number | null
   comprado_por:  string
   renglones:     CompraRenglonPayload[]
 }
@@ -47,6 +50,8 @@ export interface CompraLote extends LoteDisponible {
   // una refacción recién dada de alta se pueda montar sin recargar la lista.
   /** La tasa de la factura, la misma en todos sus renglones. */
   tasa_iva:    number | null
+  /** El descuento de la factura, el mismo en todos sus renglones. */
+  descuento_pct: number | null
   /** Verdadero si la refacción se dio de alta en esta misma compra. */
   pieza_nueva: boolean
 }

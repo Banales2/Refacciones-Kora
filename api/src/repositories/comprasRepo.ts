@@ -23,6 +23,12 @@ export interface CompraLote {
    * incluye. Es la misma en los N renglones: el IVA es de la factura.
    */
   tasa_iva: number | null
+  /**
+   * Descuento de la factura, en por ciento, que se resta ANTES del IVA. `null`
+   * = sin descuento. No toca `costo_unitario`: es de la factura completa, así
+   * que solo cambia su total, no lo que vale la pieza en inventario.
+   */
+  descuento_pct: number | null
   /** Verdadero si la refacción se dio de alta en esta misma compra. */
   pieza_nueva: boolean
 }
@@ -101,17 +107,18 @@ export async function crearCompra(
         .input('cantidad_inicial', sql.Int, renglon.cantidad_inicial)
         .input('num_factura', sql.NVarChar(100), data.num_factura)
         .input('tasa_iva', sql.Decimal(5, 2), data.tasa_iva ?? null)
+        .input('descuento_pct', sql.Decimal(5, 2), data.descuento_pct ?? null)
         .input('comprado_por', sql.NVarChar(120), data.comprado_por)
         .input('autorizado_por', sql.NVarChar(120), autorizadoPor)
         .query(`
           INSERT INTO lotes_pieza
             (pieza_id, proveedor_id, sucursal_id, fecha_compra, costo_unitario,
              cantidad_inicial, cantidad_disponible,
-             num_factura, tasa_iva, comprado_por, autorizado_por)
+             num_factura, tasa_iva, descuento_pct, comprado_por, autorizado_por)
           OUTPUT INSERTED.id
           VALUES (@pieza_id, @proveedor_id, @sucursal_id, @fecha_compra, @costo_unitario,
                   @cantidad_inicial, @cantidad_inicial,
-                  @num_factura, @tasa_iva, @comprado_por, @autorizado_por)`)
+                  @num_factura, @tasa_iva, @descuento_pct, @comprado_por, @autorizado_por)`)
       const loteId = insLote.recordset[0].id as number
 
       await tx.request()
@@ -135,6 +142,7 @@ export async function crearCompra(
         sucursal_id: data.sucursal_id,
         sucursal: nombreSucursal,
         tasa_iva: data.tasa_iva ?? null,
+        descuento_pct: data.descuento_pct ?? null,
         pieza_nueva: renglon.pieza_nueva !== undefined,
       })
     }

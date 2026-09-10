@@ -33,10 +33,17 @@ export interface Factura {
   /** null = los precios ya incluyen IVA (o la compra es exenta). */
   tasa_iva:     number | null
   /**
-   * Sus lotes no coinciden en la tasa. Pasa si alguien corrigió un lote suelto
-   * desde el drawer de la refacción; se empareja volviendo a fijarla aquí.
+   * Descuento del proveedor sobre el total, en por ciento. null = no trae. Se
+   * resta al subtotal ANTES del IVA, que es como lo emite el proveedor: ver
+   * `totalesFactura` en `lib/totales`.
    */
-  tasa_dispareja: boolean
+  descuento_pct: number | null
+  /**
+   * Sus lotes no coinciden en la tasa o en el descuento. Pasa si alguien
+   * corrigió un lote suelto desde el drawer de la refacción; se emparejan
+   * volviendo a fijarlos aquí.
+   */
+  totales_dispares: boolean
   detalle:      FacturaRenglon[]
 }
 
@@ -67,23 +74,31 @@ export function useFacturas(filtros: FacturasFiltros, enabled = true) {
   })
 }
 
-export interface FacturaIvaPayload {
+export interface FacturaTotalesPayload {
   num_factura:  string
   proveedor_id: number
   /** null devuelve la factura a "el precio ya incluye IVA". */
   tasa_iva:     number | null
+  /** null la devuelve a "sin descuento". */
+  descuento_pct: number | null
 }
 
-/** Fija la tasa en todos los lotes de la factura de un golpe. */
-export function useSetIvaFactura() {
+/**
+ * Fija la tasa y el descuento en todos los lotes de la factura de un golpe.
+ *
+ * Los dos viajan siempre juntos, aunque solo cambie uno: la API escribe ambos
+ * y el que no cambia se manda con el valor que ya tenía. Juntos son el total de
+ * la factura, y guardarlos por separado deja el desglose a medias.
+ */
+export function useSetTotalesFactura() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (payload: FacturaIvaPayload) =>
-      api.put<{ data: { lotes_actualizados: number } }>('/facturas/iva', payload),
+    mutationFn: (payload: FacturaTotalesPayload) =>
+      api.put<{ data: { lotes_actualizados: number } }>('/facturas/totales', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['facturas'] })
       // Los lotes cambiaron: el drawer de la refacción y cualquier lista que
-      // los muestre traen la tasa vieja.
+      // los muestre traen la tasa y el descuento viejos.
       qc.invalidateQueries({ queryKey: ['lotes'] })
       qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
     },

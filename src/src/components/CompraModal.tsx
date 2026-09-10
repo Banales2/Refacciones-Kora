@@ -23,7 +23,7 @@ import ProveedorForm from './ProveedorForm'
 import TipoPiezaSelect from './TipoPiezaSelect'
 import SelectCatalogo from './SelectCatalogo'
 import { formatMXN } from '../lib/formato'
-import { IVA_DEFAULT, importeIva } from '../lib/iva'
+import { IVA_DEFAULT, DESCUENTO_DEFAULT, totalesFactura } from '../lib/totales'
 import {
   TEXTO_SIMPLE, TEXTO_LIBRE, FOLIO,
   limpiarTextoSimple, limpiarTextoLibre, limpiarFolio, normalizarFolio,
@@ -56,6 +56,12 @@ type CompraFormValues = {
   // factura y el importe se calcula al mostrarlo, nunca se guarda.
   sumar_iva:    boolean
   tasa_iva:     number | string
+  // El descuento que el proveedor hace sobre el total de la factura. Apagado
+  // —el caso normal— significa que no trae ninguno. Encendido, se resta del
+  // subtotal ANTES del IVA y el porcentaje se guarda en cada lote de la
+  // factura; el importe se calcula al mostrarlo, nunca se guarda.
+  aplicar_descuento: boolean
+  descuento_pct:     number | string
   comprado_por: string
   renglones:    RenglonValues[]
 }
@@ -112,6 +118,7 @@ export default function CompraModal({
     initialValues: {
       proveedor_id: '', sucursal_id: '', fecha_compra: '', num_factura: '', comprado_por: '',
       sumar_iva: false, tasa_iva: IVA_DEFAULT,
+      aplicar_descuento: false, descuento_pct: DESCUENTO_DEFAULT,
       renglones: [{ nueva: false, ...RENGLON_VACIO }],
     },
     validate: {
@@ -138,6 +145,15 @@ export default function CompraModal({
         if (!vals.sumar_iva) return null
         if (v === '' || Number(v) <= 0) return 'La tasa debe ser mayor a 0'
         if (Number(v) > 100) return 'La tasa no puede pasar de 100%'
+        return null
+      },
+      // Igual que la tasa: apagada la casilla, el campo ni se muestra. El 100%
+      // queda fuera — una factura regalada es un error de captura, no un
+      // descuento.
+      descuento_pct: (v, vals) => {
+        if (!vals.aplicar_descuento) return null
+        if (v === '' || Number(v) <= 0) return 'El descuento debe ser mayor a 0'
+        if (Number(v) >= 100) return 'El descuento no puede llegar al 100%'
         return null
       },
       renglones: {
@@ -186,11 +202,15 @@ export default function CompraModal({
   const subtotal = renglones.reduce(
     (s, r) => s + (Number(r.cantidad_inicial) || 0) * (Number(r.costo_unitario) || 0), 0
   )
-  // El IVA se suma una sola vez, al total: los renglones se capturan como
-  // vienen en la factura y ninguno se toca.
+  // El descuento y el IVA son de la factura, no del renglón: se aplican una
+  // sola vez al total y los renglones se capturan a precio de lista, como
+  // vienen en el papel. El orden lo lleva `totalesFactura` — descuento primero,
+  // IVA sobre lo que queda.
   const tasa = form.values.sumar_iva ? Number(form.values.tasa_iva) || 0 : null
-  const iva = importeIva(subtotal, tasa)
-  const total = subtotal + iva
+  const descuentoPct = form.values.aplicar_descuento
+    ? Number(form.values.descuento_pct) || 0
+    : null
+  const { descuento, base, iva, total } = totalesFactura(subtotal, descuentoPct, tasa)
 
   // Solo informativo: el valor real lo pone la API con la cuenta de la sesión.
   const autoriza = usuario?.data.nombre ?? ''
@@ -228,6 +248,8 @@ export default function CompraModal({
         num_factura:  normalizarFolio(vals.num_factura),
         // Sin la casilla no se guarda tasa: el precio ya la trae dentro.
         tasa_iva:     vals.sumar_iva ? Number(vals.tasa_iva) : null,
+        // Sin la casilla no se guarda descuento: la factura no trae ninguno.
+        descuento_pct: vals.aplicar_descuento ? Number(vals.descuento_pct) : null,
         comprado_por: vals.comprado_por.trim(),
         renglones:    payload,
       },
@@ -461,16 +483,35 @@ export default function CompraModal({
                   </Button>
                 </Tooltip>
               </Group>
+              {/* El desglose solo aparece cuando hay algo que desglosar: sin
+                  descuento ni IVA, el subtotal ES el total y repetirlo tres
+                  veces no dice nada. */}
               <Stack gap={2} align="flex-end">
-                {tasa !== null && (
+                {(descuentoPct !== null || tasa !== null) && (
+                  <Text size="xs" c="dimmed">
+                    Subtotal <Text component="span" fw={600}>{formatMXN(subtotal)}</Text>
+                  </Text>
+                )}
+                {descuentoPct !== null && (
                   <>
                     <Text size="xs" c="dimmed">
-                      Subtotal <Text component="span" fw={600}>{formatMXN(subtotal)}</Text>
+                      Descuento ({descuentoPct}%){' '}
+                      <Text component="span" fw={600}>−{formatMXN(descuento)}</Text>
                     </Text>
-                    <Text size="xs" c="dimmed">
-                      IVA ({tasa}%) <Text component="span" fw={600}>{formatMXN(iva)}</Text>
-                    </Text>
+                    {/* La base solo importa si además hay IVA: es lo que se
+                        grava, y verla es lo que permite cuadrar el impuesto
+                        contra el papel. */}
+                    {tasa !== null && (
+                      <Text size="xs" c="dimmed">
+                        Base <Text component="span" fw={600}>{formatMXN(base)}</Text>
+                      </Text>
+                    )}
                   </>
+                )}
+                {tasa !== null && (
+                  <Text size="xs" c="dimmed">
+                    IVA ({tasa}%) <Text component="span" fw={600}>{formatMXN(iva)}</Text>
+                  </Text>
                 )}
                 <Text size="sm" c="dimmed">
                   Total factura: <Text component="span" fw={700}>{formatMXN(total)}</Text>
@@ -478,26 +519,52 @@ export default function CompraModal({
               </Stack>
             </Group>
 
-            {/* El IVA es de la factura, no del renglón: se suma una sola vez al
-                total y los precios de arriba se quedan como vienen en el papel.
-                Apagado —el caso normal— significa que el precio capturado ya lo
-                incluye, así que no hay nada que sumar y nada que guardar. */}
-            <Group gap="md" align="flex-start" wrap="nowrap">
-              <Switch
-                label="Sumar IVA al total"
-                description="Actívalo si los precios capturados son el subtotal. Apagado, se toman como precio final."
-                checked={form.values.sumar_iva}
-                onChange={(e) => form.setFieldValue('sumar_iva', e.currentTarget.checked)}
-              />
-              {form.values.sumar_iva && (
-                <NumberInput
-                  label="Tasa" size="xs" w={110}
-                  min={0.01} max={100} clampBehavior="strict"
-                  decimalScale={2} suffix="%"
-                  {...form.getInputProps('tasa_iva')}
+            {/* El descuento y el IVA son de la factura, no del renglón: se
+                aplican una sola vez al total y los precios de arriba se quedan
+                como vienen en el papel. Van en este orden porque es el orden en
+                que se calculan — primero se descuenta, y el IVA se cobra sobre
+                lo que queda.
+
+                Apagados —el caso normal— significan que la factura no trae
+                descuento y que el precio capturado ya incluye IVA: no hay nada
+                que aplicar y nada que guardar. */}
+            <Stack gap="xs">
+              <Group gap="md" align="flex-start" wrap="nowrap">
+                <Switch
+                  label="Descuento del proveedor"
+                  description="Se resta del subtotal antes del IVA. Los costos de arriba se capturan a precio de lista."
+                  checked={form.values.aplicar_descuento}
+                  onChange={(e) =>
+                    form.setFieldValue('aplicar_descuento', e.currentTarget.checked)
+                  }
                 />
-              )}
-            </Group>
+                {form.values.aplicar_descuento && (
+                  <NumberInput
+                    label="Descuento" size="xs" w={110}
+                    min={0.01} max={99.99} clampBehavior="strict"
+                    decimalScale={2} suffix="%"
+                    {...form.getInputProps('descuento_pct')}
+                  />
+                )}
+              </Group>
+
+              <Group gap="md" align="flex-start" wrap="nowrap">
+                <Switch
+                  label="Sumar IVA al total"
+                  description="Actívalo si los precios capturados son el subtotal. Apagado, se toman como precio final."
+                  checked={form.values.sumar_iva}
+                  onChange={(e) => form.setFieldValue('sumar_iva', e.currentTarget.checked)}
+                />
+                {form.values.sumar_iva && (
+                  <NumberInput
+                    label="Tasa" size="xs" w={110}
+                    min={0.01} max={100} clampBehavior="strict"
+                    decimalScale={2} suffix="%"
+                    {...form.getInputProps('tasa_iva')}
+                  />
+                )}
+              </Group>
+            </Stack>
 
             <TextInput
               label="Autorizado por"

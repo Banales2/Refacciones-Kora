@@ -41,4 +41,12 @@ export interface LoteConProveedor {
    * calcula donde se muestre. Ver `db/migrations/020_iva_del_lote.sql`.
    */
   tasa_iva: number | null
+  /**
+   * Descuento de la factura, en por ciento, que se resta al subtotal ANTES del
+   * IVA. `null` = la factura no trae descuento, que es el caso de todo lo
+   * anterior a la migración 021. No modifica `costo_unitario`: el renglón se
+   * guarda a precio de lista y el descuento solo mueve el total de la factura.
+   * Ver `db/migrations/021_descuento_de_factura.sql`.
+   */
+  descuento_pct: number | null
 }

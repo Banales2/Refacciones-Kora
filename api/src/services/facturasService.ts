@@ -24,10 +24,15 @@ export async function getIds(numFactura: string, proveedorId: number): Promise<n
   return ids
 }
 
-export async function setIva(
-  numFactura: string, proveedorId: number, tasa: number | null,
+/**
+ * El IVA y el descuento de la compra completa. Van juntos porque juntos forman
+ * el total de la factura: el descuento se resta al subtotal y el IVA se calcula
+ * sobre lo que queda, así que fijar uno sin el otro deja el total a medias.
+ */
+export async function setTotales(
+  numFactura: string, proveedorId: number, tasa: number | null, descuento: number | null,
 ): Promise<number> {
-  return repo.setIva(numFactura, proveedorId, tasa)
+  return repo.setTotales(numFactura, proveedorId, tasa, descuento)
 }
 
 /**

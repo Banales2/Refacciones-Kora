@@ -18,7 +18,7 @@ import {
 import type { Lote, LotePayload } from '../hooks/useLotes'
 import { useComparativaPieza } from '../hooks/usePreciosProveedor'
 import { exportComparativaPiezaPdf } from '../lib/reportes/comparativaPieza'
-import { IVA_DEFAULT } from '../lib/iva'
+import { IVA_DEFAULT } from '../lib/totales'
 import { normalizarFolio } from '../lib/validaciones'
 import LoteForm from './LoteForm'
 import type { LoteFormValues } from './LoteForm'

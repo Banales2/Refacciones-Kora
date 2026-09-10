@@ -67,6 +67,22 @@ export const tasaIva = z.coerce
   .max(100, 'La tasa no puede pasar de 100%')
   .nullish()
 
+// El descuento que el proveedor hace sobre el total de la factura, en por
+// ciento, y que se resta ANTES del IVA. Es de la factura, no del renglón: los
+// costos unitarios se capturan a precio de lista, tal como vienen en el papel,
+// y el descuento se aplica una sola vez al subtotal.
+//
+// Ausente (o null) = la factura no trae descuento. Igual que en `tasaIva`, el
+// cero no se admite: decir "sin descuento" de dos formas obligaría a comprobar
+// las dos en cada lectura. El tope es 99.99 — una factura al 100% de descuento
+// no es una compra, es un error de captura.
+// Ver `db/migrations/021_descuento_de_factura.sql`.
+export const descuentoPct = z.coerce
+  .number()
+  .positive('El descuento debe ser mayor a 0')
+  .max(99.99, 'El descuento no puede llegar al 100%')
+  .nullish()
+
 export const LoteCreateSchema = z.object({
   proveedor_id: z.coerce.number().int().min(1, 'Proveedor requerido'),
   // La sucursal que recibe la compra. Obligatoria: toda pieza tiene que estar

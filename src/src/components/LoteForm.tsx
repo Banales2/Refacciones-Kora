@@ -15,7 +15,7 @@ import {
   TEXTO_SIMPLE, FOLIO, limpiarTextoSimple, limpiarFolio, normalizarFolio,
 } from '../lib/validaciones'
 import { formatMXN } from '../lib/formato'
-import { IVA_DEFAULT, importeIva } from '../lib/iva'
+import { IVA_DEFAULT, importeIva } from '../lib/totales'
 import { FechaInput } from './FechaInput'
 import ProveedorForm from './ProveedorForm'
 import SelectCatalogo from './SelectCatalogo'
@@ -32,7 +32,7 @@ export type LoteFormValues = {
   num_factura: string
   // Apagado —el caso normal— significa que el precio capturado ya trae IVA y no
   // hay nada que sumarle; encendido, la tasa se guarda en el lote y el importe
-  // se calcula al mostrarlo. Ver `lib/iva` y la migración 020.
+  // se calcula al mostrarlo. Ver `lib/totales` y la migración 020.
   sumar_iva: boolean
   tasa_iva: number | string
   comprado_por: string

@@ -16,7 +16,7 @@ export interface Lote {
   /**
    * Tasa de IVA a SUMARLE a costo_unitario, en por ciento. null = el precio
    * capturado ya lo incluye (o la compra es exenta), que es el caso de todo lo
-   * anterior a la migración 020. El importe no se guarda: sale de lib/iva.
+   * anterior a la migración 020. El importe no se guarda: sale de lib/totales.
    */
   tasa_iva: number | null
   proveedor: string
