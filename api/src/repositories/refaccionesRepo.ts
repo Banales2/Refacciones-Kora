@@ -92,7 +92,8 @@ export async function findLotesByPiezaId(piezaId: number): Promise<LoteConProvee
         l.comprado_por, l.autorizado_por,
         pr.nombre AS proveedor, s.nombre AS sucursal
       FROM lotes_pieza l
-      JOIN proveedores pr ON pr.id = l.proveedor_id
+      -- LEFT: el lote de recuperación va sin proveedor (migración 024).
+      LEFT JOIN proveedores pr ON pr.id = l.proveedor_id
       LEFT JOIN sucursales s ON s.id = l.sucursal_id
       WHERE l.pieza_id = @piezaId
       ORDER BY l.fecha_compra DESC

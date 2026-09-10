@@ -19,7 +19,8 @@ export interface Lote {
    * anterior a la migración 020. El importe no se guarda: sale de lib/totales.
    */
   tasa_iva: number | null
-  proveedor: string
+  /** `null` en el lote de recuperación: la pieza no salió de una compra. */
+  proveedor: string | null
   // Sucursal de recepción. `cantidad_disponible` es la suma de lo que queda del
   // lote en todas las sucursales, no solo en esta.
   sucursal_id: number | null

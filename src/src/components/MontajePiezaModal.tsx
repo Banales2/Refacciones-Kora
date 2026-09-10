@@ -31,7 +31,7 @@ import SelectCatalogo from './SelectCatalogo'
 import { useLotes, useCreateLote } from '../hooks/useLotes'
 import type { Lote } from '../hooks/useLotes'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
-import { useConsumosSinMontar } from '../hooks/usePiezasVehiculo'
+import { useConsumosSinMontar, useHistorialPiezas } from '../hooks/usePiezasVehiculo'
 import LoteForm from './LoteForm'
 import { normalizarFolio } from '../lib/validaciones'
 import type { LoteFormValues } from './LoteForm'
@@ -65,7 +65,7 @@ const soloFecha = (f: string | null) => f?.slice(0, 10) ?? 's/f'
 
 // Cómo se nombra un lote de compra: la factura de la que salió la pieza.
 const etiquetaLote = (l: Pick<Lote, 'fecha_compra' | 'proveedor' | 'num_factura' | 'costo_unitario'>) =>
-  `${soloFecha(l.fecha_compra)} · ${l.proveedor}` +
+  `${soloFecha(l.fecha_compra)} · ${l.proveedor ?? 'Recuperada de unidad'}` +
   `${l.num_factura ? ` · Fact. ${l.num_factura}` : ''}` +
   ` · ${dinero(l.costo_unitario)}`
 
@@ -75,13 +75,21 @@ const etiquetaLote = (l: Pick<Lote, 'fecha_compra' | 'proveedor' | 'num_factura'
 const valorExistencia = (loteId: number, sucursalId: number) => `${loteId}|${sucursalId}`
 
 export default function MontajePiezaModal({
-  opened, modo, vehiculoId, tipoNombre, piezaEntranteId, piezaSalienteNombre, kmVehiculo,
+  opened, modo, vehiculoId, tipoPiezaId, etiqueta, tipoNombre,
+  piezaEntranteId, piezaSalienteNombre, kmVehiculo,
   isPending, error, onConfirm, onClose,
 }: {
   opened: boolean
   modo: ModoMontaje
   /** La unidad en la que se monta. Acota los consumos que se pueden ligar. */
   vehiculoId: number
+  /**
+   * El renglón que se está tocando, como par (tipo, etiqueta). Hace falta para
+   * mirar de qué compra salió la pieza que está puesta: sin lote no hay a dónde
+   * devolverla, y eso hay que decirlo antes de prometerlo.
+   */
+  tipoPiezaId: number
+  etiqueta: string
   tipoNombre: string
   /** La refacción que entra. Null en un retiro. */
   piezaEntranteId: number | null
@@ -135,6 +143,26 @@ export default function MontajePiezaModal({
   const { data: consumosData, isLoading: cargandoConsumos } = consumosQuery
 
   const consumos = useMemo(() => consumosData?.data ?? [], [consumosData])
+
+  // De qué compra salió la pieza que está puesta. Solo se pregunta si de verdad
+  // sale una: en un montaje sobre un renglón vacío no hay nada que devolver.
+  const { data: historialData } = useHistorialPiezas(sale ? vehiculoId : undefined, sale)
+  const instalacionVigente = useMemo(
+    () => (historialData?.data ?? []).find(
+      (h) => h.tipo_pieza_id === tipoPiezaId && h.etiqueta === etiqueta && h.fecha_retiro == null,
+    ),
+    [historialData, tipoPiezaId, etiqueta],
+  )
+
+  // Las existencias se llevan por la pareja (lote, sucursal). Una pieza que vino
+  // con la unidad nunca tuvo compra, así que no existe esa pareja y el almacén
+  // no la puede contar: marcar "regresa a almacén" no la devuelve a ningún lado.
+  // Antes esto no se decía y el propio campo prometía lo contrario.
+  const sinDondeDevolver =
+    sale && !!piezaSalienteNombre &&
+    (!instalacionVigente ||
+     instalacionVigente.lote_id == null ||
+     instalacionVigente.sucursal == null)
 
   const disponibles = useMemo(() => {
     const base = (dispData?.data ?? []).filter((d) => d.pieza_id === piezaEntranteId)
@@ -405,9 +433,11 @@ export default function MontajePiezaModal({
             <Select
               label="Destino"
               description={
-                destino === 'stock'
-                  ? 'La pieza vuelve a contarse en el almacén, en el lote y la sucursal de los que salió.'
-                  : 'Qué se hace con la pieza que sale. Solo "Regresa a almacén" la devuelve al inventario.'
+                destino !== 'stock'
+                  ? 'Qué se hace con la pieza que sale. Solo "Regresa a almacén" la devuelve al inventario.'
+                  : sinDondeDevolver
+                    ? 'No salió de ninguna compra: entra al lote de recuperación de esta refacción.'
+                    : 'La pieza vuelve a contarse en el almacén, en el lote y la sucursal de los que salió.'
               }
               placeholder="Qué se hace con la pieza que sale"
               data={DESTINOS}
@@ -415,6 +445,23 @@ export default function MontajePiezaModal({
               onChange={(v) => setDestino(v as DestinoPieza | null)}
               clearable
             />
+            {/* El inventario se lleva por lote, no por pieza suelta, así que
+                una pieza que vino con la unidad no tiene a dónde volver. Entra
+                al lote de recuperación de su refacción: sin proveedor, sin
+                factura y a costo cero, porque ya se pagó al comprar el
+                vehículo. Cuenta en unidades, no en pesos. */}
+            {destino === 'stock' && sinDondeDevolver && (
+              <Alert color="blue" variant="light" py={6}>
+                <Text size="xs">
+                  Esta pieza vino con la unidad (o su compra ya no existe), así que no
+                  salió de ningún lote. Entra al{' '}
+                  <Text component="span" fw={600}>lote de recuperación</Text> de esta
+                  refacción, en la sucursal de la unidad: sin factura ni proveedor y a
+                  $0, porque ya se pagó al comprar el vehículo. Se puede volver a usar,
+                  y no mueve el valor del inventario.
+                </Text>
+              </Alert>
+            )}
           </>
         )}
 

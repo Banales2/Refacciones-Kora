@@ -25,7 +25,8 @@ export interface LoteConProveedor {
   // columna: se calcula sobre `existencias_lote` (migración 002).
   cantidad_disponible: number
   num_factura: string | null
-  proveedor: string
+  /** `null` en el lote de recuperación, que no salió de ninguna compra. */
+  proveedor: string | null
   // Sucursal que recibió la compra. Es donde entra todo el lote; repartirlo
   // entre sucursales se hace después con un traspaso.
   sucursal_id: number | null

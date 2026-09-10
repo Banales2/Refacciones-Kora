@@ -18,7 +18,8 @@ export interface ExistenciaEnSucursal {
   descripcion:    string
   tipo_pieza_id:  number | null
   tipo_pieza:     string | null
-  proveedor:      string
+  /** `null` en el lote de recuperación: no se le compró a nadie. */
+  proveedor:      string | null
   num_factura:    string | null
   costo_unitario: number
   fecha_compra:   string
@@ -42,7 +43,9 @@ export async function findExistencias(sucursalId?: number): Promise<ExistenciaEn
     JOIN sucursales s      ON s.id  = ex.sucursal_id
     JOIN lotes_pieza l     ON l.id  = ex.lote_id
     JOIN piezas p          ON p.id  = l.pieza_id
-    JOIN proveedores pr    ON pr.id = l.proveedor_id
+    -- LEFT: el lote de recuperación va sin proveedor (migración 024) y aquí
+    -- tiene que aparecer — es stock real en el estante.
+    LEFT JOIN proveedores pr ON pr.id = l.proveedor_id
     LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id
     ${where}
     ORDER BY s.nombre, p.numero_serie, l.fecha_compra`)

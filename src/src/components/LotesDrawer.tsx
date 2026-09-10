@@ -212,7 +212,14 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                     {data?.lotes.map((lote) => (
                       <Table.Tr key={lote.id}>
                         <Table.Td>{formatDate(lote.fecha_compra)}</Table.Td>
-                        <Table.Td>{lote.proveedor}</Table.Td>
+                        {/* Sin proveedor solo puede ser el lote de
+                            recuperación: piezas que volvieron al estante sin
+                            haber salido de una compra. */}
+                        <Table.Td>
+                          {lote.proveedor ?? (
+                            <Text component="span" size="sm" c="dimmed">Recuperada de unidad</Text>
+                          )}
+                        </Table.Td>
                         <Table.Td c="dimmed">{lote.num_factura ?? '—'}</Table.Td>
                         <Table.Td>{lote.comprado_por || '—'}</Table.Td>
                         <Table.Td>{lote.autorizado_por || '—'}</Table.Td>
@@ -314,7 +321,9 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
               {deleteLote ? formatDate(deleteLote.fecha_compra) : ''}
             </Text>
             {' '}de{' '}
-            <Text component="span" fw={700}>{deleteLote?.proveedor}</Text>?
+            <Text component="span" fw={700}>
+              {deleteLote?.proveedor ?? 'piezas recuperadas'}
+            </Text>?
             Esta acción no se puede deshacer.
           </Text>
           {deleteMut.error && (

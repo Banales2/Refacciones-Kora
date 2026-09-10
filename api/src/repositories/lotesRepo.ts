@@ -14,7 +14,9 @@ const SELECT_LOTE = `
          pr.nombre AS proveedor,
          s.nombre AS sucursal
   FROM lotes_pieza l
-  JOIN proveedores pr ON pr.id = l.proveedor_id
+  -- LEFT: el lote de recuperación va sin proveedor (migración 024) y tiene que
+  -- salir en el historial de la refacción como cualquier otro.
+  LEFT JOIN proveedores pr ON pr.id = l.proveedor_id
   LEFT JOIN sucursales s ON s.id = l.sucursal_id
 `
 

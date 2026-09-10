@@ -1,7 +1,7 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { fechaMexico } from '../shared/fechaMexico'
-import { moverExistencia } from './inventarioSql'
+import { moverExistencia, loteDeRecuperacion } from './inventarioSql'
 import * as descuadresRepo from './descuadresRepo'
 
 // Un renglón que necesita el vehículo, junto con la pieza que usa para
@@ -131,6 +131,66 @@ export interface DatosMontaje {
   motivo_retiro?:     string | null
   destino?:           string | null
   km_retiro?:         number | null
+}
+
+/**
+ * A qué sucursal atribuirle un descuadre de esta unidad. `null` en los tipos que
+ * no llevan sucursal —tractocamión, caja de tráiler, utilitario—, y entonces el
+ * descuadre queda sin asignar hasta que alguien decida dónde entra.
+ */
+async function sucursalDelVehiculo(
+  tx: sql.Transaction, vehiculoId: number,
+): Promise<number | null> {
+  const r = await tx.request()
+    .input('vehiculoId', sql.Int, vehiculoId)
+    .query(`SELECT ${SUCURSAL_DEL_VEHICULO} AS sucursal_id`)
+  return r.recordset[0]?.sucursal_id ?? null
+}
+
+/**
+ * Devuelve al almacén la pieza que sale, cuando no tiene un lote propio al que
+ * volver: la que vino con el vehículo, o aquella cuya compra ya no existe.
+ *
+ * Entra al lote de recuperación de su refacción en esa sucursal —sin proveedor,
+ * sin factura y a costo cero—, que es el lote que existe justamente para esto.
+ * Ver `loteDeRecuperacion`.
+ *
+ * Si no hay ninguna sucursal a la que atribuirla (tractocamión, caja de tráiler
+ * o utilitario: esas tablas hijas no llevan sucursal), no hay estante en el que
+ * ponerla y lo único honesto es dejarlo como descuadre abierto para que alguien
+ * decida dónde entra. Antes ese era el desenlace de todos los casos, y además
+ * en silencio.
+ */
+async function devolverPiezaSinLote(
+  tx: sql.Transaction, vehiculoId: number, piezaId: number,
+  saliente: { lote_id: number | null; sucursal_id: number | null } | undefined,
+  mantenimientoId: number | null, instalacionId: number | null,
+): Promise<void> {
+  const sucursalId = saliente?.sucursal_id ?? (await sucursalDelVehiculo(tx, vehiculoId))
+
+  if (sucursalId != null) {
+    const loteId = await loteDeRecuperacion(tx, piezaId, sucursalId, fechaMexico())
+    await moverExistencia(tx, loteId, sucursalId, 1)
+    return
+  }
+
+  await descuadresRepo.crear(tx, {
+    pieza_id:    piezaId,
+    sucursal_id: null,
+    lote_id:     saliente?.lote_id ?? null,
+    // En el estante hay una que el sistema no cuenta.
+    diferencia:  -1,
+    origen:      'retiro_sin_sucursal',
+    motivo:
+      'Se retiró de la unidad marcando "regresa a almacén", pero la pieza no salió de ' +
+      'ninguna compra y esta unidad no tiene sucursal asignada, así que no hay estante ' +
+      'al que devolverla. Di en qué sucursal quedó: se le puede dar entrada ahí desde ' +
+      'el inventario, en el lote de recuperación de esa refacción. Si no se va a ' +
+      'reusar, ciérralo como aceptado.',
+    vehiculo_id:      vehiculoId,
+    instalacion_id:   instalacionId,
+    mantenimiento_id: mantenimientoId,
+  })
 }
 
 /**
@@ -274,9 +334,20 @@ export async function setPieza(
       // La que sale vuelve al estante: se devuelve a su lote y su sucursal. Es
       // la contraparte del descuento de más abajo, y en un reemplazo las dos
       // cosas pasan en la misma transacción.
+      //
+      // Si no tiene lote y sucursal no hay dónde devolverla: las existencias se
+      // llevan por la pareja (lote, sucursal), y una pieza que vino con la
+      // unidad nunca tuvo compra. Antes esto no hacía nada y nadie se enteraba;
+      // ahora queda como descuadre para que alguien decida dónde entra.
       const sal = saliente.recordset[0]
-      if (datos.destino === 'stock' && sal?.lote_id != null && sal?.sucursal_id != null) {
-        await moverExistencia(tx, sal.lote_id, sal.sucursal_id, 1)
+      if (datos.destino === 'stock' && anterior != null) {
+        if (sal?.lote_id != null && sal?.sucursal_id != null) {
+          await moverExistencia(tx, sal.lote_id, sal.sucursal_id, 1)
+        } else {
+          await devolverPiezaSinLote(
+            tx, vehiculoId, anterior, sal, datos.mantenimiento_id ?? null, null,
+          )
+        }
       }
 
       await tx.request()
@@ -474,9 +545,16 @@ async function montarRetroactivo(
   //    'stock' a otro destino deja un +1 viejo que habría que revertir, y
   //    revertir movimientos de inventario de hace meses es peor que el
   //    descuadre. Ese caso se anota abajo.
-  if (datos.destino === 'stock' && saliente && saliente.destino !== 'stock' &&
-      saliente.lote_id != null && saliente.sucursal_id != null) {
-    await moverExistencia(tx, saliente.lote_id, saliente.sucursal_id, 1)
+  if (datos.destino === 'stock' && saliente && saliente.destino !== 'stock') {
+    if (saliente.lote_id != null && saliente.sucursal_id != null) {
+      await moverExistencia(tx, saliente.lote_id, saliente.sucursal_id, 1)
+    } else {
+      // Sin lote propio al que devolverla. Mismo camino que en el montaje normal.
+      await devolverPiezaSinLote(
+        tx, vehiculoId, salientePiezaId, saliente,
+        datos.mantenimiento_id ?? null, instalacionId,
+      )
+    }
   }
 
   // 5. El descuadre que no se puede arreglar solo: la pieza que salió ya estaba

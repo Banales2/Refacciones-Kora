@@ -15,7 +15,12 @@ export type ResolucionDescuadre = Exclude<StatusDescuadre, 'abierto'>
 
 export interface DescuadreCreate {
   pieza_id:          number
-  sucursal_id:       number
+  /**
+   * En qué estante hay que contar. `null` = el sistema no lo sabe, y decidirlo
+   * es parte de resolver el descuadre: pasa con la pieza que vino con una unidad
+   * que además no tiene sucursal. Ver `db/migrations/023_descuadre_sin_sucursal.sql`.
+   */
+  sucursal_id:       number | null
   lote_id?:          number | null
   /** Signo del almacén: +1 = el sistema cuenta una unidad que no está. */
   diferencia:        number
@@ -32,8 +37,9 @@ export interface Descuadre {
   pieza_id:         number
   numero_serie:     string
   descripcion:      string
-  sucursal_id:      number
-  sucursal:         string
+  sucursal_id:      number | null
+  /** `null` = sin sucursal asignada; hay que decidir dónde entra. */
+  sucursal:         string | null
   lote_id:          number | null
   num_factura:      string | null
   diferencia:       number
@@ -94,8 +100,8 @@ const SELECT_DESCUADRE = `
          d.status, d.nota_resolucion, d.resuelto_por, d.resuelto_en,
          d.creado_por, d.created_at
   FROM descuadres_inventario d
-  JOIN piezas p     ON p.id = d.pieza_id
-  JOIN sucursales s ON s.id = d.sucursal_id
+  JOIN piezas p           ON p.id = d.pieza_id
+  LEFT JOIN sucursales s  ON s.id = d.sucursal_id
   LEFT JOIN lotes_pieza l ON l.id = d.lote_id
   LEFT JOIN vehiculos   v ON v.id = d.vehiculo_id`
 
@@ -104,7 +110,12 @@ const SELECT_DESCUADRE = `
  *
  * Sin filtro devuelve los de toda la flota: es lo que necesita el aviso de
  * arriba de la pantalla, que existe para que un descuadre en una sucursal que
- * nadie abre no se quede invisible para siempre.
+ * nadie abre no se quede invisible.
+ *
+ * Con filtro salen TAMBIÉN los que no tienen sucursal asignada. No es un
+ * descuido: esos no pertenecen a ninguna, y esconderlos hasta que alguien
+ * adivine dónde buscarlos es la forma segura de que no los resuelva nadie. El
+ * primero que los vea los cierra.
  */
 export async function findAbiertos(sucursalId?: number): Promise<Descuadre[]> {
   const pool = await getPool()
@@ -112,7 +123,7 @@ export async function findAbiertos(sucursalId?: number): Promise<Descuadre[]> {
   let filtro = ''
   if (sucursalId !== undefined) {
     req.input('sucursalId', sql.Int, sucursalId)
-    filtro = ' AND d.sucursal_id = @sucursalId'
+    filtro = ' AND (d.sucursal_id = @sucursalId OR d.sucursal_id IS NULL)'
   }
   const r = await req.query(`
     ${SELECT_DESCUADRE}

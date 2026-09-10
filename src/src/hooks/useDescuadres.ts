@@ -18,8 +18,9 @@ export interface Descuadre {
   pieza_id:         number
   numero_serie:     string
   descripcion:      string
-  sucursal_id:      number
-  sucursal:         string
+  /** `null` = sin sucursal asignada: hay que decidir dónde entra la pieza. */
+  sucursal_id:      number | null
+  sucursal:         string | null
   lote_id:          number | null
   num_factura:      string | null
   /** Signo del almacén: +1 = el sistema cuenta una unidad que no está. */

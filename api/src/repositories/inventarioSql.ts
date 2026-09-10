@@ -40,6 +40,71 @@ export function disponibleEnSucursal(alias = 'l', param = '@sucursalId'): string
  * dos puertas por las que una pieza sale del almacén, y tienen que mover el
  * inventario igual.
  */
+/**
+ * El lote donde se guardan las piezas que vuelven al estante sin haber salido de
+ * una compra, para una refacción y una sucursal. Lo crea la primera vez y lo
+ * reutiliza después.
+ *
+ * Existe porque las existencias cuelgan de la pareja (lote, sucursal): una pieza
+ * que vino con el vehículo nunca tuvo lote, así que sin esto no hay forma de
+ * contarla y se perdía en silencio.
+ *
+ * NO representa una compra, y de ahí sus tres marcas, que son también la llave
+ * por la que se le vuelve a encontrar:
+ *
+ *   proveedor_id NULL - no se le compró a nadie (migración 024).
+ *   num_factura  NULL - no hay papel que cuadrar. `facturasRepo` deja fuera los
+ *                       lotes sin folio, así que no ensucia esa pantalla.
+ *   costo_unitario 0  - la pieza ya se pagó al comprar el vehículo. Cobrarla otra
+ *                       vez la contaría dos veces, y como todos los totales son
+ *                       SUM(cantidad * costo_unitario), a cero cuenta en unidades
+ *                       pero no en pesos.
+ *
+ * `cantidad_inicial` crece con cada pieza que entra: es cuántas ha llegado a
+ * guardar este lote. El stock real sigue saliendo de `existencias_lote`.
+ */
+export async function loteDeRecuperacion(
+  tx: sql.Transaction, piezaId: number, sucursalId: number, hoy: string,
+): Promise<number> {
+  const existente = await tx.request()
+    .input('pid', sql.Int, piezaId)
+    .input('suc', sql.Int, sucursalId)
+    .query(`
+      SELECT TOP 1 id FROM lotes_pieza
+      WHERE pieza_id = @pid AND sucursal_id = @suc
+        AND proveedor_id IS NULL AND num_factura IS NULL AND costo_unitario = 0
+      ORDER BY id`)
+
+  if (existente.recordset[0]) {
+    const id = existente.recordset[0].id as number
+    // Una más de las que este lote ha llegado a guardar. `cantidad_disponible`
+    // se mantiene al día por lo mismo que en el alta: que quien mire la tabla a
+    // mano no vea un número engañoso. Nadie la lee.
+    await tx.request()
+      .input('id', sql.Int, id)
+      .query(`
+        UPDATE lotes_pieza
+        SET cantidad_inicial = cantidad_inicial + 1,
+            cantidad_disponible = cantidad_disponible + 1
+        WHERE id = @id`)
+    return id
+  }
+
+  const creado = await tx.request()
+    .input('pid',   sql.Int, piezaId)
+    .input('suc',   sql.Int, sucursalId)
+    .input('fecha', sql.Date, hoy)
+    .query(`
+      INSERT INTO lotes_pieza
+        (pieza_id, proveedor_id, sucursal_id, fecha_compra, costo_unitario,
+         cantidad_inicial, cantidad_disponible, num_factura, comprado_por, autorizado_por)
+      OUTPUT INSERTED.id
+      VALUES
+        (@pid, NULL, @suc, @fecha, 0, 1, 1, NULL,
+         'Recuperada de una unidad', 'Sistema')`)
+  return creado.recordset[0].id as number
+}
+
 export async function moverExistencia(
   tx: sql.Transaction, loteId: number, sucursalId: number, delta: number,
 ): Promise<void> {

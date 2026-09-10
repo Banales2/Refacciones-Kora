@@ -226,7 +226,10 @@ function PanelExistencias({
                 </Table.Td>
                 <Table.Td><Text size="xs">{f.tipo_pieza ?? 'Sin tipo'}</Text></Table.Td>
                 <Table.Td>
-                  <Text size="xs">{f.proveedor}</Text>
+                  {/* Sin proveedor solo puede ser el lote de recuperación. */}
+                  <Text size="xs" c={f.proveedor ? undefined : 'dimmed'}>
+                    {f.proveedor ?? 'Recuperada de unidad'}
+                  </Text>
                   <Text size="xs" c="dimmed">
                     {f.num_factura ? `Fact. ${f.num_factura}` : 'Sin factura'} · {formatearFecha(f.fecha_compra)}
                   </Text>
@@ -470,7 +473,7 @@ function TraspasoModal({
         <Paper withBorder p="xs">
           <Text size="sm" fw={500}>{existencia.numero_serie} — {existencia.descripcion}</Text>
           <Text size="xs" c="dimmed">
-            {existencia.proveedor}
+            {existencia.proveedor ?? 'Recuperada de unidad'}
             {existencia.num_factura ? ` · Fact. ${existencia.num_factura}` : ''}
             {' · '}{existencia.cantidad} disponible(s) en {existencia.sucursal}
           </Text>
@@ -594,16 +597,21 @@ function MinimoModal({ sucursalId, onClose }: { sucursalId: number; onClose: () 
 
 // ─── Descuadres ──────────────────────────────────────────────────────────────
 
-// Cuántos hay abiertos en una sucursal, para la insignia de la pestaña.
+// Cuántos hay abiertos en una sucursal, para la insignia de la pestaña. Los que
+// no tienen sucursal cuentan en todas: no son de ninguna, y esconderlos hasta
+// que alguien adivine dónde buscarlos es la forma segura de que no los vea nadie.
 function descuadresDe(descuadres: Descuadre[], sucursalId: number) {
-  return descuadres.filter((d) => d.sucursal_id === sucursalId).length
+  return descuadres.filter((d) => d.sucursal_id === sucursalId || d.sucursal_id === null).length
 }
 
-// "Vallarta (2), Centro (1)". Se dice en qué sucursal están porque el aviso vive
+// "Vallarta (2), Sin sucursal (1)". Se dice dónde están porque el aviso vive
 // arriba del selector, antes de elegir ninguna.
 function resumenPorSucursal(descuadres: Descuadre[]) {
   const porSuc = new Map<string, number>()
-  for (const d of descuadres) porSuc.set(d.sucursal, (porSuc.get(d.sucursal) ?? 0) + 1)
+  for (const d of descuadres) {
+    const clave = d.sucursal ?? 'Sin sucursal'
+    porSuc.set(clave, (porSuc.get(clave) ?? 0) + 1)
+  }
   return [...porSuc.entries()].map(([suc, n]) => `${suc} (${n})`).join(', ')
 }
 
@@ -652,6 +660,11 @@ function PanelDescuadres({ sucursalId }: { sucursalId: number }) {
                         ? `Sobra${d.diferencia === 1 ? '' : 'n'} ${d.diferencia}`
                         : `Falta${d.diferencia === -1 ? '' : 'n'} ${Math.abs(d.diferencia)}`}
                     </Badge>
+                    {/* No es de esta sucursal ni de otra: hay que decidir dónde
+                        entra, y eso es parte de resolverlo. */}
+                    {d.sucursal_id === null && (
+                      <Badge size="xs" variant="light" color="gray">Sin sucursal</Badge>
+                    )}
                   </Group>
                   <Text size="xs" c="dimmed">{d.descripcion}</Text>
                 </div>

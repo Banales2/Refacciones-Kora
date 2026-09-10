@@ -17,7 +17,8 @@ export interface ExistenciaEnSucursal {
   descripcion:    string
   tipo_pieza_id:  number | null
   tipo_pieza:     string | null
-  proveedor:      string
+  /** `null` en el lote de recuperación: la pieza no salió de una compra. */
+  proveedor:      string | null
   num_factura:    string | null
   costo_unitario: number
   fecha_compra:   string

@@ -1174,6 +1174,8 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
         opened
         modo={cambio.modo}
         vehiculoId={vehiculoId}
+        tipoPiezaId={cambio.tipoId}
+        etiqueta={cambio.etiqueta}
         tipoNombre={cambio.tipoNombre}
         piezaEntranteId={cambio.piezaEntranteId}
         piezaSalienteNombre={cambio.salienteNombre}
