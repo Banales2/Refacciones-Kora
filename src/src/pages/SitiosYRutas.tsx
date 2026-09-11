@@ -1174,11 +1174,12 @@ function RenovarSeguroForm({
 }
 
 function SegurosPanel({
-  onNavigateVehiculo, openId, onOpenIdChange,
+  onNavigateVehiculo, openId, onOpenIdChange, destacadoId,
 }: {
   onNavigateVehiculo?: (v: VehiculoRow) => void
   openId?:         number | null
   onOpenIdChange?: (id: number | null) => void
+  destacadoId?:    number | null
 }) {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Seguro | null>(null)
@@ -1200,6 +1201,14 @@ function SegurosPanel({
   const isPending = createMut.isPending || updateMut.isPending
   // El drawer abierto se deriva del id que Layout conserva.
   const asignando = items.find((s) => s.id === openId) ?? null
+
+  // Al llegar desde el tablero de vencimientos la lista puede ser larga y el
+  // documento buscado quedar fuera de la vista: se trae al centro, resaltado.
+  const filaDestacada = useRef<HTMLTableRowElement>(null)
+  useEffect(() => {
+    if (destacadoId == null) return
+    filaDestacada.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [destacadoId, items.length])
 
   const { hoy, limite } = ventanaVencimiento()
 
@@ -1244,7 +1253,13 @@ function SegurosPanel({
                   const vencido    = s.fecha_expiracion < hoy
                   const porExpirar = !vencido && s.fecha_expiracion <= limite
                   return (
-                    <Table.Tr key={s.id} onClick={() => onOpenIdChange?.(s.id)} style={{ cursor: 'pointer' }}>
+                    <Table.Tr
+                      key={s.id}
+                      ref={s.id === destacadoId ? filaDestacada : undefined}
+                      bg={s.id === destacadoId ? 'var(--mantine-color-yellow-light)' : undefined}
+                      onClick={() => onOpenIdChange?.(s.id)}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <Table.Td fw={500}>{s.poliza}</Table.Td>
                       <Table.Td c="dimmed">{s.compania}</Table.Td>
                       <Table.Td
@@ -1437,11 +1452,12 @@ function PermisoForm({
 }
 
 function PermisosPanel({
-  onNavigateVehiculo, openId, onOpenIdChange,
+  onNavigateVehiculo, openId, onOpenIdChange, destacadoId,
 }: {
   onNavigateVehiculo?: (v: VehiculoRow) => void
   openId?:         number | null
   onOpenIdChange?: (id: number | null) => void
+  destacadoId?:    number | null
 }) {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<PermisoCirculacion | null>(null)
@@ -1458,6 +1474,14 @@ function PermisosPanel({
   const isPending = createMut.isPending || updateMut.isPending
   // El drawer abierto se deriva del id que Layout conserva.
   const asignando = items.find((p) => p.id === openId) ?? null
+
+  // Al llegar desde el tablero de vencimientos la lista puede ser larga y el
+  // documento buscado quedar fuera de la vista: se trae al centro, resaltado.
+  const filaDestacada = useRef<HTMLTableRowElement>(null)
+  useEffect(() => {
+    if (destacadoId == null) return
+    filaDestacada.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [destacadoId, items.length])
 
   const { hoy, limite } = ventanaVencimiento()
 
@@ -1501,7 +1525,13 @@ function PermisosPanel({
                   const vencido    = p.fecha_expiracion < hoy
                   const porExpirar = !vencido && p.fecha_expiracion <= limite
                   return (
-                    <Table.Tr key={p.id} onClick={() => onOpenIdChange?.(p.id)} style={{ cursor: 'pointer' }}>
+                    <Table.Tr
+                      key={p.id}
+                      ref={p.id === destacadoId ? filaDestacada : undefined}
+                      bg={p.id === destacadoId ? 'var(--mantine-color-yellow-light)' : undefined}
+                      onClick={() => onOpenIdChange?.(p.id)}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <Table.Td fw={500}>{p.zona_circulacion}</Table.Td>
                       <Table.Td c={p.fecha_emision ? undefined : 'dimmed'}>{p.fecha_emision ?? '—'}</Table.Td>
                       <Table.Td
@@ -1590,6 +1620,7 @@ const TAB_LABELS: Record<string, string> = {
 
 export default function SitiosYRutas({
   onNavigateVehiculo, activeTab, conductorDestacadoId,
+  seguroDestacadoId, permisoDestacadoId,
   seguroDrawerId, onSeguroDrawerChange,
   permisoDrawerId, onPermisoDrawerChange,
 }: {
@@ -1599,6 +1630,9 @@ export default function SitiosYRutas({
   activeTab?:    string | null
   // Chofer al que se saltó desde Vales: se resalta en la pestaña Conductores.
   conductorDestacadoId?: number | null
+  // Seguro/permiso al que se saltó desde "Documentos por vencer" del tablero.
+  seguroDestacadoId?:    number | null
+  permisoDestacadoId?:   number | null
   // Id del seguro/permiso cuyo drawer de asignación está abierto (también en
   // Layout, para reabrirlo al regresar del detalle de un vehículo).
   seguroDrawerId?:        number | null
@@ -1645,6 +1679,7 @@ export default function SitiosYRutas({
             onNavigateVehiculo={onNavigateVehiculo}
             openId={seguroDrawerId}
             onOpenIdChange={onSeguroDrawerChange}
+            destacadoId={seguroDestacadoId}
           />
         </Tabs.Panel>
 
@@ -1653,6 +1688,7 @@ export default function SitiosYRutas({
             onNavigateVehiculo={onNavigateVehiculo}
             openId={permisoDrawerId}
             onOpenIdChange={onPermisoDrawerChange}
+            destacadoId={permisoDestacadoId}
           />
         </Tabs.Panel>
       </Tabs>

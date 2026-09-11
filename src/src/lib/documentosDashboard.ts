@@ -7,6 +7,18 @@
 // la hoja impresa dijera algo distinto de la pantalla— o sacarlo aquí. Es esto.
 import type { DocumentosPorVencer } from '../hooks/useDashboard'
 
+/**
+ * A dónde lleva el renglón cuando se le da clic. El tablero solo enseña que el
+ * papel vence; para hacer algo hay que llegar al catálogo donde se renueva, y
+ * buscarlo a mano en una lista larga era el estorbo. La tenencia es la excepción
+ * porque no vive en un catálogo propio: es un campo de la unidad.
+ */
+export type DestinoDocumento =
+  | { seccion: 'seguro';   id: number }
+  | { seccion: 'permiso';  id: number }
+  | { seccion: 'licencia'; id: number }
+  | { seccion: 'tenencia'; id: number }
+
 export interface DocumentoUnificado {
   key:              string
   tipo:             string
@@ -19,6 +31,8 @@ export interface DocumentoUnificado {
   dias_restantes:   number
   /** Cuántas unidades cubre. Null en licencias y tenencias: no aplica. */
   vehiculos:        number | null
+  /** Catálogo (o ficha) donde se renueva este documento. */
+  destino:          DestinoDocumento
 }
 
 const TIPO_LICENCIA: Record<string, string> = {
@@ -33,13 +47,13 @@ export function unificarDocumentos(doc: DocumentosPorVencer | undefined): Docume
 
   const seguros = doc.seguros.map((s) => ({
     key: `s-${s.id}`, tipo: 'Seguro', colorTipo: 'blue', colorAviso: 'orange',
-    etiqueta: `${s.poliza} — ${s.compania}`,
+    etiqueta: `${s.poliza} — ${s.compania}`, destino: { seccion: 'seguro' as const, id: s.id },
     fecha_expiracion: s.fecha_expiracion, dias_restantes: s.dias_restantes,
     vehiculos: s.vehiculos as number | null,
   }))
   const permisos = doc.permisos.map((p) => ({
     key: `p-${p.id}`, tipo: 'Permiso', colorTipo: 'grape', colorAviso: 'orange',
-    etiqueta: p.zona_circulacion,
+    etiqueta: p.zona_circulacion, destino: { seccion: 'permiso' as const, id: p.id },
     fecha_expiracion: p.fecha_expiracion, dias_restantes: p.dias_restantes,
     vehiculos: p.vehiculos as number | null,
   }))
@@ -49,12 +63,13 @@ export function unificarDocumentos(doc: DocumentosPorVencer | undefined): Docume
     tipo: TIPO_LICENCIA[l.tipo] ?? 'Licencia',
     colorTipo: 'teal', colorAviso: 'yellow',
     etiqueta: l.numero ? `${l.conductor} — ${l.numero}` : l.conductor,
+    destino: { seccion: 'licencia' as const, id: l.conductor_id },
     fecha_expiracion: l.fecha_expiracion, dias_restantes: l.dias_restantes,
     vehiculos: null,
   }))
   const tenencias = doc.tenencias.map((t) => ({
     key: `t-${t.vehiculo_id}`, tipo: 'Tenencia', colorTipo: 'indigo', colorAviso: 'orange',
-    etiqueta: t.vehiculo,
+    etiqueta: t.vehiculo, destino: { seccion: 'tenencia' as const, id: t.vehiculo_id },
     fecha_expiracion: t.fecha_expiracion, dias_restantes: t.dias_restantes,
     vehiculos: null,
   }))

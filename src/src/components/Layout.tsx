@@ -37,6 +37,7 @@ import ValesGasolina from '../pages/ValesGasolina'
 import RegistrosCambios from '../pages/RegistrosCambios'
 import Mantenimientos from '../pages/Mantenimientos'
 import type { VehiculoRow } from '../hooks/useVehiculos'
+import type { DestinoDocumento } from '../lib/documentosDashboard'
 
 type Section =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
@@ -229,6 +230,10 @@ export default function Layout() {
   // Chofer al que se saltó desde otra pantalla (Vales): la pestaña Conductores
   // lo resalta y lo trae a la vista.
   const [conductorDestacado, setConductorDestacado] = useState<number | null>(null)
+  // Seguro/permiso al que se saltó desde el tablero de vencimientos: su pestaña
+  // lo resalta y lo trae a la vista, igual que el chofer.
+  const [seguroDestacado, setSeguroDestacado]   = useState<number | null>(null)
+  const [permisoDestacado, setPermisoDestacado] = useState<number | null>(null)
   // Modelo cuyo detalle está abierto; se conserva al saltar a un vehículo para
   // poder regresar al mismo modelo (no solo a la lista de modelos).
   const [modeloDetalleId, setModeloDetalleId] = useState<number | null>(null)
@@ -243,6 +248,8 @@ export default function Layout() {
     }
     if (s !== 'piezas') setPendingPiezaId(null)
     setConductorDestacado(null)
+    setSeguroDestacado(null)
+    setPermisoDestacado(null)
     setVehiculoOrigin(null)
     // Navegación explícita por el menú: el detalle de Modelos vuelve a la lista.
     setModeloDetalleId(null)
@@ -295,6 +302,20 @@ export default function Layout() {
     setVehiculoOrigin(null)
     setModeloDetalleId(id)
     setSection('modelos')
+    if (mobileOpened) toggleMobile()
+  }
+
+  // Salto desde "Documentos por vencer" del tablero al papel concreto. Como el
+  // de Vales, no pasa por navigate(): ese limpia justo el resaltado que aquí se
+  // quiere fijar. La tenencia no tiene catálogo —es un campo del vehículo—, así
+  // que se desvía a su ficha.
+  function navigateToDocumento(d: DestinoDocumento) {
+    if (d.seccion === 'tenencia') { navigateToVehiculoId(d.id); return }
+    setConductorDestacado(d.seccion === 'licencia' ? d.id : null)
+    setSeguroDestacado(  d.seccion === 'seguro'   ? d.id : null)
+    setPermisoDestacado( d.seccion === 'permiso'  ? d.id : null)
+    setSitiosTab(d.seccion === 'licencia' ? 'conductores' : d.seccion === 'seguro' ? 'seguros' : 'permisos')
+    setSection('sitios')
     if (mobileOpened) toggleMobile()
   }
 
@@ -446,6 +467,7 @@ export default function Layout() {
           <Dashboard
             onNavigateVehiculo={navigateToVehiculoId}
             onNavigatePieza={navigateToPiezaId}
+            onNavigateDocumento={navigateToDocumento}
           />
         )}
         {section === 'piezas'    && <Piezas initialPiezaId={pendingPiezaId ?? undefined} />}
@@ -472,6 +494,8 @@ export default function Layout() {
             onNavigateVehiculo={navigateToVehiculo}
             activeTab={sitiosTab}
             conductorDestacadoId={conductorDestacado}
+            seguroDestacadoId={seguroDestacado}
+            permisoDestacadoId={permisoDestacado}
             seguroDrawerId={seguroDrawerId}
             onSeguroDrawerChange={setSeguroDrawerId}
             permisoDrawerId={permisoDrawerId}

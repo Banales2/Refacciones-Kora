@@ -26,6 +26,7 @@ import {
 import { SEVERIDAD_META } from '../lib/incidenciaMeta'
 import { useSucursales } from '../hooks/useSucursales'
 import { unificarDocumentos, agruparSinDocumento, estadoVencimiento } from '../lib/documentosDashboard'
+import type { DestinoDocumento } from '../lib/documentosDashboard'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
 import { formatMXN, formatFecha, formatFechaCorta } from '../lib/formato'
 import { StatCard } from './StatCard'
@@ -198,9 +199,11 @@ function RequerimientosPorVehiculoTable({
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
+export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavigateDocumento }: {
   onNavigateVehiculo?: (vehiculoId: number) => void
   onNavigatePieza?:    (piezaId: number) => void
+  /** Lleva al catálogo donde se renueva el documento del renglón. */
+  onNavigateDocumento?: (destino: DestinoDocumento) => void
 }) {
   const { data: resumen, isLoading: loadingResumen } = useResumenMes()
   const { data: vencidosData, isLoading: loadingVencidos } = useRequerimientosVencidos()
@@ -443,7 +446,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
                 <Center py="xl"><Text c="dimmed" size="sm">Sin compras registradas en los últimos 30 días.</Text></Center>
               ) : (
                 <Table.ScrollContainer minWidth={560}>
-                  <Table striped withTableBorder>
+                  <Table striped withTableBorder highlightOnHover={!!onNavigateDocumento}>
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th>Refacción</Table.Th>
@@ -494,7 +497,9 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
           <Stack gap="lg">
             <Seccion
               titulo="Documentos por vencer"
-              descripcion="Seguros y permisos ya vencidos o próximos a vencer (dentro de 30 días) y licencias de conductor con vigencia dentro de 2 meses. Gestiónalos en Catálogos → Seguros / Permisos / Conductores."
+              descripcion={onNavigateDocumento
+                ? 'Seguros y permisos ya vencidos o próximos a vencer (dentro de 30 días) y licencias de conductor con vigencia dentro de 2 meses. Haz clic en un renglón para abrir el documento en su catálogo.'
+                : 'Seguros y permisos ya vencidos o próximos a vencer (dentro de 30 días) y licencias de conductor con vigencia dentro de 2 meses. Gestiónalos en Catálogos → Seguros / Permisos / Conductores.'}
             >
               {loadingDocumentos ? (
                 <Center py="xl"><Loader size="sm" /></Center>
@@ -502,7 +507,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
                 <Center py="xl"><Text c="dimmed" size="sm">Ningún documento por vencer. Todo en regla.</Text></Center>
               ) : (
                 <Table.ScrollContainer minWidth={560}>
-                  <Table striped withTableBorder>
+                  <Table striped withTableBorder highlightOnHover={!!onNavigateDocumento}>
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th>Tipo</Table.Th>
@@ -515,8 +520,14 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza }: {
                     <Table.Tbody>
                       {documentosPorVencer.map((d) => {
                         const est = estadoVencimiento(d.dias_restantes, d.colorAviso)
+                        // La tenencia no tiene catálogo propio: su renglón abre
+                        // la ficha de la unidad, que es donde se captura.
                         return (
-                          <Table.Tr key={d.key}>
+                          <Table.Tr
+                            key={d.key}
+                            onClick={onNavigateDocumento ? () => onNavigateDocumento(d.destino) : undefined}
+                            style={onNavigateDocumento ? { cursor: 'pointer' } : undefined}
+                          >
                             <Table.Td>
                               <Badge variant="light" color={d.colorTipo} size="sm">{d.tipo}</Badge>
                             </Table.Td>
