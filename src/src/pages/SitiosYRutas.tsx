@@ -6,6 +6,7 @@ import {
   Stack, Group, Text, TextInput, Table, Tabs,
   Loader, Center, Alert, Button, ActionIcon,
   Modal, Tooltip, Badge, SegmentedControl, NumberInput, Drawer, Accordion, Paper,
+  Switch,
 } from '@mantine/core'
 import { FechaInput } from '../components/FechaInput'
 import { formatMXN, formatLitros } from '../lib/formato'
@@ -21,7 +22,7 @@ import { TIPOS_CON_PERMISO, TIPOS_CON_SEGURO } from '../lib/tipoVehiculo'
 import { useForm } from '@mantine/form'
 import {
   IconPencil, IconTrash, IconPlus, IconAlertTriangle, IconRefresh,
-  IconSearch, IconFileTypePdf, IconFileSpreadsheet,
+  IconSearch, IconFileTypePdf, IconFileSpreadsheet, IconArchive, IconArchiveOff,
 } from '@tabler/icons-react'
 import {
   useSucursales, useCreateSucursal, useUpdateSucursal, useDeleteSucursal,
@@ -38,6 +39,7 @@ import {
 import {
   useSeguros, useCreateSeguro, useUpdateSeguro, useDeleteSeguro,
   useAssignVehiculosSeguro, useUnassignVehiculoSeguro, useRenovarSeguro,
+  useTerminarSeguro,
 } from '../hooks/useSeguros'
 import {
   usePermisosCirculacion, useCreatePermisoCirculacion,
@@ -1189,15 +1191,23 @@ function SegurosPanel({
   // cerrar el modal y dejar al usuario adivinando si se movieron las unidades.
   const [renovado, setRenovado]   = useState<Renovacion | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  // Poliza que se va a dar por terminada, a la espera de confirmar.
+  const [terminando, setTerminando] = useState<Seguro | null>(null)
+  // Las terminadas se archivaron para quitarlas de enfrente, asi que arrancan
+  // ocultas; el interruptor solo aparece cuando hay alguna que ensenar.
+  const [verTerminadas, setVerTerminadas] = useState(false)
 
   const { data, isLoading, isError } = useSeguros()
   const createMut = useCreateSeguro()
   const updateMut = useUpdateSeguro()
   const deleteMut = useDeleteSeguro()
   const renovarMut = useRenovarSeguro()
+  const terminarMut = useTerminarSeguro()
   const assignMut = useAssignVehiculosSeguro()
   const unassignMut = useUnassignVehiculoSeguro()
-  const items = data?.data ?? []
+  const todos = data?.data ?? []
+  const terminadas = todos.filter((s) => s.terminado_en != null).length
+  const items = verTerminadas ? todos : todos.filter((s) => s.terminado_en == null)
   const isPending = createMut.isPending || updateMut.isPending
   // El drawer abierto se deriva del id que Layout conserva.
   const asignando = items.find((s) => s.id === openId) ?? null
@@ -1229,8 +1239,20 @@ function SegurosPanel({
     <>
       <Stack gap="md">
         <Group justify="space-between">
-          <Text size="sm" c="dimmed">{items.length} seguro{items.length !== 1 ? 's' : ''} · clic en un renglón para asignar vehículos</Text>
-          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo seguro</Button>
+          <Text size="sm" c="dimmed">
+            {items.length} seguro{items.length !== 1 ? 's' : ''} · clic en un renglón para asignar vehículos
+            {terminadas > 0 && !verTerminadas && ` · ${terminadas} terminada${terminadas !== 1 ? 's' : ''} sin mostrar`}
+          </Text>
+          <Group gap="sm">
+            {terminadas > 0 && (
+              <Switch
+                size="xs" label="Ver terminadas"
+                checked={verTerminadas}
+                onChange={(e) => setVerTerminadas(e.currentTarget.checked)}
+              />
+            )}
+            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo seguro</Button>
+          </Group>
         </Group>
 
         {isLoading ? <Center py="xl"><Loader /></Center>
@@ -1250,8 +1272,11 @@ function SegurosPanel({
               </Table.Thead>
               <Table.Tbody>
                 {items.map((s) => {
-                  const vencido    = s.fecha_expiracion < hoy
-                  const porExpirar = !vencido && s.fecha_expiracion <= limite
+                  const terminada  = s.terminado_en != null
+                  // Una póliza terminada ya no reclama nada: venció y se
+                  // archivó a propósito, así que su fecha deja de ir en rojo.
+                  const vencido    = !terminada && s.fecha_expiracion < hoy
+                  const porExpirar = !terminada && !vencido && s.fecha_expiracion <= limite
                   return (
                     <Table.Tr
                       key={s.id}
@@ -1260,13 +1285,20 @@ function SegurosPanel({
                       onClick={() => onOpenIdChange?.(s.id)}
                       style={{ cursor: 'pointer' }}
                     >
-                      <Table.Td fw={500}>{s.poliza}</Table.Td>
+                      <Table.Td fw={500} c={terminada ? 'dimmed' : undefined}>
+                        <Group gap={6} wrap="nowrap">
+                          {s.poliza}
+                          {terminada && <Badge variant="light" color="gray" size="xs">Terminada</Badge>}
+                        </Group>
+                      </Table.Td>
                       <Table.Td c="dimmed">{s.compania}</Table.Td>
                       <Table.Td
-                        c={vencido ? 'red' : porExpirar ? 'yellow.8' : undefined}
+                        c={vencido ? 'red' : porExpirar ? 'yellow.8' : terminada ? 'dimmed' : undefined}
                         fw={vencido || porExpirar ? 600 : undefined}
                       >
-                        {s.fecha_expiracion}{vencido ? ' (vencido)' : porExpirar ? ' (por expirar)' : ''}
+                        {s.fecha_expiracion}
+                        {vencido ? ' (vencido)' : porExpirar ? ' (por expirar)'
+                          : terminada ? ` (terminada el ${s.terminado_en})` : ''}
                       </Table.Td>
                       {/* Sin costo se deja el guion: un "$0" se leería como que
                           salió gratis, y lo que pasa es que no se capturó. */}
@@ -1277,7 +1309,28 @@ function SegurosPanel({
                       </Table.Td>
                       <Table.Td onClick={(e) => e.stopPropagation()}>
                         <Group gap={4} justify="flex-end" wrap="nowrap">
-                          <Tooltip label="Renovar"><ActionIcon variant="subtle" color="teal" size="sm" onClick={() => { setFormError(null); setRenovando(s) }}><IconRefresh size={14} /></ActionIcon></Tooltip>
+                          {/* Terminar solo se ofrece donde tiene sentido: una
+                              póliza vigente se renueva, no se archiva. */}
+                          {terminada ? (
+                            <Tooltip label="Reactivar: vuelve a contar como documento por vencer">
+                              <ActionIcon variant="subtle" color="gray" size="sm"
+                                loading={terminarMut.isPending && terminarMut.variables?.id === s.id}
+                                onClick={() => terminarMut.mutate({ id: s.id, terminado: false })}>
+                                <IconArchiveOff size={14} />
+                              </ActionIcon>
+                            </Tooltip>
+                          ) : (
+                            <>
+                              <Tooltip label="Renovar"><ActionIcon variant="subtle" color="teal" size="sm" onClick={() => { setFormError(null); setRenovando(s) }}><IconRefresh size={14} /></ActionIcon></Tooltip>
+                              {vencido && (
+                                <Tooltip label="Terminar: deja de pedir renovación">
+                                  <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => setTerminando(s)}>
+                                    <IconArchive size={14} />
+                                  </ActionIcon>
+                                </Tooltip>
+                              )}
+                            </>
+                          )}
                           <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(s)}><IconPencil size={14} /></ActionIcon></Tooltip>
                           <Tooltip label="Eliminar"><ActionIcon variant="subtle" color="red"  size="sm" onClick={() => setDeleting(s)}><IconTrash  size={14} /></ActionIcon></Tooltip>
                         </Group>
@@ -1351,13 +1404,43 @@ function SegurosPanel({
               </Text>
               <Text size="sm" c="dimmed">
                 <strong>{renovado.anterior.poliza}</strong> se conserva como registro de lo que
-                estuvo vigente hasta el {renovado.anterior.fecha_expiracion}. Ya no cubre unidades,
-                así que se puede eliminar si estorba.
+                estuvo vigente hasta el {renovado.anterior.fecha_expiracion}. Ya no cubre unidades:
+                dála por terminada para que deje de pedir renovación, o elimínala si estorba.
               </Text>
             </>
           )}
           <Group justify="flex-end">
             <Button onClick={() => setRenovado(null)}>Entendido</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Terminar no borra ni descubre a nadie, pero apaga un aviso, y un aviso
+          apagado por error no vuelve a pedir atención solo: por eso se pregunta,
+          diciendo también lo que NO hace. */}
+      <Modal opened={terminando !== null} onClose={() => setTerminando(null)} title="Terminar póliza" centered size="sm">
+        <Stack gap="md">
+          <Text>
+            ¿Dar por terminada la póliza <strong>{terminando?.poliza}</strong>, vencida el{' '}
+            {terminando?.fecha_expiracion}?
+          </Text>
+          <Text size="sm" c="dimmed">
+            Deja de aparecer en “Documentos por vencer” del tablero. La póliza no se borra
+            —sigue siendo el registro de hasta cuándo estuvo cubierta la flota— y las unidades
+            que tenía asignadas se quedan como estaban: como la póliza está vencida, esas
+            unidades siguen contando como <strong>sin seguro</strong> hasta que se les asigne
+            una vigente. Se puede reactivar después.
+          </Text>
+          {terminarMut.error && <Alert color="red" title="Error">{(terminarMut.error as Error).message}</Alert>}
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setTerminando(null)} disabled={terminarMut.isPending}>Cancelar</Button>
+            <Button color="gray" loading={terminarMut.isPending}
+              onClick={() => terminarMut.mutate(
+                { id: terminando!.id, terminado: true },
+                { onSuccess: () => setTerminando(null) },
+              )}>
+              Terminar
+            </Button>
           </Group>
         </Stack>
       </Modal>

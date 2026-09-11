@@ -7,9 +7,11 @@
 // Un vehículo es una fila en `vehiculos` más una fila en la tabla hija de su
 // tipo, y ahí es donde viven la tenencia, el seguro y el permiso: los llevan
 // nada más los tipos a los que les aplican.
+import * as sql from 'mssql'
 import {
   TIPOS_CON_PERMISO, TIPOS_CON_SEGURO, TIPOS_CON_TENENCIA, TipoVehiculo,
 } from '../schemas/vehiculoSchema'
+import { fechaMexico } from '../shared/fechaMexico'
 
 // Tabla hija de cada tipo. El vehículo siempre tiene exactamente una fila ahí.
 export const TABLA_POR_TIPO: Record<TipoVehiculo, string> = {
@@ -54,12 +56,33 @@ export const SIN_TENENCIA = `
   AND COALESCE(c.tenencia_expiracion, u.tenencia_expiracion) IS NULL
 `
 
-// Sin seguro = de los tipos que se aseguran y sin póliza asignada. Las cajas de
+// Sin seguro = de los tipos que se aseguran y sin póliza VIGENTE. Las cajas de
 // trailer no entran: no se aseguran, así que reclamarles la póliza era ruido.
+//
+// Antes bastaba con tener una póliza asignada, cualquiera: una unidad con la
+// póliza vencida desde hace dos años salía como asegurada, y no lo está. Lo
+// único que asegura es una póliza cuya fecha no haya pasado, así que la
+// pregunta se hace contra la tabla —no contra el id— y el NOT EXISTS cubre de
+// paso el caso de no tener ninguna. Alias propio (`seg_vig`) porque quien usa
+// este fragmento ya suele tener un `seg` en su FROM.
+//
+// El "hoy" llega como parámetro @hoy y no como GETDATE(): las funciones corren
+// en UTC, donde a partir de las seis de la tarde de México ya es mañana, y una
+// póliza que vence hoy saldría vencida esa misma tarde. Toda consulta que use
+// este fragmento tiene que declarar @hoy (ver HOY_INPUT).
 export const SIN_SEGURO = `
   v.tipo IN (${TIPOS_CON_SEGURO.map((t) => `'${t}'`).join(',')})
-  AND ${SEGURO_ID_SQL} IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM seguros seg_vig
+    WHERE seg_vig.id = ${SEGURO_ID_SQL}
+      AND seg_vig.fecha_expiracion >= @hoy
+  )
 `
+
+/** El @hoy que pide SIN_SEGURO, para no repetir el import en cada repositorio. */
+export function conHoy(req: sql.Request): sql.Request {
+  return req.input('hoy', sql.Date, fechaMexico())
+}
 
 // Vehículos que tienen asignado cierto documento, como subconsulta de una sola
 // columna. Sirve tanto para contarlos como para filtrar por ellos.

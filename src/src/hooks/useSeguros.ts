@@ -11,6 +11,12 @@ export interface Seguro {
   fecha_expiracion: string
   /** Lo que se pagó. Null = no se capturó, que no es lo mismo que gratis. */
   costo:            number | null
+  /**
+   * Cuándo se dio por terminada. Null = sigue contando. Con fecha = archivada:
+   * ya la reemplazó otra o es demasiado vieja, y deja de pedir renovación. No
+   * asegura a nadie: la cobertura la da la vigencia, no esto.
+   */
+  terminado_en:     string | null
 }
 
 export interface SeguroPayload {
@@ -104,6 +110,21 @@ export interface Renovacion {
   anterior:          Seguro
   modo:              RenovacionPayload['modo']
   vehiculos_movidos: number
+}
+
+// Dar por terminada una póliza vencida —o reactivarla si fue un error—. La
+// póliza no se borra: se archiva, y deja de aparecer en "Documentos por vencer".
+export function useTerminarSeguro() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, terminado }: { id: number; terminado: boolean }) =>
+      api.post<{ data: Seguro }>(`/seguros/${id}/terminar`, { terminado }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['seguros'] })
+      // Es justo el aviso del tablero lo que cambia.
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
 }
 
 export function useRenovarSeguro() {

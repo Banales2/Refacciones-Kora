@@ -88,9 +88,10 @@ export interface VehiculoSinDocumentos {
 }
 
 /**
- * Unidades a las que les falta tenencia o seguro por completo. Van aparte de la
- * lista de arriba porque no tienen fecha, así que no hay "días restantes" con
- * los cuales ordenarlas. Se juntan por vehículo porque a algunas les faltan las
+ * Unidades sin tenencia registrada o sin póliza vigente (sin seguro asignado, o
+ * con el suyo ya vencido: una póliza vencida no asegura más que ninguna). Van
+ * aparte de la lista de arriba porque lo que falta no tiene fecha, así que no
+ * hay "días restantes" con los cuales ordenarlas. Se juntan por vehículo porque a algunas les faltan las
  * dos cosas, y verlas dos veces no ayuda.
  */
 export function agruparSinDocumento(doc: DocumentosPorVencer | undefined): VehiculoSinDocumentos[] {

@@ -53,6 +53,16 @@ export const SeguroRenovarSchema = z.discriminatedUnion('modo', [
   }),
 ])
 
+/**
+ * Dar por terminada una póliza, o reactivarla. Lo único que viaja es el
+ * interruptor: la fecha la pone el servidor (ver `segurosRepo.setTerminado`).
+ * `terminado` explícito y no dos rutas distintas porque deshacer es tan normal
+ * como hacer —se archiva la póliza equivocada y se nota enseguida—.
+ */
+export const SeguroTerminarSchema = z.object({
+  terminado: z.boolean().default(true),
+})
+
 export const SeguroAssignSchema = z.object({
   vehiculo_ids: z.array(z.coerce.number().int().positive()).min(1, 'Selecciona al menos un vehículo'),
 })
@@ -60,4 +70,5 @@ export const SeguroAssignSchema = z.object({
 export type SeguroCreate = z.infer<typeof SeguroCreateSchema>
 export type SeguroUpdate = z.infer<typeof SeguroUpdateSchema>
 export type SeguroAssign  = z.infer<typeof SeguroAssignSchema>
+export type SeguroTerminar = z.infer<typeof SeguroTerminarSchema>
 export type SeguroRenovar = z.infer<typeof SeguroRenovarSchema>

@@ -6,6 +6,7 @@ import {
 } from '../schemas/vehiculoSchema'
 import {
   JOINS_HIJAS, NO_DADO_DE_BAJA, PERMISO_ID_SQL, SEGURO_ID_SQL, SIN_SEGURO, SIN_TENENCIA,
+  conHoy,
 } from './vehiculosSql'
 
 export interface VehiculoRow {
@@ -150,7 +151,7 @@ export async function findAll(params: {
   alerta?: AlertaVehiculo; limite?: string; idsAlerta?: number[]
 }): Promise<{ data: VehiculoRow[]; total: number }> {
   const pool = await getPool()
-  const req = pool.request()
+  const req = conHoy(pool.request())
     .input('search',    sql.NVarChar(100), params.search ? `%${params.search}%` : null)
     .input('tipo',      sql.NVarChar(20),  params.tipo     ?? null)
     .input('modeloId',  sql.Int,           params.modelo_id ?? null)
@@ -176,7 +177,7 @@ export async function findAll(params: {
 // Sin paginar: para reportes que necesitan la flota completa de una sola vez.
 export async function findAllParaReporte(): Promise<VehiculoRow[]> {
   const pool = await getPool()
-  const result = await pool.request().query(`
+  const result = await conHoy(pool.request()).query(`
     SELECT ${SELECT_COLS} ${JOINS}
     ORDER BY v.tipo, m.marca, m.nombre, v.numero_serie
   `)
@@ -185,7 +186,7 @@ export async function findAllParaReporte(): Promise<VehiculoRow[]> {
 
 export async function findById(id: number): Promise<VehiculoRow | null> {
   const pool = await getPool()
-  const result = await pool.request()
+  const result = await conHoy(pool.request())
     .input('id', sql.Int, id)
     .query(`SELECT ${SELECT_COLS} ${JOINS} WHERE v.id = @id`)
   const row = (result.recordset as VehiculoRowSql[])[0]

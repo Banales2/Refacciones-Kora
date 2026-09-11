@@ -2,6 +2,7 @@ import * as repo from '../repositories/segurosRepo'
 import type { Seguro } from '../repositories/segurosRepo'
 import type { SeguroCreate, SeguroUpdate, SeguroRenovar } from '../schemas/seguroSchema'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
+import { fechaMexico } from '../shared/fechaMexico'
 
 export async function getAll(): Promise<Seguro[]> {
   return repo.findAll()
@@ -52,6 +53,13 @@ export async function renovar(id: number, data: SeguroRenovar): Promise<Renovaci
   const anterior = await repo.findById(id)
   if (!anterior) throw new NotFoundError('Seguro')
 
+  if (anterior.terminado_en) {
+    throw new ConflictError(
+      'Esta póliza se dio por terminada: ya no se renueva. Reactívala si fue un ' +
+      'error, o da de alta la póliza nueva desde "Nuevo seguro".'
+    )
+  }
+
   if (data.fecha_expiracion <= anterior.fecha_expiracion) {
     throw new ValidationError(
       `La póliza vence el ${anterior.fecha_expiracion}: la renovación tiene que ` +
@@ -87,6 +95,39 @@ export async function renovar(id: number, data: SeguroRenovar): Promise<Renovaci
   if (vehiculos.length) await repo.assignVehiculos(seguro.id, vehiculos)
 
   return { seguro, anterior, modo: data.modo, vehiculos_movidos: vehiculos.length }
+}
+
+/**
+ * Dar por terminada una póliza: se archiva y deja de pedir renovación. Es lo
+ * que hacía falta para las que ya reemplazó otra póliza, o para las tan viejas
+ * que el aviso solo estorbaba; borrarlas no era opción, porque son el registro
+ * de hasta cuándo estuvo cubierta la flota.
+ *
+ * Solo se terminan las ya vencidas. Una póliza vigente está cubriendo unidades
+ * ahora mismo: archivarla no cancelaría el contrato, solo escondería la fecha
+ * en que hay que renovar, que es justo el aviso que se quiere conservar. Para
+ * una póliza cancelada antes de tiempo lo que corresponde es corregir su fecha
+ * de expiración —eso es lo que pasó— y entonces terminarla.
+ *
+ * No toca las unidades asignadas a propósito: que sigan ahí es lo que permite
+ * saber con qué póliza estuvieron cubiertas por última vez. Que hoy no lo
+ * estén ya lo dice el aviso de "sin seguro", que mira la vigencia y no el
+ * archivado (ver `SIN_SEGURO` en vehiculosSql).
+ */
+export async function terminar(id: number, terminado: boolean): Promise<Seguro> {
+  const seguro = await repo.findById(id)
+  if (!seguro) throw new NotFoundError('Seguro')
+
+  if (terminado && seguro.fecha_expiracion >= fechaMexico()) {
+    throw new ValidationError(
+      `Esta póliza sigue vigente (vence el ${seguro.fecha_expiracion}): terminarla ` +
+      'solo escondería el aviso de renovarla. Se terminan las que ya vencieron.'
+    )
+  }
+
+  const result = await repo.setTerminado(id, terminado)
+  if (!result) throw new NotFoundError('Seguro')
+  return result
 }
 
 export async function remove(id: number): Promise<void> {

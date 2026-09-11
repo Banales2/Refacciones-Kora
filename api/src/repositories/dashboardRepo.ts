@@ -2,6 +2,7 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import {
   JOINS_HIJAS, NO_DADO_DE_BAJA, PERMISO_ID_SQL, SEGURO_ID_SQL, SIN_SEGURO, SIN_TENENCIA,
+  conHoy,
 } from './vehiculosSql'
 
 // ─── Seguros / permisos por vencer ──────────────────────────────────────────
@@ -39,6 +40,10 @@ const FLOTA_EN_OPERACION = `
 // conteo de vehículos que los usan. La póliza aparece aunque su único vehículo
 // esté de baja (sigue siendo un documento del catálogo que vence), pero esa
 // unidad no se cuenta.
+//
+// Las terminadas quedan fuera: se archivaron precisamente para dejar de pedir
+// una renovación que no va a llegar. Que la unidad siga sin cobertura lo dice
+// la lista de "sin seguro", que mira la vigencia y no el archivado.
 export async function findSegurosPorVencer(limite: string): Promise<SeguroPorVencer[]> {
   const pool = await getPool()
   const r = await pool.request()
@@ -51,6 +56,7 @@ export async function findSegurosPorVencer(limite: string): Promise<SeguroPorVen
       FROM seguros s
       LEFT JOIN flota v ON v.seguro_id = s.id
       WHERE s.fecha_expiracion <= @limite
+        AND s.terminado_en IS NULL
       GROUP BY s.id, s.poliza, s.compania, s.fecha_expiracion
       ORDER BY s.fecha_expiracion`)
   return r.recordset
@@ -131,7 +137,7 @@ export async function findVehiculosSinTenencia(): Promise<VehiculoSinDocumento[]
 
 export async function findVehiculosSinSeguro(): Promise<VehiculoSinDocumento[]> {
   const pool = await getPool()
-  const r = await pool.request().query(`
+  const r = await conHoy(pool.request()).query(`
     ${SELECT_VEHICULO_SIN_DOC}
     WHERE ${SIN_SEGURO} AND ${NO_DADO_DE_BAJA}
     ${ORDEN_SIN_DOC}`)

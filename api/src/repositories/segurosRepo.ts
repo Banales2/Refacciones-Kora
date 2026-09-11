@@ -9,10 +9,18 @@ export interface Seguro {
   fecha_expiracion: string
   /** Lo que se pagó por la póliza. Null = no se capturó, que no es lo mismo que gratis. */
   costo:            number | null
+  /**
+   * Cuándo se dio por terminada. Null = sigue contando (avisa al vencer). Con
+   * fecha = archivada: ya la reemplazó otra, o es tan vieja que reclamarla no
+   * lleva a ninguna parte. No borra nada ni asegura a nadie: solo calla el
+   * aviso del documento (ver la migración 029).
+   */
+  terminado_en:     string | null
 }
 
 const COLS = `id, poliza, compania,
-  CONVERT(char(10), fecha_expiracion, 23) AS fecha_expiracion, costo`
+  CONVERT(char(10), fecha_expiracion, 23) AS fecha_expiracion, costo,
+  CONVERT(char(10), terminado_en, 23) AS terminado_en`
 
 // mssql devuelve DECIMAL como string cuando no cabe en un number seguro; aquí
 // siempre cabe, pero se normaliza para que el consumidor no tenga que
@@ -52,7 +60,8 @@ export async function create(
       INSERT INTO seguros (poliza, compania, fecha_expiracion, costo)
       OUTPUT INSERTED.id, INSERTED.poliza, INSERTED.compania,
              CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion,
-             INSERTED.costo
+             INSERTED.costo,
+             CONVERT(char(10), INSERTED.terminado_en, 23) AS terminado_en
       VALUES (@poliza, @compania, @fecha, @costo)`)
   return mapSeguro(r.recordset[0])
 }
@@ -75,8 +84,30 @@ export async function update(
     UPDATE seguros SET ${sets.join(',')}
     OUTPUT INSERTED.id, INSERTED.poliza, INSERTED.compania,
            CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion,
-           INSERTED.costo
+           INSERTED.costo,
+           CONVERT(char(10), INSERTED.terminado_en, 23) AS terminado_en
     WHERE id=@id`)
+  return r.recordset[0] ? mapSeguro(r.recordset[0]) : null
+}
+
+/**
+ * Da por terminada la póliza (o la reactiva). `terminado_en` se pone con la
+ * fecha del servidor y no con una que mande el cliente: lo que se archiva es
+ * hoy, y aceptar la fecha de fuera solo abriría la puerta a archivar "el mes
+ * pasado" sin que eso signifique nada.
+ */
+export async function setTerminado(id: number, terminado: boolean): Promise<Seguro | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query(`
+      UPDATE seguros
+      SET terminado_en = ${terminado ? 'CAST(GETDATE() AS date)' : 'NULL'}
+      OUTPUT INSERTED.id, INSERTED.poliza, INSERTED.compania,
+             CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion,
+             INSERTED.costo,
+             CONVERT(char(10), INSERTED.terminado_en, 23) AS terminado_en
+      WHERE id=@id`)
   return r.recordset[0] ? mapSeguro(r.recordset[0]) : null
 }
 

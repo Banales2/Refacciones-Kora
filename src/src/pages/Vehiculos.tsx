@@ -122,7 +122,7 @@ function antiguedad(iso: string | null | undefined) {
 // atención activo, y la línea que explica qué se está mostrando.
 const ALERTA_CHIP: Record<AlertaVehiculo, string> = {
   sin_tenencia:            'Solo sin tenencia',
-  sin_seguro:              'Solo sin seguro',
+  sin_seguro:              'Solo sin seguro vigente',
   programa_atrasado:       'Solo atrasados en su programa',
   permiso_por_vencer:      'Solo con permiso por vencer',
 }
@@ -135,8 +135,11 @@ const AVISO_DOCUMENTO: Record<AlertaDocumento, {
 }> = {
   sin_seguro: {
     color: 'red', iconColor: 'var(--mantine-color-red-6)',
-    titulo: 'Sin seguro', tooltip: 'Sin seguro asignado',
-    detalle: 'Este vehículo no tiene un seguro asignado. Asígnale uno desde el botón de editar.',
+    titulo: 'Sin seguro', tooltip: 'Sin póliza vigente',
+    // Cubre los dos casos, porque para la unidad son el mismo: está circulando
+    // sin seguro. Una póliza vencida no asegura más que ninguna.
+    detalle: 'Este vehículo no tiene una póliza vigente: o no tiene seguro asignado, o el ' +
+             'que tiene ya venció. Asígnale uno desde el botón de editar.',
   },
   sin_tenencia: {
     color: 'yellow', iconColor: 'var(--mantine-color-yellow-7)',
@@ -148,7 +151,7 @@ const AVISO_DOCUMENTO: Record<AlertaDocumento, {
 
 const ALERTA_DETALLE: Record<AlertaVehiculo, string> = {
   sin_tenencia:            'Camiones de reparto y utilitarios sin fecha de tenencia.',
-  sin_seguro:              'Unidades que se aseguran (todas menos las cajas de trailer) sin póliza asignada.',
+  sin_seguro:              'Unidades que se aseguran (todas menos las cajas de trailer) sin póliza vigente: sin seguro asignado, o con el suyo ya vencido.',
   programa_atrasado:       'Con la visita de su programa de mantenimiento ya vencida, o con una operación vencida por tiempo.',
   permiso_por_vencer:      'Con permiso de circulación ya vencido o que vence dentro de 30 días.',
 }
@@ -1991,7 +1994,7 @@ export default function Vehiculos({
       texto: `${sinTenencia !== 1 ? 'no tienen' : 'no tiene'} tenencia registrada`,
       boton: 'Ver sin tenencia' },
     { alerta: 'sin_seguro', total: sinSeguro,
-      texto: `${sinSeguro !== 1 ? 'no tienen' : 'no tiene'} seguro asignado`,
+      texto: `${sinSeguro !== 1 ? 'no tienen' : 'no tiene'} seguro vigente`,
       boton: 'Ver sin seguro' },
     { alerta: 'programa_atrasado', total: conVencidos,
       texto: `${conVencidos !== 1 ? 'están atrasados' : 'está atrasado'} en su programa de mantenimiento`,

@@ -548,12 +548,12 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
 
             <Seccion
               titulo="Vehículos sin documentos"
-              descripcion="Unidades sin tenencia o sin seguro capturado. No aparecen arriba porque no tienen fecha de vencimiento que vigilar. La tenencia solo aplica a reparto y utilitarios."
+              descripcion="Unidades sin tenencia registrada o sin póliza vigente —sin seguro asignado, o con el suyo ya vencido—. No aparecen arriba porque lo que falta no tiene fecha que vigilar. La tenencia solo aplica a reparto y utilitarios."
             >
               {loadingDocumentos ? (
                 <Center py="xl"><Loader size="sm" /></Center>
               ) : sinDocumento.length === 0 ? (
-                <Center py="xl"><Text c="dimmed" size="sm">Todas las unidades tienen tenencia y seguro.</Text></Center>
+                <Center py="xl"><Text c="dimmed" size="sm">Todas las unidades tienen tenencia y seguro vigente.</Text></Center>
               ) : (
                 <Stack gap="sm">
                   <Alert color="orange" icon={<IconAlertTriangle size={16} />}>
@@ -567,7 +567,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
                     {totalSinSeguro > 0 && (
                       <>
                         <strong>{totalSinSeguro} vehículo{totalSinSeguro !== 1 ? 's' : ''}</strong>
-                        {totalSinSeguro !== 1 ? ' no tienen' : ' no tiene'} seguro asignado.
+                        {totalSinSeguro !== 1 ? ' no tienen' : ' no tiene'} seguro vigente.
                       </>
                     )}
                   </Alert>

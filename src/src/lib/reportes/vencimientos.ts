@@ -80,11 +80,12 @@ export async function exportVencimientosPdf(
 
   pdf.seccion(
     'Vehículos sin documentos',
-    'Unidades sin tenencia o sin seguro capturado. No aparecen arriba porque no tienen fecha de ' +
-    'vencimiento que vigilar. La tenencia solo aplica a unidades de reparto y utilitarios.',
+    'Unidades sin tenencia registrada o sin póliza vigente (sin seguro asignado, o con el suyo ' +
+    'ya vencido). No aparecen arriba porque lo que falta no tiene fecha que vigilar. La tenencia ' +
+    'solo aplica a unidades de reparto y utilitarios.',
   )
   if (sinDoc.length === 0) {
-    pdf.vacio('Todas las unidades tienen tenencia y seguro.')
+    pdf.vacio('Todas las unidades tienen tenencia y seguro vigente.')
   } else {
     pdf.tabla({
       head: ['Vehículo', 'Placas', 'Tipo', 'Le falta'],
@@ -124,7 +125,7 @@ export async function exportVencimientosExcel(
     { header: 'Placas',   width: 14, valor: (v) => v.placas ?? '—' },
     { header: 'Tipo',     width: 22, valor: (v) => TIPO_LABELS[v.tipo] ?? v.tipo },
     { header: 'Le falta', width: 22, valor: (v) => faltantes(v) },
-  ], sinDoc, { vacio: 'Todas las unidades tienen tenencia y seguro.' })
+  ], sinDoc, { vacio: 'Todas las unidades tienen tenencia y seguro vigente.' })
 
   await wb.guardar(nombreBase(periodo))
 }

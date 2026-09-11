@@ -185,7 +185,7 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
   if (v.alertas.length > 0) {
     pdf.nota(
       'Documentos faltantes: ' +
-      v.alertas.map((a) => (a === 'sin_seguro' ? 'no tiene seguro asignado' : 'no tiene tenencia registrada')).join('; ') + '.'
+      v.alertas.map((a) => (a === 'sin_seguro' ? 'no tiene seguro vigente' : 'no tiene tenencia registrada')).join('; ') + '.'
     )
   }
 

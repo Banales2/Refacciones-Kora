@@ -128,7 +128,13 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
   const modelosOpts   = (modelosData?.data   ?? []).map((m) => ({ value: String(m.id), label: `${m.marca} ${m.nombre}${m.anio ? ` ${m.anio}` : ''}` }))
   const sucursalesOpts = (sucursalesData?.data ?? []).map((s) => ({ value: String(s.id), label: s.nombre }))
   const rutasOpts      = (rutasData?.data      ?? []).map((r) => ({ value: String(r.id), label: r.nombre }))
-  const segurosOpts    = (segurosData?.data    ?? []).map((s) => ({ value: String(s.id), label: `${s.poliza} — ${s.compania}` }))
+  // Las pólizas terminadas no se ofrecen: se archivaron porque ya no cubren a
+  // nadie, y asignar una dejaría a la unidad con un seguro que no asegura. La
+  // que ya trae puesta sí se conserva en la lista, o al abrir el formulario el
+  // selector saldría vacío y guardar le borraría el dato sin avisar.
+  const segurosOpts    = (segurosData?.data ?? [])
+    .filter((s) => s.terminado_en == null || s.id === initial?.seguro_id)
+    .map((s) => ({ value: String(s.id), label: `${s.poliza} — ${s.compania}` }))
   const permisosOpts   = (permisosData?.data   ?? []).map((p) => ({ value: String(p.id), label: `${p.zona_circulacion} (expira ${p.fecha_expiracion})` }))
 
   const form = useForm<FormVals>({
