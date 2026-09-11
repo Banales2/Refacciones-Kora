@@ -63,6 +63,7 @@ nombre, sin acentos y sin importar mayúsculas; se aceptan varios alias (ver
 | Descripción | concepto |
 | Cantidad | cant, piezas |
 | Precio unit con descuento | precio unitario, precio, costo unitario |
+| Tipo *(opcional)* | tipo de pieza, categoria, familia |
 
 Ejemplo:
 
@@ -95,9 +96,33 @@ El número de parte es la llave. Si ya está en el catálogo se usa esa refacci�
 más que un archivo viejo. Si no está, se da de alta con la descripción del
 archivo.
 
-El tipo de pieza no viene en ningún CSV y es obligatorio en una refacción (es su
-única clasificación), así que se elige en la pantalla: uno para todas las nuevas
-y, si hace falta, uno por artículo. Solo se pide para las que no existen.
+El tipo de pieza es obligatorio en una refacción (es su única clasificación) y
+se resuelve en este orden:
+
+1. El que se haya elegido a mano para ese artículo en la pantalla.
+2. El de la columna **Tipo** del archivo, si su nombre casa con un tipo del
+   catálogo. El nombre se compara sin acentos y sin distinguir mayúsculas, para
+   que "Filtro de aire" no cree un duplicado de `FILTRO DE AIRE`. Los nombres
+   que no existan se listan con un botón para crearlos de una vez.
+3. El de *Tipo para todas*.
+
+La columna es opcional y ningún sistema de facturación la exporta: la escribe
+quien prepara la importación. Existe porque clasificar noventa refacciones en
+una hoja de cálculo son diez minutos, y hacerlo en noventa desplegables de una
+pantalla es trabajo que nadie termina. Solo se usa para las refacciones que no
+están en el catálogo; en las que ya existen se ignora.
+
+## Qué alimenta lo importado
+
+Todo lo que entra cuenta como compra real, así que aparece en:
+
+- **Gastos del proveedor**, con su folio, fecha, cantidad y precio unitario.
+- **La comparativa de precios**: el precio pagado es una de las dos fuentes con
+  las que se compara a los proveedores. Ver `comparacion-de-precios.md` — ahí
+  está por qué un precio pagado y una cotización no se pueden comparar crudos.
+
+Lo que **no** toca es `precios_proveedor`: eso es lo que el proveedor cotiza, y
+una factura no es una cotización. Tampoco toca el inventario, que es el punto.
 
 ## Volver a subir el mismo archivo
 

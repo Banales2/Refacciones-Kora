@@ -109,7 +109,9 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
   }
 
   const stockTotal = data?.lotes.reduce((s, l) => s + l.cantidad_disponible, 0) ?? 0
-  const cotizaciones = comparativa?.data.fila?.precios.length ?? 0
+  // Proveedores con precio comparable, que ya no son solo los que cotizan:
+  // también cuenta aquel al que se le compra, con lo que se le paga de verdad.
+  const conPrecio = comparativa?.data.fila?.precios.length ?? 0
 
   async function generarComparativa() {
     if (!comparativa) return
@@ -162,9 +164,9 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
               <Group gap="xs">
                 <Tooltip
                   label={
-                    cotizaciones === 0
-                      ? 'Ningún proveedor tiene precio registrado para esta refacción'
-                      : `Precio y tiempo de entrega de ${cotizaciones} proveedor${cotizaciones !== 1 ? 'es' : ''}`
+                    conPrecio === 0
+                      ? 'Ningún proveedor cotiza esta refacción y nunca se le ha comprado a nadie'
+                      : `Precio y tiempo de entrega de ${conPrecio} proveedor${conPrecio !== 1 ? 'es' : ''}`
                   }
                 >
                   {/* El <span> es lo que sostiene el tooltip cuando el botón va
@@ -175,7 +177,7 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                       variant="light"
                       leftSection={<IconFileTypePdf size={14} />}
                       loading={generando}
-                      disabled={cargandoComparativa || cotizaciones === 0}
+                      disabled={cargandoComparativa || conPrecio === 0}
                       onClick={generarComparativa}
                     >
                       Comparar proveedores

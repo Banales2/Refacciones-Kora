@@ -18,16 +18,29 @@ export interface PrecioProveedor {
   tiempo_entrega_dias: number | null
   observaciones:  string | null
   registrado_por: string
+  /**
+   * Lo que costaría de verdad esta cotización con el descuento de referencia.
+   * Es el número con el que se compara contra los demás; `precio` es el de
+   * lista, que es como lo manda el proveedor.
+   */
+  precio_comparable: number
+  /** El descuento con el que se calculó `precio_comparable`, en por ciento. */
+  descuento_referencia: number
   pieza_serie:    string
   pieza:          string
   tipo_pieza:     string | null
   /** El precio más reciente que este proveedor tiene para esta refacción. */
   vigente:        boolean
-  /** El más barato entre los precios vigentes de todos los proveedores. */
+  /**
+   * El más barato de esta refacción entre todos los proveedores, ya comparable:
+   * puede salir de una cotización o de lo que se le paga a quien ya se le compra.
+   */
   mejor_precio:       number | null
   mejor_proveedor_id: number | null
   mejor_proveedor:    string | null
-  /** Cuántos proveedores tienen precio registrado para esta refacción. */
+  /** De dónde salió ese mejor precio. */
+  mejor_origen:       'cotizado' | 'pagado' | null
+  /** Cuántos proveedores tienen precio —cotizado o pagado— para esta refacción. */
   proveedores_con_precio: number
 }
 
@@ -90,12 +103,26 @@ export function useDeletePrecioProveedor() {
 export interface PrecioDeProveedor {
   proveedor_id: number
   proveedor:    string
+  /** Ya con descuento. Es el que ordena y con el que se calcula todo. */
   precio:       number
+  /** Si sale de lo que el proveedor cotiza o de lo que ya se le pagó. */
+  origen:       'cotizado' | 'pagado'
+  /** Lo que dice el papel, antes del descuento. */
+  precio_lista: number
+  /** El descuento aplicado para llegar a `precio`. */
+  descuento_pct: number | null
+  /**
+   * El descuento no salió de ninguna factura: es el de referencia. Siempre en
+   * las cotizaciones, porque el proveedor cotiza lista y descuenta después.
+   */
+  estimado:     boolean
   fecha:        string
   /** Días naturales en que surte ese proveedor. Null si no se capturó. */
   tiempo_entrega_dias: number | null
   /** Cuánto más caro es que el mejor precio de esa refacción, en porcentaje. */
   sobre_mejor:  number
+  /** La otra fuente del mismo proveedor, si la tiene: cotiza Y se le compra. */
+  otro:         { origen: 'cotizado' | 'pagado'; precio: number; fecha: string } | null
 }
 
 export interface FilaComparativa {
@@ -122,6 +149,8 @@ export interface FilaComparativa {
 export interface ComparativaPrecios {
   proveedores: { id: number; nombre: string }[]
   piezas:      FilaComparativa[]
+  /** El supuesto con el que se estimó el neto de las cotizaciones. */
+  descuento_referencia: number
   totales: {
     refacciones:           number
     comparables:           number
@@ -129,10 +158,17 @@ export interface ComparativaPrecios {
   }
 }
 
-export function useComparativaPrecios() {
+/**
+ * `descuentoRef` es el descuento que se supone sobre una cotización para poder
+ * compararla contra compras que ya vienen descontadas. Ausente = el de
+ * referencia del servidor (10%). No se guarda: es un supuesto de quien lee la
+ * tabla, y por eso viaja en la consulta y entra en la clave de caché.
+ */
+export function useComparativaPrecios(descuentoRef?: number) {
   return useQuery({
-    queryKey: ['precios-proveedor', 'comparativa'],
-    queryFn: () => api.get<{ data: ComparativaPrecios }>('/precios-proveedor/comparativa'),
+    queryKey: ['precios-proveedor', 'comparativa', descuentoRef ?? null],
+    queryFn: () => api.get<{ data: ComparativaPrecios }>(
+      `/precios-proveedor/comparativa${descuentoRef == null ? '' : `?descuento_ref=${descuentoRef}`}`),
   })
 }
 
@@ -148,8 +184,10 @@ export interface ComparativaPieza {
     descripcion:  string
     tipo_pieza:   string | null
   }
-  /** Null cuando ningún proveedor la cotiza todavía. */
+  /** Null cuando nadie la cotiza y nunca se ha comprado. */
   fila: FilaComparativa | null
+  /** El supuesto con el que se estimó el neto de las cotizaciones. */
+  descuento_referencia: number
 }
 
 export function useComparativaPieza(piezaId: number | null) {

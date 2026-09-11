@@ -31,14 +31,28 @@ import { leerTexto } from '../lib/csv'
 import {
   ArchivoInvalidoError, leerArchivoHistorico,
 } from '../lib/historicoCsv'
-import type { ArchivoHistorico, FormatoFecha } from '../lib/historicoCsv'
+import type { ArchivoHistorico, ArticuloHistorico, FormatoFecha } from '../lib/historicoCsv'
 import { useSucursales } from '../hooks/useSucursales'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
-import { useTiposPieza } from '../hooks/useTiposPieza'
+import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { useImportarHistorico } from '../hooks/useImportarHistorico'
 import type { ImportacionResultado } from '../hooks/useImportarHistorico'
 import type { Proveedor } from '../hooks/useProveedores'
+
+/**
+ * Para casar el nombre de un tipo escrito en el archivo con uno del catálogo.
+ * "Filtro de aire", "FILTRO DE AIRE" y "Filtro de Aire" son el mismo tipo, y
+ * crear un duplicado por una mayúscula es peor que no leer la columna.
+ */
+function claveDeTipo(nombre: string): string {
+  return nombre
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+}
 
 function formatFecha(iso: string) {
   return new Date(`${iso}T12:00:00`).toLocaleDateString('es-MX', {
@@ -149,23 +163,39 @@ function Rechazos({ archivo }: { archivo: ArchivoHistorico }) {
 
 // Solo se pide el tipo de las que NO están en el catálogo: a las que ya existen
 // no se les toca nada. El tipo es obligatorio en una refacción —es su única
-// clasificación— y un archivo no lo trae, así que hay que ponerlo aquí.
+// clasificación— y hay tres formas de ponerlo, en este orden:
 //
-// Un tipo para todas y, si hace falta, uno por artículo: en un archivo de un
-// proveedor de refacciones casi todo cae en el mismo tipo, y obligar a elegir
-// noventa veces lo mismo es la forma segura de que nadie lo haga bien.
+//   1. el que se eligió a mano para ese artículo,
+//   2. el que traía el archivo en su columna `Tipo`, si casa con uno del
+//      catálogo (los nombres que no casen se pueden crear de un botón),
+//   3. el de "Tipo para todas".
+//
+// La columna del archivo existe porque clasificar noventa refacciones en una
+// hoja de cálculo son diez minutos, y hacerlo en noventa desplegables es
+// trabajo que nadie termina.
 function TiposDeLasNuevas({
-  nuevas, porDefecto, onPorDefecto, override, onOverride, tipos,
+  nuevas, porDefecto, onPorDefecto, onOverride, tipos,
+  conTipos, tipoDe, faltantes, onCrearFaltantes, creando,
 }: {
-  nuevas:       { numero_serie: string; descripcion: string; renglones: number }[]
+  nuevas:       ArticuloHistorico[]
   porDefecto:   string
   onPorDefecto: (v: string) => void
-  override:     Record<string, string>
+  /** Fija el tipo de un artículo a mano; gana sobre el del archivo y el general. */
   onOverride:   (serie: string, v: string) => void
   tipos:        { value: string; label: string }[]
+  /** El archivo traía columna de tipo. */
+  conTipos:     boolean
+  /** El tipo que le toca a un artículo con las tres reglas de arriba; '' si ninguna aplica. */
+  tipoDe:       (serie: string) => string
+  /** Nombres de tipo del archivo que no existen en el catálogo. */
+  faltantes:    string[]
+  onCrearFaltantes: () => void
+  creando:      boolean
 }) {
   const [abierto, setAbierto] = useState(false)
   if (nuevas.length === 0) return null
+
+  const clasificadas = nuevas.filter((a) => tipoDe(a.numero_serie) !== '').length
 
   return (
     <Paper withBorder p="md" radius="md">
@@ -176,14 +206,40 @@ function TiposDeLasNuevas({
           </Text>
           <Text size="xs" c="dimmed">
             No están en el catálogo y se darán de alta con la descripción del
-            archivo. El tipo no viene en el CSV, así que hay que elegirlo.
+            archivo. Falta decir de qué tipo es cada una.
           </Text>
         </div>
+
+        {conTipos && (
+          <Text size="sm">
+            El archivo trae columna <b>Tipo</b>:{' '}
+            {clasificadas === nuevas.length
+              ? 'las clasifica todas.'
+              : `${clasificadas} de ${nuevas.length} quedaron clasificadas.`}
+          </Text>
+        )}
+
+        {faltantes.length > 0 && (
+          <Alert color="yellow" icon={<IconAlertTriangle size={16} />}
+            title={`${faltantes.length} tipo${faltantes.length !== 1 ? 's' : ''} del archivo no existe${faltantes.length !== 1 ? 'n' : ''} en el catálogo`}>
+            <Stack gap="xs">
+              <Text size="sm">{faltantes.join(' · ')}</Text>
+              <Group>
+                <Button size="xs" variant="light" loading={creando} onClick={onCrearFaltantes}>
+                  Crear {faltantes.length === 1 ? 'el tipo' : `los ${faltantes.length} tipos`}
+                </Button>
+                <Text size="xs" c="dimmed">
+                  O corrige los nombres en el archivo y vuelve a subirlo.
+                </Text>
+              </Group>
+            </Stack>
+          </Alert>
+        )}
 
         <TipoPiezaSelect
           value={porDefecto}
           onChange={onPorDefecto}
-          label="Tipo para todas"
+          label={conTipos ? 'Tipo para las que queden sin clasificar' : 'Tipo para todas'}
           description="Se puede cambiar artículo por artículo abajo"
         />
 
@@ -214,8 +270,8 @@ function TiposDeLasNuevas({
                         size="xs"
                         searchable
                         data={tipos}
-                        placeholder="El de arriba"
-                        value={override[a.numero_serie] ?? null}
+                        placeholder="Sin clasificar"
+                        value={tipoDe(a.numero_serie) || null}
                         onChange={(v) => onOverride(a.numero_serie, v ?? '')}
                         comboboxProps={{ withinPortal: true }}
                       />
@@ -302,11 +358,17 @@ export default function ImportarHistoricoModal({
   const { data: tiposData } = useTiposPieza()
   const { data: usuario } = useUsuarioActual()
   const importarMut = useImportarHistorico()
+  const crearTipoMut = useCreateTipoPieza()
 
   const sucursales = (sucQuery.data?.data ?? []).map((s) => ({ value: String(s.id), label: s.nombre }))
   const piezas = useMemo(() => piezasQuery.data?.data ?? [], [piezasQuery.data])
   const tiposDisponibles = useMemo(
     () => (tiposData?.data ?? []).map((t) => ({ value: String(t.id), label: t.nombre })),
+    [tiposData],
+  )
+  // Por nombre normalizado, que es como viene escrito en el archivo.
+  const tipoPorNombre = useMemo(
+    () => new Map((tiposData?.data ?? []).map((t) => [claveDeTipo(t.nombre), String(t.id)])),
     [tiposData],
   )
 
@@ -341,6 +403,42 @@ export default function ImportarHistoricoModal({
     [archivo, seriesExistentes],
   )
   const enCatalogo = (archivo?.articulos.length ?? 0) - nuevas.length
+
+  // El tipo que le toca a cada artículo nuevo: lo elegido a mano, lo que dijo
+  // el archivo si casa con un tipo del catálogo, o el de "para todas".
+  const tipoDelArchivo = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const a of archivo?.articulos ?? []) {
+      const id = a.tipo ? tipoPorNombre.get(claveDeTipo(a.tipo)) : undefined
+      if (id) m.set(a.numero_serie, id)
+    }
+    return m
+  }, [archivo, tipoPorNombre])
+
+  function tipoDe(serie: string): string {
+    return tipoPorArticulo[serie] || tipoDelArchivo.get(serie) || tipoPorDefecto || ''
+  }
+
+  // Nombres que el archivo trae y el catálogo no tiene. Solo de las refacciones
+  // nuevas: el tipo de las que ya existen no se toca, así que un nombre que
+  // solo aparezca en ellas no hay por qué crearlo.
+  const tiposFaltantes = useMemo(
+    () => [...new Set(
+      nuevas
+        .map((a) => a.tipo)
+        .filter((t): t is string => !!t && !tipoPorNombre.has(claveDeTipo(t))),
+    )].sort(),
+    [nuevas, tipoPorNombre],
+  )
+
+  async function crearTiposFaltantes() {
+    // De uno en uno: el alta de un tipo es un POST por nombre y no hay endpoint
+    // que reciba varios. Son un puñado, y si uno falla los anteriores quedan
+    // creados —que es lo correcto: no hay nada que deshacer en un catálogo.
+    for (const nombre of tiposFaltantes) {
+      await crearTipoMut.mutateAsync(nombre)
+    }
+  }
 
   const subtotal = useMemo(
     () => (archivo?.facturas ?? []).reduce(
@@ -377,9 +475,7 @@ export default function ImportarHistoricoModal({
 
   const nombreDefault = usuario?.data.nombre ?? ''
   const comprador = compradoPor || nombreDefault
-  const faltaTipo = nuevas.length > 0 && nuevas.some(
-    (a) => !(tipoPorArticulo[a.numero_serie] || tipoPorDefecto),
-  )
+  const faltaTipo = nuevas.some((a) => tipoDe(a.numero_serie) === '')
   const listo = archivo !== null && archivo.facturas.length > 0 &&
     sucursalId !== '' && comprador.trim() !== '' && !faltaTipo
 
@@ -401,7 +497,7 @@ export default function ImportarHistoricoModal({
           // existen no se les manda: proponerles un tipo sería proponer
           // cambiarles el suyo, y esta pantalla no viene a corregir el catálogo.
           ...(seriesExistentes.has(r.numero_serie) ? {} : {
-            tipo_pieza_id: Number(tipoPorArticulo[r.numero_serie] || tipoPorDefecto),
+            tipo_pieza_id: Number(tipoDe(r.numero_serie)),
           }),
           cantidad_inicial: r.cantidad,
           costo_unitario:   r.costo_unitario,
@@ -536,11 +632,21 @@ export default function ImportarHistoricoModal({
                     nuevas={nuevas}
                     porDefecto={tipoPorDefecto}
                     onPorDefecto={setTipoPorDefecto}
-                    override={tipoPorArticulo}
                     onOverride={(serie, v) =>
                       setTipoPorArticulo((prev) => ({ ...prev, [serie]: v }))}
                     tipos={tiposDisponibles}
+                    conTipos={archivo.conTipos}
+                    tipoDe={tipoDe}
+                    faltantes={tiposFaltantes}
+                    onCrearFaltantes={() => { void crearTiposFaltantes() }}
+                    creando={crearTipoMut.isPending}
                   />
+
+                  {crearTipoMut.error && (
+                    <Alert color="red" title="No se pudieron crear los tipos">
+                      {(crearTipoMut.error as Error).message}
+                    </Alert>
+                  )}
 
                   {intentado && faltaTipo && (
                     <Alert color="red" title="Falta el tipo de pieza">

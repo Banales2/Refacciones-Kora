@@ -1,6 +1,7 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { PrecioProveedorCreate, PrecioProveedorUpdate } from '../schemas/precioProveedorSchema'
+import { DESCUENTO_REFERENCIA, precioCotizado, precioPagado } from './preciosSql'
 
 export interface PrecioProveedor {
   id:             number
@@ -12,39 +13,82 @@ export interface PrecioProveedor {
   tiempo_entrega_dias: number | null
   observaciones:  string | null
   registrado_por: string
+  /**
+   * Lo que costaría de verdad esta cotización con el descuento de referencia.
+   * Es el número con el que se compara contra los demás proveedores; `precio`
+   * es el de lista, que es como lo manda el proveedor. Ver `preciosSql`.
+   */
+  precio_comparable: number
+  /** El descuento con el que se calculó `precio_comparable`, en por ciento. */
+  descuento_referencia: number
   // Datos de la refacción, para no tener que cruzarlos en el cliente.
   pieza_serie:    string
   pieza:          string
   tipo_pieza:     string | null
   /** El precio más reciente que este proveedor tiene para esta refacción. */
   vigente:        boolean
-  /** El más barato entre los precios vigentes de todos los proveedores. */
+  /**
+   * El más barato de esta refacción entre todos los proveedores, ya comparable
+   * (ver `preciosSql`): puede salir de una cotización o de una compra real.
+   */
   mejor_precio:        number | null
   mejor_proveedor_id:  number | null
   mejor_proveedor:     string | null
-  /** Cuántos proveedores tienen precio registrado para esta refacción. */
+  /** De dónde salió ese mejor precio. Null si no hay ninguno. */
+  mejor_origen:        'cotizado' | 'pagado' | null
+  /** Cuántos proveedores tienen precio —cotizado o pagado— para esta refacción. */
   proveedores_con_precio: number
 }
 
 // El precio "vigente" de un proveedor para una refacción es el de fecha más
-// reciente (y a igual fecha, el capturado después). Sobre esos vigentes se
-// calcula el más barato del mercado, que es con lo que se compara.
+// reciente (y a igual fecha, el capturado después). Lo mismo vale para lo que se
+// le ha pagado: la compra más reciente.
+//
+// El más barato del mercado se calcula sobre LAS DOS FUENTES, no solo sobre las
+// cotizaciones. Un proveedor al que ya se le compra tiene un precio real, y
+// dejarlo fuera hacía que "el más barato" solo supiera de quien mandó
+// cotización — que suele ser el que menos se usa. Los dos lados se llevan a la
+// misma base antes de compararse (ver `preciosSql`).
+//
+// Requiere el parámetro @descRef: el descuento de referencia con el que se
+// estima lo que costaría de verdad una cotización.
 const CTE_COMPARATIVA = `
-  WITH vigentes AS (
-    SELECT pp.id, pp.proveedor_id, pp.pieza_id, pp.precio,
+  WITH cotizados AS (
+    SELECT pp.id, pp.proveedor_id, pp.pieza_id,
+           ${precioCotizado('pp')} AS comparable,
            ROW_NUMBER() OVER (PARTITION BY pp.proveedor_id, pp.pieza_id
                               ORDER BY pp.fecha DESC, pp.id DESC) AS rn
     FROM precios_proveedor pp
   ),
+  pagados AS (
+    SELECT fac.proveedor_id, l.pieza_id,
+           ${precioPagado('l', 'fac')} AS comparable,
+           ROW_NUMBER() OVER (PARTITION BY fac.proveedor_id, l.pieza_id
+                              ORDER BY fac.fecha_compra DESC, l.id DESC) AS rn
+    FROM lotes_pieza l
+    -- JOIN y no LEFT: el lote de recuperación (024) no salió de ninguna compra,
+    -- vale \$0 y no es el precio de nadie.
+    JOIN facturas fac ON fac.id = l.factura_id
+  ),
+  comparables AS (
+    SELECT proveedor_id, pieza_id, comparable, 'cotizado' AS origen
+    FROM cotizados WHERE rn = 1
+    UNION ALL
+    SELECT proveedor_id, pieza_id, comparable, 'pagado' AS origen
+    FROM pagados WHERE rn = 1
+  ),
   mejores AS (
-    SELECT pieza_id, precio AS mejor_precio, proveedor_id AS mejor_proveedor_id,
+    SELECT pieza_id, comparable AS mejor_precio, proveedor_id AS mejor_proveedor_id,
+           origen AS mejor_origen,
            ROW_NUMBER() OVER (PARTITION BY pieza_id
-                              ORDER BY precio ASC, proveedor_id ASC) AS rn
-    FROM vigentes WHERE rn = 1
+                              ORDER BY comparable ASC, proveedor_id ASC) AS rn
+    FROM comparables
   ),
   conteo AS (
-    SELECT pieza_id, COUNT(*) AS proveedores_con_precio
-    FROM vigentes WHERE rn = 1 GROUP BY pieza_id
+    -- DISTINCT: un proveedor que cotiza Y al que además se le compra es un solo
+    -- proveedor, no dos. Sin esto "comparable" se cumpliría con uno solo.
+    SELECT pieza_id, COUNT(DISTINCT proveedor_id) AS proveedores_con_precio
+    FROM comparables GROUP BY pieza_id
   )
 `
 
@@ -55,42 +99,59 @@ const SELECT_PRECIO = `
          p.numero_serie AS pieza_serie, p.descripcion AS pieza,
          tp.nombre AS tipo_pieza,
          CAST(CASE WHEN v.rn = 1 THEN 1 ELSE 0 END AS BIT) AS vigente,
+         v.comparable AS precio_comparable, @descRef AS descuento_referencia,
          m.mejor_precio, m.mejor_proveedor_id, pm.nombre AS mejor_proveedor,
-         c.proveedores_con_precio
+         m.mejor_origen, c.proveedores_con_precio
   FROM precios_proveedor pp
   JOIN piezas p            ON p.id = pp.pieza_id
   LEFT JOIN tipos_pieza tp ON tp.id = p.tipo_pieza_id
-  JOIN vigentes v          ON v.id = pp.id
+  JOIN cotizados v         ON v.id = pp.id
   LEFT JOIN mejores m      ON m.pieza_id = pp.pieza_id AND m.rn = 1
   LEFT JOIN proveedores pm ON pm.id = m.mejor_proveedor_id
   LEFT JOIN conteo c       ON c.pieza_id = pp.pieza_id
 `
 
+// mssql devuelve DECIMAL como string cuando no cabe en un number seguro; aquí
+// siempre cabe, pero se normaliza para no dejar al consumidor adivinando.
+function normalizar(row: Record<string, unknown>): PrecioProveedor {
+  return {
+    ...row,
+    precio:               Number(row.precio),
+    precio_comparable:    Number(row.precio_comparable),
+    descuento_referencia: Number(row.descuento_referencia),
+    mejor_precio: row.mejor_precio == null ? null : Number(row.mejor_precio),
+  } as PrecioProveedor
+}
+
 // Todos los precios que este proveedor tiene registrados, del más reciente al
 // más viejo dentro de cada refacción: el primero de cada grupo es el vigente.
-export async function findByProveedor(proveedorId: number): Promise<PrecioProveedor[]> {
+export async function findByProveedor(
+  proveedorId: number, descuentoRef = DESCUENTO_REFERENCIA,
+): Promise<PrecioProveedor[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('pid', sql.Int, proveedorId)
+    .input('descRef', sql.Decimal(5, 2), descuentoRef)
     .query(`
       ${CTE_COMPARATIVA}
       ${SELECT_PRECIO}
       WHERE pp.proveedor_id = @pid
       ORDER BY p.descripcion, p.numero_serie, pp.fecha DESC, pp.id DESC
     `)
-  return r.recordset
+  return r.recordset.map(normalizar)
 }
 
 export async function findById(id: number): Promise<PrecioProveedor | null> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, id)
+    .input('descRef', sql.Decimal(5, 2), DESCUENTO_REFERENCIA)
     .query(`
       ${CTE_COMPARATIVA}
       ${SELECT_PRECIO}
       WHERE pp.id = @id
     `)
-  return r.recordset[0] ?? null
+  return r.recordset[0] ? normalizar(r.recordset[0]) : null
 }
 
 export async function create(
@@ -192,73 +253,102 @@ export async function existsMismoDia(
 
 // ─── Comparativa global ─────────────────────────────────────────────────────
 
-/** El precio vigente de una refacción con un proveedor, para cruzar a lo ancho. */
-export interface PrecioVigente {
+/**
+ * Un precio comparable de una refacción con un proveedor: el vigente si lo
+ * cotiza, y el de su última compra si se le compra. Un proveedor puede aportar
+ * los dos, y son dos filas: cuál de ellos vale hoy lo decide el servicio.
+ */
+export interface PrecioComparable {
   pieza_id:      number
   numero_serie:  string
   descripcion:   string
   tipo_pieza:    string | null
   proveedor_id:  number
   proveedor:     string
+  origen:        'cotizado' | 'pagado'
+  /** Ya con el descuento aplicado: es el número que se compara. */
   precio:        number
+  /** Lo que dice el papel, antes del descuento. */
+  precio_lista:  number
+  /**
+   * El descuento con el que se llegó a `precio`. En una compra es el de su
+   * factura —un hecho—; en una cotización, el de referencia —un supuesto—.
+   * Null solo en una compra sin descuento.
+   */
+  descuento_pct: number | null
   fecha:         string
+  /** Solo en las cotizaciones: una compra no dice en cuántos días surte. */
   tiempo_entrega_dias: number | null
-  observaciones: string | null
-  /** Lo que se pagó la última vez que se compró esa refacción, venga de quien venga. */
-  ultimo_pagado:      number | null
-  ultimo_proveedor:   string | null
-  ultima_compra:      string | null
 }
 
-// La comparativa de un proveedor contra los demás ya existe (findByProveedor);
-// esto es la tabla completa: una fila por (refacción, proveedor) con el precio
-// que está vigente hoy. Se devuelve larga y no pivoteada porque el número de
-// proveedores no se sabe de antemano — pivotearla es trabajo del servicio.
-//
-// Se trae además la última compra real de cada refacción: el precio cotizado
-// dice a cuánto la venden, pero la decisión se toma comparándolo contra lo que
-// de hecho se pagó la última vez.
+// La tabla completa: una fila por (refacción, proveedor, origen). Se devuelve
+// larga y no pivoteada porque el número de proveedores no se sabe de antemano
+// —pivotearla es trabajo del servicio— y con el origen a la vista porque una
+// cotización y una compra no son lo mismo aunque se comparen: la primera es lo
+// que ofrecen y la segunda lo que ya pasó.
 //
 // `piezaId` acota la consulta a una sola refacción: es la comparativa que se
 // abre desde la pieza, y traerse el catálogo entero para quedarse con una fila
 // sería pagar la tabla completa por una pregunta puntual.
-export async function findVigentesGlobal(piezaId?: number): Promise<PrecioVigente[]> {
+export async function findComparables(
+  piezaId?: number, descuentoRef = DESCUENTO_REFERENCIA,
+): Promise<PrecioComparable[]> {
   const pool = await getPool()
   const r = await pool.request()
-    .input('pieza', sql.Int, piezaId ?? null)
+    .input('pieza',   sql.Int,           piezaId ?? null)
+    .input('descRef', sql.Decimal(5, 2), descuentoRef)
     .query(`
-    WITH vigentes AS (
-      SELECT pp.id, pp.proveedor_id, pp.pieza_id, pp.precio, pp.fecha,
-             pp.tiempo_entrega_dias, pp.observaciones,
+    WITH cotizados AS (
+      SELECT pp.proveedor_id, pp.pieza_id,
+             ${precioCotizado('pp')} AS precio,
+             pp.precio AS precio_lista,
+             @descRef  AS descuento_pct,
+             pp.fecha, pp.tiempo_entrega_dias,
              ROW_NUMBER() OVER (PARTITION BY pp.proveedor_id, pp.pieza_id
                                 ORDER BY pp.fecha DESC, pp.id DESC) AS rn
       FROM precios_proveedor pp
     ),
-    ultima_compra AS (
-      SELECT l.pieza_id, l.costo_unitario, fac.fecha_compra, fac.proveedor_id,
-             ROW_NUMBER() OVER (PARTITION BY l.pieza_id
+    pagados AS (
+      SELECT fac.proveedor_id, l.pieza_id,
+             ${precioPagado('l', 'fac')} AS precio,
+             l.costo_unitario AS precio_lista,
+             fac.descuento_pct,
+             fac.fecha_compra AS fecha,
+             CAST(NULL AS INT) AS tiempo_entrega_dias,
+             ROW_NUMBER() OVER (PARTITION BY fac.proveedor_id, l.pieza_id
                                 ORDER BY fac.fecha_compra DESC, l.id DESC) AS rn
       FROM lotes_pieza l
-      -- JOIN y no LEFT: "lo último que se pagó" solo tiene sentido sobre una
-      -- compra real. El lote de recuperación (024) vale $0 y no es un precio.
+      -- JOIN y no LEFT: el lote de recuperación (024) no salió de ninguna
+      -- compra, vale $0 y no es el precio de nadie.
       JOIN facturas fac ON fac.id = l.factura_id
+    ),
+    todos AS (
+      SELECT 'cotizado' AS origen, proveedor_id, pieza_id, precio, precio_lista,
+             descuento_pct, fecha, tiempo_entrega_dias
+      FROM cotizados WHERE rn = 1
+      UNION ALL
+      SELECT 'pagado' AS origen, proveedor_id, pieza_id, precio, precio_lista,
+             descuento_pct, fecha, tiempo_entrega_dias
+      FROM pagados WHERE rn = 1
     )
-    SELECT v.pieza_id, p.numero_serie, p.descripcion, tp.nombre AS tipo_pieza,
-           v.proveedor_id, pr.nombre AS proveedor,
-           v.precio, CONVERT(char(10), v.fecha, 23) AS fecha,
-           v.tiempo_entrega_dias, v.observaciones,
-           uc.costo_unitario                        AS ultimo_pagado,
-           pru.nombre                               AS ultimo_proveedor,
-           CONVERT(char(10), uc.fecha_compra, 23)   AS ultima_compra
-    FROM vigentes v
-    JOIN piezas      p  ON p.id  = v.pieza_id
-    JOIN proveedores pr ON pr.id = v.proveedor_id
-    LEFT JOIN tipos_pieza  tp  ON tp.id = p.tipo_pieza_id
-    LEFT JOIN ultima_compra uc ON uc.pieza_id = v.pieza_id AND uc.rn = 1
-    LEFT JOIN proveedores  pru ON pru.id = uc.proveedor_id
-    WHERE v.rn = 1
-      AND (@pieza IS NULL OR v.pieza_id = @pieza)
-    ORDER BY p.descripcion, p.numero_serie, v.precio
+    SELECT t.pieza_id, p.numero_serie, p.descripcion, tp.nombre AS tipo_pieza,
+           t.proveedor_id, pr.nombre AS proveedor, t.origen,
+           t.precio, t.precio_lista, t.descuento_pct,
+           CONVERT(char(10), t.fecha, 23) AS fecha,
+           t.tiempo_entrega_dias
+    FROM todos t
+    JOIN piezas      p  ON p.id  = t.pieza_id
+    JOIN proveedores pr ON pr.id = t.proveedor_id
+    LEFT JOIN tipos_pieza tp ON tp.id = p.tipo_pieza_id
+    WHERE (@pieza IS NULL OR t.pieza_id = @pieza)
+    ORDER BY p.descripcion, p.numero_serie, t.precio
   `)
-  return r.recordset
+  // mssql devuelve DECIMAL como string cuando no cabe en un number seguro; aquí
+  // siempre cabe, pero se normaliza para no dejar al consumidor adivinando.
+  return r.recordset.map((row) => ({
+    ...row,
+    precio:        Number(row.precio),
+    precio_lista:  Number(row.precio_lista),
+    descuento_pct: row.descuento_pct == null ? null : Number(row.descuento_pct),
+  }))
 }

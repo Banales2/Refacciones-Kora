@@ -63,5 +63,15 @@ export const PrecioProveedorUpdateSchema = z.object({
   observaciones,
 })
 
+// El descuento que se supone sobre una cotización para estimar lo que costaría
+// de verdad, y poder compararla contra compras que ya vienen descontadas. Es un
+// supuesto de quien lee la tabla, no un dato: viaja en la consulta y no se
+// guarda. Ver `repositories/preciosSql.ts`.
+export const DescuentoReferenciaSchema = z.coerce
+  .number()
+  .min(0, 'No puede ser negativo')
+  .max(99.99, 'El descuento no puede llegar al 100%')
+  .optional()
+
 export type PrecioProveedorCreate = z.infer<typeof PrecioProveedorCreateSchema>
 export type PrecioProveedorUpdate = z.infer<typeof PrecioProveedorUpdateSchema>

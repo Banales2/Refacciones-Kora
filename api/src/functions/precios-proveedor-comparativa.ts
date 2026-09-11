@@ -4,6 +4,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { DescuentoReferenciaSchema } from '../schemas/precioProveedorSchema'
 import * as service from '../services/preciosProveedorService'
 
 export async function preciosProveedorComparativa(
@@ -11,7 +12,10 @@ export async function preciosProveedorComparativa(
 ): Promise<HttpResponseInit> {
   try {
     requireRole(req, 'admin', 'editor', 'lector', 'viewer')
-    const data = await service.getComparativa()
+    // Ausente = el de referencia del servidor. Ver `preciosSql`.
+    const descRef = DescuentoReferenciaSchema.parse(
+      req.query.get('descuento_ref') ?? undefined)
+    const data = await service.getComparativa(undefined, descRef)
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
 }

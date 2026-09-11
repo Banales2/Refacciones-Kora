@@ -5,6 +5,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { DescuentoReferenciaSchema } from '../schemas/precioProveedorSchema'
 import * as service from '../services/preciosProveedorService'
 
 export async function preciosProveedorPieza(
@@ -14,7 +15,9 @@ export async function preciosProveedorPieza(
     requireRole(req, 'admin', 'editor', 'lector', 'viewer')
     const piezaId = parseInt(req.params.id, 10)
     if (isNaN(piezaId)) return { status: 400, jsonBody: { error: 'ID inválido' } }
-    const data = await service.getComparativaPieza(piezaId)
+    const descRef = DescuentoReferenciaSchema.parse(
+      req.query.get('descuento_ref') ?? undefined)
+    const data = await service.getComparativaPieza(piezaId, descRef)
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
 }

@@ -37,14 +37,14 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
     ['Número de serie', pieza.numero_serie],
     ['Descripción',     pieza.descripcion],
     ['Tipo',            pieza.tipo_pieza ?? 'Sin tipo'],
-    ['Proveedores que la cotizan', String(fila?.precios.length ?? 0)],
+    ['Proveedores con precio', String(fila?.precios.length ?? 0)],
   ])
 
   if (!fila || fila.precios.length === 0) {
-    pdf.seccion('Sin precios capturados')
+    pdf.seccion('Sin precios')
     pdf.vacio(
-      'Ningún proveedor tiene precio registrado para esta refacción. ' +
-      'Captúralos en Proveedores → Registrar precio.'
+      'Ningún proveedor cotiza esta refacción y nunca se le ha comprado a nadie. ' +
+      'Captura un precio en Proveedores → Registrar precio.'
     )
     pdf.guardar(nombreBase(pieza.numero_serie))
     return
@@ -82,26 +82,33 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
   // ── La tabla que se lleva a la llamada ──
   pdf.seccion(
     'Precio y tiempo de entrega por proveedor',
-    'Precio vigente de cada proveedor —el de su cotización más reciente—, del más barato al más caro. ' +
+    'Lo que cuesta con cada proveedor, del más barato al más caro, siempre CON descuento: ' +
+    'el de la factura cuando el precio sale de una compra, y el estimado ' +
+    `de ${c.descuento_referencia}% cuando sale de una cotización —que es como las mandan, a lista—. ` +
     '"Entrega" es en días naturales, tal como lo dijo el proveedor.',
   )
   pdf.tabla({
-    head: ['Proveedor', 'Precio', 'vs más barato', 'Entrega', 'Cotizado el'],
+    head: ['Proveedor', 'Precio', 'Origen', 'Lista', 'vs más barato', 'Entrega', 'Fecha'],
     body: fila.precios.map((p, i) => [
       p.proveedor,
       formatMXN(p.precio),
+      p.origen === 'pagado'
+        ? (p.descuento_pct ? `Pagado (−${p.descuento_pct}%)` : 'Pagado')
+        : `Cotizado (−${p.descuento_pct ?? 0}% est.)`,
+      formatMXN(p.precio_lista),
       i === 0 ? 'el más barato' : `+${p.sobre_mejor.toFixed(1)}%`,
       textoEntrega(p.tiempo_entrega_dias),
       formatFecha(p.fecha),
     ]),
     columnStyles: {
-      1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' },
+      1: { halign: 'right' }, 3: { halign: 'right' },
+      4: { halign: 'right' }, 5: { halign: 'right' },
     },
     didParseCell: (d: CellHookData) => {
       if (d.section !== 'body') return
       // El más barato en verde y el sobreprecio grande en rojo: son las dos
       // celdas que se buscan de un vistazo al comparar.
-      if (d.column.index === 2) {
+      if (d.column.index === 4) {
         const txt = String(d.cell.raw)
         if (txt === 'el más barato') {
           d.cell.styles.textColor = COLOR.verde
@@ -112,7 +119,7 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
       }
       // Igual con el plazo: quien entrega antes se marca, aunque no sea el
       // barato — es justo la disyuntiva que el documento tiene que mostrar.
-      if (d.column.index === 3 && fila.mejor_entrega != null) {
+      if (d.column.index === 5 && fila.mejor_entrega != null) {
         const dias = fila.precios[d.row.index]?.tiempo_entrega_dias
         if (dias != null && dias === fila.mejor_entrega) {
           d.cell.styles.textColor = COLOR.verde

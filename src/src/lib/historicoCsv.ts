@@ -8,7 +8,9 @@
 //
 // Ver `docs/importacion-historica.md`.
 import { normalizarEncabezado, parseCsv } from './csv'
-import { limpiarCodigo, limpiarTextoLibre, limpiarFolio, normalizarFolio } from './validaciones'
+import {
+  limpiarCodigo, limpiarTextoLibre, limpiarTextoSimple, limpiarFolio, normalizarFolio,
+} from './validaciones'
 
 /** Cómo vienen escritas las fechas del archivo. Ver `detectarFormatoFecha`. */
 export type FormatoFecha = 'MDA' | 'DMA'
@@ -29,6 +31,18 @@ export interface FacturaHistorica {
   renglones:    RenglonHistorico[]
 }
 
+export interface ArticuloHistorico {
+  numero_serie: string
+  descripcion:  string
+  /**
+   * El tipo de pieza tal como lo escribió el archivo, si trae esa columna. Es
+   * un NOMBRE, no un id: el archivo no sabe nada del catálogo. Quien lo importa
+   * es el que lo casa contra los tipos que existen.
+   */
+  tipo:         string | null
+  renglones:    number
+}
+
 export interface LineaRechazada {
   linea:  number
   motivo: string
@@ -41,7 +55,9 @@ export interface ArchivoHistorico {
   /** Renglones que no se pudieron leer. No entran en las facturas. */
   rechazos:  LineaRechazada[]
   /** Una entrada por número de parte distinto, con la descripción del archivo. */
-  articulos: { numero_serie: string; descripcion: string; renglones: number }[]
+  articulos: ArticuloHistorico[]
+  /** El archivo traía columna de tipo de pieza. Ver `COLUMNAS.tipo`. */
+  conTipos:  boolean
   formato:   FormatoFecha
   /** Total de renglones que sí se leyeron. */
   renglones: number
@@ -57,6 +73,11 @@ const COLUMNAS = {
   desc:   ['descripcion', 'descripcion articulo', 'concepto'],
   cant:   ['cantidad', 'cant', 'piezas'],
   costo:  ['precio unit con descuento', 'precio unitario', 'precio', 'costo unitario', 'costo', 'importe unitario'],
+  // La única opcional, y no viene de ningún sistema de facturación: la escribe
+  // quien prepara la importación. Clasificar noventa refacciones en una hoja de
+  // cálculo es trabajo de diez minutos; hacerlo en noventa desplegables de una
+  // pantalla es trabajo que nadie termina.
+  tipo:   ['tipo', 'tipo de pieza', 'tipo pieza', 'categoria', 'familia'],
 } as const
 
 export type Columna = keyof typeof COLUMNAS
@@ -69,18 +90,23 @@ export const NOMBRE_COLUMNA: Record<Columna, string> = {
   desc:  'Descripción',
   cant:  'Cantidad',
   costo: 'Precio unitario',
+  tipo:  'Tipo',
 }
 
 export class ArchivoInvalidoError extends Error {}
 
-function mapearColumnas(encabezado: string[]): Record<Columna, number> {
+// `tipo` es la única que puede no venir: el archivo tal como lo exporta el
+// proveedor no la trae, y se añade a mano solo cuando conviene.
+const OPCIONALES = new Set<Columna>(['tipo'])
+
+function mapearColumnas(encabezado: string[]): Partial<Record<Columna, number>> {
   const normalizados = encabezado.map(normalizarEncabezado)
-  const mapa = {} as Record<Columna, number>
+  const mapa: Partial<Record<Columna, number>> = {}
   const faltantes: Columna[] = []
 
   for (const clave of Object.keys(COLUMNAS) as Columna[]) {
     const i = normalizados.findIndex((h) => (COLUMNAS[clave] as readonly string[]).includes(h))
-    if (i === -1) faltantes.push(clave)
+    if (i === -1) { if (!OPCIONALES.has(clave)) faltantes.push(clave) }
     else mapa[clave] = i
   }
 
@@ -216,12 +242,14 @@ export function leerArchivoHistorico(
   const cuerpo = filas.slice(1)
   if (cuerpo.length === 0) throw new ArchivoInvalidoError('El archivo solo trae el encabezado')
 
-  const fmt = formato ?? detectarFormatoFecha(cuerpo, col.fecha)
+  // Las obligatorias ya las comprobó `mapearColumnas`; el `!` es por el
+  // Partial que devuelve para poder dejar fuera la de tipo.
+  const fmt = formato ?? detectarFormatoFecha(cuerpo, col.fecha!)
   const hoy = hoyIso()
 
   const rechazos: LineaRechazada[] = []
   const porFolio = new Map<string, FacturaHistorica>()
-  const articulos = new Map<string, { numero_serie: string; descripcion: string; renglones: number }>()
+  const articulos = new Map<string, ArticuloHistorico>()
   let renglones = 0
 
   cuerpo.forEach((fila, i) => {
@@ -231,31 +259,31 @@ export function leerArchivoHistorico(
     const crudo = fila.join(', ').trim()
     const rechazar = (motivo: string) => rechazos.push({ linea, motivo, texto: crudo })
 
-    const folio = normalizarFolio(limpiarFolio(fila[col.folio] ?? '', 30))
+    const folio = normalizarFolio(limpiarFolio(fila[col.folio!] ?? '', 30))
     if (!folio) return rechazar('Sin folio')
 
-    const fecha = aIso(fila[col.fecha] ?? '', fmt)
-    if (!fecha) return rechazar(`Fecha ilegible: "${(fila[col.fecha] ?? '').trim()}"`)
+    const fecha = aIso(fila[col.fecha!] ?? '', fmt)
+    if (!fecha) return rechazar(`Fecha ilegible: "${(fila[col.fecha!] ?? '').trim()}"`)
     if (fecha > hoy) return rechazar(`Fecha futura: ${fecha}`)
 
-    const serie = limpiarCodigo(fila[col.serie] ?? '', 20)
+    const serie = limpiarCodigo(fila[col.serie!] ?? '', 20)
     if (!serie) return rechazar('Sin número de artículo')
 
-    const cantidad = aNumero(fila[col.cant] ?? '')
+    const cantidad = aNumero(fila[col.cant!] ?? '')
     if (cantidad === null || !Number.isInteger(cantidad) || cantidad < 1 || cantidad > 999) {
-      return rechazar(`Cantidad inválida: "${(fila[col.cant] ?? '').trim()}"`)
+      return rechazar(`Cantidad inválida: "${(fila[col.cant!] ?? '').trim()}"`)
     }
 
-    const costo = aNumero(fila[col.costo] ?? '')
+    const costo = aNumero(fila[col.costo!] ?? '')
     if (costo === null || costo <= 0 || costo > 200000) {
-      return rechazar(`Precio inválido: "${(fila[col.costo] ?? '').trim()}"`)
+      return rechazar(`Precio inválido: "${(fila[col.costo!] ?? '').trim()}"`)
     }
 
     // Los saltos de línea dentro de una descripción entrecomillada son reales
     // en estas exportaciones; como texto de catálogo no aportan nada.
     const descripcion =
       limpiarTextoLibre(
-        sinComillasDeSobra((fila[col.desc] ?? '').replace(/\s+/g, ' ')), 255,
+        sinComillasDeSobra((fila[col.desc!] ?? '').replace(/\s+/g, ' ')), 255,
       ).trim()
         // La descripción solo se usa si la refacción no está en el catálogo, y
         // vacía no pasaría la validación. El número de parte es lo peor que
@@ -275,9 +303,21 @@ export function leerArchivoHistorico(
       })
     }
 
+    // El tipo se toma del primer renglón del artículo que lo traiga: un mismo
+    // número de parte no puede ser de dos tipos, y si el archivo se contradice
+    // gana el primero en vez de rechazar el renglón — la clasificación se
+    // revisa en pantalla antes de importar.
+    const tipo = col.tipo === undefined
+      ? null
+      : limpiarTextoSimple(sinComillasDeSobra((fila[col.tipo] ?? '').replace(/\s+/g, ' ')), 40).trim() || null
+
     const art = articulos.get(serie)
-    if (art) art.renglones++
-    else articulos.set(serie, { numero_serie: serie, descripcion, renglones: 1 })
+    if (art) {
+      art.renglones++
+      art.tipo ??= tipo
+    } else {
+      articulos.set(serie, { numero_serie: serie, descripcion, tipo, renglones: 1 })
+    }
     renglones++
   })
 
@@ -285,6 +325,7 @@ export function leerArchivoHistorico(
     facturas: [...porFolio.values()],
     rechazos,
     articulos: [...articulos.values()].sort((a, b) => a.numero_serie.localeCompare(b.numero_serie)),
+    conTipos: col.tipo !== undefined,
     formato: fmt,
     renglones,
   }

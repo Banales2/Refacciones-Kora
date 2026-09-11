@@ -77,22 +77,32 @@ function agrupar(items: PrecioProveedor[]): GrupoPieza[] {
 
 // ── Comparación contra los demás proveedores ──────────────────────────────────
 
-// Qué tan lejos está el precio vigente de este proveedor del mejor registrado.
-// El mejor incluye el propio, así que empatar con él es ser el más barato.
+// Qué tan lejos está este proveedor del mejor precio que hoy se consigue para
+// esa refacción. El mejor incluye el propio, así que empatar con él es ser el
+// más barato.
+//
+// No se comparan los números de los papeles: se compara lo que cada refacción
+// costaría de verdad. Esta cotización va con el descuento de referencia
+// aplicado (`precio_comparable`), y el mejor puede venir de otra cotización o
+// de lo que ya se le paga a un proveedor al que se le compra — comparar una
+// lista contra una compra ya descontada le daba la razón al que nunca cotiza.
 function ComparativaBadge({ vigente }: { vigente: PrecioProveedor }) {
   const mejor = vigente.mejor_precio != null ? Number(vigente.mejor_precio) : null
-  const precio = Number(vigente.precio)
+  const precio = Number(vigente.precio_comparable)
+  const base =
+    `Comparado sobre el precio con descuento: ` +
+    `${formatMXN(vigente.precio)} de lista − ${vigente.descuento_referencia}% = ${formatMXN(precio)}`
 
   if (mejor == null || vigente.proveedores_con_precio <= 1) {
     return (
-      <Tooltip label="Ningún otro proveedor tiene precio registrado para esta refacción">
+      <Tooltip label="Ningún otro proveedor cotiza esta refacción ni se le ha comprado a nadie más">
         <Badge variant="light" color="gray">Sin comparación</Badge>
       </Tooltip>
     )
   }
   if (precio <= mejor) {
     return (
-      <Tooltip label={`El más barato de ${vigente.proveedores_con_precio} proveedores con precio`}>
+      <Tooltip label={`El más barato de ${vigente.proveedores_con_precio} proveedores con precio. ${base}`}>
         <Badge variant="light" color="green">Más barato</Badge>
       </Tooltip>
     )
@@ -100,8 +110,14 @@ function ComparativaBadge({ vigente }: { vigente: PrecioProveedor }) {
 
   const diferencia = precio - mejor
   const porcentaje = (diferencia / mejor) * 100
+  const comoEsElMejor = vigente.mejor_origen === 'pagado'
+    ? 'lo que ya se le paga'
+    : 'su cotización con descuento'
   return (
-    <Tooltip label={`${formatMXN(mejor)} con ${vigente.mejor_proveedor} · ${formatMXN(diferencia)} de diferencia`}>
+    <Tooltip
+      label={`${formatMXN(mejor)} con ${vigente.mejor_proveedor} (${comoEsElMejor}) · ` +
+             `${formatMXN(diferencia)} de diferencia. ${base}`}
+    >
       <Badge variant="light" color="orange">
         +{porcentaje.toFixed(1)}% vs {vigente.mejor_proveedor}
       </Badge>
