@@ -92,10 +92,13 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
     body: fila.precios.map((p, i) => [
       p.proveedor,
       formatMXN(p.precio),
+      // Una compra sin descuento declarado no es una compra sin descuento: hoy
+      // los precios se capturan ya descontados y sin desglosar, así que "−0%"
+      // afirmaría algo que no se sabe. Ver `docs/comparacion-de-precios.md`.
       p.origen === 'pagado'
-        ? (p.descuento_pct ? `Pagado (−${p.descuento_pct}%)` : 'Pagado')
+        ? (p.descuento_pct ? `Pagado (−${p.descuento_pct}%)` : 'Pagado (sin desglose)')
         : `Cotizado (−${p.descuento_pct ?? 0}% est.)`,
-      formatMXN(p.precio_lista),
+      p.descuento_pct ? formatMXN(p.precio_lista) : '—',
       i === 0 ? 'el más barato' : `+${p.sobre_mejor.toFixed(1)}%`,
       textoEntrega(p.tiempo_entrega_dias),
       formatFecha(p.fecha),

@@ -48,6 +48,22 @@ Cada precio de la comparativa lleva su `origen` (`cotizado` / `pagado`), su
 `precio_lista` y si el descuento fue `estimado`, para que nadie tenga que
 adivinar qué se está comparando.
 
+### Una compra sin descuento declarado no es una compra sin descuento
+
+`facturas.descuento_pct` en NULL significa hoy dos cosas que desde el código no
+se distinguen: que esa compra no tuvo descuento, o —el caso de todo lo que se
+captura hoy, incluido el histórico importado— que **el precio ya venía
+descontado y el porcentaje no se desglosó**.
+
+El comparable sale bien en los dos casos: el número capturado ES lo que se pagó.
+Lo que no se puede afirmar es el precio de lista, así que los reportes marcan
+esas compras como **"Pagado (sin desglose)"** y dejan la columna *Lista* en "—",
+en vez de decir "−0%" y enseñar el neto como si fuera lista.
+
+Cuando la captura pase a lista + descuento de la factura, esas compras empiezan
+a traer su porcentaje y se etiquetan solas como "Pagado (−10%)". No hay nada que
+migrar: las dos épocas dan el mismo precio comparable.
+
 ### El IVA se queda fuera, a propósito
 
 `facturas.tasa_iva` en NULL significa que el precio capturado **ya lo incluye**

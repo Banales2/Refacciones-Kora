@@ -15,7 +15,7 @@
 // razón al proveedor que nunca cotiza. El supuesto que se usa para las
 // cotizaciones viaja en `descuento_referencia` y se imprime, porque es un
 // supuesto y quien lea la tabla tiene que poder discutirlo.
-import type { ComparativaPrecios } from '../../hooks/usePreciosProveedor'
+import type { ComparativaPrecios, PrecioDeProveedor } from '../../hooks/usePreciosProveedor'
 import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
 import { formatMXN, formatFecha } from '../formato'
@@ -25,11 +25,30 @@ function nombreBase(): string {
   return `comparativa-precios-${hoyISO()}`
 }
 
-/** Cómo se lee un precio en la tabla: de dónde salió y sobre qué se descontó. */
-function textoOrigen(p: { origen: 'cotizado' | 'pagado'; descuento_pct: number | null }): string {
-  return p.origen === 'pagado'
-    ? (p.descuento_pct ? `Pagado (−${p.descuento_pct}%)` : 'Pagado')
-    : `Cotizado (−${p.descuento_pct ?? 0}% est.)`
+// Cómo se lee un precio en la tabla: de dónde salió y sobre qué se descontó.
+//
+// UNA COMPRA SIN DESCUENTO DECLARADO NO ES UNA COMPRA SIN DESCUENTO. Hoy los
+// precios se capturan ya descontados y sin desglosar —así entró todo el
+// histórico—, así que `descuento_pct` en NULL puede significar dos cosas que
+// desde aquí no se distinguen: que no hubo descuento, o que ya venía aplicado.
+// Decir "−0%" elegía una de las dos y casi siempre la equivocada; "sin
+// desglose" dice lo único que de verdad se sabe. Cuando la captura pase a
+// lista + descuento de factura, estas compras empezarán a caer en el primer
+// caso solas. Ver `docs/comparacion-de-precios.md`.
+function textoOrigen(p: PrecioDeProveedor): string {
+  if (p.origen === 'cotizado') return `Cotizado (−${p.descuento_pct ?? 0}% est.)`
+  return p.descuento_pct ? `Pagado (−${p.descuento_pct}%)` : 'Pagado (sin desglose)'
+}
+
+/** Cómo se llegó al precio con descuento, para la hoja larga de Excel. */
+function textoDescuento(p: PrecioDeProveedor, ref: number): string {
+  if (p.origen === 'cotizado') return `Estimado (${ref}%)`
+  return p.descuento_pct ? 'Descuento de la factura' : 'Ya venía descontado, sin desglose'
+}
+
+/** El de lista solo se enseña cuando se sabe: sin desglose, no hay tal número. */
+function textoLista(p: PrecioDeProveedor): string {
+  return p.descuento_pct ? formatMXN(p.precio_lista) : '—'
 }
 
 function notaDeBase(c: ComparativaPrecios): string {
@@ -37,7 +56,9 @@ function notaDeBase(c: ComparativaPrecios): string {
     'Todos los precios van con descuento aplicado. Los de las compras llevan el ' +
     'de su factura; las cotizaciones se estiman con ' +
     `${c.descuento_referencia}% de descuento, que es el que se suele conseguir por volumen. ` +
-    'La columna "origen" dice cuál es cuál.'
+    'La columna "origen" dice cuál es cuál. Una compra "sin desglose" es una que ' +
+    'se capturó con el precio ya descontado: el número es el que se pagó, pero no ' +
+    'se sabe de qué lista salió.'
   )
 }
 
@@ -153,7 +174,7 @@ export async function exportComparativaPreciosPdf(c: ComparativaPrecios) {
         pr.proveedor,
         formatMXN(pr.precio),
         textoOrigen(pr),
-        formatMXN(pr.precio_lista),
+        textoLista(pr),
         textoEntrega(pr.tiempo_entrega_dias),
         formatFecha(pr.fecha),
         i === 0 ? 'el más barato' : `+${pr.sobre_mejor.toFixed(1)}%`,
@@ -240,9 +261,10 @@ export async function exportComparativaPreciosExcel(c: ComparativaPrecios) {
     { header: 'Proveedor',   width: 28, valor: (x) => x.precio.proveedor },
     { header: 'Precio con descuento', width: 18, formato: 'moneda', valor: (x) => x.precio.precio },
     { header: 'Origen',      width: 12, valor: (x) => x.precio.origen === 'pagado' ? 'Pagado' : 'Cotizado' },
-    { header: 'Precio de lista', width: 16, formato: 'moneda', valor: (x) => x.precio.precio_lista },
+    { header: 'Precio de lista', width: 16, valor: (x) => textoLista(x.precio) },
     { header: 'Descuento %', width: 12, formato: 'porcentaje', valor: (x) => x.precio.descuento_pct ?? 0 },
-    { header: 'Descuento estimado', width: 18, valor: (x) => x.precio.estimado ? 'Sí' : 'No' },
+    { header: 'Cómo se descontó', width: 30,
+      valor: (x) => textoDescuento(x.precio, c.descuento_referencia) },
     { header: 'Entrega (días)', width: 14, valor: (x) => x.precio.tiempo_entrega_dias ?? '—' },
     { header: 'Fecha',       width: 13, formato: 'fecha',  valor: (x) => new Date(`${x.precio.fecha}T12:00:00`) },
     // La otra fuente del mismo proveedor: el contraste con el que se negocia

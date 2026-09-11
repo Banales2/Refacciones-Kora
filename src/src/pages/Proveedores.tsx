@@ -8,11 +8,10 @@
 import { useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert,
-  Button, ActionIcon, Modal, Menu, Tooltip, TextInput, NumberInput,
+  Button, ActionIcon, Modal, Tooltip, TextInput,
 } from '@mantine/core'
 import {
-  IconPencil, IconTrash, IconPlus, IconFileTypePdf, IconFileSpreadsheet, IconScale,
-  IconSearch,
+  IconPencil, IconTrash, IconPlus, IconScale, IconSearch,
 } from '@tabler/icons-react'
 import {
   useProveedores, useCreateProveedor, useUpdateProveedor, useDeleteProveedor,
@@ -20,10 +19,7 @@ import {
 import type { Proveedor } from '../hooks/useProveedores'
 import ProveedorForm from '../components/ProveedorForm'
 import ProveedorDetalle from './ProveedorDetalle'
-import { useComparativaPrecios } from '../hooks/usePreciosProveedor'
-import {
-  exportComparativaPreciosPdf, exportComparativaPreciosExcel,
-} from '../lib/reportes/comparativaPrecios'
+import ComparativaPrecios from './ComparativaPrecios'
 
 export default function Proveedores() {
   const [createOpen, setCreateOpen]       = useState(false)
@@ -31,33 +27,13 @@ export default function Proveedores() {
   const [deleteProveedor, setDeleteProveedor] = useState<Proveedor | null>(null)
   // Proveedor cuyo detalle está abierto; null = la lista.
   const [detalleId, setDetalleId] = useState<number | null>(null)
+  // La comparativa cruza todas las refacciones contra todos los proveedores, así
+  // que no cabe dentro de uno: sustituye a la lista, como el detalle.
+  const [comparativaAbierta, setComparativaAbierta] = useState(false)
   // Filtro de la barra de búsqueda del catálogo.
   const [busqueda, setBusqueda] = useState('')
-  // El descuento que se supone sobre una cotización para compararla contra
-  // compras que ya vienen descontadas. Por volumen casi siempre nos hacen ~10%,
-  // así que ese es el punto de partida; se mueve para las excepciones. No se
-  // guarda en ningún lado: es un supuesto de quien lee la tabla.
-  const [descuentoRef, setDescuentoRef] = useState<number | string>(10)
 
   const { data, isLoading, isError } = useProveedores()
-  // La comparativa cruza todas las refacciones contra todos los proveedores. Se
-  // carga aqui —y no dentro del detalle de uno— porque la pregunta que contesta
-  // es de compras en general: "de todo lo que compramos, que conviene mover".
-  const { data: comparativa } = useComparativaPrecios(
-    typeof descuentoRef === 'number' ? descuentoRef : undefined)
-  const [generando, setGenerando] = useState<'pdf' | 'excel' | null>(null)
-
-  async function generarComparativa(formato: 'pdf' | 'excel') {
-    if (!comparativa) return
-    setGenerando(formato)
-    try {
-      await (formato === 'pdf' ? exportComparativaPreciosPdf : exportComparativaPreciosExcel)(comparativa.data)
-    } catch (e) {
-      alert((e as Error).message)
-    } finally {
-      setGenerando(null)
-    }
-  }
 
   const createMut = useCreateProveedor()
   const updateMut = useUpdateProveedor()
@@ -70,6 +46,9 @@ export default function Proveedores() {
   const detalle = proveedores.find((p) => p.id === detalleId) ?? null
   if (detalle) {
     return <ProveedorDetalle proveedor={detalle} onBack={() => setDetalleId(null)} />
+  }
+  if (comparativaAbierta) {
+    return <ComparativaPrecios onBack={() => setComparativaAbierta(false)} />
   }
 
   // El catálogo cabe entero en memoria, así que el filtro es local: responde
@@ -102,62 +81,17 @@ export default function Proveedores() {
             w={280}
           />
           <Group gap="xs">
-            {/* La comparativa vive junto al catalogo de proveedores y no dentro
+            {/* La comparativa vive junto al catálogo de proveedores y no dentro
                 de uno: comparar precios es justamente mirar a todos a la vez. */}
-            <Menu shadow="md" position="bottom-end" width={300}>
-              <Menu.Target>
-                <Tooltip
-                  label={comparativa && comparativa.data.piezas.length === 0
-                    ? 'Todavia no hay precios capturados que comparar'
-                    : 'Cada refaccion con el precio vigente de todos los proveedores'}
-                >
-                  <Button
-                    size="xs" variant="default"
-                    leftSection={<IconScale size={14} />}
-                    loading={generando !== null}
-                    disabled={!comparativa}
-                  >
-                    Comparativa de precios
-                  </Button>
-                </Tooltip>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Label>
-                  {comparativa
-                    ? `${comparativa.data.totales.refacciones} refacciones · ` +
-                      `${comparativa.data.totales.comparables} comparables`
-                    : 'Cargando…'}
-                </Menu.Label>
-                {/* Las cotizaciones vienen a precio de lista y las compras ya
-                    con el descuento de la factura. Sin traerlas a la misma
-                    base, el proveedor que cotiza sale caro siempre. */}
-                <NumberInput
-                  px="xs" pb="xs"
-                  size="xs"
-                  label="Descuento que nos suelen hacer"
-                  description="Se aplica a las cotizaciones para compararlas contra lo que ya se paga"
-                  suffix="%"
-                  min={0}
-                  max={99}
-                  decimalScale={2}
-                  value={descuentoRef}
-                  onChange={setDescuentoRef}
-                  onKeyDown={(e) => e.stopPropagation()}
-                />
-                <Menu.Item
-                  leftSection={<IconFileTypePdf size={16} />}
-                  onClick={() => generarComparativa('pdf')}
-                >
-                  PDF — para negociar
-                </Menu.Item>
-                <Menu.Item
-                  leftSection={<IconFileSpreadsheet size={16} />}
-                  onClick={() => generarComparativa('excel')}
-                >
-                  Excel — tabla por proveedor
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
+            <Tooltip label="Cada refacción con lo que cuesta con cada proveedor: lo que cotizan y lo que ya se les paga">
+              <Button
+                size="xs" variant="default"
+                leftSection={<IconScale size={14} />}
+                onClick={() => setComparativaAbierta(true)}
+              >
+                Comparativa de precios
+              </Button>
+            </Tooltip>
             <Button
               size="xs"
               leftSection={<IconPlus size={14} />}
