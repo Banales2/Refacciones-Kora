@@ -39,11 +39,12 @@ export const SIN_RESPUESTA = 0
 
 async function request<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  timeoutMs: number = TIMEOUT_MS,
 ): Promise<T> {
   // AbortSignal.timeout no sirve aquí: hay navegadores en uso que no lo traen.
   const ctrl = new AbortController()
-  const corte = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
+  const corte = setTimeout(() => ctrl.abort(), timeoutMs)
 
   let res: Response
   try {
@@ -102,8 +103,14 @@ export function esReintentable(err: unknown): boolean {
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+  /**
+   * `timeoutMs` solo se pasa donde el tope normal no alcanza de verdad: la
+   * importación de un histórico son cientos de INSERT en una transacción, y
+   * cortarla a los 30 s la deja a medias en el cliente mientras el servidor la
+   * termina. Para todo lo demás, el tope de arriba.
+   */
+  post: <T>(path: string, body: unknown, timeoutMs?: number) =>
+    request<T>(path, { method: 'POST', body: JSON.stringify(body) }, timeoutMs),
   put: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),

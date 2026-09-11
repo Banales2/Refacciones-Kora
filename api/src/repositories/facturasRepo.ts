@@ -41,6 +41,12 @@ export interface Factura {
   descuento_pct: number | null
   comprado_por: string
   autorizado_por: string
+  /**
+   * Se cargó de un histórico: la compra es real y su gasto cuenta, pero las
+   * piezas ya se habían usado cuando se capturó y sus renglones nacieron con
+   * existencia cero. Ver `db/migrations/028_facturas_historicas.sql`.
+   */
+  historica: boolean
   detalle: FacturaRenglon[]
 }
 
@@ -116,6 +122,7 @@ export async function findAll(
     SELECT f.id, f.folio AS num_factura, f.proveedor_id, pr.nombre AS proveedor,
            CONVERT(char(10), f.fecha_compra, 23) AS fecha_compra,
            f.tasa_iva, f.descuento_pct, f.comprado_por, f.autorizado_por,
+           f.historica,
            (SELECT COUNT(*) FROM lotes_pieza l WHERE l.factura_id = f.id) AS renglones,
            COALESCE((SELECT SUM(l.costo_unitario * l.cantidad_inicial)
                      FROM lotes_pieza l WHERE l.factura_id = f.id), 0) AS subtotal

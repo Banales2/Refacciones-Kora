@@ -269,6 +269,12 @@ export interface GastoProveedor {
   num_factura:    string | null
   sucursal:       string | null
   comprado_por:   string
+  /**
+   * La factura se cargó de un histórico: la compra es real y el gasto cuenta,
+   * pero las piezas ya se habían usado cuando entraron y su existencia nació en
+   * cero. Ver `db/migrations/028_facturas_historicas.sql`.
+   */
+  historica:      boolean
 }
 
 export async function findGastosDeProveedor(proveedorId: number): Promise<GastoProveedor[]> {
@@ -282,7 +288,8 @@ export async function findGastosDeProveedor(proveedorId: number): Promise<GastoP
              tp.nombre AS tipo_pieza,
              l.cantidad_inicial AS cantidad, l.costo_unitario,
              l.cantidad_inicial * l.costo_unitario AS total,
-             fac.folio AS num_factura, s.nombre AS sucursal, fac.comprado_por
+             fac.folio AS num_factura, s.nombre AS sucursal, fac.comprado_por,
+             fac.historica
       FROM lotes_pieza l
       -- JOIN y no LEFT: es el gasto CON este proveedor, así que solo cuentan
       -- los renglones que salieron de una factura suya.

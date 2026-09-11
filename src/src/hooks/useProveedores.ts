@@ -67,6 +67,12 @@ export interface GastoProveedor {
   num_factura:    string | null
   sucursal:       string | null
   comprado_por:   string
+  /**
+   * La factura se cargó de un histórico: la compra es real y el gasto cuenta,
+   * pero las piezas ya se habían usado cuando entraron y su existencia nació en
+   * cero. Ver `docs/importacion-historica.md`.
+   */
+  historica:      boolean
 }
 
 export function useGastosProveedor(proveedorId: number) {

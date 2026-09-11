@@ -19,6 +19,7 @@ import {
 import {
   IconPencil, IconTrash, IconPlus, IconArrowLeft, IconPhone, IconUser,
   IconTag, IconReceipt, IconSearch, IconFileTypePdf, IconFileSpreadsheet,
+  IconFileImport,
 } from '@tabler/icons-react'
 import SelectorPeriodoReporte from '../components/SelectorPeriodoReporte'
 import {
@@ -35,6 +36,7 @@ import type { PrecioProveedor } from '../hooks/usePreciosProveedor'
 import { useGastosProveedor } from '../hooks/useProveedores'
 import type { Proveedor, GastoProveedor } from '../hooks/useProveedores'
 import PrecioProveedorForm from '../components/PrecioProveedorForm'
+import ImportarHistoricoModal from '../components/ImportarHistoricoModal'
 
 function formatMXN(n: number) {
   return Number(n).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -223,6 +225,12 @@ type FacturaDeGastos = {
   /** null = compras sin factura registrada. */
   folio:   string | null
   total:   number
+  /**
+   * Se cargó de un histórico: el gasto es real, pero sus piezas ya estaban
+   * usadas cuando entraron y no sumaron nada al almacén. Se marca para que un
+   * renglón con existencia cero no se lea como un descuadre.
+   */
+  historica: boolean
   compras: GastoProveedor[]
 }
 
@@ -233,7 +241,7 @@ function agruparPorFactura(compras: GastoProveedor[]): FacturaDeGastos[] {
     // El prefijo evita que un folio llamado "sin-factura" caiga en el bloque
     // de las compras que no la tienen.
     const clave = folio === null ? 'sin-factura' : `f:${folio}`
-    const entry = map.get(clave) ?? { folio, total: 0, compras: [] }
+    const entry = map.get(clave) ?? { folio, total: 0, historica: c.historica, compras: [] }
     entry.total += c.total
     entry.compras.push(c)
     map.set(clave, entry)
@@ -303,6 +311,11 @@ function FacturaBloque({ factura }: { factura: FacturaDeGastos }) {
             <Text size="sm" fw={600} c="dimmed">Sin factura</Text>
           )}
           {fecha && <Text size="xs" c="dimmed">{formatFecha(fecha)}</Text>}
+          {factura.historica && (
+            <Tooltip label="Cargada de un histórico: las piezas ya se habían usado, así que entraron con existencia cero">
+              <Badge size="xs" variant="light" color="gray">Histórica</Badge>
+            </Tooltip>
+          )}
         </Group>
         <Group gap="sm" wrap="nowrap">
           <Text size="xs" c="dimmed">
@@ -321,6 +334,7 @@ function GastosPanel({ proveedor }: { proveedor: Proveedor }) {
   const [periodo, setPeriodo]   = useState<Periodo>(PERIODO_DEFAULT)
   const [busqueda, setBusqueda] = useState('')
   const [exportando, setExportando] = useState<'pdf' | 'excel' | null>(null)
+  const [importarOpen, setImportarOpen] = useState(false)
 
   const todos = useMemo(() => data?.data ?? [], [data])
 
@@ -350,6 +364,28 @@ function GastosPanel({ proveedor }: { proveedor: Proveedor }) {
     }
   }
 
+  // El botón aparece en los dos estados —con compras y sin ellas—: el caso
+  // típico de una importación es justamente el proveedor al que todavía no se
+  // le ha capturado nada en el sistema.
+  const botonImportar = (
+    <Tooltip label="Cargar facturas viejas desde un CSV. Cuentan como gasto pero no entran al almacén: sus piezas ya se usaron.">
+      <Button
+        variant="default"
+        leftSection={<IconFileImport size={16} />}
+        onClick={() => setImportarOpen(true)}
+      >
+        Importar histórico
+      </Button>
+    </Tooltip>
+  )
+  const modalImportar = (
+    <ImportarHistoricoModal
+      opened={importarOpen}
+      onClose={() => setImportarOpen(false)}
+      proveedor={proveedor}
+    />
+  )
+
   if (isLoading) return <Center py="xl"><Loader /></Center>
   if (isError) {
     return (
@@ -360,14 +396,18 @@ function GastosPanel({ proveedor }: { proveedor: Proveedor }) {
   }
   if (todos.length === 0) {
     return (
-      <Center py="xl">
-        <Stack align="center" gap="xs">
-          <Text c="dimmed">A este proveedor todavía no se le ha comprado nada.</Text>
-          <Text size="sm" c="dimmed">
-            Las compras aparecen aquí en cuanto se registra un lote a su nombre.
-          </Text>
-        </Stack>
-      </Center>
+      <>
+        <Center py="xl">
+          <Stack align="center" gap="xs">
+            <Text c="dimmed">A este proveedor todavía no se le ha comprado nada.</Text>
+            <Text size="sm" c="dimmed">
+              Las compras aparecen aquí en cuanto se registra un lote a su nombre.
+            </Text>
+            {botonImportar}
+          </Stack>
+        </Center>
+        {modalImportar}
+      </>
     )
   }
 
@@ -394,6 +434,7 @@ function GastosPanel({ proveedor }: { proveedor: Proveedor }) {
             onChange={(e) => setBusqueda(e.currentTarget.value)}
           />
           <Group gap="xs">
+            {botonImportar}
             <Button
               variant="light" leftSection={<IconFileTypePdf size={16} />}
               loading={exportando === 'pdf'} disabled={!listo || exportando !== null}
@@ -467,6 +508,7 @@ function GastosPanel({ proveedor }: { proveedor: Proveedor }) {
       </Accordion>
         </>
       )}
+      {modalImportar}
     </Stack>
   )
 }
