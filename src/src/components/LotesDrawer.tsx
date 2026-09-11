@@ -134,7 +134,11 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
           )
         }
         position="right"
-        size="xl"
+        // La tabla de lotes pide 840px de ancho mínimo: con el "xl" de Mantine
+        // (640px) las últimas columnas quedaban fuera y había que buscarlas
+        // hacia la derecha. Se le da el ancho que la tabla necesita, sin pasar
+        // de la pantalla en equipos angostos.
+        size="min(1100px, 95vw)"
         overlayProps={{ backgroundOpacity: 0.3 }}
       >
         {isLoading ? (
