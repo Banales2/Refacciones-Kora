@@ -74,8 +74,6 @@ export interface PrecioDeProveedor {
    */
   estimado:     boolean
   fecha:        string
-  /** Días naturales en que surte ese proveedor. Null si no se capturó. */
-  tiempo_entrega_dias: number | null
   /** Cuánto más caro es que el mejor precio de esa refacción, en porcentaje. */
   sobre_mejor:  number
   /**
@@ -120,9 +118,6 @@ export interface FilaComparativa {
   ultima_compra:    string | null
   /** Lo que se paga de más hoy contra el mejor precio disponible, por unidad. */
   ahorro_unitario:  number | null
-  /** El plazo más corto entre los proveedores que lo capturaron. */
-  mejor_entrega:          number | null
-  mejor_entrega_proveedor: string | null
   /**
    * La mayor subida entre los precios vigentes de esta refacción, contra el
    * registro anterior de cada proveedor. Es lo que ordena la tabla cuando no
@@ -188,8 +183,7 @@ export async function getComparativa(
       mejor_precio: 0, mejor_proveedor: '', peor_precio: 0, peor_proveedor: '',
       diferencia: 0, diferencia_pct: 0,
       ultimo_pagado: null, ultimo_proveedor: null, ultima_compra: null,
-      ahorro_unitario: null, mejor_entrega: null, mejor_entrega_proveedor: null,
-      alza_pct: null,
+      ahorro_unitario: null, alza_pct: null,
     }
     porPieza.set(c.pieza_id, fila)
 
@@ -206,7 +200,7 @@ export async function getComparativa(
       precio: c.precio, origen: c.origen,
       precio_lista: c.precio_lista, descuento_pct: c.descuento_pct,
       estimado: c.origen === 'cotizado',
-      fecha: c.fecha, tiempo_entrega_dias: c.tiempo_entrega_dias,
+      fecha: c.fecha,
       sobre_mejor: 0,
       registros:        c.registros,
       precio_anterior:  c.precio_anterior,
@@ -270,16 +264,6 @@ export async function getComparativa(
       .map((p) => p.cambio_pct)
       .filter((x): x is number => x != null && x > 0)
     fila.alza_pct = alzas.length ? Math.max(...alzas) : null
-
-    // El más barato no siempre es el que entrega antes: con la unidad parada,
-    // el plazo pesa tanto como el precio, así que la fila lleva los dos.
-    const conEntrega = fila.precios.filter((p) => p.tiempo_entrega_dias != null)
-    if (conEntrega.length) {
-      const rapido = conEntrega.reduce((a, b) =>
-        b.tiempo_entrega_dias! < a.tiempo_entrega_dias! ? b : a)
-      fila.mejor_entrega           = rapido.tiempo_entrega_dias
-      fila.mejor_entrega_proveedor = rapido.proveedor
-    }
   }
 
   // Primero lo que más margen tiene: es donde una llamada al proveedor rinde

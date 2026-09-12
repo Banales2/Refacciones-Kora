@@ -14,8 +14,6 @@ export interface PrecioProveedor {
   pieza_id:       number
   precio:         number
   fecha:          string
-  /** En cuántos días naturales surte ese proveedor. Null si no se capturó. */
-  tiempo_entrega_dias: number | null
   observaciones:  string | null
   registrado_por: string
   /**
@@ -48,7 +46,6 @@ export interface PrecioProveedorPayload {
   pieza_id:       number
   precio:         number
   fecha:          string
-  tiempo_entrega_dias?: number | null
   observaciones?: string | null
 }
 
@@ -117,8 +114,6 @@ export interface PrecioDeProveedor {
    */
   estimado:     boolean
   fecha:        string
-  /** Días naturales en que surte ese proveedor. Null si no se capturó. */
-  tiempo_entrega_dias: number | null
   /** Cuánto más caro es que el mejor precio de esa refacción, en porcentaje. */
   sobre_mejor:  number
   /**
@@ -159,9 +154,6 @@ export interface FilaComparativa {
   ultimo_proveedor: string | null
   ultima_compra:    string | null
   ahorro_unitario:  number | null
-  /** El plazo más corto entre los proveedores que lo capturaron. */
-  mejor_entrega:           number | null
-  mejor_entrega_proveedor: string | null
   /** La mayor subida de precio entre sus proveedores, contra el registro previo. */
   alza_pct:                number | null
 }

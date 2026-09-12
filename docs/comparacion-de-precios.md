@@ -111,6 +111,16 @@ negocia: *"te pago 92 y me cotizas 105"*.
 
 ## Lo que NO se hace, y por qué
 
+**No se guarda el tiempo de entrega.** Lo hizo la migración 009 y lo deshace la
+030: el plazo se capturaba junto a cada cotización, como si fuera de la
+refacción, cuando en realidad es del proveedor —y se mueve—. Un número
+capturado el día de la cotización envejece sin que nadie se entere, y a la hora
+de comprar hay que llamar al proveedor de todos modos: guardarlo no ahorraba la
+llamada, solo ponía en pantalla una cifra en la que se podía confiar por error.
+Si algún día hace falta, lo que corresponde es medirlo de las compras reales
+(fecha de pedido contra fecha de llegada), que es un dato y no una promesa.
+
+
 **No se copian los precios pagados a `precios_proveedor`.** Sería lo fácil —
 insertar una cotización por cada compra — y está mal por dos razones:
 

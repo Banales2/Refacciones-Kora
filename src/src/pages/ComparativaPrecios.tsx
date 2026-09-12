@@ -20,7 +20,6 @@ import {
   IconAlertTriangle,
 } from '@tabler/icons-react'
 import { formatMXN, formatFecha, formatFechaCorta } from '../lib/formato'
-import { textoEntrega } from '../lib/reportes/comparativaPieza'
 import {
   exportComparativaPreciosPdf, exportComparativaPreciosExcel,
 } from '../lib/reportes/comparativaPrecios'
@@ -95,7 +94,6 @@ function detalleDelPrecio(p: PrecioDeProveedor): string {
       )
     }
   }
-  if (p.tiempo_entrega_dias != null) partes.push(`entrega ${textoEntrega(p.tiempo_entrega_dias)}`)
   if (p.otro) {
     partes.push(
       `también ${p.otro.origen} a ${formatMXN(p.otro.precio)} (${formatFecha(p.otro.fecha)})`,
@@ -147,7 +145,6 @@ function DetalleModal({
                 <Table.Th style={{ width: 120, textAlign: 'right' }}>Precio</Table.Th>
                 <Table.Th style={{ width: 110 }}>Origen</Table.Th>
                 <Table.Th style={{ width: 110, textAlign: 'right' }}>Lista</Table.Th>
-                <Table.Th style={{ width: 100 }}>Entrega</Table.Th>
                 <Table.Th style={{ width: 110 }}>Fecha</Table.Th>
                 <Table.Th style={{ width: 150 }}>Cómo cambió</Table.Th>
                 <Table.Th style={{ width: 90, textAlign: 'right' }}>vs mejor</Table.Th>
@@ -174,9 +171,6 @@ function DetalleModal({
                       capturado ya venía descontado. */}
                   <Table.Td style={{ textAlign: 'right' }} c={p.descuento_pct ? undefined : 'dimmed'}>
                     <Text size="sm">{p.descuento_pct ? formatMXN(p.precio_lista) : '—'}</Text>
-                  </Table.Td>
-                  <Table.Td c={p.tiempo_entrega_dias == null ? 'dimmed' : undefined}>
-                    <Text size="sm">{textoEntrega(p.tiempo_entrega_dias)}</Text>
                   </Table.Td>
                   <Table.Td><Text size="sm">{formatFecha(p.fecha)}</Text></Table.Td>
                   <Table.Td>

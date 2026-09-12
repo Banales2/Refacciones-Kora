@@ -9,8 +9,6 @@ export interface PrecioProveedor {
   pieza_id:       number
   precio:         number
   fecha:          string
-  /** En cuántos días naturales surte ese proveedor. Null si no se capturó. */
-  tiempo_entrega_dias: number | null
   observaciones:  string | null
   registrado_por: string
   /**
@@ -95,7 +93,7 @@ const CTE_COMPARATIVA = `
 const SELECT_PRECIO = `
   SELECT pp.id, pp.proveedor_id, pp.pieza_id, pp.precio,
          CONVERT(char(10), pp.fecha, 23) AS fecha,
-         pp.tiempo_entrega_dias, pp.observaciones, pp.registrado_por,
+         pp.observaciones, pp.registrado_por,
          p.numero_serie AS pieza_serie, p.descripcion AS pieza,
          tp.nombre AS tipo_pieza,
          CAST(CASE WHEN v.rn = 1 THEN 1 ELSE 0 END AS BIT) AS vigente,
@@ -163,14 +161,13 @@ export async function create(
     .input('pieza_id',       sql.Int,             data.pieza_id)
     .input('precio',         sql.Decimal(18, 2),  data.precio)
     .input('fecha',          sql.Date,            data.fecha)
-    .input('entrega',        sql.Int,             data.tiempo_entrega_dias ?? null)
     .input('observaciones',  sql.NVarChar(255),   data.observaciones ?? null)
     .input('registrado_por', sql.NVarChar(120),   registradoPor)
     .query(`
       INSERT INTO precios_proveedor
-        (proveedor_id, pieza_id, precio, fecha, tiempo_entrega_dias, observaciones, registrado_por)
+        (proveedor_id, pieza_id, precio, fecha, observaciones, registrado_por)
       OUTPUT INSERTED.id
-      VALUES (@proveedor_id, @pieza_id, @precio, @fecha, @entrega, @observaciones, @registrado_por)
+      VALUES (@proveedor_id, @pieza_id, @precio, @fecha, @observaciones, @registrado_por)
     `)
   return findById(r.recordset[0].id) as Promise<PrecioProveedor>
 }
@@ -189,10 +186,6 @@ export async function update(id: number, data: PrecioProveedorUpdate): Promise<P
   if (data.fecha !== undefined) {
     req.input('fecha', sql.Date, data.fecha)
     sets.push('fecha = @fecha')
-  }
-  if (data.tiempo_entrega_dias !== undefined) {
-    req.input('entrega', sql.Int, data.tiempo_entrega_dias ?? null)
-    sets.push('tiempo_entrega_dias = @entrega')
   }
   if (data.observaciones !== undefined) {
     req.input('observaciones', sql.NVarChar(255), data.observaciones ?? null)
@@ -277,8 +270,6 @@ export interface PrecioComparable {
    */
   descuento_pct: number | null
   fecha:         string
-  /** Solo en las cotizaciones: una compra no dice en cuántos días surte. */
-  tiempo_entrega_dias: number | null
   /**
    * Cómo llegó ese proveedor a ese precio. `precio` es el vigente —el último
    * registro—, pero detrás suele haber más: con un solo proveedor en el
@@ -323,7 +314,7 @@ export async function findComparables(
              ${precioCotizado('pp')} AS precio,
              pp.precio AS precio_lista,
              @descRef  AS descuento_pct,
-             pp.fecha, pp.tiempo_entrega_dias,
+             pp.fecha,
              -- Desempate dentro del mismo día: sin él, cuál es el vigente entre
              -- dos registros de la misma fecha lo decidiría el motor.
              pp.id AS orden
@@ -349,7 +340,6 @@ export async function findComparables(
              lo.costo_unitario AS precio_lista,
              c.descuento_pct,
              c.fecha,
-             CAST(NULL AS INT) AS tiempo_entrega_dias,
              c.lote_id AS orden
       FROM compras c
       JOIN lotes_pieza lo ON lo.id = c.lote_id
@@ -360,7 +350,7 @@ export async function findComparables(
     -- en el tiempo.
     historial AS (
       SELECT origen, proveedor_id, pieza_id, precio, precio_lista, descuento_pct,
-             fecha, tiempo_entrega_dias,
+             fecha,
              ROW_NUMBER() OVER (PARTITION BY origen, proveedor_id, pieza_id
                                 ORDER BY fecha DESC, orden DESC) AS rn,
              COUNT(*) OVER (PARTITION BY origen, proveedor_id, pieza_id) AS registros,
@@ -385,7 +375,6 @@ export async function findComparables(
            t.proveedor_id, pr.nombre AS proveedor, t.origen,
            t.precio, t.precio_lista, t.descuento_pct,
            CONVERT(char(10), t.fecha, 23) AS fecha,
-           t.tiempo_entrega_dias,
            t.registros, t.precio_anterior,
            CONVERT(char(10), t.fecha_anterior, 23) AS fecha_anterior,
            t.precio_primero,

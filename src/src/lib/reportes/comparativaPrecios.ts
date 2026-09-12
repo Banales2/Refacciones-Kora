@@ -19,7 +19,6 @@ import type { ComparativaPrecios, PrecioDeProveedor } from '../../hooks/usePreci
 import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
 import { formatMXN, formatFecha } from '../formato'
-import { textoEntrega } from './comparativaPieza'
 
 function nombreBase(): string {
   return `comparativa-precios-${hoyISO()}`
@@ -223,11 +222,10 @@ export async function exportComparativaPreciosPdf(c: ComparativaPrecios) {
     'Todos los precios vigentes de cada refacción, del más barato al más caro. ' +
     'La columna "vs mejor" dice cuánto más caro es cada uno que el más económico, ' +
     '"origen" si el precio sale de una cotización o de lo que ya se le paga, ' +
-    '"entrega" en cuántos días surte ese proveedor, y "cambio" cómo se movió ' +
-    'respecto del registro anterior de ese mismo proveedor.',
+    'y "cambio" cómo se movió respecto del registro anterior de ese mismo proveedor.',
   )
   pdf.tabla({
-    head: ['Refacción', 'Descripción', 'Tipo', 'Proveedor', 'Precio', 'Origen', 'Lista', 'Entrega', 'Fecha', 'Cambio', 'vs mejor'],
+    head: ['Refacción', 'Descripción', 'Tipo', 'Proveedor', 'Precio', 'Origen', 'Lista', 'Fecha', 'Cambio', 'vs mejor'],
     body: c.piezas.flatMap((p) =>
       p.precios.map((pr, i) => [
         // El nombre solo en el primer renglón de cada refacción: así el bloque
@@ -239,25 +237,23 @@ export async function exportComparativaPreciosPdf(c: ComparativaPrecios) {
         formatMXN(pr.precio),
         textoOrigen(pr),
         textoLista(pr),
-        textoEntrega(pr.tiempo_entrega_dias),
         formatFecha(pr.fecha),
         textoCambio(pr),
         i === 0 ? 'el más barato' : `+${pr.sobre_mejor.toFixed(1)}%`,
       ])
     ),
     columnStyles: {
-      4: { halign: 'right' }, 6: { halign: 'right' },
-      7: { halign: 'right' }, 10: { halign: 'right' },
+      4: { halign: 'right' }, 6: { halign: 'right' }, 9: { halign: 'right' },
     },
     didParseCell: (d: CellHookData) => {
       if (d.section !== 'body') return
       const txt = String(d.cell.raw)
-      if (d.column.index === 9) {
+      if (d.column.index === 8) {
         if (txt.startsWith('+'))      d.cell.styles.textColor = COLOR.rojo
         else if (txt.startsWith('-')) d.cell.styles.textColor = COLOR.verde
         return
       }
-      if (d.column.index !== 10) return
+      if (d.column.index !== 9) return
       if (txt === 'el más barato') d.cell.styles.textColor = COLOR.verde
       else if (parseFloat(txt.replace(/[+%]/g, '')) >= 25) d.cell.styles.textColor = COLOR.rojo
     },
@@ -304,10 +300,6 @@ export async function exportComparativaPreciosExcel(c: ComparativaPrecios) {
     { header: 'Más barato con',  width: 26, valor: (p: typeof c.piezas[number]) => p.mejor_proveedor },
     { header: 'Origen del mejor', width: 16,
       valor: (p: typeof c.piezas[number]) => p.precios[0]?.origen === 'pagado' ? 'Pagado' : 'Cotizado' },
-    { header: 'Entrega + rápida (días)', width: 20,
-      valor: (p: typeof c.piezas[number]) => p.mejor_entrega ?? '—' },
-    { header: 'Entrega + rápida con',    width: 26,
-      valor: (p: typeof c.piezas[number]) => p.mejor_entrega_proveedor ?? '—' },
     { header: 'Diferencia',      width: 14, formato: 'moneda' as const, valor: (p: typeof c.piezas[number]) => p.diferencia },
     { header: 'Diferencia %',    width: 13, formato: 'porcentaje' as const, valor: (p: typeof c.piezas[number]) => p.diferencia_pct },
     { header: 'Última compra',   width: 14, formato: 'fecha' as const,
@@ -341,7 +333,6 @@ export async function exportComparativaPreciosExcel(c: ComparativaPrecios) {
     { header: 'Descuento %', width: 12, formato: 'porcentaje', valor: (x) => x.precio.descuento_pct ?? 0 },
     { header: 'Cómo se descontó', width: 30,
       valor: (x) => textoDescuento(x.precio, c.descuento_referencia) },
-    { header: 'Entrega (días)', width: 14, valor: (x) => x.precio.tiempo_entrega_dias ?? '—' },
     { header: 'Fecha',       width: 13, formato: 'fecha',  valor: (x) => new Date(`${x.precio.fecha}T12:00:00`) },
     // La otra fuente del mismo proveedor: el contraste con el que se negocia
     // ("te pago esto y me cotizas esto otro").

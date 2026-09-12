@@ -1,5 +1,5 @@
 // Comparativa de proveedores de una sola refacción: precio vigente de cada uno
-// y en cuántos días entrega. Es lo que se imprime al abrir la pieza, cuando la
+// con su historial de precio. Es lo que se imprime al abrir la pieza, cuando la
 // pregunta no es "dónde hay margen en el catálogo" sino "a quién le compro
 // ésta". La comparativa completa vive en precios-proveedor-comparativa.
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'

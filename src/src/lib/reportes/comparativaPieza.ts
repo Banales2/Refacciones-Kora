@@ -17,13 +17,6 @@ function nombreBase(serie: string): string {
   return `comparativa-${limpio || 'refaccion'}-${hoyISO()}`
 }
 
-/** "3 días", "Inmediata", "—". El plazo se lee igual en toda la app. */
-export function textoEntrega(dias: number | null): string {
-  if (dias == null) return '—'
-  if (dias === 0) return 'Inmediata'
-  return `${dias} día${dias !== 1 ? 's' : ''}`
-}
-
 export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
   const { pieza, fila } = c
 
@@ -55,12 +48,6 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
   const resumen: [string, string][] = [
     ['Precio más bajo', `${formatMXN(fila.mejor_precio)} — ${fila.mejor_proveedor}`],
   ]
-  if (fila.mejor_entrega != null) {
-    resumen.push([
-      'Entrega más rápida',
-      `${textoEntrega(fila.mejor_entrega)} — ${fila.mejor_entrega_proveedor}`,
-    ])
-  }
   if (fila.precios.length > 1) {
     resumen.push([
       'Margen entre el más caro y el más barato',
@@ -81,15 +68,14 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
 
   // ── La tabla que se lleva a la llamada ──
   pdf.seccion(
-    'Precio y tiempo de entrega por proveedor',
+    'Precio por proveedor',
     'Lo que cuesta con cada proveedor, del más barato al más caro, siempre CON descuento: ' +
     'el de la factura cuando el precio sale de una compra, y el estimado ' +
     `de ${c.descuento_referencia}% cuando sale de una cotización —que es como las mandan, a lista—. ` +
-    '"Entrega" es en días naturales, tal como lo dijo el proveedor, y "cómo cambió" ' +
-    'compara contra el registro anterior de ese mismo proveedor.',
+    '"Cómo cambió" compara contra el registro anterior de ese mismo proveedor.',
   )
   pdf.tabla({
-    head: ['Proveedor', 'Precio', 'Origen', 'Lista', 'vs más barato', 'Entrega', 'Fecha', 'Cómo cambió'],
+    head: ['Proveedor', 'Precio', 'Origen', 'Lista', 'vs más barato', 'Fecha', 'Cómo cambió'],
     body: fila.precios.map((p, i) => [
       p.proveedor,
       formatMXN(p.precio),
@@ -101,7 +87,6 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
         : `Cotizado (−${p.descuento_pct ?? 0}% est.)`,
       p.descuento_pct ? formatMXN(p.precio_lista) : '—',
       i === 0 ? 'el más barato' : `+${p.sobre_mejor.toFixed(1)}%`,
-      textoEntrega(p.tiempo_entrega_dias),
       formatFecha(p.fecha),
       // Contra el registro anterior de ESE proveedor. Es lo que se lleva a la
       // llamada cuando hay uno solo: no se puede decir "me lo dan más barato
@@ -112,8 +97,7 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
           (p.fecha_anterior ? ` vs. ${formatFecha(p.fecha_anterior)}` : ''),
     ]),
     columnStyles: {
-      1: { halign: 'right' }, 3: { halign: 'right' },
-      4: { halign: 'right' }, 5: { halign: 'right' },
+      1: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
     },
     didParseCell: (d: CellHookData) => {
       if (d.section !== 'body') return
@@ -128,33 +112,16 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
           d.cell.styles.textColor = COLOR.rojo
         }
       }
-      // Igual con el plazo: quien entrega antes se marca, aunque no sea el
-      // barato — es justo la disyuntiva que el documento tiene que mostrar.
       // Subir cuesta dinero; bajar es el argumento con el que se sostiene el
       // precio en la siguiente compra. Los dos se marcan.
-      if (d.column.index === 7) {
+      if (d.column.index === 6) {
         const txt = String(d.cell.raw)
         if (txt.startsWith('+'))      d.cell.styles.textColor = COLOR.rojo
         else if (txt.startsWith('-')) d.cell.styles.textColor = COLOR.verde
       }
-      if (d.column.index === 5 && fila.mejor_entrega != null) {
-        const dias = fila.precios[d.row.index]?.tiempo_entrega_dias
-        if (dias != null && dias === fila.mejor_entrega) {
-          d.cell.styles.textColor = COLOR.verde
-          d.cell.styles.fontStyle = 'bold'
-        }
-      }
     },
     fontSize: 9,
   })
-
-  const sinEntrega = fila.precios.filter((p) => p.tiempo_entrega_dias == null).length
-  if (sinEntrega > 0) {
-    pdf.nota(
-      `${sinEntrega} de ${fila.precios.length} proveedores no tienen tiempo de entrega capturado: ` +
-      'su renglón dice "—", que no significa que entreguen rápido.'
-    )
-  }
 
   pdf.guardar(nombreBase(pieza.numero_serie))
 }

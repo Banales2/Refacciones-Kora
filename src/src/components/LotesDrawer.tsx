@@ -3,7 +3,7 @@
 // cantidades) y dar de alta, editar o eliminar lotes.
 //
 // Desde aquí sale también el PDF comparativo de proveedores de esa refacción
-// —precio vigente de cada uno y en cuántos días entrega—: la pieza abierta es
+// —precio vigente de cada uno y cómo se ha movido—: la pieza abierta es
 // justo el momento en que se decide a quién comprarle, y hasta ahora esa
 // comparación solo existía para el catálogo completo.
 import { useState } from 'react'
@@ -166,7 +166,7 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                   label={
                     conPrecio === 0
                       ? 'Ningún proveedor cotiza esta refacción y nunca se le ha comprado a nadie'
-                      : `Precio y tiempo de entrega de ${conPrecio} proveedor${conPrecio !== 1 ? 'es' : ''}`
+                      : `Precio de ${conPrecio} proveedor${conPrecio !== 1 ? 'es' : ''}`
                   }
                 >
                   {/* El <span> es lo que sostiene el tooltip cuando el botón va
