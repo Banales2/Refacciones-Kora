@@ -13,8 +13,9 @@
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert, Button, Paper, Badge,
-  Tooltip, TextInput, NumberInput, Select, Modal, Anchor, Divider,
+  Tooltip, TextInput, NumberInput, Select, Modal, Anchor, Divider, ScrollArea,
 } from '@mantine/core'
+import { LineChart } from '@mantine/charts'
 import {
   IconArrowLeft, IconSearch, IconFileTypePdf, IconFileSpreadsheet,
   IconAlertTriangle,
@@ -23,10 +24,12 @@ import { formatMXN, formatFecha, formatFechaCorta } from '../lib/formato'
 import {
   exportComparativaPreciosPdf, exportComparativaPreciosExcel,
 } from '../lib/reportes/comparativaPrecios'
-import { useComparativaPrecios } from '../hooks/usePreciosProveedor'
+import { useComparativaPrecios, useComparativaPieza } from '../hooks/usePreciosProveedor'
 import type {
   ComparativaPrecios as Comparativa, FilaComparativa, PrecioDeProveedor,
+  RegistroPrecio,
 } from '../hooks/usePreciosProveedor'
+import { seriesDeHistorial, conVariacion, MAX_SERIES } from '../lib/historialPrecios'
 
 // ── Cómo se lee un precio ─────────────────────────────────────────────────────
 
@@ -102,6 +105,117 @@ function detalleDelPrecio(p: PrecioDeProveedor): string {
   return partes.join(' · ')
 }
 
+// ── El flujo del costo ────────────────────────────────────────────────────────
+
+/** Cuánto se movió, en el mismo lenguaje que la tabla de arriba. */
+function Variacion({ pct }: { pct: number | null }) {
+  if (pct == null) return <Text size="xs" c="dimmed">primera vez</Text>
+  const color = pct > 0 ? 'red' : pct < 0 ? 'teal' : 'dimmed'
+  return (
+    <Text size="sm" fw={500} c={color}>
+      {pct > 0 ? '▲' : pct < 0 ? '▼' : '='} {pct > 0 ? '+' : ''}{pct.toFixed(1)}%
+    </Text>
+  )
+}
+
+/**
+ * Cada compra y cada cotización de la refacción, en el tiempo.
+ *
+ * La gráfica solo aparece con dos registros o más: una línea de un punto no es
+ * un flujo, es un dato suelto, y la tabla ya lo dice mejor. La tabla va siempre
+ * —es también lo que sostiene el color de la gráfica, que nunca es la única
+ * forma de saber de qué proveedor se habla.
+ */
+function FlujoDeCosto({ historial }: { historial: RegistroPrecio[] }) {
+  const { series, datos } = seriesDeHistorial(historial)
+  const registros = conVariacion(historial)
+  const proveedores = new Set(historial.map((r) => r.proveedor)).size
+
+  if (historial.length === 0) {
+    return (
+      <Text size="sm" c="dimmed">
+        Todavía no hay ninguna compra ni cotización registrada de esta refacción.
+      </Text>
+    )
+  }
+
+  return (
+    <Stack gap="sm">
+      {datos.length > 1 && (
+        <>
+          <LineChart
+            h={220}
+            data={datos}
+            dataKey="fechaLabel"
+            series={series.map((s) => ({ name: s.proveedor, color: s.color, label: s.proveedor }))}
+            withLegend={series.length > 1}
+            withDots
+            curveType="linear"
+            gridAxis="y"
+            valueFormatter={(v) => formatMXN(v)}
+            connectNulls
+          />
+          {proveedores > MAX_SERIES && (
+            <Text size="xs" c="dimmed">
+              La gráfica dibuja {MAX_SERIES} proveedores; los {proveedores - MAX_SERIES}{' '}
+              restantes están en la tabla de abajo.
+            </Text>
+          )}
+        </>
+      )}
+
+      <ScrollArea.Autosize mah={260}>
+        <Table verticalSpacing="xs" fz="sm" stickyHeader>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th style={{ width: 110 }}>Fecha</Table.Th>
+              <Table.Th>Proveedor</Table.Th>
+              <Table.Th style={{ width: 110 }}>Origen</Table.Th>
+              <Table.Th style={{ width: 120, textAlign: 'right' }}>Costo</Table.Th>
+              <Table.Th style={{ width: 110 }}>Cambio</Table.Th>
+              <Table.Th style={{ width: 130 }}>Factura</Table.Th>
+              <Table.Th style={{ width: 80, textAlign: 'center' }}>Piezas</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {registros.map((r, i) => (
+              <Table.Tr key={`${r.proveedor_id}-${r.origen}-${r.fecha}-${r.folio ?? i}`}>
+                <Table.Td>{formatFecha(r.fecha)}</Table.Td>
+                <Table.Td>
+                  <Group gap={6} wrap="nowrap">
+                    {/* El punto de color ata el renglón a su línea de la
+                        gráfica; el nombre al lado es lo que de verdad
+                        identifica al proveedor. */}
+                    <span style={{
+                      width: 8, height: 8, borderRadius: 8, flexShrink: 0,
+                      background: series.find((s) => s.proveedor === r.proveedor)?.color
+                        ?? 'var(--mantine-color-gray-5)',
+                    }} />
+                    <Text size="sm">{r.proveedor}</Text>
+                  </Group>
+                </Table.Td>
+                <Table.Td>
+                  <Badge size="xs" variant="light" color={r.origen === 'pagado' ? 'blue' : 'grape'}>
+                    {r.origen === 'pagado' ? 'Pagado' : 'Cotizado'}
+                  </Badge>
+                </Table.Td>
+                <Table.Td style={{ textAlign: 'right' }} fw={500}>{formatMXN(r.precio)}</Table.Td>
+                <Table.Td><Variacion pct={r.cambio_pct} /></Table.Td>
+                <Table.Td c={r.folio ? undefined : 'dimmed'}>
+                  <Text size="sm">{r.folio ?? '—'}</Text>
+                </Table.Td>
+                <Table.Td style={{ textAlign: 'center' }} c={r.cantidad == null ? 'dimmed' : undefined}>
+                  <Text size="sm">{r.cantidad ?? '—'}</Text>
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </ScrollArea.Autosize>
+    </Stack>
+  )
+}
+
 // ── Detalle de una refacción ──────────────────────────────────────────────────
 
 function DetalleModal({
@@ -111,6 +225,11 @@ function DetalleModal({
   descuentoRef: number
   onClose: () => void
 }) {
+  // El historial no viaja en la comparativa: con cien refacciones sería traerse
+  // todas las compras del catálogo para mirar una. Se pide al abrir el detalle,
+  // que es cuando se necesita.
+  const { data: detalle, isLoading } = useComparativaPieza(fila?.pieza_id ?? null)
+
   return (
     <Modal
       opened={fila !== null}
@@ -206,6 +325,20 @@ function DetalleModal({
             salen de una compra, y el estimado de {descuentoRef}% cuando salen de
             una cotización, que es como las mandan los proveedores.
           </Text>
+
+          <Divider />
+
+          <div>
+            <Text fw={600} size="sm">Cómo ha ido el costo</Text>
+            <Text size="xs" c="dimmed" mb="sm">
+              Cada compra y cada cotización, de la más reciente a la más vieja. Una
+              compra es una factura: las partidas repetidas del mismo papel son un
+              solo movimiento de precio, y sus piezas se suman.
+            </Text>
+            {isLoading
+              ? <Center py="lg"><Loader size="sm" /></Center>
+              : <FlujoDeCosto historial={detalle?.data.historial ?? []} />}
+          </div>
         </Stack>
       )}
     </Modal>

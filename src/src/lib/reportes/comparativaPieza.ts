@@ -3,12 +3,13 @@
 // La comparativa global (comparativaPrecios) contesta "¿dónde hay margen en el
 // catálogo?". Ésta contesta la otra pregunta, la que se hace con la pieza ya
 // abierta y el teléfono en la mano: "¿a quién le compro ésta?". Por eso cabe en
-// una hoja y lleva las dos variables de la decisión juntas —lo que cuesta y en
-// cuántos días llega—, porque el más barato no sirve si la unidad se queda
-// parada esperándolo.
+// una hoja y lleva lo que cuesta hoy con cada proveedor y cómo llegó a costar
+// eso: cuando hay un solo proveedor no hay columnas que comparar, y el único
+// argumento que queda para la llamada es su propio historial.
 import type { ComparativaPieza } from '../../hooks/usePreciosProveedor'
 import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
 import { formatMXN, formatFecha } from '../formato'
+import { conVariacion } from '../historialPrecios'
 
 function nombreBase(serie: string): string {
   // El número de serie va en el nombre del archivo, pero puede traer barras o
@@ -122,6 +123,45 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
     },
     fontSize: 9,
   })
+
+  // ── El flujo del costo ──
+  // La misma tabla que la pantalla, con la misma función compartida: es lo que
+  // impide que la hoja y el modal cuenten historias distintas.
+  const registros = conVariacion(c.historial)
+  pdf.seccion(
+    'Cómo ha ido el costo',
+    'Cada compra y cada cotización, de la más reciente a la más vieja. El cambio es contra la ' +
+    'vez anterior del MISMO proveedor: entre dos proveedores distintos la diferencia es de ' +
+    'precio, no un cambio. Una compra es una factura, así que las partidas repetidas del mismo ' +
+    'papel cuentan como un solo movimiento y sus piezas se suman.',
+  )
+  if (registros.length === 0) {
+    pdf.vacio('No hay ninguna compra ni cotización registrada de esta refacción.')
+  } else {
+    pdf.tabla({
+      head: ['Fecha', 'Proveedor', 'Origen', 'Costo', 'Cambio', 'Factura', 'Piezas'],
+      body: registros.map((r) => [
+        formatFecha(r.fecha), r.proveedor,
+        r.origen === 'pagado' ? 'Pagado' : 'Cotizado',
+        formatMXN(r.precio),
+        r.cambio_pct == null
+          ? 'primera vez'
+          : `${r.cambio_pct > 0 ? '+' : ''}${r.cambio_pct.toFixed(1)}%`,
+        r.folio ?? '—',
+        r.cantidad == null ? '—' : String(r.cantidad),
+      ]),
+      columnStyles: {
+        3: { halign: 'right' }, 4: { halign: 'right' }, 6: { halign: 'center' },
+      },
+      didParseCell: (d: CellHookData) => {
+        if (d.section !== 'body' || d.column.index !== 4) return
+        const txt = String(d.cell.raw)
+        if (txt.startsWith('+'))      d.cell.styles.textColor = COLOR.rojo
+        else if (txt.startsWith('-')) d.cell.styles.textColor = COLOR.verde
+      },
+      fontSize: 9,
+    })
+  }
 
   pdf.guardar(nombreBase(pieza.numero_serie))
 }

@@ -191,6 +191,25 @@ export function useComparativaPrecios(descuentoRef?: number) {
 // pregunta que se hace al abrirla ("¿a quién le compro ésta?"). Se pide aparte
 // para no traerse la tabla completa cada vez que se abre una refacción.
 
+/**
+ * Un registro de precio suelto: una compra o una cotización, con su fecha. Es
+ * el grano que la comparativa resume —ahí cada proveedor aparece una vez, con
+ * lo último— y lo que hace falta para ver cómo se ha movido el costo.
+ */
+export interface RegistroPrecio {
+  proveedor_id:  number
+  proveedor:     string
+  origen:        'cotizado' | 'pagado'
+  fecha:         string
+  /** Ya con descuento: es el que se puede comparar con los demás. */
+  precio:        number
+  precio_lista:  number
+  descuento_pct: number | null
+  /** Solo en compras: de qué factura salió y cuántas piezas entraron a ese precio. */
+  folio:         string | null
+  cantidad:      number | null
+}
+
 export interface ComparativaPieza {
   pieza: {
     id:           number
@@ -200,6 +219,11 @@ export interface ComparativaPieza {
   }
   /** Null cuando nadie la cotiza y nunca se ha comprado. */
   fila: FilaComparativa | null
+  /**
+   * Cada compra y cada cotización, de lo más viejo a lo más nuevo. `fila` dice
+   * en cuánto está hoy con cada proveedor; esto, cómo llegó ahí.
+   */
+  historial: RegistroPrecio[]
   /** El supuesto con el que se estimó el neto de las cotizaciones. */
   descuento_referencia: number
 }

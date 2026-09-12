@@ -309,6 +309,13 @@ export interface ComparativaPieza {
   }
   /** Null cuando nadie la cotiza y nunca se ha comprado. */
   fila: FilaComparativa | null
+  /**
+   * Cada compra y cada cotización de esta refacción, de lo más viejo a lo más
+   * nuevo. `fila` dice en cuánto está hoy con cada proveedor; esto dice cómo
+   * llegó ahí, que es lo que se mira cuando hay un solo proveedor y no hay
+   * columnas que comparar.
+   */
+  historial: repo.RegistroPrecio[]
   /** El supuesto con el que se estimó el neto de las cotizaciones. */
   descuento_referencia: number
 }
@@ -318,7 +325,13 @@ export async function getComparativaPieza(
 ): Promise<ComparativaPieza> {
   const pieza = await refaccionesRepo.findById(piezaId)
   if (!pieza) throw new NotFoundError('Refacción')
-  const comparativa = await getComparativa(piezaId, descuentoRef)
+  // Las dos consultas en paralelo: miran las mismas tablas pero contestan
+  // preguntas distintas —en cuánto está hoy, y cómo llegó ahí— y ninguna
+  // depende de la otra.
+  const [comparativa, historial] = await Promise.all([
+    getComparativa(piezaId, descuentoRef),
+    repo.findHistorialPrecios(piezaId, descuentoRef),
+  ])
   return {
     pieza: {
       id:           pieza.id,
@@ -327,6 +340,7 @@ export async function getComparativaPieza(
       tipo_pieza:   pieza.tipo_pieza ?? null,
     },
     fila: comparativa.piezas[0] ?? null,
+    historial,
     descuento_referencia: comparativa.descuento_referencia,
   }
 }

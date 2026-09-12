@@ -290,6 +290,88 @@ export interface PrecioComparable {
   fecha_primera:    string
 }
 
+/**
+ * Un registro de precio suelto: una compra o una cotización, con su fecha.
+ *
+ * Es el grano que la comparativa resume. Ahí cada proveedor aparece una sola
+ * vez —con lo último— porque la pregunta es a quién comprarle hoy; aquí no se
+ * resume nada, porque la pregunta es cómo ha ido moviéndose el costo.
+ */
+export interface RegistroPrecio {
+  proveedor_id:  number
+  proveedor:     string
+  origen:        'cotizado' | 'pagado'
+  fecha:         string
+  /** Ya con descuento: es el que se puede comparar con los demás. */
+  precio:        number
+  precio_lista:  number
+  descuento_pct: number | null
+  /** Solo en compras: de qué factura salió y cuántas piezas entraron a ese precio. */
+  folio:         string | null
+  cantidad:      number | null
+}
+
+/**
+ * Todo lo que se sabe del precio de una refacción, registro por registro y de
+ * lo más viejo a lo más nuevo.
+ *
+ * Una COMPRA es una factura, no un renglón, igual que en `findComparables`: el
+ * mismo número de parte viene repetido en varias partidas del mismo papel, y
+ * enseñarlas por separado pondría tres puntos idénticos el mismo día como si
+ * fueran tres movimientos de precio. Las cantidades de esas partidas sí se
+ * suman: son piezas que entraron de verdad a ese precio.
+ */
+export async function findHistorialPrecios(
+  piezaId: number, descuentoRef = DESCUENTO_REFERENCIA,
+): Promise<RegistroPrecio[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('pieza',   sql.Int,           piezaId)
+    .input('descRef', sql.Decimal(5, 2), descuentoRef)
+    .query(`
+      WITH compras AS (
+        SELECT fac.proveedor_id, fac.folio, fac.fecha_compra AS fecha,
+               fac.descuento_pct,
+               SUM(l.cantidad_inicial) AS cantidad,
+               MAX(l.id)               AS lote_id
+        FROM lotes_pieza l
+        JOIN facturas fac ON fac.id = l.factura_id
+        WHERE l.pieza_id = @pieza
+        GROUP BY fac.proveedor_id, fac.folio, fac.fecha_compra, fac.descuento_pct
+      )
+      SELECT 'pagado' AS origen, c.proveedor_id, pr.nombre AS proveedor,
+             CONVERT(char(10), c.fecha, 23) AS fecha,
+             ${precioPagado('lo', 'c')} AS precio,
+             lo.costo_unitario AS precio_lista,
+             c.descuento_pct,
+             c.folio, c.cantidad
+      FROM compras c
+      JOIN lotes_pieza  lo ON lo.id = c.lote_id
+      JOIN proveedores  pr ON pr.id = c.proveedor_id
+
+      UNION ALL
+
+      SELECT 'cotizado' AS origen, pp.proveedor_id, pr.nombre AS proveedor,
+             CONVERT(char(10), pp.fecha, 23) AS fecha,
+             ${precioCotizado('pp')} AS precio,
+             pp.precio AS precio_lista,
+             @descRef  AS descuento_pct,
+             CAST(NULL AS NVARCHAR(30)) AS folio,
+             CAST(NULL AS INT)          AS cantidad
+      FROM precios_proveedor pp
+      JOIN proveedores pr ON pr.id = pp.proveedor_id
+      WHERE pp.pieza_id = @pieza
+
+      ORDER BY proveedor, fecha`)
+  return r.recordset.map((row) => ({
+    ...row,
+    precio:        Number(row.precio),
+    precio_lista:  Number(row.precio_lista),
+    descuento_pct: row.descuento_pct == null ? null : Number(row.descuento_pct),
+    cantidad:      row.cantidad == null ? null : Number(row.cantidad),
+  }))
+}
+
 // La tabla completa: una fila por (refacción, proveedor, origen). Se devuelve
 // larga y no pivoteada porque el número de proveedores no se sabe de antemano
 // —pivotearla es trabajo del servicio— y con el origen a la vista porque una
