@@ -32,11 +32,30 @@ function mapSeguro(row: Record<string, unknown>): Seguro {
   }
 }
 
-export async function findAll(): Promise<Seguro[]> {
+/**
+ * Una póliza del catálogo con cuántas unidades cubre. El conteo solo existe en
+ * el listado: el alta, la edición y la renovación devuelven la póliza sola, y
+ * prometerlo ahí obligaría a una consulta extra para un dato que nadie mira en
+ * ese momento.
+ */
+export type SeguroConVehiculos = Seguro & { vehiculos: number }
+
+// Cuenta TODO lo asignado, unidades de baja incluidas: es el mismo número que
+// enseña el drawer al abrir el renglón, y que no cuadren se leería como un
+// error. El tablero sí las descuenta, pero ahí la pregunta es otra (a cuántas
+// unidades en operación les urge renovar).
+export async function findAll(): Promise<SeguroConVehiculos[]> {
   const pool = await getPool()
   const r = await pool.request()
-    .query(`SELECT ${COLS} FROM seguros ORDER BY fecha_expiracion`)
-  return r.recordset.map(mapSeguro)
+    .query(`
+      SELECT ${COLS},
+             (SELECT COUNT(*) FROM (${vehiculosConDocumento('seguro_id', 's.id')}) x) AS vehiculos
+      FROM seguros s
+      ORDER BY fecha_expiracion`)
+  return r.recordset.map((row) => ({
+    ...mapSeguro(row),
+    vehiculos: Number(row.vehiculos),
+  }))
 }
 
 export async function findById(id: number): Promise<Seguro | null> {

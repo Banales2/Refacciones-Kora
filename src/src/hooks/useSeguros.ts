@@ -19,6 +19,13 @@ export interface Seguro {
   terminado_en:     string | null
 }
 
+/**
+ * La póliza tal como sale del listado: con el número de unidades que cubre.
+ * Sólo el listado lo trae; lo que devuelven alta, edición y renovación es un
+ * `Seguro` pelado.
+ */
+export type SeguroListado = Seguro & { vehiculos: number }
+
 export interface SeguroPayload {
   poliza:           string
   compania:         string
@@ -29,7 +36,7 @@ export interface SeguroPayload {
 export function useSeguros() {
   return useQuery({
     queryKey: ['seguros'],
-    queryFn: () => api.get<{ data: Seguro[] }>('/seguros'),
+    queryFn: () => api.get<{ data: SeguroListado[] }>('/seguros'),
     staleTime: 5 * 60 * 1000,
   })
 }

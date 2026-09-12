@@ -1,10 +1,10 @@
 import * as repo from '../repositories/segurosRepo'
-import type { Seguro } from '../repositories/segurosRepo'
+import type { Seguro, SeguroConVehiculos } from '../repositories/segurosRepo'
 import type { SeguroCreate, SeguroUpdate, SeguroRenovar } from '../schemas/seguroSchema'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
 import { fechaMexico } from '../shared/fechaMexico'
 
-export async function getAll(): Promise<Seguro[]> {
+export async function getAll(): Promise<SeguroConVehiculos[]> {
   return repo.findAll()
 }
 

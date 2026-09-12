@@ -1259,7 +1259,7 @@ function SegurosPanel({
         : isError   ? <Alert color="red" title="Error">No se pudieron obtener los seguros.</Alert>
         : items.length === 0 ? <Center py="xl"><Text c="dimmed">No hay seguros registrados.</Text></Center>
         : (
-          <Table.ScrollContainer minWidth={400}>
+          <Table.ScrollContainer minWidth={480}>
             <Table striped highlightOnHover withTableBorder>
               <Table.Thead>
                 <Table.Tr>
@@ -1267,6 +1267,7 @@ function SegurosPanel({
                   <Table.Th>Compañía</Table.Th>
                   <Table.Th>Expiración</Table.Th>
                   <Table.Th style={{ textAlign: 'right' }}>Costo</Table.Th>
+                  <Table.Th style={{ width: 90, textAlign: 'center' }}>Vehículos</Table.Th>
                   <Table.Th style={{ width: 110 }} />
                 </Table.Tr>
               </Table.Thead>
@@ -1306,6 +1307,14 @@ function SegurosPanel({
                         {s.costo != null
                           ? formatMXN(s.costo)
                           : <Text component="span" c="dimmed">—</Text>}
+                      </Table.Td>
+                      {/* Cuántas unidades cubre, nada más para verlo de un vistazo
+                          sin abrir el renglón. Cero en gris: es lo normal en una
+                          póliza ya reemplazada, no un problema que reclame nada. */}
+                      <Table.Td style={{ textAlign: 'center' }}>
+                        {s.vehiculos > 0
+                          ? <Badge variant="light" color={terminada ? 'gray' : 'blue'} size="sm">{s.vehiculos}</Badge>
+                          : <Text component="span" c="dimmed" size="sm">0</Text>}
                       </Table.Td>
                       <Table.Td onClick={(e) => e.stopPropagation()}>
                         <Group gap={4} justify="flex-end" wrap="nowrap">
