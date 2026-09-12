@@ -19,7 +19,7 @@ import {
   IconArrowLeft, IconSearch, IconFileTypePdf, IconFileSpreadsheet,
   IconAlertTriangle,
 } from '@tabler/icons-react'
-import { formatMXN, formatFecha } from '../lib/formato'
+import { formatMXN, formatFecha, formatFechaCorta } from '../lib/formato'
 import { textoEntrega } from '../lib/reportes/comparativaPieza'
 import {
   exportComparativaPreciosPdf, exportComparativaPreciosExcel,
@@ -40,6 +40,28 @@ function textoOrigen(p: PrecioDeProveedor): string {
   return p.descuento_pct ? `pagado −${p.descuento_pct}%` : 'pagado, sin desglose'
 }
 
+/**
+ * Cómo se enseña que un precio se movió.
+ *
+ * Es lo que se lee cuando hay un solo proveedor: sin segunda columna no hay
+ * comparación posible entre proveedores, y la única pregunta que queda —la que
+ * de verdad se hace al abrir esto— es si a esa refacción le subieron el precio.
+ * Subir va en rojo y bajar en verde: aquí se paga, no se cobra.
+ */
+function textoCambio(p: PrecioDeProveedor): string | null {
+  if (p.cambio_pct == null) return null
+  const signo = p.cambio_pct > 0 ? '+' : ''
+  const desde = p.fecha_anterior ? ` vs. ${formatFechaCorta(p.fecha_anterior)}` : ''
+  return `${signo}${p.cambio_pct.toFixed(1)}%${desde}`
+}
+
+function colorCambio(pct: number): string | undefined {
+  if (pct > 0) return 'red'
+  if (pct < 0) return 'teal'
+  // Cero es información: se le compró otra vez y no se movió.
+  return 'dimmed'
+}
+
 function OrigenBadge({ p }: { p: PrecioDeProveedor }) {
   return (
     <Badge size="xs" variant="light" color={p.origen === 'pagado' ? 'blue' : 'grape'}>
@@ -52,6 +74,27 @@ function OrigenBadge({ p }: { p: PrecioDeProveedor }) {
 function detalleDelPrecio(p: PrecioDeProveedor): string {
   const partes = [textoOrigen(p), formatFecha(p.fecha)]
   if (p.descuento_pct) partes.push(`lista ${formatMXN(p.precio_lista)}`)
+  // El historial de ese proveedor con esa refacción: cuántas veces, contra
+  // cuánto estaba antes y de dónde viene. Es el contenido de la celda cuando
+  // no hay con quién comparar.
+  if (p.registros > 1) {
+    const veces = p.origen === 'pagado'
+      ? `${p.registros} compras`
+      : `${p.registros} cotizaciones`
+    partes.push(veces)
+    if (p.precio_anterior != null) {
+      partes.push(
+        `antes ${formatMXN(p.precio_anterior)}` +
+        (p.fecha_anterior ? ` (${formatFecha(p.fecha_anterior)})` : ''),
+      )
+    }
+    if (p.cambio_total_pct != null) {
+      partes.push(
+        `${p.cambio_total_pct > 0 ? '+' : ''}${p.cambio_total_pct.toFixed(1)}% ` +
+        `desde ${formatMXN(p.precio_primero)} (${formatFecha(p.fecha_primera)})`,
+      )
+    }
+  }
   if (p.tiempo_entrega_dias != null) partes.push(`entrega ${textoEntrega(p.tiempo_entrega_dias)}`)
   if (p.otro) {
     partes.push(
@@ -106,6 +149,7 @@ function DetalleModal({
                 <Table.Th style={{ width: 110, textAlign: 'right' }}>Lista</Table.Th>
                 <Table.Th style={{ width: 100 }}>Entrega</Table.Th>
                 <Table.Th style={{ width: 110 }}>Fecha</Table.Th>
+                <Table.Th style={{ width: 150 }}>Cómo cambió</Table.Th>
                 <Table.Th style={{ width: 90, textAlign: 'right' }}>vs mejor</Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -135,6 +179,24 @@ function DetalleModal({
                     <Text size="sm">{textoEntrega(p.tiempo_entrega_dias)}</Text>
                   </Table.Td>
                   <Table.Td><Text size="sm">{formatFecha(p.fecha)}</Text></Table.Td>
+                  <Table.Td>
+                    {p.cambio_pct == null ? (
+                      <Text size="xs" c="dimmed">
+                        {p.origen === 'pagado' ? 'Primera compra' : 'Primera cotización'}
+                      </Text>
+                    ) : (
+                      <>
+                        <Text size="sm" fw={500} c={colorCambio(p.cambio_pct)}>
+                          {textoCambio(p)}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {p.registros} {p.origen === 'pagado' ? 'compras' : 'cotizaciones'}
+                          {p.cambio_total_pct != null &&
+                            ` · ${p.cambio_total_pct > 0 ? '+' : ''}${p.cambio_total_pct.toFixed(1)}% desde ${formatFechaCorta(p.fecha_primera)}`}
+                        </Text>
+                      </>
+                    )}
+                  </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
                     <Text size="sm" c={i === 0 ? 'green' : p.sobre_mejor >= 25 ? 'red' : undefined}>
                       {i === 0 ? 'el más barato' : `+${p.sobre_mejor.toFixed(1)}%`}
@@ -207,6 +269,15 @@ function TablaPivote({
                           {precio.origen === 'pagado' ? 'pagado' : 'cotizado'}
                           {!esMejor && ` · +${precio.sobre_mejor.toFixed(0)}%`}
                         </Text>
+                        {/* Cómo se movió contra la vez anterior. Solo aparece
+                            si hay una vez anterior: inventar un 0% donde solo
+                            hay un registro diría que el precio se sostuvo. */}
+                        {precio.cambio_pct != null && (
+                          <Text size="xs" fw={500} c={colorCambio(precio.cambio_pct)}>
+                            {precio.cambio_pct > 0 ? '▲' : precio.cambio_pct < 0 ? '▼' : '='}{' '}
+                            {textoCambio(precio)}
+                          </Text>
+                        )}
                       </div>
                     </Tooltip>
                   </Table.Td>
@@ -287,6 +358,7 @@ export default function ComparativaPrecios({ onBack }: { onBack: () => void }) {
       totales: {
         refacciones: piezas.length,
         comparables: piezas.filter((p) => p.precios.length > 1).length,
+        con_alza:    piezas.filter((p) => p.alza_pct != null).length,
         ahorro_unitario_total: Math.round(
           piezas.reduce((s, p) => s + (p.ahorro_unitario ?? 0), 0) * 100) / 100,
       },
@@ -410,6 +482,14 @@ export default function ComparativaPrecios({ onBack }: { onBack: () => void }) {
                       <Text size="xs" c="dimmed" fw={600} tt="uppercase">Comparables</Text>
                     </Tooltip>
                     <Text size="xl" fw={700}>{vista.totales.comparables}</Text>
+                  </div>
+                  <div>
+                    <Tooltip label="Refacciones cuyo precio subió respecto del registro anterior de ese mismo proveedor. No necesitan un segundo proveedor para verse.">
+                      <Text size="xs" c="dimmed" fw={600} tt="uppercase">Subieron de precio</Text>
+                    </Tooltip>
+                    <Text size="xl" fw={700} c={vista.totales.con_alza > 0 ? 'red' : undefined}>
+                      {vista.totales.con_alza}
+                    </Text>
                   </div>
                   <div>
                     <Tooltip label="Suma del sobreprecio por unidad de lo que hoy se compra más caro de lo necesario. Multiplícalo por el volumen que se compre.">

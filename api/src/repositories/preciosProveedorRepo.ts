@@ -279,6 +279,24 @@ export interface PrecioComparable {
   fecha:         string
   /** Solo en las cotizaciones: una compra no dice en cuántos días surte. */
   tiempo_entrega_dias: number | null
+  /**
+   * Cómo llegó ese proveedor a ese precio. `precio` es el vigente —el último
+   * registro—, pero detrás suele haber más: con un solo proveedor en el
+   * catálogo, la comparación entre columnas no existe y lo único que hay que
+   * mirar es si el precio se movió.
+   *
+   * Una COMPRA es una factura, no un renglón: la misma refacción puede venir
+   * repetida en varias partidas del mismo papel (así exporta el sistema del
+   * proveedor, ver `docs/importacion-historica.md`), y contarlas como compras
+   * distintas inventaría un cambio de precio de 0% contra sí misma.
+   */
+  registros:        number
+  /** El registro inmediatamente anterior de esta misma fuente. */
+  precio_anterior:  number | null
+  fecha_anterior:   string | null
+  /** El más viejo, para leer el recorrido completo y no solo el último salto. */
+  precio_primero:   number
+  fecha_primera:    string
 }
 
 // La tabla completa: una fila por (refacción, proveedor, origen). Se devuelve
@@ -298,44 +316,80 @@ export async function findComparables(
     .input('pieza',   sql.Int,           piezaId ?? null)
     .input('descRef', sql.Decimal(5, 2), descuentoRef)
     .query(`
+    -- Un registro de precio por fuente, SIN elegir todavía cuál vale: el
+    -- historial se calcula sobre todos y solo al final se toma el vigente.
     WITH cotizados AS (
       SELECT pp.proveedor_id, pp.pieza_id,
              ${precioCotizado('pp')} AS precio,
              pp.precio AS precio_lista,
              @descRef  AS descuento_pct,
              pp.fecha, pp.tiempo_entrega_dias,
-             ROW_NUMBER() OVER (PARTITION BY pp.proveedor_id, pp.pieza_id
-                                ORDER BY pp.fecha DESC, pp.id DESC) AS rn
+             -- Desempate dentro del mismo día: sin él, cuál es el vigente entre
+             -- dos registros de la misma fecha lo decidiría el motor.
+             pp.id AS orden
       FROM precios_proveedor pp
     ),
-    pagados AS (
-      SELECT fac.proveedor_id, l.pieza_id,
-             ${precioPagado('l', 'fac')} AS precio,
-             l.costo_unitario AS precio_lista,
-             fac.descuento_pct,
-             fac.fecha_compra AS fecha,
-             CAST(NULL AS INT) AS tiempo_entrega_dias,
-             ROW_NUMBER() OVER (PARTITION BY fac.proveedor_id, l.pieza_id
-                                ORDER BY fac.fecha_compra DESC, l.id DESC) AS rn
+    -- Una COMPRA es una factura, no un renglón: la misma refacción viene
+    -- repetida en varias partidas del mismo papel y contarlas por separado
+    -- fabricaría un "cambio de precio" de 0% contra sí misma. Se toma el
+    -- último lote de cada (factura, refacción), que es el precio que quedó.
+    compras AS (
+      SELECT fac.proveedor_id, l.pieza_id, l.factura_id,
+             fac.fecha_compra AS fecha, fac.descuento_pct,
+             MAX(l.id) AS lote_id
       FROM lotes_pieza l
       -- JOIN y no LEFT: el lote de recuperación (024) no salió de ninguna
       -- compra, vale $0 y no es el precio de nadie.
       JOIN facturas fac ON fac.id = l.factura_id
+      GROUP BY fac.proveedor_id, l.pieza_id, l.factura_id, fac.fecha_compra, fac.descuento_pct
     ),
-    todos AS (
-      SELECT 'cotizado' AS origen, proveedor_id, pieza_id, precio, precio_lista,
-             descuento_pct, fecha, tiempo_entrega_dias
-      FROM cotizados WHERE rn = 1
-      UNION ALL
-      SELECT 'pagado' AS origen, proveedor_id, pieza_id, precio, precio_lista,
-             descuento_pct, fecha, tiempo_entrega_dias
-      FROM pagados WHERE rn = 1
-    )
+    pagados AS (
+      SELECT c.proveedor_id, c.pieza_id,
+             ${precioPagado('lo', 'c')} AS precio,
+             lo.costo_unitario AS precio_lista,
+             c.descuento_pct,
+             c.fecha,
+             CAST(NULL AS INT) AS tiempo_entrega_dias,
+             c.lote_id AS orden
+      FROM compras c
+      JOIN lotes_pieza lo ON lo.id = c.lote_id
+    ),
+    -- El historial de cada (proveedor, refacción) dentro de su fuente: cuántos
+    -- registros hay, cuál era el anterior y desde dónde viene. LEAD y no LAG
+    -- porque el orden es descendente: el "siguiente" en esa lista es el previo
+    -- en el tiempo.
+    historial AS (
+      SELECT origen, proveedor_id, pieza_id, precio, precio_lista, descuento_pct,
+             fecha, tiempo_entrega_dias,
+             ROW_NUMBER() OVER (PARTITION BY origen, proveedor_id, pieza_id
+                                ORDER BY fecha DESC, orden DESC) AS rn,
+             COUNT(*) OVER (PARTITION BY origen, proveedor_id, pieza_id) AS registros,
+             LEAD(precio) OVER (PARTITION BY origen, proveedor_id, pieza_id
+                                ORDER BY fecha DESC, orden DESC) AS precio_anterior,
+             LEAD(fecha)  OVER (PARTITION BY origen, proveedor_id, pieza_id
+                                ORDER BY fecha DESC, orden DESC) AS fecha_anterior,
+             LAST_VALUE(precio) OVER (
+               PARTITION BY origen, proveedor_id, pieza_id ORDER BY fecha DESC, orden DESC
+               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS precio_primero,
+             LAST_VALUE(fecha) OVER (
+               PARTITION BY origen, proveedor_id, pieza_id ORDER BY fecha DESC, orden DESC
+               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS fecha_primera
+      FROM (
+        SELECT 'cotizado' AS origen, * FROM cotizados
+        UNION ALL
+        SELECT 'pagado'   AS origen, * FROM pagados
+      ) x
+    ),
+    todos AS (SELECT * FROM historial WHERE rn = 1)
     SELECT t.pieza_id, p.numero_serie, p.descripcion, tp.nombre AS tipo_pieza,
            t.proveedor_id, pr.nombre AS proveedor, t.origen,
            t.precio, t.precio_lista, t.descuento_pct,
            CONVERT(char(10), t.fecha, 23) AS fecha,
-           t.tiempo_entrega_dias
+           t.tiempo_entrega_dias,
+           t.registros, t.precio_anterior,
+           CONVERT(char(10), t.fecha_anterior, 23) AS fecha_anterior,
+           t.precio_primero,
+           CONVERT(char(10), t.fecha_primera, 23) AS fecha_primera
     FROM todos t
     JOIN piezas      p  ON p.id  = t.pieza_id
     JOIN proveedores pr ON pr.id = t.proveedor_id
@@ -347,8 +401,11 @@ export async function findComparables(
   // siempre cabe, pero se normaliza para no dejar al consumidor adivinando.
   return r.recordset.map((row) => ({
     ...row,
-    precio:        Number(row.precio),
-    precio_lista:  Number(row.precio_lista),
-    descuento_pct: row.descuento_pct == null ? null : Number(row.descuento_pct),
+    precio:          Number(row.precio),
+    precio_lista:    Number(row.precio_lista),
+    descuento_pct:   row.descuento_pct == null ? null : Number(row.descuento_pct),
+    registros:       Number(row.registros),
+    precio_anterior: row.precio_anterior == null ? null : Number(row.precio_anterior),
+    precio_primero:  Number(row.precio_primero),
   }))
 }

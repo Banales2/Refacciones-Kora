@@ -121,6 +121,24 @@ export interface PrecioDeProveedor {
   tiempo_entrega_dias: number | null
   /** Cuánto más caro es que el mejor precio de esa refacción, en porcentaje. */
   sobre_mejor:  number
+  /**
+   * Cómo llegó este proveedor a este precio. Con un solo proveedor en el
+   * catálogo no hay columnas que comparar, y lo único que queda por mirar
+   * —lo que de verdad se pregunta— es si el precio se movió y cuándo.
+   *
+   * `registros` cuenta facturas, no renglones: la misma refacción viene
+   * repetida en varias partidas del mismo papel.
+   */
+  registros:        number
+  precio_anterior:  number | null
+  fecha_anterior:   string | null
+  /** Contra el registro anterior. Positivo = subió. Null si no hay con qué. */
+  cambio_pct:       number | null
+  /** El registro más viejo de esta fuente, para leer el recorrido entero. */
+  precio_primero:   number
+  fecha_primera:    string
+  /** Del primero al vigente. Null cuando solo hay un registro. */
+  cambio_total_pct: number | null
   /** La otra fuente del mismo proveedor, si la tiene: cotiza Y se le compra. */
   otro:         { origen: 'cotizado' | 'pagado'; precio: number; fecha: string } | null
 }
@@ -144,6 +162,8 @@ export interface FilaComparativa {
   /** El plazo más corto entre los proveedores que lo capturaron. */
   mejor_entrega:           number | null
   mejor_entrega_proveedor: string | null
+  /** La mayor subida de precio entre sus proveedores, contra el registro previo. */
+  alza_pct:                number | null
 }
 
 export interface ComparativaPrecios {
@@ -154,6 +174,8 @@ export interface ComparativaPrecios {
   totales: {
     refacciones:           number
     comparables:           number
+    /** Cuántas subieron de precio contra el registro anterior de su proveedor. */
+    con_alza:              number
     ahorro_unitario_total: number
   }
 }

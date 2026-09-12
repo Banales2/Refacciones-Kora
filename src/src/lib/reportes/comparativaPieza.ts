@@ -85,10 +85,11 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
     'Lo que cuesta con cada proveedor, del más barato al más caro, siempre CON descuento: ' +
     'el de la factura cuando el precio sale de una compra, y el estimado ' +
     `de ${c.descuento_referencia}% cuando sale de una cotización —que es como las mandan, a lista—. ` +
-    '"Entrega" es en días naturales, tal como lo dijo el proveedor.',
+    '"Entrega" es en días naturales, tal como lo dijo el proveedor, y "cómo cambió" ' +
+    'compara contra el registro anterior de ese mismo proveedor.',
   )
   pdf.tabla({
-    head: ['Proveedor', 'Precio', 'Origen', 'Lista', 'vs más barato', 'Entrega', 'Fecha'],
+    head: ['Proveedor', 'Precio', 'Origen', 'Lista', 'vs más barato', 'Entrega', 'Fecha', 'Cómo cambió'],
     body: fila.precios.map((p, i) => [
       p.proveedor,
       formatMXN(p.precio),
@@ -102,6 +103,13 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
       i === 0 ? 'el más barato' : `+${p.sobre_mejor.toFixed(1)}%`,
       textoEntrega(p.tiempo_entrega_dias),
       formatFecha(p.fecha),
+      // Contra el registro anterior de ESE proveedor. Es lo que se lleva a la
+      // llamada cuando hay uno solo: no se puede decir "me lo dan más barato
+      // allá", pero sí "me lo subiste 9% en tres meses".
+      p.cambio_pct == null
+        ? (p.origen === 'pagado' ? 'Primera compra' : 'Primera cotización')
+        : `${p.cambio_pct > 0 ? '+' : ''}${p.cambio_pct.toFixed(1)}%` +
+          (p.fecha_anterior ? ` vs. ${formatFecha(p.fecha_anterior)}` : ''),
     ]),
     columnStyles: {
       1: { halign: 'right' }, 3: { halign: 'right' },
@@ -122,6 +130,13 @@ export async function exportComparativaPiezaPdf(c: ComparativaPieza) {
       }
       // Igual con el plazo: quien entrega antes se marca, aunque no sea el
       // barato — es justo la disyuntiva que el documento tiene que mostrar.
+      // Subir cuesta dinero; bajar es el argumento con el que se sostiene el
+      // precio en la siguiente compra. Los dos se marcan.
+      if (d.column.index === 7) {
+        const txt = String(d.cell.raw)
+        if (txt.startsWith('+'))      d.cell.styles.textColor = COLOR.rojo
+        else if (txt.startsWith('-')) d.cell.styles.textColor = COLOR.verde
+      }
       if (d.column.index === 5 && fila.mejor_entrega != null) {
         const dias = fila.precios[d.row.index]?.tiempo_entrega_dias
         if (dias != null && dias === fila.mejor_entrega) {

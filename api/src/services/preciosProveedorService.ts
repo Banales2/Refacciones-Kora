@@ -78,6 +78,24 @@ export interface PrecioDeProveedor {
   tiempo_entrega_dias: number | null
   /** Cuánto más caro es que el mejor precio de esa refacción, en porcentaje. */
   sobre_mejor:  number
+  /**
+   * Cómo llegó este proveedor a este precio. Con un solo proveedor en el
+   * catálogo no hay columnas que comparar, y lo único que queda por mirar
+   * —lo que de verdad se pregunta— es si el precio se movió y cuándo.
+   *
+   * `registros` cuenta facturas, no renglones: la misma refacción viene
+   * repetida en varias partidas del mismo papel.
+   */
+  registros:        number
+  precio_anterior:  number | null
+  fecha_anterior:   string | null
+  /** Contra el registro anterior. Positivo = subió. Null si no hay con qué. */
+  cambio_pct:       number | null
+  /** El registro más viejo de esta fuente, para leer el recorrido entero. */
+  precio_primero:   number
+  fecha_primera:    string
+  /** Del primero al vigente. Null cuando solo hay un registro. */
+  cambio_total_pct: number | null
   /** La otra fuente del mismo proveedor, si la tiene. */
   otro:         { origen: 'cotizado' | 'pagado'; precio: number; fecha: string } | null
 }
@@ -105,6 +123,14 @@ export interface FilaComparativa {
   /** El plazo más corto entre los proveedores que lo capturaron. */
   mejor_entrega:          number | null
   mejor_entrega_proveedor: string | null
+  /**
+   * La mayor subida entre los precios vigentes de esta refacción, contra el
+   * registro anterior de cada proveedor. Es lo que ordena la tabla cuando no
+   * hay nada que comparar entre proveedores —el caso de un catálogo con un
+   * solo proveedor—, y lo que responde "¿a cuáles me subieron el precio?".
+   * Null si ninguno tiene un registro previo.
+   */
+  alza_pct:               number | null
 }
 
 export interface ComparativaPrecios {
@@ -117,12 +143,20 @@ export interface ComparativaPrecios {
     refacciones:          number
     /** Cuántas tienen precio de dos o más proveedores: las únicas comparables. */
     comparables:          number
+    /** Cuántas subieron de precio contra el registro anterior de su proveedor. */
+    con_alza:             number
     /** Suma del ahorro por unidad de las que hoy se compran más caro de lo necesario. */
     ahorro_unitario_total: number
   }
 }
 
 const redondear = (n: number) => Math.round(n * 100) / 100
+const pct = (de: number, a: number) => Math.round(((a - de) / de) * 1000) / 10
+
+/** Variación porcentual contra un precio previo. Null si no hay con qué medir. */
+function cambio(previo: number | null | undefined, actual: number): number | null {
+  return previo == null || previo <= 0 ? null : pct(previo, actual)
+}
 
 /**
  * Pivotea los precios comparables: de una fila por (refacción, proveedor,
@@ -155,6 +189,7 @@ export async function getComparativa(
       diferencia: 0, diferencia_pct: 0,
       ultimo_pagado: null, ultimo_proveedor: null, ultima_compra: null,
       ahorro_unitario: null, mejor_entrega: null, mejor_entrega_proveedor: null,
+      alza_pct: null,
     }
     porPieza.set(c.pieza_id, fila)
 
@@ -172,7 +207,17 @@ export async function getComparativa(
       precio_lista: c.precio_lista, descuento_pct: c.descuento_pct,
       estimado: c.origen === 'cotizado',
       fecha: c.fecha, tiempo_entrega_dias: c.tiempo_entrega_dias,
-      sobre_mejor: 0, otro: null,
+      sobre_mejor: 0,
+      registros:        c.registros,
+      precio_anterior:  c.precio_anterior,
+      fecha_anterior:   c.fecha_anterior,
+      cambio_pct:       cambio(c.precio_anterior, c.precio),
+      precio_primero:   c.precio_primero,
+      fecha_primera:    c.fecha_primera,
+      // Con un solo registro el primero ES el vigente: decir "+0%" sonaría a
+      // que se midió un recorrido que no existe.
+      cambio_total_pct: c.registros > 1 ? cambio(c.precio_primero, c.precio) : null,
+      otro: null,
     }
 
     const clave = `${c.pieza_id}:${c.proveedor_id}`
@@ -219,6 +264,13 @@ export async function getComparativa(
       ? redondear(fila.ultimo_pagado - mejor.precio)
       : null
 
+    // La subida más fuerte entre los proveedores de esta refacción. Se queda en
+    // la fila porque es lo que la ordena y lo que se cuenta en el resumen.
+    const alzas = fila.precios
+      .map((p) => p.cambio_pct)
+      .filter((x): x is number => x != null && x > 0)
+    fila.alza_pct = alzas.length ? Math.max(...alzas) : null
+
     // El más barato no siempre es el que entrega antes: con la unidad parada,
     // el plazo pesa tanto como el precio, así que la fila lleva los dos.
     const conEntrega = fila.precios.filter((p) => p.tiempo_entrega_dias != null)
@@ -230,10 +282,16 @@ export async function getComparativa(
     }
   }
 
-  // Primero lo que más margen tiene: es donde una llamada al proveedor rinde más.
+  // Primero lo que más margen tiene: es donde una llamada al proveedor rinde
+  // más. El alza entra como tercer criterio y no como primero porque un
+  // sobreprecio contra otro proveedor es dinero que se está perdiendo hoy,
+  // mientras que una subida puede ser el mercado entero. Pero manda sobre el
+  // orden alfabético: con un solo proveedor los dos primeros criterios empatan
+  // en cero para todo el catálogo, y sin esto lo que más subió quedaba enterrado.
   piezas.sort((a, b) =>
     (b.ahorro_unitario ?? 0) - (a.ahorro_unitario ?? 0) ||
     b.diferencia - a.diferencia ||
+    (b.alza_pct ?? -Infinity) - (a.alza_pct ?? -Infinity) ||
     a.descripcion.localeCompare(b.descripcion, 'es-MX'))
 
   return {
@@ -245,6 +303,7 @@ export async function getComparativa(
     totales: {
       refacciones: piezas.length,
       comparables: piezas.filter((p) => p.precios.length > 1).length,
+      con_alza:    piezas.filter((p) => p.alza_pct != null).length,
       ahorro_unitario_total: redondear(
         piezas.reduce((s, p) => s + (p.ahorro_unitario ?? 0), 0)),
     },

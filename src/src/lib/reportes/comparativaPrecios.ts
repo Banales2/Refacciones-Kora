@@ -46,6 +46,21 @@ function textoDescuento(p: PrecioDeProveedor, ref: number): string {
   return p.descuento_pct ? 'Descuento de la factura' : 'Ya venía descontado, sin desglose'
 }
 
+/**
+ * Cómo se movió el precio contra el registro anterior de ese mismo proveedor.
+ *
+ * Es la lectura que queda cuando el catálogo tiene un solo proveedor: no hay
+ * columnas que comparar, y lo que se pregunta es si subió. Un guion largo no es
+ * "no cambió" sino "no hay contra qué": la primera compra no se mueve respecto
+ * de nada.
+ */
+function textoCambio(p: PrecioDeProveedor): string {
+  if (p.cambio_pct == null) return p.origen === 'pagado' ? 'Primera compra' : 'Primera cotización'
+  const signo = p.cambio_pct > 0 ? '+' : ''
+  return `${signo}${p.cambio_pct.toFixed(1)}%` +
+    (p.fecha_anterior ? ` vs. ${formatFecha(p.fecha_anterior)}` : '')
+}
+
 /** El de lista solo se enseña cuando se sabe: sin desglose, no hay tal número. */
 function textoLista(p: PrecioDeProveedor): string {
   return p.descuento_pct ? formatMXN(p.precio_lista) : '—'
@@ -86,6 +101,7 @@ export async function exportComparativaPreciosPdf(c: ComparativaPrecios) {
   pdf.datos([
     ['Refacciones con al menos un precio', String(c.totales.refacciones)],
     ['Refacciones con dos o más proveedores (comparables)', String(c.totales.comparables)],
+    ['Refacciones que subieron de precio con su proveedor', String(c.totales.con_alza)],
     ['Refacciones que hoy se compran más caro de lo necesario', String(conAhorro.length)],
     ['Ahorro por unidad si se cambiara de proveedor', formatMXN(c.totales.ahorro_unitario_total)],
   ], { destacarUltimo: true })
@@ -117,6 +133,53 @@ export async function exportComparativaPreciosPdf(c: ComparativaPrecios) {
           d.cell.styles.textColor = COLOR.verde
           d.cell.styles.fontStyle = 'bold'
         }
+      },
+      fontSize: 8,
+    })
+  }
+
+  // ── Cómo se movió el precio con cada proveedor ──
+  // Va antes de la comparación entre proveedores a propósito: no necesita un
+  // segundo proveedor para existir, así que es lo único que se puede leer
+  // cuando al catálogo todavía le falta competencia.
+  const conCambio = c.piezas
+    .flatMap((p) => p.precios.map((pr) => ({ pieza: p, precio: pr })))
+    .filter((x) => x.precio.cambio_pct != null)
+    .sort((a, b) => b.precio.cambio_pct! - a.precio.cambio_pct!)
+
+  pdf.seccion(
+    'Cómo cambió el precio con cada proveedor',
+    'Cada precio vigente contra el registro anterior del mismo proveedor —la compra o la ' +
+    'cotización previa—, de la mayor subida a la mayor baja. No depende de que haya otro ' +
+    'proveedor con quien comparar.',
+  )
+  if (conCambio.length === 0) {
+    pdf.vacio('Ninguna refacción tiene todavía dos registros del mismo proveedor con los que medir un cambio.')
+  } else {
+    pdf.tabla({
+      head: ['Refacción', 'Descripción', 'Proveedor', 'Registros', 'Antes', 'Fecha', 'Ahora', 'Fecha', 'Cambio', 'Desde el inicio'],
+      body: conCambio.map((x) => [
+        x.pieza.numero_serie, x.pieza.descripcion, x.precio.proveedor,
+        String(x.precio.registros),
+        formatMXN(x.precio.precio_anterior!),
+        x.precio.fecha_anterior ? formatFecha(x.precio.fecha_anterior) : '—',
+        formatMXN(x.precio.precio), formatFecha(x.precio.fecha),
+        `${x.precio.cambio_pct! > 0 ? '+' : ''}${x.precio.cambio_pct!.toFixed(1)}%`,
+        x.precio.cambio_total_pct != null
+          ? `${x.precio.cambio_total_pct > 0 ? '+' : ''}${x.precio.cambio_total_pct.toFixed(1)}% desde ${formatFecha(x.precio.fecha_primera)}`
+          : '—',
+      ]),
+      columnStyles: {
+        3: { halign: 'center' }, 4: { halign: 'right' },
+        6: { halign: 'right' },  8: { halign: 'right' },
+      },
+      // Subir es lo que cuesta dinero; bajar también se marca, porque es el
+      // dato con el que se defiende un precio en la siguiente compra.
+      didParseCell: (d: CellHookData) => {
+        if (d.section !== 'body' || d.column.index !== 8) return
+        const v = parseFloat(String(d.cell.raw).replace(/[+%]/g, ''))
+        if (v > 0)      { d.cell.styles.textColor = COLOR.rojo; d.cell.styles.fontStyle = 'bold' }
+        else if (v < 0)   d.cell.styles.textColor = COLOR.verde
       },
       fontSize: 8,
     })
@@ -160,10 +223,11 @@ export async function exportComparativaPreciosPdf(c: ComparativaPrecios) {
     'Todos los precios vigentes de cada refacción, del más barato al más caro. ' +
     'La columna "vs mejor" dice cuánto más caro es cada uno que el más económico, ' +
     '"origen" si el precio sale de una cotización o de lo que ya se le paga, ' +
-    'y "entrega" en cuántos días surte ese proveedor.',
+    '"entrega" en cuántos días surte ese proveedor, y "cambio" cómo se movió ' +
+    'respecto del registro anterior de ese mismo proveedor.',
   )
   pdf.tabla({
-    head: ['Refacción', 'Descripción', 'Tipo', 'Proveedor', 'Precio', 'Origen', 'Lista', 'Entrega', 'Fecha', 'vs mejor'],
+    head: ['Refacción', 'Descripción', 'Tipo', 'Proveedor', 'Precio', 'Origen', 'Lista', 'Entrega', 'Fecha', 'Cambio', 'vs mejor'],
     body: c.piezas.flatMap((p) =>
       p.precios.map((pr, i) => [
         // El nombre solo en el primer renglón de cada refacción: así el bloque
@@ -177,16 +241,23 @@ export async function exportComparativaPreciosPdf(c: ComparativaPrecios) {
         textoLista(pr),
         textoEntrega(pr.tiempo_entrega_dias),
         formatFecha(pr.fecha),
+        textoCambio(pr),
         i === 0 ? 'el más barato' : `+${pr.sobre_mejor.toFixed(1)}%`,
       ])
     ),
     columnStyles: {
       4: { halign: 'right' }, 6: { halign: 'right' },
-      7: { halign: 'right' }, 9: { halign: 'right' },
+      7: { halign: 'right' }, 10: { halign: 'right' },
     },
     didParseCell: (d: CellHookData) => {
-      if (d.section !== 'body' || d.column.index !== 9) return
+      if (d.section !== 'body') return
       const txt = String(d.cell.raw)
+      if (d.column.index === 9) {
+        if (txt.startsWith('+'))      d.cell.styles.textColor = COLOR.rojo
+        else if (txt.startsWith('-')) d.cell.styles.textColor = COLOR.verde
+        return
+      }
+      if (d.column.index !== 10) return
       if (txt === 'el más barato') d.cell.styles.textColor = COLOR.verde
       else if (parseFloat(txt.replace(/[+%]/g, '')) >= 25) d.cell.styles.textColor = COLOR.rojo
     },
@@ -202,6 +273,7 @@ export async function exportComparativaPreciosExcel(c: ComparativaPrecios) {
   wb.hojaResumen('Resumen', [
     ['Refacciones con al menos un precio', c.totales.refacciones],
     ['Refacciones comparables (dos o más proveedores)', c.totales.comparables],
+    ['Refacciones que subieron de precio con su proveedor', c.totales.con_alza],
     ['Proveedores con precio (cotizado o pagado)', c.proveedores.length],
     ['Descuento supuesto sobre las cotizaciones (%)', c.descuento_referencia],
     ['Ahorro por unidad si se cambiara de proveedor', c.totales.ahorro_unitario_total],
@@ -243,6 +315,10 @@ export async function exportComparativaPreciosExcel(c: ComparativaPrecios) {
     { header: 'Se le compró a',  width: 26, valor: (p: typeof c.piezas[number]) => p.ultimo_proveedor ?? '—' },
     { header: 'Pagado',          width: 14, formato: 'moneda' as const, valor: (p: typeof c.piezas[number]) => p.ultimo_pagado ?? 0 },
     { header: 'Ahorro/unidad',   width: 14, formato: 'moneda' as const, valor: (p: typeof c.piezas[number]) => p.ahorro_unitario ?? 0 },
+    // La mayor subida entre sus proveedores. Es lo que ordena la tabla cuando
+    // no hay con quién comparar, así que tiene que poder filtrarse en Excel.
+    { header: 'Mayor alza %',    width: 13, formato: 'porcentaje' as const,
+      valor: (p: typeof c.piezas[number]) => p.alza_pct ?? 0 },
   ]
   wb.hoja('Comparativa', columnasPivote, c.piezas, {
     totales: { 'Refacción': 'Total', 'Ahorro/unidad': c.totales.ahorro_unitario_total },
@@ -273,6 +349,15 @@ export async function exportComparativaPreciosExcel(c: ComparativaPrecios) {
       valor: (x) => x.precio.otro ? (x.precio.otro.origen === 'pagado' ? 'Pagado' : 'Cotizado') : '—' },
     { header: 'Precio de esa otra fuente', width: 22, formato: 'moneda',
       valor: (x) => x.precio.otro?.precio ?? 0 },
+    { header: 'Registros de este proveedor', width: 24, valor: (x) => x.precio.registros },
+    { header: 'Precio anterior', width: 16, formato: 'moneda', valor: (x) => x.precio.precio_anterior ?? 0 },
+    { header: 'Fecha anterior',  width: 14, formato: 'fecha',
+      valor: (x) => x.precio.fecha_anterior ? new Date(`${x.precio.fecha_anterior}T12:00:00`) : null },
+    { header: 'Cambio %',        width: 12, formato: 'porcentaje', valor: (x) => x.precio.cambio_pct ?? 0 },
+    { header: 'Primer precio',   width: 14, formato: 'moneda', valor: (x) => x.precio.precio_primero },
+    { header: 'Desde',           width: 13, formato: 'fecha',
+      valor: (x) => new Date(`${x.precio.fecha_primera}T12:00:00`) },
+    { header: 'Cambio total %',  width: 14, formato: 'porcentaje', valor: (x) => x.precio.cambio_total_pct ?? 0 },
     { header: 'vs mejor %',  width: 12, formato: 'porcentaje', valor: (x) => x.precio.sobre_mejor },
     { header: 'Es el más barato', width: 16, valor: (x) => x.precio.sobre_mejor === 0 ? 'Sí' : 'No' },
   ], largo, { vacio: 'Todavía no hay cotizaciones capturadas ni compras registradas.' })

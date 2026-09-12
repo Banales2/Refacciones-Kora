@@ -72,6 +72,33 @@ qué tasa entraron. Sumárselo a las demás dejaría unas con IVA y otras sin é
 que es peor que no tocarlo. Es además la misma base sobre la que el resto de la
 app reporta gasto: todos los totales son `cantidad × costo_unitario`.
 
+## Cuando no hay con quién comparar: cómo se movió el precio
+
+Con un solo proveedor en el catálogo la comparación entre columnas no existe, y
+la tabla se lee vacía aunque tenga cientos de precios detrás. Pero ahí sigue
+habiendo una pregunta que sí se puede contestar con lo que hay: **¿me subieron
+el precio?**
+
+Por eso cada precio vigente lleva su historial dentro de la misma fuente y el
+mismo proveedor: cuántos registros hay (`registros`), cuál era el anterior y de
+cuándo (`precio_anterior`, `fecha_anterior`), el cambio contra él (`cambio_pct`)
+y el recorrido completo desde el más viejo (`precio_primero`, `fecha_primera`,
+`cambio_total_pct`). En pantalla es la tercera línea de cada celda; en los
+reportes, la sección *Cómo cambió el precio con cada proveedor*.
+
+**Una compra es una factura, no un renglón.** La misma refacción viene repetida
+en varias partidas del mismo papel —así exporta el sistema del proveedor, ver
+`importacion-historica.md`—, y contar cada partida como una compra distinta
+fabricaría un cambio de precio de 0% contra sí misma. El historial agrupa por
+factura antes de medir.
+
+La refacción lleva además `alza_pct`: la mayor subida entre sus proveedores. Es
+el tercer criterio de orden de la tabla, después del ahorro y de la diferencia
+entre proveedores —un sobreprecio contra otro proveedor es dinero que se pierde
+hoy; una subida puede ser el mercado entero—, pero por delante del orden
+alfabético: con un solo proveedor los dos primeros empatan en cero para todo el
+catálogo, y sin esto lo que más subió quedaba enterrado.
+
 ## Un proveedor que cotiza *y* al que se le compra
 
 Queda **una entrada por proveedor** —la comparativa se lee como una columna por
