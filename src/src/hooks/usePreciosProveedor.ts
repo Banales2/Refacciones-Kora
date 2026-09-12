@@ -9,7 +9,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 export interface PrecioProveedor {
-  id:             number
+  /**
+   * El id de la cotización. Null en una compra: ésa vive en su factura, no en
+   * el catálogo de precios, y por eso no se edita ni se borra desde aquí.
+   */
+  id:             number | null
+  /** Clave única del registro, venga de donde venga. */
+  clave:          string
+  /** Si el número lo pidió el proveedor o si ya se le pagó. */
+  origen:         'cotizado' | 'pagado'
+  /** Solo en compras: de qué factura salió y cuántas piezas entraron. */
+  folio:          string | null
+  cantidad:       number | null
+  /** El descuento con el que se llegó a `precio_comparable`. */
+  descuento_pct:  number | null
   proveedor_id:   number
   pieza_id:       number
   precio:         number

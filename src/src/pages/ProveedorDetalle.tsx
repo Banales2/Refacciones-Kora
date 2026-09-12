@@ -58,8 +58,13 @@ type GrupoPieza = {
   historial: PrecioProveedor[]
 }
 
-// La API ya devuelve los precios ordenados por refacción y, dentro de cada una,
-// del más reciente al más viejo: basta con agrupar respetando ese orden.
+/** Cuántos de los registros de una refacción salieron de una compra real. */
+function compras(g: GrupoPieza): number {
+  return g.historial.filter((p) => p.origen === 'pagado').length
+}
+
+// La API ya devuelve los registros ordenados por refacción y, dentro de cada
+// una, del más reciente al más viejo: basta con agrupar respetando ese orden.
 function agrupar(items: PrecioProveedor[]): GrupoPieza[] {
   const grupos = new Map<number, GrupoPieza>()
   for (const p of items) {
@@ -89,9 +94,15 @@ function agrupar(items: PrecioProveedor[]): GrupoPieza[] {
 function ComparativaBadge({ vigente }: { vigente: PrecioProveedor }) {
   const mejor = vigente.mejor_precio != null ? Number(vigente.mejor_precio) : null
   const precio = Number(vigente.precio_comparable)
-  const base =
-    `Comparado sobre el precio con descuento: ` +
-    `${formatMXN(vigente.precio)} de lista − ${vigente.descuento_referencia}% = ${formatMXN(precio)}`
+  // Una compra ya trae su descuento aplicado —o ya venía descontada y sin
+  // desglosar—; una cotización se estima con el de referencia. Decirlo aquí
+  // evita que el badge afirme un descuento que nadie pactó.
+  const base = vigente.origen === 'pagado'
+    ? (vigente.descuento_pct
+        ? `Comparado sobre lo pagado: ${formatMXN(vigente.precio)} de lista − ${vigente.descuento_pct}% = ${formatMXN(precio)}`
+        : `Comparado sobre lo que se pagó: ${formatMXN(precio)}`)
+    : `Comparado sobre el precio con descuento: ` +
+      `${formatMXN(vigente.precio)} de lista − ${vigente.descuento_referencia}% = ${formatMXN(precio)}`
 
   if (mejor == null || vigente.proveedores_con_precio <= 1) {
     return (
@@ -154,8 +165,11 @@ function HistorialTabla({
       <Table.Thead>
         <Table.Tr>
           <Table.Th style={{ width: 130 }}>Fecha</Table.Th>
+          <Table.Th style={{ width: 105 }}>Origen</Table.Th>
           <Table.Th style={{ width: 120, textAlign: 'right' }}>Precio</Table.Th>
           <Table.Th style={{ width: 110 }}>Cambio</Table.Th>
+          <Table.Th style={{ width: 130 }}>Factura</Table.Th>
+          <Table.Th style={{ width: 70, textAlign: 'center' }}>Piezas</Table.Th>
           <Table.Th>Observaciones</Table.Th>
           <Table.Th style={{ width: 160 }}>Registró</Table.Th>
           <Table.Th style={{ width: 80 }} />
@@ -163,12 +177,17 @@ function HistorialTabla({
       </Table.Thead>
       <Table.Tbody>
         {historial.map((p, i) => (
-          <Table.Tr key={p.id}>
+          <Table.Tr key={p.clave}>
             <Table.Td>
               <Group gap={6} wrap="nowrap">
                 {formatFecha(p.fecha)}
                 {i === 0 && <Badge size="xs" variant="light">Vigente</Badge>}
               </Group>
+            </Table.Td>
+            <Table.Td>
+              <Badge size="xs" variant="light" color={p.origen === 'pagado' ? 'blue' : 'grape'}>
+                {p.origen === 'pagado' ? 'Pagado' : 'Cotizado'}
+              </Badge>
             </Table.Td>
             <Table.Td style={{ textAlign: 'right' }} fw={i === 0 ? 600 : 400}>
               {formatMXN(p.precio)}
@@ -176,21 +195,36 @@ function HistorialTabla({
             <Table.Td>
               <VariacionCelda actual={p.precio} anterior={historial[i + 1]?.precio} />
             </Table.Td>
+            <Table.Td c={p.folio ? undefined : 'dimmed'}>
+              <Text size="sm">{p.folio ?? '—'}</Text>
+            </Table.Td>
+            <Table.Td style={{ textAlign: 'center' }} c={p.cantidad == null ? 'dimmed' : undefined}>
+              <Text size="sm">{p.cantidad ?? '—'}</Text>
+            </Table.Td>
             <Table.Td c={p.observaciones ? undefined : 'dimmed'}>
               <Text size="sm">{p.observaciones ?? '—'}</Text>
             </Table.Td>
             <Table.Td><Text size="xs" c="dimmed">{p.registrado_por}</Text></Table.Td>
             <Table.Td>
-              <Group gap={4} justify="flex-end" wrap="nowrap">
-                <ActionIcon variant="subtle" color="blue" size="sm"
-                  aria-label="Editar" onClick={() => onEdit(p)}>
-                  <IconPencil size={14} />
-                </ActionIcon>
-                <ActionIcon variant="subtle" color="red" size="sm"
-                  aria-label="Eliminar" onClick={() => onDelete(p)}>
-                  <IconTrash size={14} />
-                </ActionIcon>
-              </Group>
+              {/* Una compra no se corrige desde aquí: el número es de su
+                  factura, y editarlo en el catálogo de precios dejaría el
+                  gasto diciendo una cosa y el precio otra. */}
+              {p.origen === 'cotizado' ? (
+                <Group gap={4} justify="flex-end" wrap="nowrap">
+                  <ActionIcon variant="subtle" color="blue" size="sm"
+                    aria-label="Editar" onClick={() => onEdit(p)}>
+                    <IconPencil size={14} />
+                  </ActionIcon>
+                  <ActionIcon variant="subtle" color="red" size="sm"
+                    aria-label="Eliminar" onClick={() => onDelete(p)}>
+                    <IconTrash size={14} />
+                  </ActionIcon>
+                </Group>
+              ) : (
+                <Tooltip label="Viene de una factura: se corrige en la compra, no aquí">
+                  <Text size="xs" c="dimmed" ta="right">de compra</Text>
+                </Tooltip>
+              )}
             </Table.Td>
           </Table.Tr>
         ))}
@@ -626,9 +660,12 @@ export default function ProveedorDetalle({
               ) : grupos.length === 0 ? (
                 <Center py="xl">
                   <Stack align="center" gap="xs">
-                    <Text c="dimmed">Este proveedor no tiene precios registrados.</Text>
+                    <Text c="dimmed">
+                      A este proveedor no se le ha comprado nada ni tiene precios registrados.
+                    </Text>
                     <Text size="sm" c="dimmed">
-                      Registra lo que pide por una refacción para poder compararlo con los demás.
+                      Cada compra suya entra aquí sola. Si te cotizó algo que todavía no le
+                      compras, regístralo para poder compararlo con los demás.
                     </Text>
                     <Button size="xs" variant="light" leftSection={<IconPlus size={14} />}
                       onClick={() => abrirAlta()}>
@@ -647,8 +684,10 @@ export default function ProveedorDetalle({
                             <div style={{ minWidth: 0 }}>
                               <Text size="sm" fw={500} truncate>{g.label}</Text>
                               <Text size="xs" c="dimmed">
-                                {g.tipo ?? 'Sin tipo'} · {g.historial.length} precio
-                                {g.historial.length !== 1 ? 's' : ''} · último {formatFecha(vigente.fecha)}
+                                {g.tipo ?? 'Sin tipo'} · {g.historial.length} registro
+                                {g.historial.length !== 1 ? 's' : ''}
+                                {compras(g) > 0 && ` (${compras(g)} compra${compras(g) !== 1 ? 's' : ''})`}
+                                {' · último '}{formatFecha(vigente.fecha)}
                               </Text>
                             </div>
                             <Group gap="sm" wrap="nowrap">
@@ -731,7 +770,7 @@ export default function ProveedorDetalle({
             error={updateMut.error ? (updateMut.error as Error).message : null}
             onSubmit={({ precio, fecha, observaciones }) =>
               updateMut.mutate(
-                { id: editPrecio.id, payload: { precio, fecha, observaciones } },
+                { id: editPrecio.id!, payload: { precio, fecha, observaciones } },
                 { onSuccess: () => setEditPrecio(null) }
               )
             }
@@ -765,7 +804,8 @@ export default function ProveedorDetalle({
             </Button>
             <Button color="red" loading={deleteMut.isPending}
               onClick={() =>
-                deleteMut.mutate(deletePrecio!.id, { onSuccess: () => setDeletePrecio(null) })
+                // Solo las cotizaciones traen id, y solo ellas ofrecen el botón.
+                deleteMut.mutate(deletePrecio!.id!, { onSuccess: () => setDeletePrecio(null) })
               }>
               Eliminar
             </Button>

@@ -4,7 +4,24 @@ import { PrecioProveedorCreate, PrecioProveedorUpdate } from '../schemas/precioP
 import { DESCUENTO_REFERENCIA, precioCotizado, precioPagado } from './preciosSql'
 
 export interface PrecioProveedor {
-  id:             number
+  /**
+   * El id de la cotización. NULL en una compra: ésa no vive en
+   * `precios_proveedor`, vive en su factura, y por eso no se edita ni se borra
+   * desde el catálogo de precios.
+   */
+  id:             number | null
+  /** Clave única del registro, venga de donde venga. Para listarlos. */
+  clave:          string
+  /** Si el número lo pidió el proveedor o si ya se le pagó. */
+  origen:         'cotizado' | 'pagado'
+  /** Solo en compras: de qué factura salió y cuántas piezas entraron. */
+  folio:          string | null
+  cantidad:       number | null
+  /**
+   * El descuento con el que se llegó a `precio_comparable`. En una compra es el
+   * de su factura —un hecho—; en una cotización, el de referencia —un supuesto—.
+   */
+  descuento_pct:  number | null
   proveedor_id:   number
   pieza_id:       number
   precio:         number
@@ -17,13 +34,13 @@ export interface PrecioProveedor {
    * es el de lista, que es como lo manda el proveedor. Ver `preciosSql`.
    */
   precio_comparable: number
-  /** El descuento con el que se calculó `precio_comparable`, en por ciento. */
+  /** El descuento de referencia con el que se estiman las cotizaciones. */
   descuento_referencia: number
   // Datos de la refacción, para no tener que cruzarlos en el cliente.
   pieza_serie:    string
   pieza:          string
   tipo_pieza:     string | null
-  /** El precio más reciente que este proveedor tiene para esta refacción. */
+  /** El registro más reciente de este proveedor para esta refacción. */
   vigente:        boolean
   /**
    * El más barato de esta refacción entre todos los proveedores, ya comparable
@@ -90,8 +107,14 @@ const CTE_COMPARATIVA = `
   )
 `
 
+// Una cotización suelta, por id. Se usa después de crearla o editarla, así que
+// siempre es de origen `cotizado`: las columnas que solo tienen sentido en una
+// compra van fijas en NULL para que el tipo sea el mismo de un lado y del otro.
 const SELECT_PRECIO = `
-  SELECT pp.id, pp.proveedor_id, pp.pieza_id, pp.precio,
+  SELECT pp.id, CONCAT('c', pp.id) AS clave, 'cotizado' AS origen,
+         CAST(NULL AS NVARCHAR(30)) AS folio, CAST(NULL AS INT) AS cantidad,
+         @descRef AS descuento_pct,
+         pp.proveedor_id, pp.pieza_id, pp.precio,
          CONVERT(char(10), pp.fecha, 23) AS fecha,
          pp.observaciones, pp.registrado_por,
          p.numero_serie AS pieza_serie, p.descripcion AS pieza,
@@ -117,12 +140,27 @@ function normalizar(row: Record<string, unknown>): PrecioProveedor {
     precio:               Number(row.precio),
     precio_comparable:    Number(row.precio_comparable),
     descuento_referencia: Number(row.descuento_referencia),
-    mejor_precio: row.mejor_precio == null ? null : Number(row.mejor_precio),
+    descuento_pct: row.descuento_pct == null ? null : Number(row.descuento_pct),
+    cantidad:      row.cantidad      == null ? null : Number(row.cantidad),
+    mejor_precio:  row.mejor_precio  == null ? null : Number(row.mejor_precio),
   } as PrecioProveedor
 }
 
-// Todos los precios que este proveedor tiene registrados, del más reciente al
-// más viejo dentro de cada refacción: el primero de cada grupo es el vigente.
+/**
+ * Todo lo que este proveedor tiene registrado de cada refacción, del registro
+ * más reciente al más viejo: el primero de cada grupo es el vigente.
+ *
+ * LAS DOS FUENTES, no solo las cotizaciones. Antes esta pantalla miraba nada
+ * más `precios_proveedor`, así que a un proveedor al que se le compra mes a mes
+ * pero que nunca manda cotización se le veía vacío —decía "no tiene precios
+ * registrados" con cientos de facturas suyas en la base—. Lo que se le paga ES
+ * su precio, y es el único que hay cuando no cotiza.
+ *
+ * Una COMPRA es una factura, no un renglón, igual que en el resto de la
+ * comparativa: el mismo número de parte viene repetido en varias partidas del
+ * mismo papel y contarlas por separado pondría tres movimientos de precio
+ * idénticos el mismo día. Las cantidades sí se suman.
+ */
 export async function findByProveedor(
   proveedorId: number, descuentoRef = DESCUENTO_REFERENCIA,
 ): Promise<PrecioProveedor[]> {
@@ -131,10 +169,63 @@ export async function findByProveedor(
     .input('pid', sql.Int, proveedorId)
     .input('descRef', sql.Decimal(5, 2), descuentoRef)
     .query(`
-      ${CTE_COMPARATIVA}
-      ${SELECT_PRECIO}
-      WHERE pp.proveedor_id = @pid
-      ORDER BY p.descripcion, p.numero_serie, pp.fecha DESC, pp.id DESC
+      ${CTE_COMPARATIVA},
+      compras_prov AS (
+        SELECT l.pieza_id, fac.folio, fac.fecha_compra AS fecha, fac.descuento_pct,
+               MAX(fac.comprado_por) AS comprado_por,
+               SUM(l.cantidad_inicial) AS cantidad,
+               MAX(l.id)              AS lote_id
+        FROM lotes_pieza l
+        JOIN facturas fac ON fac.id = l.factura_id
+        WHERE fac.proveedor_id = @pid
+        GROUP BY l.pieza_id, fac.folio, fac.fecha_compra, fac.descuento_pct
+      ),
+      registros AS (
+        SELECT pp.id, 'cotizado' AS origen,
+               CONCAT('c', pp.id) AS clave,
+               pp.pieza_id, pp.precio, pp.fecha,
+               pp.observaciones, pp.registrado_por,
+               ${precioCotizado('pp')} AS precio_comparable,
+               CAST(@descRef AS DECIMAL(5,2)) AS descuento_pct,
+               CAST(NULL AS NVARCHAR(30))  AS folio,
+               CAST(NULL AS INT)           AS cantidad,
+               pp.id AS orden
+        FROM precios_proveedor pp
+        WHERE pp.proveedor_id = @pid
+        UNION ALL
+        SELECT CAST(NULL AS INT) AS id, 'pagado' AS origen,
+               CONCAT('f', c.lote_id) AS clave,
+               c.pieza_id, lo.costo_unitario AS precio, c.fecha,
+               CAST(NULL AS NVARCHAR(255)) AS observaciones,
+               CAST(c.comprado_por AS NVARCHAR(120)) AS registrado_por,
+               ${precioPagado('lo', 'c')} AS precio_comparable,
+               c.descuento_pct,
+               c.folio, c.cantidad,
+               c.lote_id AS orden
+        FROM compras_prov c
+        JOIN lotes_pieza lo ON lo.id = c.lote_id
+      )
+      SELECT rg.id, rg.clave, rg.origen, rg.folio, rg.cantidad, rg.descuento_pct,
+             @pid AS proveedor_id, rg.pieza_id, rg.precio,
+             CONVERT(char(10), rg.fecha, 23) AS fecha,
+             rg.observaciones, rg.registrado_por,
+             p.numero_serie AS pieza_serie, p.descripcion AS pieza,
+             tp.nombre AS tipo_pieza,
+             -- Vigente es el más reciente de LAS DOS fuentes: una compra de
+             -- ayer dice más que una cotización del año pasado.
+             CAST(CASE WHEN ROW_NUMBER() OVER (
+                    PARTITION BY rg.pieza_id ORDER BY rg.fecha DESC, rg.orden DESC) = 1
+                  THEN 1 ELSE 0 END AS BIT) AS vigente,
+             rg.precio_comparable, @descRef AS descuento_referencia,
+             m.mejor_precio, m.mejor_proveedor_id, pm.nombre AS mejor_proveedor,
+             m.mejor_origen, c.proveedores_con_precio
+      FROM registros rg
+      JOIN piezas p            ON p.id = rg.pieza_id
+      LEFT JOIN tipos_pieza tp ON tp.id = p.tipo_pieza_id
+      LEFT JOIN mejores m      ON m.pieza_id = rg.pieza_id AND m.rn = 1
+      LEFT JOIN proveedores pm ON pm.id = m.mejor_proveedor_id
+      LEFT JOIN conteo c       ON c.pieza_id = rg.pieza_id
+      ORDER BY p.descripcion, p.numero_serie, rg.fecha DESC, rg.orden DESC
     `)
   return r.recordset.map(normalizar)
 }
