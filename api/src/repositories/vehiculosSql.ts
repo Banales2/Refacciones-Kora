@@ -84,6 +84,22 @@ export function conHoy(req: sql.Request): sql.Request {
   return req.input('hoy', sql.Date, fechaMexico())
 }
 
+/**
+ * Todas las asignaciones de un documento, reunidas de las tablas hijas: una
+ * fila por vehículo asignado, con el id del documento al lado.
+ *
+ * Existe aparte de `vehiculosConDocumento` porque esta no filtra por un valor:
+ * sirve para contar de un golpe cuántas unidades cubre CADA documento, con un
+ * GROUP BY y un LEFT JOIN —una pasada por las tablas hijas—, en vez de una
+ * subconsulta correlacionada que las recorre otra vez por cada documento.
+ */
+export function asignacionesDocumento(campo: 'seguro_id' | 'permiso_id'): string {
+  const tablas = campo === 'seguro_id' ? TABLAS_CON_SEGURO : TABLAS_CON_PERMISO
+  return tablas
+    .map((tabla) => `SELECT ${campo} FROM ${tabla} WHERE ${campo} IS NOT NULL`)
+    .join(' UNION ALL ')
+}
+
 // Vehículos que tienen asignado cierto documento, como subconsulta de una sola
 // columna. Sirve tanto para contarlos como para filtrar por ellos.
 export function vehiculosConDocumento(campo: 'seguro_id' | 'permiso_id', valor: string): string {

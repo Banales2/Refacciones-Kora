@@ -1,6 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { TABLAS_CON_SEGURO, vehiculosConDocumento } from './vehiculosSql'
+import { TABLAS_CON_SEGURO, asignacionesDocumento, vehiculosConDocumento } from './vehiculosSql'
 
 export interface Seguro {
   id:               number
@@ -48,9 +48,13 @@ export async function findAll(): Promise<SeguroConVehiculos[]> {
   const pool = await getPool()
   const r = await pool.request()
     .query(`
-      SELECT ${COLS},
-             (SELECT COUNT(*) FROM (${vehiculosConDocumento('seguro_id', 's.id')}) x) AS vehiculos
+      SELECT ${COLS}, COALESCE(asig.vehiculos, 0) AS vehiculos
       FROM seguros s
+      LEFT JOIN (
+        SELECT seguro_id, COUNT(*) AS vehiculos
+        FROM (${asignacionesDocumento('seguro_id')}) a
+        GROUP BY seguro_id
+      ) asig ON asig.seguro_id = s.id
       ORDER BY fecha_expiracion`)
   return r.recordset.map((row) => ({
     ...mapSeguro(row),
