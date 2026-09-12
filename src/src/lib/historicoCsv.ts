@@ -15,13 +15,32 @@ import {
 /** Cómo vienen escritas las fechas del archivo. Ver `detectarFormatoFecha`. */
 export type FormatoFecha = 'MDA' | 'DMA'
 
+/**
+ * Qué es el número de la columna de precio.
+ *
+ * No se puede deducir del archivo: en los renglones de una pieza los dos
+ * valores coinciden, y en los de varias no hay contra qué contrastarlos. En la
+ * exportación de ISUZU la columna se llama "Precio unit con descuento" y lo que
+ * trae es el IMPORTE del renglón —el subtotal de todas las piezas de ese
+ * artículo en esa partida—, confirmado con el proveedor. Eso hace de `importe`
+ * el valor por omisión, pero la pantalla deja cambiarlo, igual que con el
+ * formato de fecha: el que sube el archivo lo tiene abierto al lado.
+ *
+ * Elegir mal no pasa desapercibido: el resumen enseña la cuenta hecha sobre un
+ * renglón de varias piezas, que es justo donde las dos lecturas se separan.
+ */
+export type PrecioDelArchivo = 'unitario' | 'importe'
+
 export interface RenglonHistorico {
   /** Línea del archivo, para poder ir a verla. La 1 es el encabezado. */
   linea:          number
   numero_serie:   string
   descripcion:    string
   cantidad:       number
+  /** Lo que cuesta UNA pieza. Es lo que se guarda y lo que se compara. */
   costo_unitario: number
+  /** El número tal como venía en la columna de precio, para poder enseñarlo. */
+  importe:        number
 }
 
 export interface FacturaHistorica {
@@ -59,6 +78,8 @@ export interface ArchivoHistorico {
   /** El archivo traía columna de tipo de pieza. Ver `COLUMNAS.tipo`. */
   conTipos:  boolean
   formato:   FormatoFecha
+  /** Cómo se interpretó la columna de precio. */
+  precioEs:  PrecioDelArchivo
   /** Total de renglones que sí se leyeron. */
   renglones: number
 }
@@ -89,7 +110,7 @@ export const NOMBRE_COLUMNA: Record<Columna, string> = {
   serie: 'Artículo',
   desc:  'Descripción',
   cant:  'Cantidad',
-  costo: 'Precio unitario',
+  costo: 'Precio',
   tipo:  'Tipo',
 }
 
@@ -226,14 +247,16 @@ function hoyIso(): string {
 
 /**
  * Lee el archivo completo. `formato` fuerza cómo se interpretan las fechas; sin
- * él se detecta (ver `detectarFormatoFecha`).
+ * él se detecta (ver `detectarFormatoFecha`). `precioEs` dice qué es la columna
+ * de precio: el importe del renglón (lo normal en estas exportaciones) o el
+ * precio de una pieza. Ver `PrecioDelArchivo`.
  *
  * Un renglón ilegible no tumba el archivo: se aparta en `rechazos` con el
  * motivo y el número de línea. Con doscientos renglones exportados de otro
  * sistema, rechazar todo por uno roto significa que nadie importa nunca nada.
  */
 export function leerArchivoHistorico(
-  texto: string, formato?: FormatoFecha,
+  texto: string, formato?: FormatoFecha, precioEs: PrecioDelArchivo = 'importe',
 ): ArchivoHistorico {
   const filas = parseCsv(texto)
   if (filas.length === 0) throw new ArchivoInvalidoError('El archivo está vacío')
@@ -274,9 +297,31 @@ export function leerArchivoHistorico(
       return rechazar(`Cantidad inválida: "${(fila[col.cant!] ?? '').trim()}"`)
     }
 
-    const costo = aNumero(fila[col.costo!] ?? '')
-    if (costo === null || costo <= 0 || costo > 200000) {
+    const importe = aNumero(fila[col.costo!] ?? '')
+    if (importe === null || importe <= 0) {
       return rechazar(`Precio inválido: "${(fila[col.costo!] ?? '').trim()}"`)
+    }
+
+    // Lo que se guarda es el precio de UNA pieza: es lo que compara la
+    // comparativa de precios contra otro proveedor, y lo que multiplica la
+    // cantidad en todo reporte de gasto. Si la columna trae el importe del
+    // renglón, aquí es donde se reparte entre las piezas que cubre.
+    //
+    // Se redondea a dos decimales porque `lotes_pieza.costo_unitario` es
+    // DECIMAL(18,2). En un importe que no divide exacto, multiplicar de vuelta
+    // puede dar un centavo de más o de menos contra la factura; repartir ese
+    // centavo entre los renglones sería inventar un precio distinto para
+    // piezas idénticas, que es peor que el centavo.
+    const costo = precioEs === 'importe'
+      ? Math.round((importe / cantidad) * 100) / 100
+      : importe
+    // El tope se comprueba sobre el unitario y no sobre el importe: es el
+    // mismo límite que valida la API para el costo de un lote, y un importe
+    // grande repartido entre muchas piezas puede ser perfectamente válido.
+    if (costo <= 0 || costo > 200000) {
+      return rechazar(
+        `Precio unitario inválido: ${importe} entre ${cantidad} = ${costo}`,
+      )
     }
 
     // Los saltos de línea dentro de una descripción entrecomillada son reales
@@ -292,14 +337,14 @@ export function leerArchivoHistorico(
 
     const factura = porFolio.get(folio)
     if (factura) {
-      factura.renglones.push({ linea, numero_serie: serie, descripcion, cantidad, costo_unitario: costo })
+      factura.renglones.push({ linea, numero_serie: serie, descripcion, cantidad, costo_unitario: costo, importe })
     } else {
       // La fecha de la factura es la del primer renglón que la nombra. En una
       // exportación los N renglones de un folio traen la misma.
       porFolio.set(folio, {
         num_factura: folio,
         fecha_compra: fecha,
-        renglones: [{ linea, numero_serie: serie, descripcion, cantidad, costo_unitario: costo }],
+        renglones: [{ linea, numero_serie: serie, descripcion, cantidad, costo_unitario: costo, importe }],
       })
     }
 
@@ -327,6 +372,7 @@ export function leerArchivoHistorico(
     articulos: [...articulos.values()].sort((a, b) => a.numero_serie.localeCompare(b.numero_serie)),
     conTipos: col.tipo !== undefined,
     formato: fmt,
+    precioEs,
     renglones,
   }
 }

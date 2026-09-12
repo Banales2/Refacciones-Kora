@@ -62,7 +62,7 @@ nombre, sin acentos y sin importar mayúsculas; se aceptan varios alias (ver
 | Artículo | numero de parte, no parte, codigo, sku |
 | Descripción | concepto |
 | Cantidad | cant, piezas |
-| Precio unit con descuento | precio unitario, precio, costo unitario |
+| Precio (ver abajo) | precio unit con descuento, precio unitario, precio, costo unitario |
 | Tipo *(opcional)* | tipo de pieza, categoria, familia |
 
 Ejemplo:
@@ -72,6 +72,34 @@ Movimiento,Fecha Emisión,Artículo,Descripción,Cantidad,Precio unit con descue
 TPR8054,1/5/2026,5878324100,KING PIN KIT,2," 6,481.58 "
 TPR8058,1/6/2026,8942575121,"LENS, BACKUP, RR COMB LAMP",4, 487.65
 ```
+
+Leído como importe del renglón —lo normal—, el primero son 2 piezas a $3,240.79
+y el segundo 4 a $121.91.
+
+### La columna de precio no dice qué es
+
+En la exportación de ISUZU la columna se llama **"Precio unit con descuento"** y
+lo que trae es el **importe del renglón**: el subtotal de todas las piezas de ese
+artículo en esa partida. Confirmado con el proveedor. En los renglones de una
+pieza los dos números coinciden, y por eso el error no se veía: solo se separan
+donde la cantidad es mayor que uno.
+
+Lo que se guarda en `lotes_pieza.costo_unitario` es siempre **el precio de UNA
+pieza** —es lo que compara la comparativa contra otro proveedor y lo que
+multiplica la cantidad en todo reporte de gasto—, así que el lector divide el
+importe entre la cantidad del renglón. Por renglón, no por artículo: el mismo
+número de parte aparece repetido en varias partidas del mismo folio, cada una
+con su propia cantidad.
+
+No se puede deducir del archivo cuál de las dos cosas es, así que la pantalla
+pregunta, igual que con el formato de fecha, y enseña la cuenta hecha sobre un
+renglón real (`6 × $67.24 = $403.45`) para contrastarla contra el papel antes de
+importar. Por omisión se lee como importe del renglón.
+
+El unitario se redondea a dos decimales, que es lo que guarda la columna. Cuando
+el importe no divide exacto, multiplicar de vuelta puede dar un centavo de más o
+de menos contra la factura; repartir ese centavo entre los renglones daría
+precios distintos para piezas idénticas, que es peor que el centavo.
 
 Detalles que el lector resuelve solo:
 

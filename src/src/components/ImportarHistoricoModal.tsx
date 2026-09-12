@@ -31,7 +31,9 @@ import { leerTexto } from '../lib/csv'
 import {
   ArchivoInvalidoError, leerArchivoHistorico,
 } from '../lib/historicoCsv'
-import type { ArchivoHistorico, ArticuloHistorico, FormatoFecha } from '../lib/historicoCsv'
+import type {
+  ArchivoHistorico, ArticuloHistorico, FormatoFecha, PrecioDelArchivo,
+} from '../lib/historicoCsv'
 import { useSucursales } from '../hooks/useSucursales'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
 import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
@@ -63,15 +65,23 @@ function formatFecha(iso: string) {
 // ── Lo que trae el archivo ────────────────────────────────────────────────────
 
 function ResumenArchivo({
-  archivo, nuevas, enCatalogo, formato, onFormato,
+  archivo, nuevas, enCatalogo, formato, onFormato, precioEs, onPrecioEs,
 }: {
   archivo:    ArchivoHistorico
   nuevas:     number
   enCatalogo: number
   formato:    FormatoFecha
   onFormato:  (f: FormatoFecha) => void
+  precioEs:   PrecioDelArchivo
+  onPrecioEs: (p: PrecioDelArchivo) => void
 }) {
   const fechas = archivo.facturas.map((f) => f.fecha_compra).sort()
+  // Un renglón de varias piezas, que es donde las dos lecturas de la columna
+  // dan números distintos. En un archivo donde todos los renglones son de una
+  // pieza la elección no cambia nada, y entonces no hay ejemplo que enseñar.
+  const ejemplo = archivo.facturas
+    .flatMap((f) => f.renglones)
+    .find((r) => r.cantidad > 1)
   return (
     <Paper withBorder p="md" radius="md">
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
@@ -96,20 +106,41 @@ function ResumenArchivo({
         </Group>
         {/* El formato de fecha se detecta, pero se deja cambiar: "1/5/2026" es
             válido de las dos formas y quien subió el archivo lo tiene abierto. */}
-        <Select
-          label="Fechas del archivo"
-          description={fechas.length
-            ? `De ${formatFecha(fechas[0])} a ${formatFecha(fechas[fechas.length - 1])}`
-            : undefined}
-          w={210}
-          data={[
-            { value: 'MDA', label: 'Mes/Día/Año  (7/14/2026)' },
-            { value: 'DMA', label: 'Día/Mes/Año  (14/7/2026)' },
-          ]}
-          value={formato}
-          onChange={(v) => v && onFormato(v as FormatoFecha)}
-          allowDeselect={false}
-        />
+        <Group gap="md" align="flex-start" wrap="wrap">
+          <Select
+            label="Fechas del archivo"
+            description={fechas.length
+              ? `De ${formatFecha(fechas[0])} a ${formatFecha(fechas[fechas.length - 1])}`
+              : undefined}
+            w={210}
+            data={[
+              { value: 'MDA', label: 'Mes/Día/Año  (7/14/2026)' },
+              { value: 'DMA', label: 'Día/Mes/Año  (14/7/2026)' },
+            ]}
+            value={formato}
+            onChange={(v) => v && onFormato(v as FormatoFecha)}
+            allowDeselect={false}
+          />
+          {/* La columna de precio no dice qué es. En estas exportaciones se
+              llama "Precio unit con descuento" y trae el importe del renglón,
+              así que esa es la opción por omisión; el ejemplo de abajo enseña
+              la cuenta sobre un renglón real para poder contrastarla contra el
+              papel antes de importar. */}
+          <Select
+            label="La columna de precio es"
+            description={ejemplo
+              ? `Ej.: ${ejemplo.cantidad} × ${formatMXN(ejemplo.costo_unitario)} = ${formatMXN(ejemplo.importe)}`
+              : 'Todos los renglones son de una pieza: da igual cuál elijas'}
+            w={250}
+            data={[
+              { value: 'importe',  label: 'El importe del renglón' },
+              { value: 'unitario', label: 'El precio de una pieza' },
+            ]}
+            value={precioEs}
+            onChange={(v) => v && onPrecioEs(v as PrecioDelArchivo)}
+            allowDeselect={false}
+          />
+        </Group>
       </Group>
     </Paper>
   )
@@ -341,6 +372,9 @@ export default function ImportarHistoricoModal({
   const [archivoCsv, setArchivoCsv] = useState<File | null>(null)
   const [texto, setTexto]           = useState<string | null>(null)
   const [formato, setFormato]       = useState<FormatoFecha | null>(null)
+  // Qué es la columna de precio. Arranca en el importe del renglón, que es lo
+  // que mandan estas exportaciones; se puede cambiar sin volver a subir nada.
+  const [precioEs, setPrecioEs]     = useState<PrecioDelArchivo>('importe')
   // Solo el de abrir el archivo. El de interpretarlo sale de `lectura`.
   const [errorArchivo, setErrorArchivo] = useState<string | null>(null)
   const [leyendo, setLeyendo]       = useState(false)
@@ -372,13 +406,17 @@ export default function ImportarHistoricoModal({
     [tiposData],
   )
 
-  // El archivo se relee cuando cambia el formato de fecha elegido: es lo único
-  // que puede cambiar sin volver a subirlo. El error sale del mismo cálculo y
-  // no de un `setState` dentro del render, que es como se hacen los bucles.
+  // El archivo se relee cuando cambia el formato de fecha o qué es la columna
+  // de precio: es lo único que puede cambiar sin volver a subirlo. El error
+  // sale del mismo cálculo y no de un `setState` dentro del render, que es
+  // como se hacen los bucles.
   const lectura = useMemo<{ archivo: ArchivoHistorico | null; error: string | null }>(() => {
     if (texto === null) return { archivo: null, error: null }
     try {
-      return { archivo: leerArchivoHistorico(texto, formato ?? undefined), error: null }
+      return {
+        archivo: leerArchivoHistorico(texto, formato ?? undefined, precioEs),
+        error: null,
+      }
     } catch (e) {
       return {
         archivo: null,
@@ -387,7 +425,7 @@ export default function ImportarHistoricoModal({
           : 'No se pudo leer el archivo. ¿Es un CSV?',
       }
     }
-  }, [texto, formato])
+  }, [texto, formato, precioEs])
   const archivo = lectura.archivo
   // El de abrir el archivo (no se pudo leer del disco) y el de interpretarlo.
   const problema = errorArchivo ?? lectura.error
@@ -554,6 +592,8 @@ export default function ImportarHistoricoModal({
                 enCatalogo={enCatalogo}
                 formato={archivo.formato}
                 onFormato={setFormato}
+                precioEs={archivo.precioEs}
+                onPrecioEs={setPrecioEs}
               />
 
               <Rechazos archivo={archivo} />
