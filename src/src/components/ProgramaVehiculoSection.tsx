@@ -25,7 +25,7 @@
 //  - El **renglón**: cada operación trae su "o cada N meses" y corre por su
 //    cuenta. Puede vencer con la visita todavía lejos, y entonces se atiende
 //    solo, sin adelantar el resto de la columna.
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   Stack, Group, Text, Table, Badge, Button, Modal, Alert, Loader, Center,
   ActionIcon, Tooltip, Divider, Paper, NumberInput, Progress, SegmentedControl,
@@ -40,9 +40,11 @@ import {
   useSetExcepciones, ORIGEN_ARRANQUE_LABEL,
 } from '../hooks/useProgramaVehiculo'
 import type {
-  ServicioPendiente, OperacionPorTiempo, Etapa, EstadoProgramaVehiculo,
+  ServicioPendiente, OperacionPorTiempo, Etapa, EstadoProgramaVehiculo, OperacionAtendida,
 } from '../hooks/useProgramaVehiculo'
-import { useProgramasModelo, TIPO_PROGRAMA_LABEL } from '../hooks/usePrograma'
+import { useProgramasModelo, useAccionesPrograma, TIPO_PROGRAMA_LABEL } from '../hooks/usePrograma'
+import { useTiposPieza } from '../hooks/useTiposPieza'
+import type { RenglonColumna, ActaValor } from '../lib/acta'
 import { KM_MAX } from '../lib/validaciones'
 import { formatMXN, formatMXNCorto } from '../lib/formato'
 import { FechaInput } from './FechaInput'
@@ -276,6 +278,46 @@ function ProximaVisita({
   )
 }
 
+// ── El acta de una visita ya cerrada ─────────────────────────────────────────
+
+// Cuántos renglones de la columna se hicieron, y cuáles no con su motivo. Las
+// visitas anteriores a que el acta existiera llegan con la lista vacía: eso no
+// es "no se hizo nada", es que no se preguntó, y por eso se dice aparte.
+function ActaDeLaVisita({
+  acta, programa,
+}: {
+  acta:     OperacionAtendida[]
+  programa: EstadoProgramaVehiculo['programa']
+}) {
+  if (!acta.length) {
+    return (
+      <Tooltip label="Se registró antes de que se llevara el detalle: no se sabe qué quedó sin hacer." multiline w={230}>
+        <Text size="sm" c="dimmed">—</Text>
+      </Tooltip>
+    )
+  }
+  const hechas   = acta.filter((a) => a.hecha)
+  const omitidas = acta.filter((a) => !a.hecha)
+  const nombre = (id: number) =>
+    programa.operaciones.find((o) => o.id === id)?.nombre ?? `Operación ${id}`
+
+  return (
+    <Tooltip
+      multiline w={300}
+      label={omitidas.length
+        ? omitidas.map((a) => `${nombre(a.operacion_id)}: ${a.nota ?? 'sin motivo'}`).join(' · ')
+        : 'Se hizo la columna completa'}
+    >
+      <Badge
+        size="sm" variant="light"
+        color={omitidas.length ? 'yellow' : 'teal'}
+      >
+        {hechas.length} de {acta.length}
+      </Badge>
+    </Tooltip>
+  )
+}
+
 // ── Sección ──────────────────────────────────────────────────────────────────
 
 export default function ProgramaVehiculoSection({
@@ -297,6 +339,10 @@ export default function ProgramaVehiculoSection({
   const estado = data?.data ?? null
   // Solo para el caso sin programa: saber si el modelo tiene alguno que ofrecer.
   const { data: delModelo } = useProgramasModelo(modeloId)
+  // Para el acta: qué verbo consume refacción, y cómo se llama el tipo de pieza
+  // que cada renglón exige. Las dos son catálogos chicos y ya cacheados.
+  const { data: accionesData }   = useAccionesPrograma()
+  const { data: tiposPiezaData } = useTiposPieza()
 
   const asignarMut  = useAsignarPrograma(vehiculoId)
   const etapaMut    = useForzarEtapa(vehiculoId)
@@ -323,6 +369,47 @@ export default function ProgramaVehiculoSection({
   // formulario de mantenimiento.
   const [fechaTrabajo, setFechaTrabajo] = useState(hoyIso())
   const [kmTrabajo, setKmTrabajo]       = useState<number | null>(null)
+  // Lo que se va contestando de cada renglón de la columna. Vive aquí y no en
+  // el formulario porque es esta pantalla la que cierra la columna: el
+  // formulario solo lo pinta y lo revisa contra las refacciones capturadas.
+  const [acta, setActa]                 = useState<ActaValor>({})
+
+  // Los renglones de la columna que toca, ya resueltos contra los dos
+  // catálogos: cuál acción consume refacción y cómo se llama el tipo de pieza
+  // que el renglón exige. Va antes de cualquier salida temprana porque es un
+  // hook.
+  const renglonesColumna = useMemo<RenglonColumna[]>(() => {
+    const proxima = estado?.proxima
+    if (!proxima) return []
+    const acciones = new Map((accionesData?.data ?? []).map((a) => [a.codigo, a]))
+    const tipos    = new Map((tiposPiezaData?.data ?? []).map((t) => [t.id, t.nombre]))
+    return proxima.operaciones.map((o) => {
+      const accion = acciones.get(o.accion)
+      return {
+        operacion_id:      o.operacion.id,
+        nombre:            o.operacion.nombre,
+        categoria:         o.operacion.categoria,
+        accion:            o.accion,
+        accion_nombre:     accion?.nombre ?? o.accion,
+        tipo_pieza_id:     o.operacion.tipo_pieza_id,
+        tipo_pieza_nombre: o.operacion.tipo_pieza_id != null
+          ? tipos.get(o.operacion.tipo_pieza_id) ?? null
+          : null,
+        // Mientras el catálogo de acciones no llegue, ningún renglón exige
+        // pieza: reclamar una refacción por un dato que todavía no cargó sería
+        // un reclamo inventado. La API revisa lo mismo al guardar.
+        requiere_pieza:    accion?.requiere_pieza ?? false,
+      }
+    })
+  }, [estado?.proxima, accionesData, tiposPiezaData])
+
+  // El acta arranca en blanco cada vez que se abre la captura: las respuestas
+  // son de esta visita, no de la anterior.
+  function abrirVisita() {
+    setActa({})
+    setError(null)
+    setVisitaOpen(true)
+  }
 
   const encabezado = (
     <Divider
@@ -424,7 +511,16 @@ export default function ProgramaVehiculoSection({
       onError: (e: Error) => setError(e.message),
       onSuccess: (res) => {
         const ligar = () => visitaMut.mutate(
-          { mantenimiento_id: res.data.id },
+          {
+            mantenimiento_id: res.data.id,
+            // El acta va con el vínculo: es lo que esta visita declaró de cada
+            // renglón de su columna.
+            operaciones: renglonesColumna.map((r) => ({
+              operacion_id: r.operacion_id,
+              hecha:        acta[r.operacion_id]?.hecha ?? false,
+              nota:         acta[r.operacion_id]?.nota.trim() || null,
+            })),
+          },
           {
             onSuccess: () => setVisitaOpen(false),
             onError: (e: Error) => setError(
@@ -519,7 +615,7 @@ export default function ProgramaVehiculoSection({
         <ProximaVisita
           proxima={proxima}
           kmRecorrido={estado.km_recorrido}
-          onRegistrar={() => { setError(null); setVisitaOpen(true) }}
+          onRegistrar={abrirVisita}
         />
       ) : (
         <Alert color="blue" variant="light">
@@ -642,6 +738,9 @@ export default function ProgramaVehiculoSection({
                 <Table.Th>Columna</Table.Th>
                 <Table.Th>Fecha</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>Odómetro</Table.Th>
+                {/* El acta: qué renglones de la columna se hicieron de verdad.
+                    Antes se daban todos por hechos y no quedaba registro. */}
+                <Table.Th style={{ textAlign: 'center' }}>Se hizo</Table.Th>
                 {/* Lo que costó de verdad, que es lo que se gana con que la
                     visita sea el mantenimiento y no un registro aparte. */}
                 <Table.Th style={{ textAlign: 'right' }}>Costo</Table.Th>
@@ -669,6 +768,9 @@ export default function ProgramaVehiculoSection({
                     <Table.Td><Text size="sm">{fmtFecha(v.fecha)}</Text></Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       <Text size="sm">{v.km != null ? `${nf.format(v.km)} km` : '—'}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'center' }}>
+                      <ActaDeLaVisita acta={v.operaciones} programa={programa} />
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       <Text size="sm">{formatMXN(v.costo)}</Text>
@@ -715,9 +817,10 @@ export default function ProgramaVehiculoSection({
       >
         <Stack gap="sm">
           <Alert color="blue" variant="light">
-            Se registra como un mantenimiento normal. Al guardarlo se dan por hechas las{' '}
-            {proxima?.operaciones.length ?? 0} operaciones de la columna, y sus límites de meses
-            vuelven a contar desde esta fecha.
+            Se registra como un mantenimiento normal, y abajo se contesta renglón por renglón qué
+            se hizo de las {proxima?.operaciones.length ?? 0} operaciones de la columna. Solo lo
+            que se marque como hecho vuelve a contar sus meses desde esta fecha; lo que no, queda
+            anotado y sigue vencido.
           </Alert>
           <MantenimientoForm
             vehiculoId={vehiculoId}
@@ -734,6 +837,7 @@ export default function ProgramaVehiculoSection({
                 'Este mantenimiento es la visita con la que la unidad cierra esa columna de su ' +
                 'programa: por eso su origen es la prevención y no se puede quitar.',
             }}
+            acta={{ renglones: renglonesColumna, value: acta, onChange: setActa }}
             isPending={visitaMut.isPending || mantMut.isPending || piezasMut.isPending}
             error={error}
             onSubmit={registrarVisita}

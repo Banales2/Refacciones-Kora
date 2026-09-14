@@ -97,6 +97,21 @@ export interface EstadoOperacion {
   mantenimiento_id: number | null
 }
 
+/**
+ * Lo que la visita declaró de un renglón de su columna: si se hizo o no, con
+ * qué acción y —cuando no se hizo— por qué. Es el acta del servicio
+ * (migración 031): antes se daban por hechos todos los renglones sin que nadie
+ * lo dijera.
+ */
+export interface OperacionAtendida {
+  operacion_id: number
+  /** La celda al momento de la visita, copiada: el catálogo del modelo se edita. */
+  accion:       string
+  hecha:        boolean
+  /** Motivo de lo que no se hizo; en lo hecho, una observación. */
+  nota:         string | null
+}
+
 export interface VisitaCreate {
   /** El mantenimiento que cerró la columna. No se crea aquí: ya existe. */
   mantenimiento_id: number
@@ -106,8 +121,12 @@ export interface VisitaCreate {
   indice:           number
   fecha:            string
   km?:              number | null
-  /** Los renglones que esa columna manda hacer: se cierran todos con ella. */
-  operacion_ids:    number[]
+  /**
+   * Los renglones de la columna, cada uno con lo que se declaró de él. Solo
+   * los marcados como hechos ponen al día su límite de meses; los omitidos
+   * quedan en el acta y siguen vencidos.
+   */
+  operaciones:      OperacionAtendida[]
 }
 
 // ─── Vínculo ────────────────────────────────────────────────────────────────
@@ -372,8 +391,8 @@ export async function findEstados(vehiculoId: number): Promise<EstadoOperacion[]
   return r.recordset
 }
 
-// Cierra una columna completa: declara que este mantenimiento la atendió y pone
-// al día, de un golpe, todos los renglones que la columna manda hacer.
+// Cierra una columna: declara que este mantenimiento la atendió, guarda el acta
+// renglón por renglón y pone al día únicamente los que se hicieron.
 //
 // El mantenimiento ya existe cuando se llega aquí. No se crea desde este módulo
 // —eso es trabajo de `mantenimientoRepo`, con sus piezas y su stock— y por eso
@@ -394,10 +413,26 @@ export async function crearVisita(data: VisitaCreate): Promise<Visita> {
           (mantenimiento_id, vehiculo_id, etapa, fase_id, indice)
         VALUES (@mid, @vid, @etapa, @fid, @indice)`)
 
-    for (const opId of data.operacion_ids) {
+    for (const op of data.operaciones) {
+      await tx.request()
+        .input('mid',    sql.Int,          data.mantenimiento_id)
+        .input('oid',    sql.Int,          op.operacion_id)
+        .input('accion', sql.NVarChar(2),  op.accion)
+        .input('hecha',  sql.Bit,          op.hecha)
+        .input('nota',   sql.NVarChar(300), op.nota ?? null)
+        .query(`
+          INSERT INTO mantenimiento_operacion
+            (mantenimiento_id, operacion_id, accion, hecha, nota)
+          VALUES (@mid, @oid, @accion, @hecha, @nota)`)
+
+      // Lo que no se hizo no se pone al día: el renglón sigue vencido y la
+      // próxima visita vuelve a pedirlo. Queda dicho en el acta, que es lo que
+      // antes se perdía.
+      if (!op.hecha) continue
+
       await tx.request()
         .input('vid',   sql.Int,  data.vehiculo_id)
-        .input('oid',   sql.Int,  opId)
+        .input('oid',   sql.Int,  op.operacion_id)
         .input('fecha', sql.Date, data.fecha)
         .input('km',    sql.Int,  data.km ?? null)
         .input('mid',   sql.Int,  data.mantenimiento_id)
@@ -431,6 +466,9 @@ export async function crearVisita(data: VisitaCreate): Promise<Visita> {
 // saber qué decían antes, y dejarles la fecha vieja sería peor que dejarlos
 // vencidos —diría que se hicieron cuando no se hicieron—. Los que se atendieron
 // por su cuenta (mantenimiento_id nulo) no se tocan.
+//
+// El acta se va con el vínculo: decía qué renglones de esa columna se
+// atendieron, y ya no hay columna que atender.
 export async function borrarVisita(mantenimientoId: number): Promise<boolean> {
   const pool = await getPool()
   const tx = pool.transaction()
@@ -438,6 +476,8 @@ export async function borrarVisita(mantenimientoId: number): Promise<boolean> {
   try {
     await tx.request().input('id', sql.Int, mantenimientoId)
       .query('DELETE FROM vehiculo_operacion_estado WHERE mantenimiento_id=@id')
+    await tx.request().input('id', sql.Int, mantenimientoId)
+      .query('DELETE FROM mantenimiento_operacion WHERE mantenimiento_id=@id')
     const r = await tx.request().input('id', sql.Int, mantenimientoId)
       .query(`DELETE FROM mantenimiento_programa
               OUTPUT DELETED.mantenimiento_id WHERE mantenimiento_id=@id`)
@@ -455,6 +495,49 @@ export async function findVisita(mantenimientoId: number): Promise<Visita | null
     .input('id', sql.Int, mantenimientoId)
     .query(`${SELECT_VISITA} WHERE mp.mantenimiento_id=@id`)
   return r.recordset[0] ? mapVisita(r.recordset[0]) : null
+}
+
+/**
+ * Los tipos de pieza que este mantenimiento consumió de verdad.
+ *
+ * Es con lo que se comprueba que un renglón que exige refacción —"cambio de
+ * aceite"— venga respaldado por la pieza con la que se hizo. Se lee del consumo
+ * ya capturado, no de lo que el formulario dijo: la pieza tiene que haber salido
+ * del inventario.
+ */
+export async function findTiposPiezaConsumidos(mantenimientoId: number): Promise<number[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, mantenimientoId)
+    .query(`
+      SELECT DISTINCT p.tipo_pieza_id
+      FROM detalle_mtto_pieza d
+      JOIN lotes_pieza l ON l.id = d.lote_id
+      JOIN piezas p      ON p.id = l.pieza_id
+      WHERE d.mantenimiento_id=@id AND p.tipo_pieza_id IS NOT NULL`)
+  return r.recordset.map((x: { tipo_pieza_id: number }) => x.tipo_pieza_id)
+}
+
+/** Una línea del acta, ya con el mantenimiento al que pertenece. */
+export interface ActaLinea extends OperacionAtendida {
+  mantenimiento_id: number
+}
+
+// El acta de todas las visitas de la unidad. Se lee de una sola vez y se
+// reparte por visita en el servicio: son pocas filas y una consulta por visita
+// crecería con el historial.
+export async function findActa(vehiculoId: number): Promise<ActaLinea[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('vid', sql.Int, vehiculoId)
+    .query(`
+      SELECT mo.mantenimiento_id, mo.operacion_id, mo.accion, mo.hecha, mo.nota
+      FROM mantenimiento_operacion mo
+      JOIN mantenimiento_programa mp ON mp.mantenimiento_id = mo.mantenimiento_id
+      WHERE mp.vehiculo_id=@vid`)
+  return r.recordset.map((x: ActaLinea & { hecha: boolean | number }) => ({
+    ...x, hecha: !!x.hecha,
+  }))
 }
 
 /** El mantenimiento tal como lo necesita el programa para cerrarle una columna. */

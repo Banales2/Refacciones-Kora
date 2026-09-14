@@ -19,6 +19,12 @@ export interface Accion {
   nombre:      string
   descripcion: string | null
   orden:       number
+  /**
+   * El verbo consume una refacción: al cerrar la columna hay que poder señalar
+   * la pieza con la que se hizo. Nace prendido solo en 'R' (migración 031) y es
+   * un interruptor del catálogo, no una regla de la API.
+   */
+  requiere_pieza: boolean
 }
 
 export interface Fase {
@@ -128,7 +134,9 @@ const OFFSET_ORDEN = 1_000_000
 export async function findAcciones(): Promise<Accion[]> {
   const pool = await getPool()
   const r = await pool.request()
-    .query('SELECT codigo, nombre, descripcion, orden FROM programa_acciones ORDER BY orden')
+    .query(`
+      SELECT codigo, nombre, descripcion, orden, requiere_pieza
+      FROM programa_acciones ORDER BY orden`)
   return r.recordset
 }
 
@@ -293,6 +301,19 @@ export async function remove(id: number): Promise<boolean> {
       DELETE mp FROM mantenimiento_programa mp
       JOIN programa_fases f ON f.id = mp.fase_id
       WHERE f.programa_id=@id`)
+    // Y el acta de lo que cada visita atendió renglón por renglón, que apunta a
+    // la operación con NO ACTION (migración 031). Igual que arriba: lo que se
+    // suelta es la afirmación, no el mantenimiento.
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE mo FROM mantenimiento_operacion mo
+      JOIN programa_operaciones o ON o.id = mo.operacion_id
+      WHERE o.programa_id=@id`)
+    // Lo mismo con la última atención de cada renglón (migración 013), que
+    // también apunta con NO ACTION y sin esto abortaría el borrado.
+    await tx.request().input('id', sql.Int, id).query(`
+      DELETE e FROM vehiculo_operacion_estado e
+      JOIN programa_operaciones o ON o.id = e.operacion_id
+      WHERE o.programa_id=@id`)
     await tx.request().input('id', sql.Int, id)
       .query('DELETE FROM programa_operaciones WHERE programa_id=@id')
     await tx.request().input('id', sql.Int, id)
@@ -432,10 +453,16 @@ export async function updateOperacion(id: number, data: OperacionUpdate): Promis
 
 export async function removeOperacion(id: number): Promise<boolean> {
   const pool = await getPool()
-  // Las celdas se van por la cascada de la operación (migración 012). Las
-  // excepciones por unidad no: apuntan con NO ACTION (migración 016).
+  // Las celdas se van por la cascada de la operación (migración 012). Lo que
+  // cada unidad lleva encima del renglón no: apunta con NO ACTION —las
+  // excepciones (migración 016), la última atención (013) y el acta de cada
+  // visita (031)— y sin soltarlo el FK aborta el borrado.
   await pool.request().input('id', sql.Int, id)
     .query('DELETE FROM vehiculo_operacion_excepcion WHERE operacion_id=@id')
+  await pool.request().input('id', sql.Int, id)
+    .query('DELETE FROM mantenimiento_operacion WHERE operacion_id=@id')
+  await pool.request().input('id', sql.Int, id)
+    .query('DELETE FROM vehiculo_operacion_estado WHERE operacion_id=@id')
   const r = await pool.request().input('id', sql.Int, id)
     .query('DELETE FROM programa_operaciones OUTPUT DELETED.id WHERE id=@id')
   return r.recordset.length > 0

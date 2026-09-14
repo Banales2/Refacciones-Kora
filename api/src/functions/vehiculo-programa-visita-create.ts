@@ -1,6 +1,7 @@
-// Cerrar la visita que toca: la unidad entró al taller e hizo la columna
-// completa. Pone al día de un golpe todos los renglones que esa columna manda,
-// que es justamente lo que significa que el kilometraje sea grupal.
+// Cerrar la visita que toca: la unidad entró al taller e hizo la columna que le
+// tocaba. Viene con el acta —qué se hizo y qué no, renglón por renglón—, y solo
+// lo que se declaró hecho queda al día; lo omitido se guarda con su motivo y
+// sigue vencido (migración 031).
 //
 // Lo que se manda es el mantenimiento que la pagó, no una visita: son el mismo
 // hecho (migración 017). El mantenimiento se registra antes, por su camino
@@ -24,7 +25,12 @@ export async function vehiculoProgramaVisitaCreate(req: HttpRequest, ctx: Invoca
       accion: 'EDITAR',
       tabla: 'mantenimiento',
       registroId: body.mantenimiento_id,
-      despues: { vehiculo_id: vehiculoId, cerro_servicio_del_programa: true },
+      despues: {
+        vehiculo_id: vehiculoId,
+        cerro_servicio_del_programa: true,
+        // Lo que no se hizo es lo que vale la pena poder rastrear después.
+        operaciones_omitidas: body.operaciones.filter((o) => !o.hecha).length,
+      },
       ipAddress: getClientIp(req),
     })
     return { status: 201, jsonBody: { data: estado } }

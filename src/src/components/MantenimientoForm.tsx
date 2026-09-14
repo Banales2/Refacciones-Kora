@@ -39,6 +39,9 @@ import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import { useVehiculo } from '../hooks/useVehiculos'
 import type { TipoVehiculo } from '../hooks/useVehiculos'
 import SelectCatalogo from './SelectCatalogo'
+import ActaVisitaPrograma from './ActaVisitaPrograma'
+import { revisarActa } from '../lib/acta'
+import type { RenglonColumna, ActaValor } from '../lib/acta'
 
 // Fecha local de hoy en "YYYY-MM-DD" (construirla con métodos UTC recorrería
 // el día en zonas horarias detrás de UTC).
@@ -101,7 +104,7 @@ function initMant(
 
 export default function MantenimientoForm({
   vehiculoId, tipoVehiculo, initial, prefillPendienteIds, pendienteFijo, origenFijo,
-  tipoInicial, isPending, error, onSubmit, onCancel,
+  tipoInicial, acta, isPending, error, onSubmit, onCancel,
 }: {
   vehiculoId:               number
   tipoVehiculo?:            TipoVehiculo
@@ -127,6 +130,22 @@ export default function MantenimientoForm({
    * no hacer elegir lo que ya se sabe. No lo fija: se puede cambiar.
    */
   tipoInicial?:             string
+  /**
+   * El acta de la columna que este mantenimiento cierra: qué renglones manda
+   * hacer el programa y qué se contestó de cada uno. Solo la manda la sección
+   * del programa; para un mantenimiento cualquiera no hay columna que cerrar.
+   *
+   * Se revisa aquí, junto con las refacciones, porque un renglón que consume
+   * pieza no se puede dar por hecho si el mantenimiento no la trae cargada, y
+   * las refacciones se capturan en este mismo formulario. El estado lo lleva
+   * quien abre el formulario: es él quien lo manda a la API al cerrar la
+   * columna.
+   */
+  acta?: {
+    renglones: RenglonColumna[]
+    value:     ActaValor
+    onChange:  (v: ActaValor) => void
+  }
   isPending:                boolean
   error:                    string | null
   onSubmit:                 (p: MantenimientoPayload, piezas: DetalleMttoPayload[]) => void
@@ -335,12 +354,36 @@ export default function MantenimientoForm({
     (s, p) => s + (Number(p.cantidad) || 0) * (Number(p.costo_unitario) || 0), 0
   )
 
+  // Los tipos de pieza que este mantenimiento ya trae capturados. Es contra
+  // esto que se comprueba "el cambio de aceite exige un aceite", y se recalcula
+  // solo: agregar la refacción que falta apaga el reclamo sin volver a guardar.
+  const tiposCargados = useMemo(() => {
+    const tipos = new Set<number>()
+    for (const p of piezas) {
+      const lote = lotes.find(
+        (l) => claveExistencia(l.id, l.sucursal_id) === claveExistencia(p.lote_id, p.sucursal_id)
+      )
+      if (lote?.tipo_pieza_id != null) tipos.add(lote.tipo_pieza_id)
+    }
+    return tipos
+  }, [piezas, lotes])
+
+  // Lo que le falta a cada renglón del acta. Se puebla al intentar guardar: ir
+  // marcando en rojo lo que todavía no se ha contestado sería regañar a media
+  // captura.
+  const [erroresActa, setErroresActa] = useState<Record<number, string>>({})
+
   // Al registrar, el km capturado se vuelve el del vehículo si es mayor al que
   // tiene (si es menor, el odómetro no se mueve). Se avisa y se pide aceptar
   // antes de guardar. Al editar no aplica: la edición no toca el odómetro.
   const [porConfirmarKm, setPorConfirmarKm] = useState<MantForm | null>(null)
 
   function handleSubmit(vals: MantForm) {
+    if (acta) {
+      const fallas = revisarActa(acta.renglones, acta.value, tiposCargados)
+      setErroresActa(fallas)
+      if (Object.keys(fallas).length) return
+    }
     const km = vals.km_actual !== '' ? Number(vals.km_actual) : 0
     // `vehiculoData` puede no haber llegado todavía; sin él no se sabe contra
     // qué comparar, y avisar de un avance que quizá no ocurre sería peor.
@@ -507,13 +550,36 @@ export default function MantenimientoForm({
           </Grid.Col>
         </Grid>
 
+        {acta && (
+          <>
+            <Divider labelPosition="left" label={
+              <Text size="sm" fw={500}>Operaciones del servicio ({acta.renglones.length})</Text>
+            } />
+            {acta.renglones.length === 0 ? (
+              <Text size="sm" c="dimmed">
+                Esta columna no tiene operaciones capturadas en el programa del modelo.
+              </Text>
+            ) : (
+              <ActaVisitaPrograma
+                renglones={acta.renglones}
+                value={acta.value}
+                onChange={acta.onChange}
+                tiposCargados={tiposCargados}
+                errores={erroresActa}
+              />
+            )}
+          </>
+        )}
+
         {!isEdit && (
           <>
             <Divider
               label={
                 <Group gap="xs">
                   <Text size="sm" fw={500}>Refacciones usadas ({piezas.length})</Text>
-                  <Text size="xs" c="dimmed">opcional</Text>
+                  {/* Con un acta encima dejan de ser opcionales del todo: lo que
+                      consume pieza no se puede dar por hecho sin ella. */}
+                  <Text size="xs" c="dimmed">{acta ? 'según lo que se haya hecho' : 'opcional'}</Text>
                 </Group>
               }
               labelPosition="left"

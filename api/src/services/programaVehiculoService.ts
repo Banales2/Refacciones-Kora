@@ -28,7 +28,8 @@ import { fechaMexico } from '../shared/fechaMexico'
 import { evaluarGarantia, type EstadoGarantia } from '../shared/garantias'
 import type { Fase, Operacion, ProgramaCompleto } from '../repositories/programaRepo'
 import type {
-  Etapa, VinculoPrograma, Visita, EstadoOperacion, Excepciones,
+  Etapa, VinculoPrograma, Visita, EstadoOperacion, Excepciones, OperacionAtendida,
+  ActaLinea,
 } from '../repositories/programaVehiculoRepo'
 import type { GarantiaPrincipal } from '../repositories/garantiasRepo'
 
@@ -138,6 +139,11 @@ export interface GarantiaDeEtapa {
   estado: EstadoGarantia
 }
 
+/** La visita con el acta de lo que atendió, renglón por renglón. */
+export interface VisitaConActa extends Visita {
+  operaciones: ActaLinea[]
+}
+
 export interface EstadoPrograma {
   /** La etapa activa hoy. */
   etapa:              Etapa
@@ -161,7 +167,7 @@ export interface EstadoPrograma {
   /** El catálogo del modelo, ya con las excepciones de esta unidad aplicadas. */
   programa:           ProgramaCompleto
   excepciones:        Excepciones
-  visitas:            Visita[]
+  visitas:            VisitaConActa[]
   estados:            EstadoOperacion[]
   servicios_hechos:   number
   kilometraje:        number | null
@@ -377,13 +383,14 @@ function resolverArranque(
 // ─── Lectura ────────────────────────────────────────────────────────────────
 
 export async function getEstado(vehiculoId: number): Promise<EstadoPrograma | null> {
-  const [vinculos, visitas, estados, datos, principal, excepciones] = await Promise.all([
+  const [vinculos, visitas, estados, datos, principal, excepciones, acta] = await Promise.all([
     repo.findVinculos(vehiculoId),
     repo.findVisitas(vehiculoId),
     repo.findEstados(vehiculoId),
     repo.findDatosVehiculo(vehiculoId),
     garantiasRepo.findPrincipalDeVehiculo(vehiculoId),
     repo.findExcepciones(vehiculoId),
+    repo.findActa(vehiculoId),
   ])
   if (!vinculos.length) return null
 
@@ -436,7 +443,14 @@ export async function getEstado(vehiculoId: number): Promise<EstadoPrograma | nu
     arranque,
     programa,
     excepciones,
-    visitas:      visitas.map((v) => ({ ...v, fecha: aFecha(v.fecha)! })),
+    visitas:      visitas.map((v) => ({
+      ...v,
+      fecha: aFecha(v.fecha)!,
+      // Lo que esa visita declaró de cada renglón. Las visitas anteriores a la
+      // migración 031 llegan con el acta rellenada; las que se editaron el
+      // programa después pueden traerla incompleta, y eso es fiel: no se sabe.
+      operaciones: acta.filter((a) => a.mantenimiento_id === v.id),
+    })),
     estados:      estados.map((e) => ({ ...e, ultima_fecha: aFecha(e.ultima_fecha)! })),
     servicios_hechos: visitasEtapa.length,
     kilometraje,
@@ -601,6 +615,94 @@ export async function asignarProgramaDelModelo(
 
 // ─── Cerrar trabajo ─────────────────────────────────────────────────────────
 
+/** Lo que la captura declara de un renglón de la columna. */
+export interface ActaEntrada {
+  operacion_id: number
+  hecha:        boolean
+  nota?:        string | null
+}
+
+/**
+ * Revisa el acta de la visita contra la columna que se está cerrando.
+ *
+ * Es el candado del módulo. Antes, cerrar una columna daba por hechos todos sus
+ * renglones sin que nadie lo dijera: si el taller no tenía el filtro, el
+ * sistema afirmaba igual que se cambió y el renglón quedaba al día con la pieza
+ * vieja puesta. Ahora cada renglón exige respuesta, y las tres cosas que se
+ * revisan son:
+ *
+ * 1. QUE ESTÉN TODOS, y solo los de esta columna. Un renglón sin respuesta es
+ *    justo el silencio que se quiere quitar, y uno de más sería declarar algo
+ *    que esta columna no manda hacer.
+ * 2. QUE LO OMITIDO TRAIGA MOTIVO. Omitir se permite —bloquear la visita
+ *    entera dejaría al taller sin capturar ni lo que sí se hizo ni el costo—,
+ *    pero no en blanco: el renglón se queda vencido y hay que poder decir por
+ *    qué.
+ * 3. QUE LO QUE CONSUME REFACCIÓN LA TRAIGA. Si la acción de la celda consume
+ *    pieza (`requiere_pieza` del catálogo) y el renglón dice sobre qué tipo
+ *    trabaja, el mantenimiento tiene que haber consumido una pieza de ese tipo.
+ *    Eso es "el cambio de aceite obliga a registrar un aceite". Se comprueba
+ *    contra el consumo ya capturado, no contra lo que dijo el formulario: la
+ *    pieza tiene que haber salido del inventario.
+ *
+ * Los renglones informativos —inspeccionar, ajustar, o cualquiera sin tipo de
+ * pieza— no piden nada más que la palomita, y esa palomita es su registro.
+ */
+async function revisarActa(
+  columna:          OperacionDeFase[],
+  declarado:        ActaEntrada[],
+  mantenimientoId:  number,
+): Promise<OperacionAtendida[]> {
+  const porId = new Map(declarado.map((d) => [d.operacion_id, d]))
+
+  const faltan = columna.filter((o) => !porId.has(o.operacion.id))
+  if (faltan.length) {
+    throw new ValidationError(
+      `Falta decir qué se hizo con: ${faltan.map((o) => o.operacion.nombre).join(', ')}`
+    )
+  }
+  const deLaColumna = new Set(columna.map((o) => o.operacion.id))
+  if (declarado.some((d) => !deLaColumna.has(d.operacion_id))) {
+    throw new ValidationError('Se declararon operaciones que no son de esta columna')
+  }
+
+  const exigenPieza = new Set(
+    (await programaRepo.findAcciones()).filter((a) => a.requiere_pieza).map((a) => a.codigo)
+  )
+  // Solo se consulta el consumo si algún renglón hecho lo necesita: la mayoría
+  // de las columnas son pura inspección.
+  const necesitaPieza = columna.filter((o) =>
+    o.operacion.tipo_pieza_id != null &&
+    exigenPieza.has(o.accion) &&
+    porId.get(o.operacion.id)!.hecha
+  )
+  const consumidos = necesitaPieza.length
+    ? new Set(await repo.findTiposPiezaConsumidos(mantenimientoId))
+    : new Set<number>()
+
+  for (const o of necesitaPieza) {
+    if (consumidos.has(o.operacion.tipo_pieza_id!)) continue
+    throw new ValidationError(
+      `«${o.operacion.nombre}» se marcó como hecha, pero el mantenimiento no tiene ` +
+      `cargada ninguna refacción de su tipo. Agrégala, o marca el renglón como no hecho ` +
+      `diciendo por qué.`
+    )
+  }
+
+  return columna.map((o) => {
+    const d = porId.get(o.operacion.id)!
+    const nota = d.nota?.trim() || null
+    if (!d.hecha && !nota) {
+      throw new ValidationError(
+        `«${o.operacion.nombre}» quedó sin hacer: hay que decir por qué.`
+      )
+    }
+    // La acción se sella con la de hoy: el catálogo del modelo se edita y el
+    // acta tiene que seguir diciendo lo que se mandó hacer en su momento.
+    return { operacion_id: o.operacion.id, accion: o.accion, hecha: d.hecha, nota }
+  })
+}
+
 /**
  * Declara que un mantenimiento cerró la columna que le tocaba a la unidad.
  *
@@ -608,10 +710,13 @@ export async function asignarProgramaDelModelo(
  * técnico y sus piezas: aquí no se crea nada, solo se dice qué columna
  * atendió. Hacia el usuario esto es "registrar la visita al taller"; por
  * debajo, la visita y el mantenimiento son el mismo hecho (migración 017).
+ *
+ * Y se dice también qué se hizo de esa columna, renglón por renglón: el acta.
+ * No se puede cerrar una columna en silencio —ver `revisarActa`—.
  */
 export async function registrarVisita(
   vehiculoId: number,
-  data: { mantenimiento_id: number },
+  data: { mantenimiento_id: number; operaciones: ActaEntrada[] },
 ) {
   const estado = await getEstado(vehiculoId)
   if (!estado) throw new NotFoundError('Programa de la unidad')
@@ -637,6 +742,8 @@ export async function registrarVisita(
   // recorrido: el índice es lo que dice en qué punto del ciclo va la unidad, y
   // saltarse uno haría que la columna siguiente ya no fuera la correcta.
   const proxima = estado.proxima
+  const acta = await revisarActa(proxima.operaciones, data.operaciones, data.mantenimiento_id)
+
   await repo.crearVisita({
     mantenimiento_id: data.mantenimiento_id,
     vehiculo_id:      vehiculoId,
@@ -648,7 +755,7 @@ export async function registrarVisita(
     // mismo hecho, y copiarlos de otro lado sería inventar una segunda verdad.
     fecha:            mant.fecha,
     km:               mant.km_actual ?? estado.kilometraje ?? null,
-    operacion_ids:    proxima.operaciones.map((o) => o.operacion.id),
+    operaciones:      acta,
   })
   return getEstado(vehiculoId)
 }

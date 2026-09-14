@@ -33,6 +33,16 @@ export interface VinculoPrograma {
  * `mantenimiento_id` son el mismo número y la fecha, el odómetro y el costo
  * salen de él.
  */
+/** Lo que la visita declaró de un renglón de su columna: el acta del servicio. */
+export interface OperacionAtendida {
+  operacion_id: number
+  /** La acción tal como la mandaba la celda ese día, no la de hoy. */
+  accion:       string
+  hecha:        boolean
+  /** Por qué no se hizo; en lo hecho, una observación. */
+  nota:         string | null
+}
+
 export interface VisitaPrograma {
   id:               number
   vehiculo_id:      number
@@ -46,6 +56,11 @@ export interface VisitaPrograma {
   /** Lo que costó de verdad, no lo que la fase tenía cotizado. */
   costo:            number
   tipo:             string | null
+  /**
+   * Renglón por renglón, qué se hizo y qué no. Puede venir incompleta en las
+   * visitas anteriores a que el acta existiera, y eso es fiel: no se sabe.
+   */
+  operaciones:      OperacionAtendida[]
 }
 
 /**
@@ -235,9 +250,20 @@ export function useSetExcepciones(vehiculoId: number) {
   })
 }
 
-// Solo el mantenimiento: la fecha y el odómetro del servicio son los suyos.
+// El mantenimiento y el acta. La fecha y el odómetro del servicio son los del
+// mantenimiento y no viajan aquí.
+//
+// `operaciones` tiene que traer TODOS los renglones de la columna y solo esos:
+// la API rechaza la visita si falta alguno. Cerrar la columna sin decir qué se
+// hizo era lo que se corrigió —antes se daban por hechos todos—.
 export interface VisitaPayload {
   mantenimiento_id: number
+  operaciones: {
+    operacion_id: number
+    hecha:        boolean
+    /** Obligatoria cuando no se hizo: la API la exige. */
+    nota?:        string | null
+  }[]
 }
 
 // Declara que un mantenimiento ya registrado cerró la columna que tocaba.

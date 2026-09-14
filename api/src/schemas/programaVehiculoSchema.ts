@@ -42,11 +42,24 @@ export const ExcepcionesSchema = z.object({
   })).max(500, 'Máximo 500 renglones').default([]),
 })
 
-// Cerrar la columna que toca. Solo viaja el mantenimiento: la fecha y el
-// odómetro del servicio son los suyos, y volver a mandarlos aquí abriría la
-// puerta a que las dos versiones no coincidieran.
+// Cerrar la columna que toca. La fecha y el odómetro no viajan: son los del
+// mantenimiento, y volver a mandarlos aquí abriría la puerta a que las dos
+// versiones no coincidieran.
+//
+// `operaciones` es el acta del servicio y es obligatoria: la columna no se
+// cierra sin decir, renglón por renglón, qué se hizo y qué no. Que venga sin
+// ella significaría volver a darlo todo por hecho, que es lo que se corrigió
+// (migración 031). El servicio comprueba que estén todos los renglones de la
+// columna y solo esos.
 export const VisitaSchema = z.object({
   mantenimiento_id: z.coerce.number().int().positive(),
+  operaciones: z.array(z.object({
+    operacion_id: z.coerce.number().int().positive(),
+    hecha:        z.boolean(),
+    // El motivo de lo que no se hizo. Obligatorio en ese caso, pero lo exige el
+    // servicio: ahí se puede decir de qué renglón se trata.
+    nota:         z.string().trim().max(300, 'Máximo 300 caracteres').nullable().optional(),
+  })).max(500, 'Máximo 500 renglones'),
 })
 
 export const AtenderOperacionSchema = z.object({

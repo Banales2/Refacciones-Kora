@@ -17,6 +17,12 @@ export interface AccionPrograma {
   nombre:      string
   descripcion: string | null
   orden:       number
+  /**
+   * El verbo consume una refacción: al cerrar la columna, un renglón con esta
+   * acción y con tipo de pieza amarrado exige que el mantenimiento traiga
+   * cargada una pieza de ese tipo. Hoy viene prendido solo en 'R'.
+   */
+  requiere_pieza: boolean
 }
 
 export interface FasePrograma {
