@@ -14,19 +14,20 @@ export interface Modelo {
   // (se permiten todos). Evita, p. ej., crear un montacargas (sin kilometraje)
   // a partir de un modelo cuyo programa de mantenimiento va por kilometraje.
   tipos_permitidos: string[]
-  // Cuándo se dejó de ofrecer el modelo al dar de alta unidades, y por qué.
-  // Null = vigente. Un modelo de baja sigue existiendo entero —programa,
-  // garantías, tipos de pieza— y los vehículos que ya lo usan lo siguen
+  // Cuándo se dejó de comprar unidades de este modelo, y por qué. Null = se
+  // sigue usando. Un modelo descontinuado sigue existiendo entero —programa,
+  // garantías, tipos de pieza— y las unidades que ya lo usan lo siguen
   // mostrando; lo único que cambia es que no aparece en el catálogo ni en el
-  // selector del alta (ver migración 032).
-  baja_en:          string | null
-  baja_motivo:      string | null
+  // selector del alta (ver migración 032). No confundir con dar de baja una
+  // unidad, que es otra cosa y vive en su `status`.
+  descontinuado_en:     string | null
+  descontinuado_motivo: string | null
   created_at:       string
   updated_at:       string
 }
 
 const COLS = `id, marca, nombre, anio, tipos_permitidos,
-  CONVERT(char(10), baja_en, 23) AS baja_en, baja_motivo,
+  CONVERT(char(10), descontinuado_en, 23) AS descontinuado_en, descontinuado_motivo,
   created_at, updated_at`
 
 // En la BD se guarda como CSV ("camion,utilitario"); hacia fuera se expone como
@@ -48,13 +49,13 @@ function mapRow(row: ModeloRow): Modelo {
   return { ...row, tipos_permitidos: parseTipos(row.tipos_permitidos) }
 }
 
-// El catálogo. Por defecto solo los vigentes: los dados de baja siguen en la
-// base y se resuelven por id, pero no se ofrecen para dar de alta unidades.
-// `incluirBajas` es para la pantalla de modelos, que necesita poder verlos
-// para reactivarlos.
-export async function findAll(incluirBajas = false): Promise<Modelo[]> {
+// El catálogo. Por defecto solo los que se siguen usando: los descontinuados
+// siguen en la base y se resuelven por id, pero no se ofrecen para dar de alta
+// unidades. `incluirDescontinuados` es para la pantalla de modelos, que
+// necesita poder verlos para revivirlos.
+export async function findAll(incluirDescontinuados = false): Promise<Modelo[]> {
   const pool = await getPool()
-  const filtro = incluirBajas ? '' : 'WHERE baja_en IS NULL'
+  const filtro = incluirDescontinuados ? '' : 'WHERE descontinuado_en IS NULL'
   const r = await pool.request()
     .query(`SELECT ${COLS} FROM modelos ${filtro} ORDER BY marca, nombre`)
   return r.recordset.map(mapRow)
@@ -131,17 +132,18 @@ export async function countVehiculos(id: number): Promise<number> {
   return r.recordset[0].cnt
 }
 
-// Baja y reactivación. No hay borrado: un modelo es el padre del programa de
+// Descontinuar y revivir. No hay borrado: un modelo es el padre del programa de
 // mantenimiento, de las garantías del catálogo y de la lista de tipos de pieza,
 // y borrarlo se llevaba todo eso sin vuelta (migración 032).
-export async function darDeBaja(id: number, motivo: string | null): Promise<Modelo | null> {
+export async function descontinuar(id: number, motivo: string | null): Promise<Modelo | null> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id',     sql.Int,           id)
     .input('motivo', sql.NVarChar(200), motivo)
     .query(`
-      UPDATE modelos SET baja_en = SYSDATETIME(), baja_motivo = @motivo, updated_at = SYSDATETIME()
-      OUTPUT INSERTED.id WHERE id = @id AND baja_en IS NULL`)
+      UPDATE modelos
+      SET descontinuado_en = SYSDATETIME(), descontinuado_motivo = @motivo, updated_at = SYSDATETIME()
+      OUTPUT INSERTED.id WHERE id = @id AND descontinuado_en IS NULL`)
   return r.recordset[0] ? findById(id) : null
 }
 
@@ -150,7 +152,8 @@ export async function reactivar(id: number): Promise<Modelo | null> {
   const r = await pool.request()
     .input('id', sql.Int, id)
     .query(`
-      UPDATE modelos SET baja_en = NULL, baja_motivo = NULL, updated_at = SYSDATETIME()
-      OUTPUT INSERTED.id WHERE id = @id AND baja_en IS NOT NULL`)
+      UPDATE modelos
+      SET descontinuado_en = NULL, descontinuado_motivo = NULL, updated_at = SYSDATETIME()
+      OUTPUT INSERTED.id WHERE id = @id AND descontinuado_en IS NOT NULL`)
   return r.recordset[0] ? findById(id) : null
 }

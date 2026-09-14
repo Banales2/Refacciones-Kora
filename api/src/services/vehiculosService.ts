@@ -109,12 +109,12 @@ async function validateSerieYPlacas(
 // restricción). Así se evita, p. ej., crear un montacargas desde un modelo
 // cuyo programa de mantenimiento asume kilometraje.
 async function validateTipoPermitido(modeloId: number, tipo: TipoVehiculo) {
-  // Un modelo dado de baja ya no genera unidades nuevas. El selector tampoco lo
+  // Un modelo descontinuado ya no genera unidades nuevas. El selector tampoco lo
   // ofrece, pero el id puede llegar de una pestaña vieja o de la API directa.
   const modelo = await modelosRepo.findById(modeloId)
-  if (modelo?.baja_en) {
+  if (modelo?.descontinuado_en) {
     throw new ValidationError(
-      'Este modelo está dado de baja y no admite unidades nuevas. Reactívalo primero.'
+      'Este modelo está descontinuado y no admite unidades nuevas. Quítale lo descontinuado primero.'
     )
   }
   const permitidos = await modelosRepo.findTiposPermitidos(modeloId)
@@ -147,9 +147,9 @@ export async function update(id: number, data: VehiculoUpdate) {
 
 export async function getModelos() {
   const pool = await getPool()
-  // Selector del alta de unidades: los modelos dados de baja no se ofrecen.
+  // Selector del alta de unidades: los modelos descontinuados no se ofrecen.
   const r = await pool.request().query(
-    'SELECT id, marca, nombre FROM modelos WHERE baja_en IS NULL ORDER BY marca, nombre')
+    'SELECT id, marca, nombre FROM modelos WHERE descontinuado_en IS NULL ORDER BY marca, nombre')
   return r.recordset as { id: number; marca: string; nombre: string }[]
 }
 

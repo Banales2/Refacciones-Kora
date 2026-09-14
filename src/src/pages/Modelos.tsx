@@ -14,7 +14,7 @@ import {
   IconArchive, IconArchiveOff,
 } from '@tabler/icons-react'
 import {
-  useModelos, useCreateModelo, useUpdateModelo, useBajaModelo, useReactivarModelo,
+  useModelos, useCreateModelo, useUpdateModelo, useDescontinuarModelo, useRevivirModelo,
 } from '../hooks/useModelos'
 import { useVehiculos, useCreateVehiculo } from '../hooks/useVehiculos'
 import {
@@ -386,12 +386,12 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
 // ── Vista de detalle ──────────────────────────────────────────────────────────
 
 function ModeloDetalle({
-  modelo, onBack, onEdit, onBaja, onNavigateVehiculo,
+  modelo, onBack, onEdit, onDescontinuar, onNavigateVehiculo,
 }: {
   modelo: Modelo
   onBack: () => void
   onEdit: (m: Modelo) => void
-  onBaja: (m: Modelo) => void
+  onDescontinuar: (m: Modelo) => void
   onNavigateVehiculo?: (v: VehiculoRow) => void
 }) {
   const { data, isLoading, isError } = useVehiculos(1, '', undefined, modelo.id)
@@ -434,14 +434,15 @@ function ModeloDetalle({
               <Text size="xl" fw={700}>{modelo.nombre}</Text>
               <Badge variant="light" color="gray" size="lg">{modelo.marca}</Badge>
               {modelo.anio != null && <Badge variant="light" color="blue" size="lg">{modelo.anio}</Badge>}
-              {modelo.baja_en && (
-                <Badge variant="filled" color="gray" size="lg">Dado de baja</Badge>
+              {modelo.descontinuado_en && (
+                <Badge variant="filled" color="gray" size="lg">Descontinuado</Badge>
               )}
             </Group>
-            {modelo.baja_en && (
+            {modelo.descontinuado_en && (
               <Text size="sm" c="dimmed">
-                De baja desde {fmtDate(modelo.baja_en)}: no se ofrece al dar de alta unidades
-                nuevas{modelo.baja_motivo ? ` — ${modelo.baja_motivo}` : ''}.
+                Descontinuado desde {fmtDate(modelo.descontinuado_en)}: no se ofrece al dar de alta
+                unidades nuevas{modelo.descontinuado_motivo ? ` — ${modelo.descontinuado_motivo}` : ''}.
+                Las que ya existen no cambian en nada.
               </Text>
             )}
             <Grid mt={4}>
@@ -475,13 +476,13 @@ function ModeloDetalle({
                 <IconPencil size={16} />
               </ActionIcon>
             </Tooltip>
-            <Tooltip label={modelo.baja_en ? 'Reactivar modelo' : 'Dar de baja'}>
+            <Tooltip label={modelo.descontinuado_en ? 'Volver a usar este modelo' : 'Descontinuar modelo'}>
               <ActionIcon
-                variant="light" color={modelo.baja_en ? 'teal' : 'orange'} size="lg"
-                aria-label={modelo.baja_en ? 'Reactivar modelo' : 'Dar de baja el modelo'}
-                onClick={() => onBaja(modelo)}
+                variant="light" color={modelo.descontinuado_en ? 'teal' : 'orange'} size="lg"
+                aria-label={modelo.descontinuado_en ? 'Volver a usar el modelo' : 'Descontinuar el modelo'}
+                onClick={() => onDescontinuar(modelo)}
               >
-                {modelo.baja_en ? <IconArchiveOff size={16} /> : <IconArchive size={16} />}
+                {modelo.descontinuado_en ? <IconArchiveOff size={16} /> : <IconArchive size={16} />}
               </ActionIcon>
             </Tooltip>
           </Group>
@@ -593,24 +594,28 @@ function ModeloDetalle({
   )
 }
 
-// ── Baja y reactivación ───────────────────────────────────────────────────────
+// ── Descontinuar y volver a usar ──────────────────────────────────────────────
 
 // Un modelo no se borra. Es el padre del programa de mantenimiento, de las
 // garantías del catálogo y de la lista de tipos de pieza, y esa configuración
 // es lo que explica qué se le hacía a las unidades que lo usaron: sigue
 // haciendo falta mucho después de que la última se venda. Lo que sí hace falta
-// es dejar de ofrecerlo al dar de alta, y eso es la baja (migración 032).
-function BajaModeloModal({ modelo, onClose }: { modelo: Modelo | null; onClose: () => void }) {
+// es dejar de ofrecerlo al dar de alta, y eso es descontinuarlo (migración 032).
+//
+// Descontinuar el MODELO no es dar de baja una UNIDAD. La baja es del vehículo
+// —se vendió, se chocó, se retiró— y vive en su `status`. Un modelo
+// descontinuado puede tener veinte unidades rodando.
+function DescontinuarModeloModal({ modelo, onClose }: { modelo: Modelo | null; onClose: () => void }) {
   const [motivo, setMotivo] = useState('')
-  const bajaMut      = useBajaModelo()
-  const reactivarMut = useReactivarModelo()
+  const descontinuarMut = useDescontinuarModelo()
+  const revivirMut      = useRevivirModelo()
 
-  const reactivando = modelo?.baja_en != null
-  const mut = reactivando ? reactivarMut : bajaMut
+  const reviviendo = modelo?.descontinuado_en != null
+  const mut = reviviendo ? revivirMut : descontinuarMut
 
   function cerrar() {
-    bajaMut.reset()
-    reactivarMut.reset()
+    descontinuarMut.reset()
+    revivirMut.reset()
     setMotivo('')
     onClose()
   }
@@ -618,29 +623,29 @@ function BajaModeloModal({ modelo, onClose }: { modelo: Modelo | null; onClose: 
   return (
     <Modal
       opened={modelo !== null} onClose={cerrar}
-      title={reactivando ? 'Reactivar modelo' : 'Dar de baja el modelo'}
+      title={reviviendo ? 'Volver a usar este modelo' : 'Descontinuar modelo'}
       centered size="sm"
     >
       <Stack gap="md">
-        {reactivando ? (
+        {reviviendo ? (
           <>
             <Text>
               ¿Volver a ofrecer <strong>{modelo?.marca} {modelo?.nombre}</strong> al dar de alta
               unidades?
             </Text>
-            {modelo?.baja_motivo && (
-              <Text size="sm" c="dimmed">Se dio de baja por: {modelo.baja_motivo}</Text>
+            {modelo?.descontinuado_motivo && (
+              <Text size="sm" c="dimmed">Se descontinuó por: {modelo.descontinuado_motivo}</Text>
             )}
           </>
         ) : (
           <>
             <Text>
-              ¿Dar de baja <strong>{modelo?.marca} {modelo?.nombre}</strong>?
+              ¿Descontinuar <strong>{modelo?.marca} {modelo?.nombre}</strong>?
             </Text>
             <Text size="sm" c="dimmed">
-              Deja de aparecer al dar de alta unidades nuevas. No se borra nada: su programa,
-              sus garantías y sus tipos de pieza siguen ahí, los vehículos que ya lo usan lo
-              siguen mostrando, y puedes reactivarlo cuando quieras.
+              Deja de aparecer al dar de alta unidades nuevas. No se borra ni se da de baja
+              nada: su programa, sus garantías y sus tipos de pieza siguen ahí, las unidades
+              que ya lo usan siguen rodando igual, y puedes revivirlo cuando quieras.
             </Text>
             <TextInput
               label="Motivo" placeholder="Ya no se compra este modelo"
@@ -654,13 +659,13 @@ function BajaModeloModal({ modelo, onClose }: { modelo: Modelo | null; onClose: 
         <Group justify="flex-end">
           <Button variant="default" onClick={cerrar} disabled={mut.isPending}>Cancelar</Button>
           <Button
-            color={reactivando ? 'teal' : 'orange'} loading={mut.isPending}
+            color={reviviendo ? 'teal' : 'orange'} loading={mut.isPending}
             onClick={() => {
-              if (reactivando) reactivarMut.mutate(modelo!.id, { onSuccess: cerrar })
-              else bajaMut.mutate({ id: modelo!.id, motivo: motivo.trim() || undefined }, { onSuccess: cerrar })
+              if (reviviendo) revivirMut.mutate(modelo!.id, { onSuccess: cerrar })
+              else descontinuarMut.mutate({ id: modelo!.id, motivo: motivo.trim() || undefined }, { onSuccess: cerrar })
             }}
           >
-            {reactivando ? 'Reactivar' : 'Dar de baja'}
+            {reviviendo ? 'Volver a usar' : 'Descontinuar'}
           </Button>
         </Group>
       </Stack>
@@ -683,17 +688,17 @@ export default function Modelos({
   const [debounced]               = useDebouncedValue(search, 300)
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Modelo | null>(null)
-  // Modelo sobre el que se está por actuar la baja (o la reactivación, si ya
-  // estaba de baja). Un modelo nunca se borra: ver useModelos y migración 032.
-  const [bajaTarget, setBajaTarget] = useState<Modelo | null>(null)
-  // Los dados de baja se ocultan por defecto: el catálogo es sobre todo la
+  // Modelo que se está por descontinuar (o revivir, si ya lo estaba). Un modelo
+  // nunca se borra: ver useModelos y migración 032.
+  const [descTarget, setDescTarget] = useState<Modelo | null>(null)
+  // Los descontinuados se ocultan por defecto: el catálogo es sobre todo la
   // lista de lo que se puede dar de alta. El switch los trae de vuelta, que es
-  // la única forma de llegar a reactivarlos.
-  const [verBajas, setVerBajas]   = useState(false)
+  // la única forma de llegar a revivirlos.
+  const [verDesc, setVerDesc]     = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  // Con bajas incluidas: esta es la única pantalla desde donde se reactivan, y
-  // si no se listaran no habría forma de llegar a ellos.
+  // Con descontinuados incluidos: esta es la única pantalla desde donde se
+  // reviven, y si no se listaran no habría forma de llegar a ellos.
   const { data, isLoading, isError } = useModelos(true)
   const createMut = useCreateModelo()
   const updateMut = useUpdateModelo()
@@ -706,8 +711,8 @@ export default function Modelos({
     e?.stopPropagation()
     setEditing(m); setFormError(null); setFormOpen(true)
   }
-  function openBaja(m: Modelo, e: React.MouseEvent) {
-    e.stopPropagation(); setBajaTarget(m)
+  function openDescontinuar(m: Modelo, e: React.MouseEvent) {
+    e.stopPropagation(); setDescTarget(m)
   }
   function handleSubmit(payload: ModeloPayload) {
     setFormError(null)
@@ -741,7 +746,7 @@ export default function Modelos({
           modelo={selected}
           onBack={() => onOpenIdChange?.(null)}
           onEdit={(m) => openEdit(m)}
-          onBaja={(m) => setBajaTarget(m)}
+          onDescontinuar={(m) => setDescTarget(m)}
           onNavigateVehiculo={onNavigateVehiculo}
         />
         <Modal
@@ -759,15 +764,15 @@ export default function Modelos({
         {/* El modal se repite aquí porque el detalle sale por este return y no
             alcanza el de la lista. La ficha se queda abierta: el modelo sigue
             existiendo, solo cambia si se ofrece o no al dar de alta. */}
-        <BajaModeloModal modelo={bajaTarget} onClose={() => setBajaTarget(null)} />
+        <DescontinuarModeloModal modelo={descTarget} onClose={() => setDescTarget(null)} />
       </>
     )
   }
 
   const todos   = data?.data ?? []
-  const deBaja  = todos.filter((m) => m.baja_en).length
+  const descont = todos.filter((m) => m.descontinuado_en).length
   const modelos = todos.filter((m) => {
-    if (m.baja_en && !verBajas) return false
+    if (m.descontinuado_en && !verDesc) return false
     if (!debounced) return true
     const q = debounced.toLowerCase()
     return m.marca.toLowerCase().includes(q) || m.nombre.toLowerCase().includes(q)
@@ -811,10 +816,10 @@ export default function Modelos({
             ) : null
           }
         />
-        {deBaja > 0 && (
+        {descont > 0 && (
           <Switch
-            size="sm" label={`Ver dados de baja (${deBaja})`}
-            checked={verBajas} onChange={(e) => setVerBajas(e.currentTarget.checked)}
+            size="sm" label={`Ver descontinuados (${descont})`}
+            checked={verDesc} onChange={(e) => setVerDesc(e.currentTarget.checked)}
           />
         )}
       </Group>
@@ -855,7 +860,9 @@ export default function Modelos({
                   <Table.Td fw={500}>
                     <Group gap="xs" wrap="nowrap">
                       <span>{m.nombre}</span>
-                      {m.baja_en && <Badge variant="light" color="gray" size="sm">Baja</Badge>}
+                      {m.descontinuado_en && (
+                        <Badge variant="light" color="gray" size="sm">Descontinuado</Badge>
+                      )}
                     </Group>
                   </Table.Td>
                   <Table.Td>{m.anio ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
@@ -884,13 +891,13 @@ export default function Modelos({
                           <IconPencil size={14} />
                         </ActionIcon>
                       </Tooltip>
-                      <Tooltip label={m.baja_en ? 'Reactivar' : 'Dar de baja'}>
+                      <Tooltip label={m.descontinuado_en ? 'Volver a usar' : 'Descontinuar'}>
                         <ActionIcon
-                          variant="subtle" color={m.baja_en ? 'teal' : 'orange'} size="sm"
-                          aria-label={m.baja_en ? 'Reactivar modelo' : 'Dar de baja el modelo'}
-                          onClick={(e) => openBaja(m, e)}
+                          variant="subtle" color={m.descontinuado_en ? 'teal' : 'orange'} size="sm"
+                          aria-label={m.descontinuado_en ? 'Volver a usar el modelo' : 'Descontinuar el modelo'}
+                          onClick={(e) => openDescontinuar(m, e)}
                         >
-                          {m.baja_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                          {m.descontinuado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
                         </ActionIcon>
                       </Tooltip>
                       <IconChevronRight size={14} color="var(--mantine-color-dimmed)" />
@@ -915,7 +922,7 @@ export default function Modelos({
         />
       </Modal>
 
-      <BajaModeloModal modelo={bajaTarget} onClose={() => setBajaTarget(null)} />
+      <DescontinuarModeloModal modelo={descTarget} onClose={() => setDescTarget(null)} />
     </Stack>
   )
 }

@@ -6,14 +6,18 @@ import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import * as service from '../services/modelosService'
 
-// La baja de un modelo sustituye al borrado (migración 032). POST la da, DELETE
-// la deshace: lo que se está creando y quitando aquí es la baja, no el modelo,
-// que no se borra nunca.
+// Descontinuar un modelo sustituye al borrado (migración 032). POST lo
+// descontinúa, DELETE lo revive: lo que se crea y se quita aquí es la marca de
+// descontinuado, no el modelo, que no se borra nunca.
+//
+// Ojo con el vocabulario: descontinuar es del MODELO (ya no se compran unidades
+// nuevas de él) y no tiene nada que ver con dar de baja una UNIDAD, que es su
+// `status` y vive en la tabla hija de su tipo.
 const Schema = z.object({
   motivo: z.string().trim().max(200, 'Máximo 200 caracteres').optional(),
 })
 
-export async function modelosBaja(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
+export async function modelosDescontinuar(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
     const user = requireRole(req, 'admin')
     const id = parseInt(req.params.id, 10)
@@ -23,7 +27,7 @@ export async function modelosBaja(req: HttpRequest, ctx: InvocationContext): Pro
     const reactivando = req.method === 'DELETE'
     const data = reactivando
       ? await service.reactivar(id)
-      : await service.darDeBaja(id, Schema.parse(await req.json().catch(() => ({}))).motivo)
+      : await service.descontinuar(id, Schema.parse(await req.json().catch(() => ({}))).motivo)
 
     await audit({
       user,
@@ -38,9 +42,9 @@ export async function modelosBaja(req: HttpRequest, ctx: InvocationContext): Pro
   } catch (err) { return handleError(err, ctx) }
 }
 
-app.http('modelos-baja', {
+app.http('modelos-descontinuar', {
   methods: ['POST', 'DELETE'],
-  route: 'modelos/{id}/baja',
+  route: 'modelos/{id}/descontinuado',
   authLevel: 'anonymous',
-  handler: modelosBaja,
+  handler: modelosDescontinuar,
 })

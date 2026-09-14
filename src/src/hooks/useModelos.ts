@@ -14,12 +14,12 @@ export interface Modelo {
   anio:             string | null
   // Tipos de vehículo que este modelo puede generar. Vacío = sin restricción.
   tipos_permitidos: TipoVehiculo[]
-  // Desde cuándo dejó de ofrecerse el modelo al dar de alta unidades, y por
-  // qué. Null = vigente. Un modelo dado de baja conserva todo —programa,
-  // garantías, tipos de pieza— y los vehículos que ya lo usan lo siguen
-  // mostrando; no se borra nunca.
-  baja_en:          string | null
-  baja_motivo:      string | null
+  // Desde cuándo se dejó de comprar unidades de este modelo, y por qué. Null =
+  // se sigue usando. Un modelo descontinuado conserva todo —programa, garantías,
+  // tipos de pieza— y las unidades que ya lo usan lo siguen mostrando; no se
+  // borra nunca. No confundir con dar de baja una unidad, que es su `status`.
+  descontinuado_en:     string | null
+  descontinuado_motivo: string | null
   created_at:       string
   updated_at:       string
 }
@@ -31,13 +31,14 @@ export interface ModeloPayload {
   tipos_permitidos?: TipoVehiculo[]
 }
 
-// Por defecto solo los modelos vigentes, que es lo que se ofrece al dar de alta
-// una unidad. `incluirBajas` es para la pantalla de modelos, que necesita verlos
-// para poder reactivarlos.
-export function useModelos(incluirBajas = false) {
+// Por defecto solo los modelos que se siguen usando, que es lo que se ofrece al
+// dar de alta una unidad. `incluirDescontinuados` es para la pantalla de
+// modelos, que necesita verlos para poder revivirlos.
+export function useModelos(incluirDescontinuados = false) {
   return useQuery({
-    queryKey: ['modelos', incluirBajas ? 'con-bajas' : 'vigentes'],
-    queryFn: () => api.get<{ data: Modelo[] }>(incluirBajas ? '/modelos?bajas=1' : '/modelos'),
+    queryKey: ['modelos', incluirDescontinuados ? 'con-descontinuados' : 'en-uso'],
+    queryFn: () => api.get<{ data: Modelo[] }>(
+      incluirDescontinuados ? '/modelos?descontinuados=1' : '/modelos'),
     staleTime: 10 * 60 * 1000,
   })
 }
@@ -60,22 +61,22 @@ export function useUpdateModelo() {
   })
 }
 
-// Un modelo no se borra: se da de baja. Deja de ofrecerse al dar de alta
+// Un modelo no se borra: se descontinúa. Deja de ofrecerse al dar de alta
 // unidades, pero su programa, sus garantías y sus tipos de pieza siguen ahí, y
-// los vehículos que ya lo usan lo siguen mostrando.
-export function useBajaModelo() {
+// las unidades que ya lo usan lo siguen mostrando.
+export function useDescontinuarModelo() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, motivo }: { id: number; motivo?: string }) =>
-      api.post<{ data: Modelo }>(`/modelos/${id}/baja`, { motivo }),
+      api.post<{ data: Modelo }>(`/modelos/${id}/descontinuado`, { motivo }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['modelos'] }),
   })
 }
 
-export function useReactivarModelo() {
+export function useRevivirModelo() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete<{ data: Modelo }>(`/modelos/${id}/baja`),
+    mutationFn: (id: number) => api.delete<{ data: Modelo }>(`/modelos/${id}/descontinuado`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['modelos'] }),
   })
 }
