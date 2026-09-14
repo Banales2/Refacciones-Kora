@@ -1,7 +1,7 @@
 // Cerrar la visita que toca: la unidad entró al taller e hizo la columna que le
-// tocaba. Viene con el acta —qué se hizo y qué no, renglón por renglón—, y solo
-// lo que se declaró hecho queda al día; lo omitido se guarda con su motivo y
-// sigue vencido (migración 031).
+// tocaba. Viene con el acta —cómo terminó cada renglón—, y todo lo que no se
+// saltó queda al día, tanto lo atendido como lo que solo se revisó. Lo omitido
+// se guarda con su motivo y sigue vencido (migración 031).
 //
 // Lo que se manda es el mantenimiento que la pagó, no una visita: son el mismo
 // hecho (migración 017). El mantenimiento se registra antes, por su camino
@@ -28,8 +28,10 @@ export async function vehiculoProgramaVisitaCreate(req: HttpRequest, ctx: Invoca
       despues: {
         vehiculo_id: vehiculoId,
         cerro_servicio_del_programa: true,
-        // Lo que no se hizo es lo que vale la pena poder rastrear después.
-        operaciones_omitidas: body.operaciones.filter((o) => !o.hecha).length,
+        // Lo que se saltó y lo que sí se cambió: es lo que vale la pena poder
+        // rastrear después. Lo revisado sin novedad es el relleno de siempre.
+        operaciones_atendidas: body.operaciones.filter((o) => o.resultado === 'atendida').length,
+        operaciones_omitidas:  body.operaciones.filter((o) => o.resultado === 'omitida').length,
       },
       ipAddress: getClientIp(req),
     })

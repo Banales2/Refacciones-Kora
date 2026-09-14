@@ -33,13 +33,19 @@ export interface VinculoPrograma {
  * `mantenimiento_id` son el mismo número y la fecha, el odómetro y el costo
  * salen de él.
  */
+/**
+ * Cómo terminó un renglón en la visita. Revisar sin encontrar nada cuenta como
+ * cumplido igual que atenderlo; solo lo omitido deja el renglón vencido.
+ */
+export type ResultadoRenglon = 'atendida' | 'revisada' | 'omitida'
+
 /** Lo que la visita declaró de un renglón de su columna: el acta del servicio. */
 export interface OperacionAtendida {
   operacion_id: number
   /** La acción tal como la mandaba la celda ese día, no la de hoy. */
   accion:       string
-  hecha:        boolean
-  /** Por qué no se hizo; en lo hecho, una observación. */
+  resultado:    ResultadoRenglon
+  /** Por qué no se revisó; en lo demás, una observación de lo encontrado. */
   nota:         string | null
 }
 
@@ -57,8 +63,8 @@ export interface VisitaPrograma {
   costo:            number
   tipo:             string | null
   /**
-   * Renglón por renglón, qué se hizo y qué no. Puede venir incompleta en las
-   * visitas anteriores a que el acta existiera, y eso es fiel: no se sabe.
+   * Renglón por renglón, cómo terminó. Puede venir vacía en las visitas
+   * anteriores a que el acta existiera, y eso es fiel: no se sabe.
    */
   operaciones:      OperacionAtendida[]
 }
@@ -254,14 +260,14 @@ export function useSetExcepciones(vehiculoId: number) {
 // mantenimiento y no viajan aquí.
 //
 // `operaciones` tiene que traer TODOS los renglones de la columna y solo esos:
-// la API rechaza la visita si falta alguno. Cerrar la columna sin decir qué se
-// hizo era lo que se corrigió —antes se daban por hechos todos—.
+// la API rechaza la visita si falta alguno. Cerrar la columna sin decir cómo
+// terminó cada uno era lo que se corrigió —antes se daban por hechos todos—.
 export interface VisitaPayload {
   mantenimiento_id: number
   operaciones: {
     operacion_id: number
-    hecha:        boolean
-    /** Obligatoria cuando no se hizo: la API la exige. */
+    resultado:    ResultadoRenglon
+    /** Obligatoria cuando se omitió: la API la exige. */
     nota?:        string | null
   }[]
 }

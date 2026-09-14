@@ -1,19 +1,30 @@
-// El acta de la visita: renglón por renglón de la columna, qué se hizo y qué no.
+// El acta de la visita: renglón por renglón de la columna, cómo terminó.
 //
 // Cerrar una columna del programa daba por hechos todos sus renglones sin que
 // nadie lo dijera. Si el taller no tenía el filtro, el sistema afirmaba igual
 // que se cambió y el renglón quedaba al día con la pieza vieja puesta. Esto es
-// lo que rompe ese silencio: cada renglón exige respuesta, y la respuesta queda
-// guardada —también la de lo que no se hizo, que es lo que antes se perdía—.
+// lo que rompe ese silencio.
+//
+// PERO NO A COSTA DE LA CAPTURA. Un servicio de posgarantía es un chequeo
+// general: una lista larga donde casi todo sale bien y solo algunas cosas se
+// atienden. Por eso todo arranca en "sin novedad" y aquí solo se tocan las
+// excepciones —lo que sí se cambió y lo que no se alcanzó a ver—. Obligar a
+// marcar treinta renglones a mano no lo haría nadie dos veces, y a la tercera
+// se marcaría todo de corrido: el candado se volvería mentira.
+//
+// Lo único sin arranque son los renglones que consumen refacción: ahí el
+// sistema no contesta por el taller (ver `exigeRespuesta`).
 //
 // Vive dentro del formulario de mantenimiento y no en un paso aparte porque una
 // de las respuestas se comprueba contra lo que el formulario lleva capturado:
-// un renglón que consume refacción no se puede dar por hecho si el
-// mantenimiento no trae cargada una pieza de su tipo. Separarlos obligaría a
-// descubrir el problema después de guardar.
+// un renglón no se puede dar por atendido si el mantenimiento no trae cargada
+// una pieza de su tipo. Separarlos obligaría a descubrirlo después de guardar.
 import { Stack, Group, Text, Badge, Paper, SegmentedControl, TextInput, Tooltip } from '@mantine/core'
-import { exigePiezaFaltante } from '../lib/acta'
-import type { RenglonColumna, ActaValor } from '../lib/acta'
+import { exigePiezaFaltante, exigeRespuesta, respuestaDe, RESULTADO_LABEL } from '../lib/acta'
+import type { RenglonColumna, ActaValor, ResultadoRenglon } from '../lib/acta'
+
+const OPCIONES = (['atendida', 'revisada', 'omitida'] as ResultadoRenglon[])
+  .map((r) => ({ value: r, label: RESULTADO_LABEL[r] }))
 
 export default function ActaVisitaPrograma({
   renglones, value, onChange, tiposCargados, errores,
@@ -26,35 +37,49 @@ export default function ActaVisitaPrograma({
   /** Lo que falta de cada renglón. Solo se pinta después de intentar guardar. */
   errores:       Record<number, string>
 }) {
-  function responder(id: number, hecha: boolean) {
-    onChange({ ...value, [id]: { hecha, nota: value[id]?.nota ?? '' } })
+  function responder(r: RenglonColumna, resultado: ResultadoRenglon) {
+    onChange({
+      ...value,
+      [r.operacion_id]: { resultado, nota: respuestaDe(r, value)?.nota ?? '' },
+    })
   }
-  function anotar(id: number, nota: string) {
-    onChange({ ...value, [id]: { hecha: value[id]?.hecha ?? false, nota } })
+  function anotar(r: RenglonColumna, nota: string) {
+    const resp = respuestaDe(r, value)
+    onChange({
+      ...value,
+      [r.operacion_id]: { resultado: resp?.resultado ?? 'omitida', nota },
+    })
   }
 
-  const hechas = renglones.filter((r) => value[r.operacion_id]?.hecha === true).length
-  const sinResponder = renglones.filter((r) => !value[r.operacion_id]).length
+  const cuenta = (res: ResultadoRenglon) =>
+    renglones.filter((r) => respuestaDe(r, value)?.resultado === res).length
+  const porElegir = renglones.filter((r) => !respuestaDe(r, value)).length
 
   return (
     <Stack gap="xs">
       <Group gap="xs" justify="space-between">
-        <Text size="sm" fw={500}>Qué se hizo de esta columna</Text>
+        <Text size="sm" fw={500}>Cómo salió cada cosa</Text>
         <Group gap={6}>
-          <Badge size="sm" variant="light" color="teal">{hechas} hechas</Badge>
-          {sinResponder > 0 && (
-            <Badge size="sm" variant="light" color="gray">{sinResponder} sin responder</Badge>
+          {cuenta('atendida') > 0 && (
+            <Badge size="sm" variant="light" color="blue">{cuenta('atendida')} atendidas</Badge>
+          )}
+          <Badge size="sm" variant="light" color="teal">{cuenta('revisada')} sin novedad</Badge>
+          {cuenta('omitida') > 0 && (
+            <Badge size="sm" variant="light" color="yellow">{cuenta('omitida')} sin revisar</Badge>
+          )}
+          {porElegir > 0 && (
+            <Badge size="sm" variant="light" color="gray">{porElegir} por decidir</Badge>
           )}
         </Group>
       </Group>
       <Text size="xs" c="dimmed">
-        Cada renglón necesita respuesta. Lo que no se haga queda anotado con su motivo y
-        sigue vencido: la próxima visita vuelve a pedirlo.
+        Todo arranca como revisado y sin novedad: toca solo lo que se haya cambiado y lo que no
+        se haya alcanzado a ver. Lo que quede sin revisar se anota con su motivo y sigue vencido.
       </Text>
 
       <Stack gap={6}>
         {renglones.map((r) => {
-          const resp  = value[r.operacion_id]
+          const resp  = respuestaDe(r, value)
           const error = errores[r.operacion_id]
           return (
             <Paper
@@ -69,9 +94,9 @@ export default function ActaVisitaPrograma({
                     </Tooltip>
                     <Text size="sm" style={{ minWidth: 0 }}>{r.nombre}</Text>
                   </Group>
-                  {r.requiere_pieza && r.tipo_pieza_id != null ? (
+                  {exigeRespuesta(r) ? (
                     <Text size="xs" c="dimmed">
-                      Consume refacción: exige un{'\u00A0'}
+                      Consume refacción: si se cambió, exige un{'\u00A0'}
                       <Text span fw={500}>{r.tipo_pieza_nombre ?? 'tipo de pieza'}</Text> cargado abajo
                     </Text>
                   ) : r.categoria && (
@@ -80,31 +105,28 @@ export default function ActaVisitaPrograma({
                 </Stack>
                 <SegmentedControl
                   size="xs"
-                  // Sin valor de arranque a propósito: la palomita tiene que ser
-                  // una decisión, no lo que ya venía puesto.
-                  value={resp == null ? '' : resp.hecha ? 'si' : 'no'}
-                  onChange={(v) => responder(r.operacion_id, v === 'si')}
-                  data={[
-                    { value: 'si', label: 'Se hizo' },
-                    { value: 'no', label: 'No' },
-                  ]}
+                  // Vacío solo en los que exigen elegir: ahí la respuesta tiene
+                  // que ser una decisión, no lo que ya venía puesto.
+                  value={resp?.resultado ?? ''}
+                  onChange={(v) => responder(r, v as ResultadoRenglon)}
+                  data={OPCIONES}
                 />
               </Group>
 
-              {/* En cuanto se marca como hecho, el reclamo de la refacción
+              {/* En cuanto se marca como atendida, el reclamo de la refacción
                   aparece solo: no hay que intentar guardar para enterarse. */}
               {exigePiezaFaltante(r, resp, tiposCargados) && !error && (
                 <Text size="xs" c="orange" mt={4}>
-                  Falta cargar la refacción abajo para poder darla por hecha.
+                  Falta cargar la refacción abajo para poder darla por atendida.
                 </Text>
               )}
 
-              {resp?.hecha === false && (
+              {resp?.resultado === 'omitida' && (
                 <TextInput
                   mt={6} size="xs" maxLength={300}
-                  placeholder="Por qué no se hizo (no había filtro en existencia, no dio tiempo…)"
+                  placeholder="Por qué no se revisó (no había filtro en existencia, no dio tiempo…)"
                   value={resp.nota}
-                  onChange={(e) => anotar(r.operacion_id, e.currentTarget.value)}
+                  onChange={(e) => anotar(r, e.currentTarget.value)}
                 />
               )}
               {error && <Text size="xs" c="red" mt={4}>{error}</Text>}

@@ -98,17 +98,30 @@ export interface EstadoOperacion {
 }
 
 /**
- * Lo que la visita declaró de un renglón de su columna: si se hizo o no, con
- * qué acción y —cuando no se hizo— por qué. Es el acta del servicio
- * (migración 031): antes se daban por hechos todos los renglones sin que nadie
- * lo dijera.
+ * Cómo terminó un renglón en la visita. El corte que importa no es "se hizo o
+ * no", es ATENDIDO contra SALTADO: revisar y encontrar todo bien es cumplir el
+ * mantenimiento, y el renglón queda al día igual que si se hubiera cambiado la
+ * pieza. Ver la migración 031.
+ */
+export type ResultadoRenglon =
+  /** Se reemplazó, se ajustó, se lubricó. Consume refacción. */
+  | 'atendida'
+  /** Se revisó y no hacía falta hacer nada. El caso frecuente en posgarantía. */
+  | 'revisada'
+  /** No se revisó: no dio tiempo, no había pieza. Sigue vencido. */
+  | 'omitida'
+
+/**
+ * Lo que la visita declaró de un renglón de su columna: cómo terminó, con qué
+ * acción y —cuando se saltó— por qué. Es el acta del servicio (migración 031):
+ * antes se daban por hechos todos los renglones sin que nadie lo dijera.
  */
 export interface OperacionAtendida {
   operacion_id: number
   /** La celda al momento de la visita, copiada: el catálogo del modelo se edita. */
   accion:       string
-  hecha:        boolean
-  /** Motivo de lo que no se hizo; en lo hecho, una observación. */
+  resultado:    ResultadoRenglon
+  /** Motivo de lo que se saltó; en lo demás, una observación de lo encontrado. */
   nota:         string | null
 }
 
@@ -122,9 +135,9 @@ export interface VisitaCreate {
   fecha:            string
   km?:              number | null
   /**
-   * Los renglones de la columna, cada uno con lo que se declaró de él. Solo
-   * los marcados como hechos ponen al día su límite de meses; los omitidos
-   * quedan en el acta y siguen vencidos.
+   * Los renglones de la columna, cada uno con lo que se declaró de él. Lo
+   * atendido y lo revisado ponen al día su límite de meses —las dos cosas son
+   * cumplir el mantenimiento—; lo omitido queda en el acta y sigue vencido.
    */
   operaciones:      OperacionAtendida[]
 }
@@ -392,7 +405,7 @@ export async function findEstados(vehiculoId: number): Promise<EstadoOperacion[]
 }
 
 // Cierra una columna: declara que este mantenimiento la atendió, guarda el acta
-// renglón por renglón y pone al día únicamente los que se hicieron.
+// renglón por renglón y pone al día los que no se saltaron.
 //
 // El mantenimiento ya existe cuando se llega aquí. No se crea desde este módulo
 // —eso es trabajo de `mantenimientoRepo`, con sus piezas y su stock— y por eso
@@ -415,20 +428,21 @@ export async function crearVisita(data: VisitaCreate): Promise<Visita> {
 
     for (const op of data.operaciones) {
       await tx.request()
-        .input('mid',    sql.Int,          data.mantenimiento_id)
-        .input('oid',    sql.Int,          op.operacion_id)
-        .input('accion', sql.NVarChar(2),  op.accion)
-        .input('hecha',  sql.Bit,          op.hecha)
+        .input('mid',    sql.Int,           data.mantenimiento_id)
+        .input('oid',    sql.Int,           op.operacion_id)
+        .input('accion', sql.NVarChar(2),   op.accion)
+        .input('res',    sql.NVarChar(12),  op.resultado)
         .input('nota',   sql.NVarChar(300), op.nota ?? null)
         .query(`
           INSERT INTO mantenimiento_operacion
-            (mantenimiento_id, operacion_id, accion, hecha, nota)
-          VALUES (@mid, @oid, @accion, @hecha, @nota)`)
+            (mantenimiento_id, operacion_id, accion, resultado, nota)
+          VALUES (@mid, @oid, @accion, @res, @nota)`)
 
-      // Lo que no se hizo no se pone al día: el renglón sigue vencido y la
+      // Lo que se saltó no se pone al día: el renglón sigue vencido y la
       // próxima visita vuelve a pedirlo. Queda dicho en el acta, que es lo que
-      // antes se perdía.
-      if (!op.hecha) continue
+      // antes se perdía. Revisar sin encontrar nada SÍ lo pone al día: el
+      // programa pedía revisarlo y se revisó.
+      if (op.resultado === 'omitida') continue
 
       await tx.request()
         .input('vid',   sql.Int,  data.vehiculo_id)
@@ -531,13 +545,11 @@ export async function findActa(vehiculoId: number): Promise<ActaLinea[]> {
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
     .query(`
-      SELECT mo.mantenimiento_id, mo.operacion_id, mo.accion, mo.hecha, mo.nota
+      SELECT mo.mantenimiento_id, mo.operacion_id, mo.accion, mo.resultado, mo.nota
       FROM mantenimiento_operacion mo
       JOIN mantenimiento_programa mp ON mp.mantenimiento_id = mo.mantenimiento_id
       WHERE mp.vehiculo_id=@vid`)
-  return r.recordset.map((x: ActaLinea & { hecha: boolean | number }) => ({
-    ...x, hecha: !!x.hecha,
-  }))
+  return r.recordset
 }
 
 /** El mantenimiento tal como lo necesita el programa para cerrarle una columna. */

@@ -44,6 +44,7 @@ import type {
 } from '../hooks/useProgramaVehiculo'
 import { useProgramasModelo, useAccionesPrograma, TIPO_PROGRAMA_LABEL } from '../hooks/usePrograma'
 import { useTiposPieza } from '../hooks/useTiposPieza'
+import { actaParaEnviar } from '../lib/acta'
 import type { RenglonColumna, ActaValor } from '../lib/acta'
 import { KM_MAX } from '../lib/validaciones'
 import { formatMXN, formatMXNCorto } from '../lib/formato'
@@ -280,9 +281,10 @@ function ProximaVisita({
 
 // ── El acta de una visita ya cerrada ─────────────────────────────────────────
 
-// Cuántos renglones de la columna se hicieron, y cuáles no con su motivo. Las
-// visitas anteriores a que el acta existiera llegan con la lista vacía: eso no
-// es "no se hizo nada", es que no se preguntó, y por eso se dice aparte.
+// Qué salió de la columna en esa visita. Lo que importa de un chequeo general no
+// es cuántos renglones se tocaron —casi todos salen bien— sino qué se cambió y
+// qué se quedó sin ver. Las visitas anteriores a que el acta existiera llegan
+// con la lista vacía: eso no es "no se hizo nada", es que no se preguntó.
 function ActaDeLaVisita({
   acta, programa,
 }: {
@@ -291,29 +293,36 @@ function ActaDeLaVisita({
 }) {
   if (!acta.length) {
     return (
-      <Tooltip label="Se registró antes de que se llevara el detalle: no se sabe qué quedó sin hacer." multiline w={230}>
+      <Tooltip label="Se registró antes de que se llevara el detalle: no se sabe qué quedó sin revisar." multiline w={230}>
         <Text size="sm" c="dimmed">—</Text>
       </Tooltip>
     )
   }
-  const hechas   = acta.filter((a) => a.hecha)
-  const omitidas = acta.filter((a) => !a.hecha)
+  const atendidas = acta.filter((a) => a.resultado === 'atendida')
+  const omitidas  = acta.filter((a) => a.resultado === 'omitida')
   const nombre = (id: number) =>
     programa.operaciones.find((o) => o.id === id)?.nombre ?? `Operación ${id}`
 
+  const detalle = [
+    ...atendidas.map((a) => `Se atendió: ${nombre(a.operacion_id)}`),
+    ...omitidas.map((a) => `Sin revisar: ${nombre(a.operacion_id)} — ${a.nota ?? 'sin motivo'}`),
+  ]
+
   return (
     <Tooltip
-      multiline w={300}
-      label={omitidas.length
-        ? omitidas.map((a) => `${nombre(a.operacion_id)}: ${a.nota ?? 'sin motivo'}`).join(' · ')
-        : 'Se hizo la columna completa'}
+      multiline w={320}
+      label={detalle.length
+        ? detalle.join(' · ')
+        : `Se revisaron los ${acta.length} renglones y no hubo novedad`}
     >
-      <Badge
-        size="sm" variant="light"
-        color={omitidas.length ? 'yellow' : 'teal'}
-      >
-        {hechas.length} de {acta.length}
-      </Badge>
+      <Group gap={4} justify="center" wrap="nowrap">
+        <Badge size="sm" variant="light" color={atendidas.length ? 'blue' : 'teal'}>
+          {atendidas.length} de {acta.length}
+        </Badge>
+        {omitidas.length > 0 && (
+          <Badge size="sm" variant="light" color="yellow">{omitidas.length} sin ver</Badge>
+        )}
+      </Group>
     </Tooltip>
   )
 }
@@ -369,8 +378,9 @@ export default function ProgramaVehiculoSection({
   // formulario de mantenimiento.
   const [fechaTrabajo, setFechaTrabajo] = useState(hoyIso())
   const [kmTrabajo, setKmTrabajo]       = useState<number | null>(null)
-  // Lo que se va contestando de cada renglón de la columna. Vive aquí y no en
-  // el formulario porque es esta pantalla la que cierra la columna: el
+  // Lo que se toca a mano de cada renglón de la columna; lo demás corre con su
+  // arranque —"revisado, sin novedad"— y se resuelve al leerlo. Vive aquí y no
+  // en el formulario porque es esta pantalla la que cierra la columna: el
   // formulario solo lo pinta y lo revisa contra las refacciones capturadas.
   const [acta, setActa]                 = useState<ActaValor>({})
 
@@ -514,12 +524,8 @@ export default function ProgramaVehiculoSection({
           {
             mantenimiento_id: res.data.id,
             // El acta va con el vínculo: es lo que esta visita declaró de cada
-            // renglón de su columna.
-            operaciones: renglonesColumna.map((r) => ({
-              operacion_id: r.operacion_id,
-              hecha:        acta[r.operacion_id]?.hecha ?? false,
-              nota:         acta[r.operacion_id]?.nota.trim() || null,
-            })),
+            // renglón de su columna, con el arranque ya resuelto.
+            operaciones: actaParaEnviar(renglonesColumna, acta),
           },
           {
             onSuccess: () => setVisitaOpen(false),
@@ -738,9 +744,9 @@ export default function ProgramaVehiculoSection({
                 <Table.Th>Columna</Table.Th>
                 <Table.Th>Fecha</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>Odómetro</Table.Th>
-                {/* El acta: qué renglones de la columna se hicieron de verdad.
+                {/* El acta: qué se cambió de verdad y qué se quedó sin ver.
                     Antes se daban todos por hechos y no quedaba registro. */}
-                <Table.Th style={{ textAlign: 'center' }}>Se hizo</Table.Th>
+                <Table.Th style={{ textAlign: 'center' }}>Se atendió</Table.Th>
                 {/* Lo que costó de verdad, que es lo que se gana con que la
                     visita sea el mantenimiento y no un registro aparte. */}
                 <Table.Th style={{ textAlign: 'right' }}>Costo</Table.Th>
@@ -817,10 +823,10 @@ export default function ProgramaVehiculoSection({
       >
         <Stack gap="sm">
           <Alert color="blue" variant="light">
-            Se registra como un mantenimiento normal, y abajo se contesta renglón por renglón qué
-            se hizo de las {proxima?.operaciones.length ?? 0} operaciones de la columna. Solo lo
-            que se marque como hecho vuelve a contar sus meses desde esta fecha; lo que no, queda
-            anotado y sigue vencido.
+            Se registra como un mantenimiento normal. Abajo van las {proxima?.operaciones.length ?? 0}{' '}
+            operaciones de la columna, todas como revisadas y sin novedad: marca solo lo que se
+            haya cambiado y lo que no se haya alcanzado a ver. Lo que quede sin revisar sigue
+            vencido; lo demás vuelve a contar sus meses desde esta fecha.
           </Alert>
           <MantenimientoForm
             vehiculoId={vehiculoId}

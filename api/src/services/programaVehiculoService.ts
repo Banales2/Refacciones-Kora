@@ -29,7 +29,7 @@ import { evaluarGarantia, type EstadoGarantia } from '../shared/garantias'
 import type { Fase, Operacion, ProgramaCompleto } from '../repositories/programaRepo'
 import type {
   Etapa, VinculoPrograma, Visita, EstadoOperacion, Excepciones, OperacionAtendida,
-  ActaLinea,
+  ActaLinea, ResultadoRenglon,
 } from '../repositories/programaVehiculoRepo'
 import type { GarantiaPrincipal } from '../repositories/garantiasRepo'
 
@@ -618,7 +618,7 @@ export async function asignarProgramaDelModelo(
 /** Lo que la captura declara de un renglón de la columna. */
 export interface ActaEntrada {
   operacion_id: number
-  hecha:        boolean
+  resultado:    ResultadoRenglon
   nota?:        string | null
 }
 
@@ -634,19 +634,22 @@ export interface ActaEntrada {
  * 1. QUE ESTÉN TODOS, y solo los de esta columna. Un renglón sin respuesta es
  *    justo el silencio que se quiere quitar, y uno de más sería declarar algo
  *    que esta columna no manda hacer.
- * 2. QUE LO OMITIDO TRAIGA MOTIVO. Omitir se permite —bloquear la visita
- *    entera dejaría al taller sin capturar ni lo que sí se hizo ni el costo—,
- *    pero no en blanco: el renglón se queda vencido y hay que poder decir por
- *    qué.
- * 3. QUE LO QUE CONSUME REFACCIÓN LA TRAIGA. Si la acción de la celda consume
- *    pieza (`requiere_pieza` del catálogo) y el renglón dice sobre qué tipo
- *    trabaja, el mantenimiento tiene que haber consumido una pieza de ese tipo.
- *    Eso es "el cambio de aceite obliga a registrar un aceite". Se comprueba
- *    contra el consumo ya capturado, no contra lo que dijo el formulario: la
- *    pieza tiene que haber salido del inventario.
+ * 2. QUE LO OMITIDO TRAIGA MOTIVO. Saltarse un renglón se permite —bloquear la
+ *    visita entera dejaría al taller sin capturar ni lo que sí se hizo ni el
+ *    costo—, pero no en blanco: el renglón se queda vencido y hay que poder
+ *    decir por qué.
+ * 3. QUE LO ATENDIDO QUE CONSUME REFACCIÓN LA TRAIGA. Si la acción de la celda
+ *    consume pieza (`requiere_pieza` del catálogo) y el renglón dice sobre qué
+ *    tipo trabaja, el mantenimiento tiene que haber consumido una pieza de ese
+ *    tipo. Eso es "el cambio de aceite obliga a registrar un aceite". Se
+ *    comprueba contra el consumo ya capturado, no contra lo que dijo el
+ *    formulario: la pieza tiene que haber salido del inventario.
  *
- * Los renglones informativos —inspeccionar, ajustar, o cualquiera sin tipo de
- * pieza— no piden nada más que la palomita, y esa palomita es su registro.
+ * Lo que NO se revisa es 'revisada': se miró y no hacía falta nada. Es el
+ * desenlace normal de un chequeo general y no debe pedir ni pieza ni
+ * explicación —pedirla convertiría la captura en un trámite y todo el mundo
+ * acabaría marcando "atendida" para salir del paso—. Cuenta como cumplido: el
+ * programa pedía revisar el renglón y se revisó.
  */
 async function revisarActa(
   columna:          OperacionDeFase[],
@@ -658,7 +661,7 @@ async function revisarActa(
   const faltan = columna.filter((o) => !porId.has(o.operacion.id))
   if (faltan.length) {
     throw new ValidationError(
-      `Falta decir qué se hizo con: ${faltan.map((o) => o.operacion.nombre).join(', ')}`
+      `Falta decir qué pasó con: ${faltan.map((o) => o.operacion.nombre).join(', ')}`
     )
   }
   const deLaColumna = new Set(columna.map((o) => o.operacion.id))
@@ -669,12 +672,12 @@ async function revisarActa(
   const exigenPieza = new Set(
     (await programaRepo.findAcciones()).filter((a) => a.requiere_pieza).map((a) => a.codigo)
   )
-  // Solo se consulta el consumo si algún renglón hecho lo necesita: la mayoría
-  // de las columnas son pura inspección.
+  // Solo se consulta el consumo si algún renglón atendido lo necesita: la
+  // mayoría de una columna se va en revisar.
   const necesitaPieza = columna.filter((o) =>
     o.operacion.tipo_pieza_id != null &&
     exigenPieza.has(o.accion) &&
-    porId.get(o.operacion.id)!.hecha
+    porId.get(o.operacion.id)!.resultado === 'atendida'
   )
   const consumidos = necesitaPieza.length
     ? new Set(await repo.findTiposPiezaConsumidos(mantenimientoId))
@@ -683,23 +686,23 @@ async function revisarActa(
   for (const o of necesitaPieza) {
     if (consumidos.has(o.operacion.tipo_pieza_id!)) continue
     throw new ValidationError(
-      `«${o.operacion.nombre}» se marcó como hecha, pero el mantenimiento no tiene ` +
-      `cargada ninguna refacción de su tipo. Agrégala, o marca el renglón como no hecho ` +
-      `diciendo por qué.`
+      `«${o.operacion.nombre}» se marcó como atendida, pero el mantenimiento no tiene ` +
+      `cargada ninguna refacción de su tipo. Agrégala, o márcala como revisada sin ` +
+      `novedad si no hizo falta cambiarla.`
     )
   }
 
   return columna.map((o) => {
     const d = porId.get(o.operacion.id)!
     const nota = d.nota?.trim() || null
-    if (!d.hecha && !nota) {
+    if (d.resultado === 'omitida' && !nota) {
       throw new ValidationError(
-        `«${o.operacion.nombre}» quedó sin hacer: hay que decir por qué.`
+        `«${o.operacion.nombre}» quedó sin revisar: hay que decir por qué.`
       )
     }
     // La acción se sella con la de hoy: el catálogo del modelo se edita y el
     // acta tiene que seguir diciendo lo que se mandó hacer en su momento.
-    return { operacion_id: o.operacion.id, accion: o.accion, hecha: d.hecha, nota }
+    return { operacion_id: o.operacion.id, accion: o.accion, resultado: d.resultado, nota }
   })
 }
 
@@ -711,8 +714,8 @@ async function revisarActa(
  * atendió. Hacia el usuario esto es "registrar la visita al taller"; por
  * debajo, la visita y el mantenimiento son el mismo hecho (migración 017).
  *
- * Y se dice también qué se hizo de esa columna, renglón por renglón: el acta.
- * No se puede cerrar una columna en silencio —ver `revisarActa`—.
+ * Y se dice también cómo terminó cada renglón de esa columna: el acta. No se
+ * puede cerrar una columna en silencio —ver `revisarActa`—.
  */
 export async function registrarVisita(
   vehiculoId: number,
