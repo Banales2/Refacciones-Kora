@@ -5,7 +5,7 @@ import {
   Stack, Group, Text, TextInput, Table, Badge,
   Loader, Center, Alert, Button, ActionIcon,
   Modal, Tooltip, Divider, Grid, Paper, MultiSelect,
-  Autocomplete,
+  Autocomplete, Switch,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
@@ -686,6 +686,10 @@ export default function Modelos({
   // Modelo sobre el que se está por actuar la baja (o la reactivación, si ya
   // estaba de baja). Un modelo nunca se borra: ver useModelos y migración 032.
   const [bajaTarget, setBajaTarget] = useState<Modelo | null>(null)
+  // Los dados de baja se ocultan por defecto: el catálogo es sobre todo la
+  // lista de lo que se puede dar de alta. El switch los trae de vuelta, que es
+  // la única forma de llegar a reactivarlos.
+  const [verBajas, setVerBajas]   = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
   // Con bajas incluidas: esta es la única pantalla desde donde se reactivan, y
@@ -760,7 +764,10 @@ export default function Modelos({
     )
   }
 
-  const modelos = (data?.data ?? []).filter((m) => {
+  const todos   = data?.data ?? []
+  const deBaja  = todos.filter((m) => m.baja_en).length
+  const modelos = todos.filter((m) => {
+    if (m.baja_en && !verBajas) return false
     if (!debounced) return true
     const q = debounced.toLowerCase()
     return m.marca.toLowerCase().includes(q) || m.nombre.toLowerCase().includes(q)
@@ -788,20 +795,29 @@ export default function Modelos({
         </Group>
       </Group>
 
-      <TextInput
-        placeholder="Buscar por marca o modelo…"
-        value={search}
-        onChange={(e) => setSearch(e.currentTarget.value)}
-        rightSection={
-          search ? (
-            <Text
-              component="button" size="xs" c="dimmed"
-              style={{ cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
-              onClick={() => setSearch('')}
-            >✕</Text>
-          ) : null
-        }
-      />
+      <Group justify="space-between" align="center" wrap="nowrap">
+        <TextInput
+          style={{ flex: 1 }}
+          placeholder="Buscar por marca o modelo…"
+          value={search}
+          onChange={(e) => setSearch(e.currentTarget.value)}
+          rightSection={
+            search ? (
+              <Text
+                component="button" size="xs" c="dimmed"
+                style={{ cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
+                onClick={() => setSearch('')}
+              >✕</Text>
+            ) : null
+          }
+        />
+        {deBaja > 0 && (
+          <Switch
+            size="sm" label={`Ver dados de baja (${deBaja})`}
+            checked={verBajas} onChange={(e) => setVerBajas(e.currentTarget.checked)}
+          />
+        )}
+      </Group>
 
       {isLoading ? (
         <Center py="xl"><Loader /></Center>

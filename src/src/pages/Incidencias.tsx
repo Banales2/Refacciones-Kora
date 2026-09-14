@@ -516,7 +516,6 @@ export default function Incidencias({ onNavigateVehiculo }: {
           />
         )}
       </Modal>
-
     </>
   )
 }

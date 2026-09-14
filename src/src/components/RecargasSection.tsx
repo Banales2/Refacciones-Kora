@@ -595,7 +595,6 @@ export default function RecargasSection({
           onCancel={() => setFormOpen(false)}
         />
       </Modal>
-
     </>
   )
 }

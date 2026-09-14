@@ -535,7 +535,6 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
           onClose={() => setDetalleMttoId(null)}
         />
       )}
-
     </>
   )
 }
@@ -778,7 +777,6 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
           onCancel={() => setFormOpen(false)}
         />
       </Modal>
-
 
       <MantenimientoDetalleDrawer
         mantenimientoId={detalleId}
@@ -2165,7 +2163,6 @@ export default function Vehiculos({
           onSubmit={handleFormSubmit} onCancel={() => setFormOpen(false)}
         />
       </Modal>
-
     </Stack>
   )
 }

@@ -51,7 +51,6 @@ interface Props {
   onClose: () => void
 }
 
-
 export default function LotesDrawer({ piezaId, onClose }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editLote, setEditLote] = useState<Lote | null>(null)
@@ -301,7 +300,6 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
           />
         )}
       </Modal>
-
     </>
   )
 }
