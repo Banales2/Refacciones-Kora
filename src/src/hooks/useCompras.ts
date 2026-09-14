@@ -75,6 +75,10 @@ export function useCreateCompra() {
       qc.invalidateQueries({ queryKey: ['lotes'] })
       qc.invalidateQueries({ queryKey: ['refacciones'] })
       qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
+      // El precio pagado es una de las dos fuentes de la comparativa: una
+      // compra nueva cambia lo que ese proveedor cobra por esa refacción, y sin
+      // esto la pantalla de precios seguía mostrando la anterior.
+      qc.invalidateQueries({ queryKey: ['precios-proveedor'] })
       // La compra puede haber dado de alta refacciones y, con ellas, tipos de
       // pieza nuevos desde el propio renglón.
       qc.invalidateQueries({ queryKey: ['tipos-pieza'] })

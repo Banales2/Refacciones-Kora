@@ -68,6 +68,10 @@ export function useCreateLote() {
       qc.invalidateQueries({ queryKey: ['lotes'] })
       qc.invalidateQueries({ queryKey: ['refacciones'] })
       qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
+      // El precio pagado es una de las dos fuentes de la comparativa: una
+      // compra nueva cambia lo que ese proveedor cobra por esa refacción, y sin
+      // esto la pantalla de precios seguía mostrando la anterior.
+      qc.invalidateQueries({ queryKey: ['precios-proveedor'] })
     },
   })
 }
@@ -81,6 +85,10 @@ export function useUpdateLote() {
       qc.invalidateQueries({ queryKey: ['lotes'] })
       qc.invalidateQueries({ queryKey: ['refacciones'] })
       qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
+      // El precio pagado es una de las dos fuentes de la comparativa: una
+      // compra nueva cambia lo que ese proveedor cobra por esa refacción, y sin
+      // esto la pantalla de precios seguía mostrando la anterior.
+      qc.invalidateQueries({ queryKey: ['precios-proveedor'] })
     },
   })
 }
@@ -93,6 +101,10 @@ export function useDeleteLote() {
       qc.invalidateQueries({ queryKey: ['lotes'] })
       qc.invalidateQueries({ queryKey: ['refacciones'] })
       qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
+      // El precio pagado es una de las dos fuentes de la comparativa: una
+      // compra nueva cambia lo que ese proveedor cobra por esa refacción, y sin
+      // esto la pantalla de precios seguía mostrando la anterior.
+      qc.invalidateQueries({ queryKey: ['precios-proveedor'] })
     },
   })
 }

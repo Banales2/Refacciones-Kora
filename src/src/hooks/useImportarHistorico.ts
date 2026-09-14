@@ -69,6 +69,10 @@ export function useImportarHistorico() {
       qc.invalidateQueries({ queryKey: ['lotes'] })
       qc.invalidateQueries({ queryKey: ['facturas'] })
       qc.invalidateQueries({ queryKey: ['proveedor-gastos'] })
+      // El precio pagado es una de las dos fuentes de la comparativa: una
+      // compra nueva cambia lo que ese proveedor cobra por esa refacción, y sin
+      // esto la pantalla de precios seguía mostrando la anterior.
+      qc.invalidateQueries({ queryKey: ['precios-proveedor'] })
       qc.invalidateQueries({ queryKey: ['inventario-existencias'] })
     },
   })
