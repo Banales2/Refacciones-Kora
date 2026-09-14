@@ -9,11 +9,14 @@ import {
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight } from '@tabler/icons-react'
 import {
-  useModelos, useCreateModelo, useUpdateModelo, useDeleteModelo,
+  IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight,
+  IconArchive, IconArchiveOff,
+} from '@tabler/icons-react'
+import {
+  useModelos, useCreateModelo, useUpdateModelo, useBajaModelo, useReactivarModelo,
 } from '../hooks/useModelos'
-import { useVehiculos, useCreateVehiculo, useDeleteVehiculo, vehiculoLabel } from '../hooks/useVehiculos'
+import { useVehiculos, useCreateVehiculo } from '../hooks/useVehiculos'
 import {
   useTiposPiezaModelo, useAddTiposPiezaModelo, useRemoveTipoPiezaModelo,
   useRenameEtiquetaModelo,
@@ -383,12 +386,12 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
 // ── Vista de detalle ──────────────────────────────────────────────────────────
 
 function ModeloDetalle({
-  modelo, onBack, onEdit, onDelete, onNavigateVehiculo,
+  modelo, onBack, onEdit, onBaja, onNavigateVehiculo,
 }: {
   modelo: Modelo
   onBack: () => void
   onEdit: (m: Modelo) => void
-  onDelete: (m: Modelo) => void
+  onBaja: (m: Modelo) => void
   onNavigateVehiculo?: (v: VehiculoRow) => void
 }) {
   const { data, isLoading, isError } = useVehiculos(1, '', undefined, modelo.id)
@@ -397,11 +400,6 @@ function ModeloDetalle({
   const [vehiculoFormOpen, setVehiculoFormOpen] = useState(false)
   const [vehiculoError, setVehiculoError] = useState<string | null>(null)
   const createVehiculoMut = useCreateVehiculo()
-
-  // Baja de un vehículo del modelo. Al borrarse se invalida la query de
-  // vehículos, así que la tabla de aquí se refresca sola.
-  const [deletingVehiculo, setDeletingVehiculo] = useState<VehiculoRow | null>(null)
-  const deleteVehiculoMut = useDeleteVehiculo()
 
   function openCreateVehiculo() {
     setVehiculoError(null)
@@ -436,7 +434,16 @@ function ModeloDetalle({
               <Text size="xl" fw={700}>{modelo.nombre}</Text>
               <Badge variant="light" color="gray" size="lg">{modelo.marca}</Badge>
               {modelo.anio != null && <Badge variant="light" color="blue" size="lg">{modelo.anio}</Badge>}
+              {modelo.baja_en && (
+                <Badge variant="filled" color="gray" size="lg">Dado de baja</Badge>
+              )}
             </Group>
+            {modelo.baja_en && (
+              <Text size="sm" c="dimmed">
+                De baja desde {fmtDate(modelo.baja_en)}: no se ofrece al dar de alta unidades
+                nuevas{modelo.baja_motivo ? ` — ${modelo.baja_motivo}` : ''}.
+              </Text>
+            )}
             <Grid mt={4}>
               <Grid.Col span={{ base: 12, sm: 6 }}>
                 <Text size="xs" c="dimmed">Creado</Text>
@@ -468,10 +475,13 @@ function ModeloDetalle({
                 <IconPencil size={16} />
               </ActionIcon>
             </Tooltip>
-            <Tooltip label="Eliminar modelo">
-              <ActionIcon variant="light" color="red" size="lg"
-                aria-label="Eliminar modelo" onClick={() => onDelete(modelo)}>
-                <IconTrash size={16} />
+            <Tooltip label={modelo.baja_en ? 'Reactivar modelo' : 'Dar de baja'}>
+              <ActionIcon
+                variant="light" color={modelo.baja_en ? 'teal' : 'orange'} size="lg"
+                aria-label={modelo.baja_en ? 'Reactivar modelo' : 'Dar de baja el modelo'}
+                onClick={() => onBaja(modelo)}
+              >
+                {modelo.baja_en ? <IconArchiveOff size={16} /> : <IconArchive size={16} />}
               </ActionIcon>
             </Tooltip>
           </Group>
@@ -524,7 +534,6 @@ function ModeloDetalle({
                 <Table.Th>Placas</Table.Th>
                 <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>Kilometraje</Table.Th>
-                <Table.Th style={{ width: 40 }} />
                 {onNavigateVehiculo && <Table.Th style={{ width: 32 }} />}
               </Table.Tr>
             </Table.Thead>
@@ -551,19 +560,6 @@ function ModeloDetalle({
                       {v.kilometraje !== null
                         ? `${v.kilometraje.toLocaleString('es-MX')} km`
                         : <Text component="span" c="dimmed" size="sm">—</Text>}
-                    </Table.Td>
-                    <Table.Td>
-                      <Tooltip label="Eliminar vehículo">
-                        <ActionIcon
-                          variant="subtle" color="red" size="sm"
-                          aria-label="Eliminar vehículo"
-                          // El renglón navega al vehículo: sin esto, borrar
-                          // abriría también su ficha.
-                          onClick={(e) => { e.stopPropagation(); setDeletingVehiculo(v) }}
-                        >
-                          <IconTrash size={14} />
-                        </ActionIcon>
-                      </Tooltip>
                     </Table.Td>
                     {onNavigateVehiculo && (
                       <Table.Td>
@@ -593,52 +589,82 @@ function ModeloDetalle({
           onCancel={() => setVehiculoFormOpen(false)}
         />
       </Modal>
-
-      <Modal
-        opened={deletingVehiculo !== null}
-        onClose={() => setDeletingVehiculo(null)}
-        title="Eliminar vehículo"
-        centered
-        size="sm"
-      >
-        <Stack gap="md">
-          <Text>
-            ¿Eliminar{' '}
-            <strong>{deletingVehiculo ? vehiculoLabel(deletingVehiculo) : ''}</strong>?
-            Esta acción no se puede deshacer.
-          </Text>
-          <Text size="sm" c="dimmed">
-            Su avance en el programa de mantenimiento se elimina automáticamente. No podrá
-            eliminarse si tiene mantenimientos, recargas o vales registrados.
-          </Text>
-          {deleteVehiculoMut.error && (
-            <Alert color="red" title="Error">
-              {(deleteVehiculoMut.error as Error).message}
-            </Alert>
-          )}
-          <Group justify="flex-end">
-            <Button
-              variant="default"
-              onClick={() => setDeletingVehiculo(null)}
-              disabled={deleteVehiculoMut.isPending}
-            >
-              Cancelar
-            </Button>
-            <Button
-              color="red"
-              loading={deleteVehiculoMut.isPending}
-              onClick={() =>
-                deleteVehiculoMut.mutate(deletingVehiculo!.id, {
-                  onSuccess: () => setDeletingVehiculo(null),
-                })
-              }
-            >
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </Stack>
+  )
+}
+
+// ── Baja y reactivación ───────────────────────────────────────────────────────
+
+// Un modelo no se borra. Es el padre del programa de mantenimiento, de las
+// garantías del catálogo y de la lista de tipos de pieza, y esa configuración
+// es lo que explica qué se le hacía a las unidades que lo usaron: sigue
+// haciendo falta mucho después de que la última se venda. Lo que sí hace falta
+// es dejar de ofrecerlo al dar de alta, y eso es la baja (migración 032).
+function BajaModeloModal({ modelo, onClose }: { modelo: Modelo | null; onClose: () => void }) {
+  const [motivo, setMotivo] = useState('')
+  const bajaMut      = useBajaModelo()
+  const reactivarMut = useReactivarModelo()
+
+  const reactivando = modelo?.baja_en != null
+  const mut = reactivando ? reactivarMut : bajaMut
+
+  function cerrar() {
+    bajaMut.reset()
+    reactivarMut.reset()
+    setMotivo('')
+    onClose()
+  }
+
+  return (
+    <Modal
+      opened={modelo !== null} onClose={cerrar}
+      title={reactivando ? 'Reactivar modelo' : 'Dar de baja el modelo'}
+      centered size="sm"
+    >
+      <Stack gap="md">
+        {reactivando ? (
+          <>
+            <Text>
+              ¿Volver a ofrecer <strong>{modelo?.marca} {modelo?.nombre}</strong> al dar de alta
+              unidades?
+            </Text>
+            {modelo?.baja_motivo && (
+              <Text size="sm" c="dimmed">Se dio de baja por: {modelo.baja_motivo}</Text>
+            )}
+          </>
+        ) : (
+          <>
+            <Text>
+              ¿Dar de baja <strong>{modelo?.marca} {modelo?.nombre}</strong>?
+            </Text>
+            <Text size="sm" c="dimmed">
+              Deja de aparecer al dar de alta unidades nuevas. No se borra nada: su programa,
+              sus garantías y sus tipos de pieza siguen ahí, los vehículos que ya lo usan lo
+              siguen mostrando, y puedes reactivarlo cuando quieras.
+            </Text>
+            <TextInput
+              label="Motivo" placeholder="Ya no se compra este modelo"
+              description="Opcional, pero evita que alguien lo vuelva a dar de alta duplicado."
+              maxLength={200}
+              value={motivo} onChange={(e) => setMotivo(e.currentTarget.value)}
+            />
+          </>
+        )}
+        {mut.error && <Alert color="red" title="Error">{(mut.error as Error).message}</Alert>}
+        <Group justify="flex-end">
+          <Button variant="default" onClick={cerrar} disabled={mut.isPending}>Cancelar</Button>
+          <Button
+            color={reactivando ? 'teal' : 'orange'} loading={mut.isPending}
+            onClick={() => {
+              if (reactivando) reactivarMut.mutate(modelo!.id, { onSuccess: cerrar })
+              else bajaMut.mutate({ id: modelo!.id, motivo: motivo.trim() || undefined }, { onSuccess: cerrar })
+            }}
+          >
+            {reactivando ? 'Reactivar' : 'Dar de baja'}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   )
 }
 
@@ -657,13 +683,16 @@ export default function Modelos({
   const [debounced]               = useDebouncedValue(search, 300)
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Modelo | null>(null)
-  const [deleting, setDeleting]   = useState<Modelo | null>(null)
+  // Modelo sobre el que se está por actuar la baja (o la reactivación, si ya
+  // estaba de baja). Un modelo nunca se borra: ver useModelos y migración 032.
+  const [bajaTarget, setBajaTarget] = useState<Modelo | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const { data, isLoading, isError } = useModelos()
+  // Con bajas incluidas: esta es la única pantalla desde donde se reactivan, y
+  // si no se listaran no habría forma de llegar a ellos.
+  const { data, isLoading, isError } = useModelos(true)
   const createMut = useCreateModelo()
   const updateMut = useUpdateModelo()
-  const deleteMut = useDeleteModelo()
 
   // El modelo abierto se deriva del id conservado por Layout.
   const selected = (data?.data ?? []).find((m) => m.id === openId) ?? null
@@ -673,8 +702,8 @@ export default function Modelos({
     e?.stopPropagation()
     setEditing(m); setFormError(null); setFormOpen(true)
   }
-  function openDelete(m: Modelo, e: React.MouseEvent) {
-    e.stopPropagation(); setDeleting(m)
+  function openBaja(m: Modelo, e: React.MouseEvent) {
+    e.stopPropagation(); setBajaTarget(m)
   }
   function handleSubmit(payload: ModeloPayload) {
     setFormError(null)
@@ -708,7 +737,7 @@ export default function Modelos({
           modelo={selected}
           onBack={() => onOpenIdChange?.(null)}
           onEdit={(m) => openEdit(m)}
-          onDelete={(m) => setDeleting(m)}
+          onBaja={(m) => setBajaTarget(m)}
           onNavigateVehiculo={onNavigateVehiculo}
         />
         <Modal
@@ -723,28 +752,10 @@ export default function Modelos({
           />
         </Modal>
 
-        {/* El modal de baja se repite aquí porque el detalle sale por este
-            return y no alcanza el de la lista. Al borrarlo ya no hay ficha
-            que mostrar, así que se cierra el detalle. */}
-        <Modal
-          opened={deleting !== null} onClose={() => setDeleting(null)}
-          title="Eliminar modelo" centered size="sm"
-        >
-          <Stack gap="md">
-            <Text>¿Eliminar <strong>{deleting?.marca} {deleting?.nombre}</strong>? Esta acción no se puede deshacer.</Text>
-            <Text size="sm" c="dimmed">No podrá eliminarse si tiene vehículos asignados.</Text>
-            {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-            <Group justify="flex-end">
-              <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-              <Button color="red" loading={deleteMut.isPending}
-                onClick={() => deleteMut.mutate(deleting!.id, {
-                  onSuccess: () => { setDeleting(null); onOpenIdChange?.(null) },
-                })}>
-                Eliminar
-              </Button>
-            </Group>
-          </Stack>
-        </Modal>
+        {/* El modal se repite aquí porque el detalle sale por este return y no
+            alcanza el de la lista. La ficha se queda abierta: el modelo sigue
+            existiendo, solo cambia si se ofrece o no al dar de alta. */}
+        <BajaModeloModal modelo={bajaTarget} onClose={() => setBajaTarget(null)} />
       </>
     )
   }
@@ -825,7 +836,12 @@ export default function Modelos({
                   <Table.Td>
                     <Badge variant="light" color="gray" size="sm">{m.marca}</Badge>
                   </Table.Td>
-                  <Table.Td fw={500}>{m.nombre}</Table.Td>
+                  <Table.Td fw={500}>
+                    <Group gap="xs" wrap="nowrap">
+                      <span>{m.nombre}</span>
+                      {m.baja_en && <Badge variant="light" color="gray" size="sm">Baja</Badge>}
+                    </Group>
+                  </Table.Td>
                   <Table.Td>{m.anio ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
                   <Table.Td>
                     {(m.tipos_permitidos ?? []).length === 0 ? (
@@ -852,9 +868,13 @@ export default function Modelos({
                           <IconPencil size={14} />
                         </ActionIcon>
                       </Tooltip>
-                      <Tooltip label="Eliminar">
-                        <ActionIcon variant="subtle" color="red" size="sm" onClick={(e) => openDelete(m, e)}>
-                          <IconTrash size={14} />
+                      <Tooltip label={m.baja_en ? 'Reactivar' : 'Dar de baja'}>
+                        <ActionIcon
+                          variant="subtle" color={m.baja_en ? 'teal' : 'orange'} size="sm"
+                          aria-label={m.baja_en ? 'Reactivar modelo' : 'Dar de baja el modelo'}
+                          onClick={(e) => openBaja(m, e)}
+                        >
+                          {m.baja_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
                         </ActionIcon>
                       </Tooltip>
                       <IconChevronRight size={14} color="var(--mantine-color-dimmed)" />
@@ -879,23 +899,7 @@ export default function Modelos({
         />
       </Modal>
 
-      <Modal
-        opened={deleting !== null} onClose={() => setDeleting(null)}
-        title="Eliminar modelo" centered size="sm"
-      >
-        <Stack gap="md">
-          <Text>¿Eliminar <strong>{deleting?.marca} {deleting?.nombre}</strong>? Esta acción no se puede deshacer.</Text>
-          <Text size="sm" c="dimmed">No podrá eliminarse si tiene vehículos asignados.</Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <BajaModeloModal modelo={bajaTarget} onClose={() => setBajaTarget(null)} />
     </Stack>
   )
 }

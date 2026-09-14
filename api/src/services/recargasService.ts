@@ -50,7 +50,3 @@ export async function update(id: number, data: RecargaUpdate): Promise<RecargaCo
   return result
 }
 
-export async function remove(id: number): Promise<void> {
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Recarga')
-}

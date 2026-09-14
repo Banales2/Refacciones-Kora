@@ -214,28 +214,6 @@ export async function existsPlacas(placas: string, exceptId?: number): Promise<b
   return r.recordset.length > 0
 }
 
-export interface DependenciasVehiculo {
-  mantenimientos: number
-  recargas:       number
-  vales:          number
-}
-
-// Registros históricos que impiden dar de baja el vehículo. Se cuentan por
-// separado para poder decir en el mensaje qué es lo que lo está reteniendo,
-// en vez de un "tiene N registros vinculados" que no orienta a nadie.
-export async function countDependencies(id: number): Promise<DependenciasVehiculo> {
-  const pool = await getPool()
-  const result = await pool.request()
-    .input('id', sql.Int, id)
-    .query(`
-      SELECT
-        (SELECT COUNT(*) FROM mantenimiento          WHERE vehiculo_id = @id) AS mantenimientos,
-        (SELECT COUNT(*) FROM recargas_combustible   WHERE vehiculo_id = @id) AS recargas,
-        (SELECT COUNT(*) FROM vales_gasolina         WHERE vehiculo_id = @id) AS vales
-    `)
-  return result.recordset[0]
-}
-
 // ── Write ─────────────────────────────────────────────────────────────────────
 
 export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
@@ -404,59 +382,6 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
   }
 
   return findById(id)
-}
-
-export async function remove(id: number): Promise<void> {
-  const pool = await getPool()
-  const tx = pool.transaction()
-  await tx.begin()
-  try {
-    const tipoRes = await tx.request().input('id', sql.Int, id)
-      .query('SELECT tipo FROM vehiculos WHERE id=@id')
-    const tipo: TipoVehiculo = tipoRes.recordset[0]?.tipo
-    if (!tipo) { await tx.rollback(); return }
-
-    // Preventivos e incidencias del vehículo: se sueltan sus vínculos con
-    // mantenimientos y agendas (FK NO ACTION) y se borran los padres; las tablas
-    // hijas se van solas por ON DELETE CASCADE.
-    await tx.request().input('id', sql.Int, id).query(`
-      DELETE mp FROM mantenimiento_pendientes mp
-      JOIN pendientes p ON p.id = mp.pendiente_id
-      WHERE p.vehiculo_id = @id
-    `)
-    await tx.request().input('id', sql.Int, id).query(`
-      DELETE ap FROM agenda_pendientes ap
-      JOIN pendientes p ON p.id = ap.pendiente_id
-      WHERE p.vehiculo_id = @id
-    `)
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM pendientes WHERE vehiculo_id=@id')
-    // El avance del programa de mantenimiento y lo que la unidad hacía distinto
-    // de él (migraciones 013, 016 y 017). Se borra a mano, por lo mismo que las
-    // garantías: para no depender del orden en que el motor resuelva las
-    // cascadas que bajan de `vehiculos`.
-    //
-    // Las columnas cerradas no aparecen aquí porque son mantenimientos, y una
-    // unidad con mantenimientos no se puede borrar: lo comprueba el servicio.
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM vehiculo_operacion_estado WHERE vehiculo_id=@id')
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM vehiculo_fase_excepcion WHERE vehiculo_id=@id')
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM vehiculo_operacion_excepcion WHERE vehiculo_id=@id')
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM vehiculo_programa WHERE vehiculo_id=@id')
-    const sub = tx.request().input('id', sql.Int, id)
-    const table = tipo === 'camion' ? 'camiones' : tipo === 'tractocamion' ? 'tractocamiones'
-                : tipo === 'caja_trailer' ? 'cajas_trailer' : tipo === 'montacargas' ? 'montacargas'
-                : 'vehiculos_utilitarios'
-    await sub.query(`DELETE FROM ${table} WHERE vehiculo_id=@id`)
-    await tx.request().input('id', sql.Int, id).query('DELETE FROM vehiculos WHERE id=@id')
-    await tx.commit()
-  } catch (err) {
-    await tx.rollback()
-    throw err
-  }
 }
 
 /**

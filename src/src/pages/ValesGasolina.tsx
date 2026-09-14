@@ -12,9 +12,9 @@ import {
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
+import { IconPencil, IconPlus } from '@tabler/icons-react'
 import {
-  useValesGasolina, useCreateValeGasolina, useUpdateValeGasolina, useDeleteValeGasolina,
+  useValesGasolina, useCreateValeGasolina, useUpdateValeGasolina,
 } from '../hooks/useValesGasolina'
 import type { ValeGasolina, ValeGasolinaPayload } from '../hooks/useValesGasolina'
 import { useConductores } from '../hooks/useConductores'
@@ -284,11 +284,10 @@ function ValeForm({
 // Ni la persona ni el vehículo se repiten como columnas: ya los dice el
 // encabezado del grupo que contiene esta tabla.
 function ValesTabla({
-  items, onEdit, onDelete, onNavigateConductor,
+  items, onEdit, onNavigateConductor,
 }: {
   items: ValeGasolina[]
   onEdit: (v: ValeGasolina) => void
-  onDelete: (v: ValeGasolina) => void
   onNavigateConductor?: (id: number) => void
 }) {
   return (
@@ -298,7 +297,7 @@ function ValesTabla({
           <Table.Th>Folio</Table.Th>
           <Table.Th>Fecha</Table.Th>
           <Table.Th>Chofer</Table.Th>
-          <Table.Th style={{ width: 90 }} />
+          <Table.Th style={{ width: 48 }} />
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
@@ -321,10 +320,6 @@ function ValesTabla({
                 <ActionIcon variant="subtle" color="blue" size="sm"
                   aria-label="Editar" onClick={() => onEdit(v)}>
                   <IconPencil size={14} />
-                </ActionIcon>
-                <ActionIcon variant="subtle" color="red" size="sm"
-                  aria-label="Eliminar" onClick={() => onDelete(v)}>
-                  <IconTrash size={14} />
                 </ActionIcon>
               </Group>
             </Table.Td>
@@ -378,12 +373,10 @@ export default function ValesGasolina({
 }) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editVale, setEditVale]     = useState<ValeGasolina | null>(null)
-  const [deleteVale, setDeleteVale] = useState<ValeGasolina | null>(null)
 
   const { data, isLoading, isError } = useValesGasolina()
   const createMut = useCreateValeGasolina()
   const updateMut = useUpdateValeGasolina()
-  const deleteMut = useDeleteValeGasolina()
 
   const vales = useMemo(() => data?.data ?? [], [data])
   const personas = useMemo(() => agrupar(vales), [vales])
@@ -457,7 +450,6 @@ export default function ValesGasolina({
                           <ValesTabla
                             items={g.items}
                             onEdit={setEditVale}
-                            onDelete={setDeleteVale}
                             onNavigateConductor={onNavigateConductor}
                           />
                         </Accordion.Panel>
@@ -519,47 +511,6 @@ export default function ValesGasolina({
         )}
       </Modal>
 
-      {/* Modal: confirmar eliminación */}
-      <Modal
-        opened={deleteVale !== null}
-        onClose={() => setDeleteVale(null)}
-        title="Eliminar vale"
-        centered
-        size="sm"
-      >
-        <Stack gap="md">
-          <Text>
-            ¿Eliminar el vale <strong>{deleteVale?.folio}</strong> del{' '}
-            <strong>{deleteVale ? formatFecha(deleteVale.fecha) : ''}</strong> a nombre de{' '}
-            <strong>{deleteVale?.conductor}</strong>? Esta acción no se puede deshacer.
-          </Text>
-          {deleteMut.error && (
-            <Alert color="red" title="Error">
-              {(deleteMut.error as Error).message}
-            </Alert>
-          )}
-          <Group justify="flex-end">
-            <Button
-              variant="default"
-              onClick={() => setDeleteVale(null)}
-              disabled={deleteMut.isPending}
-            >
-              Cancelar
-            </Button>
-            <Button
-              color="red"
-              loading={deleteMut.isPending}
-              onClick={() =>
-                deleteMut.mutate(deleteVale!.id, {
-                  onSuccess: () => setDeleteVale(null),
-                })
-              }
-            >
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </>
   )
 }

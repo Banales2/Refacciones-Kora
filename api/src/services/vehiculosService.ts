@@ -109,6 +109,14 @@ async function validateSerieYPlacas(
 // restricción). Así se evita, p. ej., crear un montacargas desde un modelo
 // cuyo programa de mantenimiento asume kilometraje.
 async function validateTipoPermitido(modeloId: number, tipo: TipoVehiculo) {
+  // Un modelo dado de baja ya no genera unidades nuevas. El selector tampoco lo
+  // ofrece, pero el id puede llegar de una pestaña vieja o de la API directa.
+  const modelo = await modelosRepo.findById(modeloId)
+  if (modelo?.baja_en) {
+    throw new ValidationError(
+      'Este modelo está dado de baja y no admite unidades nuevas. Reactívalo primero.'
+    )
+  }
   const permitidos = await modelosRepo.findTiposPermitidos(modeloId)
   if (permitidos.length > 0 && !permitidos.includes(tipo)) {
     throw new ValidationError('El tipo de vehículo seleccionado no está permitido para este modelo')
@@ -137,26 +145,11 @@ export async function update(id: number, data: VehiculoUpdate) {
   return updated
 }
 
-export async function remove(id: number) {
-  const deps = await repo.countDependencies(id)
-  const bloqueos: string[] = []
-  if (deps.mantenimientos > 0) bloqueos.push(`${deps.mantenimientos} mantenimiento(s)`)
-  if (deps.recargas       > 0) bloqueos.push(`${deps.recargas} recarga(s) de combustible`)
-  if (deps.vales          > 0) bloqueos.push(`${deps.vales} vale(s) de gasolina`)
-  if (bloqueos.length) {
-    throw new ConflictError(
-      `Este vehículo tiene ${bloqueos.join(', ')} y no puede eliminarse. ` +
-      'Elimina primero esos registros.'
-    )
-  }
-  const current = await repo.findById(id)
-  if (!current) throw new NotFoundError('Vehículo')
-  await repo.remove(id)
-}
-
 export async function getModelos() {
   const pool = await getPool()
-  const r = await pool.request().query('SELECT id, marca, nombre FROM modelos ORDER BY marca, nombre')
+  // Selector del alta de unidades: los modelos dados de baja no se ofrecen.
+  const r = await pool.request().query(
+    'SELECT id, marca, nombre FROM modelos WHERE baja_en IS NULL ORDER BY marca, nombre')
   return r.recordset as { id: number; marca: string; nombre: string }[]
 }
 

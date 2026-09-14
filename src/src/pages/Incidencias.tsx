@@ -9,10 +9,10 @@ import {
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
-  IconPencil, IconTrash, IconPlus, IconAlertTriangle, IconSearch, IconTool,
+  IconPencil, IconPlus, IconAlertTriangle, IconSearch, IconTool,
 } from '@tabler/icons-react'
 import {
-  useIncidencias, useCreateIncidencia, useUpdateIncidencia, useDeleteIncidencia,
+  useIncidencias, useCreateIncidencia, useUpdateIncidencia,
 } from '../hooks/useIncidencias'
 import type { Incidencia, IncidenciaConVehiculo, IncidenciaPayload } from '../hooks/useIncidencias'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
@@ -62,7 +62,6 @@ export default function Incidencias({ onNavigateVehiculo }: {
   const [createOpen, setCreateOpen]   = useState(false)
   const [vehiculoNueva, setVehiculoNueva] = useState<string | null>(null)
   const [editando, setEditando]       = useState<IncidenciaConVehiculo | null>(null)
-  const [borrando, setBorrando]       = useState<IncidenciaConVehiculo | null>(null)
   const [formError, setFormError]     = useState<string | null>(null)
   // Incidencia cuya ficha se está viendo, y la que se está atendiendo con un
   // mantenimiento nuevo. Son distintas porque atender se puede disparar desde
@@ -79,10 +78,9 @@ export default function Incidencias({ onNavigateVehiculo }: {
 
   // Las mutaciones necesitan el id del vehículo para invalidar sus listas.
   const vehiculoActivo =
-    editando?.vehiculo_id ?? borrando?.vehiculo_id ?? atendiendo?.vehiculo_id ?? Number(vehiculoNueva ?? 0)
+    editando?.vehiculo_id ?? atendiendo?.vehiculo_id ?? Number(vehiculoNueva ?? 0)
   const createMut = useCreateIncidencia(vehiculoActivo)
   const updateMut = useUpdateIncidencia(vehiculoActivo)
-  const deleteMut = useDeleteIncidencia(vehiculoActivo)
   const mantMut   = useCreateMantenimiento(atendiendo?.vehiculo_id ?? 0)
   const piezasMut = useCreateDetallesMtto()
 
@@ -118,7 +116,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
         if (payload.status === 'completado') {
           const v = (vehiculosData?.data ?? []).find((x) => x.id === data.vehiculo_id)
           setMantError(null)
-          setDeshacer({ tipo: 'eliminar' })
+          setDeshacer({ tipo: 'revertir', status: 'activo' })
           setAtendiendo({
             ...data,
             vehiculo_nombre: v ? vehiculoLabel(v) : '',
@@ -162,7 +160,8 @@ export default function Incidencias({ onNavigateVehiculo }: {
 
   // Cancelar el mantenimiento de una incidencia que seguía abierta solo cierra
   // el modal. Si se acaba de cerrar la incidencia, se deshace ese cambio:
-  // borrarla si nació atendida o devolverle su status anterior si se editó.
+  // devolverle el status que tenía antes, o dejarla activa si nació atendida:
+  // el reporte existió, lo que no llegó a pasar es el servicio que lo cerraba.
   function cancelarAtencion() {
     if (!atendiendo || !deshacer) { setAtendiendo(null); return }
     setMantError(null)
@@ -170,14 +169,10 @@ export default function Incidencias({ onNavigateVehiculo }: {
     const onError = (e: unknown) =>
       setMantError(`No se pudo deshacer el cambio en la incidencia: ${(e as Error).message}`)
 
-    if (deshacer.tipo === 'eliminar') {
-      deleteMut.mutate(atendiendo.id, { onSuccess: cerrar, onError })
-    } else {
-      updateMut.mutate(
-        { id: atendiendo.id, payload: { status: deshacer.status } },
-        { onSuccess: cerrar, onError },
-      )
-    }
+    updateMut.mutate(
+      { id: atendiendo.id, payload: { status: deshacer.status } },
+      { onSuccess: cerrar, onError },
+    )
   }
 
   function handleAtender(payload: MantenimientoPayload, piezas: DetalleMttoPayload[]) {
@@ -350,11 +345,6 @@ export default function Incidencias({ onNavigateVehiculo }: {
                               <IconPencil size={14} />
                             </ActionIcon>
                           </Tooltip>
-                          <Tooltip label="Eliminar">
-                            <ActionIcon variant="subtle" color="red" size="sm" onClick={() => setBorrando(i)}>
-                              <IconTrash size={14} />
-                            </ActionIcon>
-                          </Tooltip>
                         </Group>
                       </Table.Td>
                     </Table.Tr>
@@ -496,8 +486,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
               {...(deshacer
                 ? { pendienteFijo: { id: atendiendo.id, nombre: atendiendo.nombre } }
                 : { prefillPendienteIds: [atendiendo.id] })}
-              isPending={mantMut.isPending || piezasMut.isPending
-                || deleteMut.isPending || updateMut.isPending}
+              isPending={mantMut.isPending || piezasMut.isPending || updateMut.isPending}
               error={mantError}
               onSubmit={handleAtender}
               onCancel={cancelarAtencion}
@@ -528,27 +517,6 @@ export default function Incidencias({ onNavigateVehiculo }: {
         )}
       </Modal>
 
-      <Modal
-        opened={borrando !== null} onClose={() => setBorrando(null)}
-        title="Eliminar incidencia" centered size="sm"
-      >
-        <Stack gap="md">
-          <Text>¿Eliminar <strong>{borrando?.nombre}</strong>? Esta acción no se puede deshacer.</Text>
-          <Text size="sm" c="dimmed">
-            Si solo quieres que deje de alertar sin perder el registro, edítala y ponla como cancelada.
-          </Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setBorrando(null)} disabled={deleteMut.isPending}>
-              Cancelar
-            </Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(borrando!.id, { onSuccess: () => setBorrando(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </>
   )
 }

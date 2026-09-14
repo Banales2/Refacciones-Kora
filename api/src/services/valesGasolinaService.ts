@@ -40,7 +40,3 @@ export async function update(id: number, data: ValeGasolinaUpdate): Promise<Vale
   return result
 }
 
-export async function remove(id: number): Promise<void> {
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Vale')
-}

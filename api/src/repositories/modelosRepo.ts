@@ -14,11 +14,20 @@ export interface Modelo {
   // (se permiten todos). Evita, p. ej., crear un montacargas (sin kilometraje)
   // a partir de un modelo cuyo programa de mantenimiento va por kilometraje.
   tipos_permitidos: string[]
+  // Cuándo se dejó de ofrecer el modelo al dar de alta unidades, y por qué.
+  // Null = vigente. Un modelo de baja sigue existiendo entero —programa,
+  // garantías, tipos de pieza— y los vehículos que ya lo usan lo siguen
+  // mostrando; lo único que cambia es que no aparece en el catálogo ni en el
+  // selector del alta (ver migración 032).
+  baja_en:          string | null
+  baja_motivo:      string | null
   created_at:       string
   updated_at:       string
 }
 
-const COLS = 'id, marca, nombre, anio, tipos_permitidos, created_at, updated_at'
+const COLS = `id, marca, nombre, anio, tipos_permitidos,
+  CONVERT(char(10), baja_en, 23) AS baja_en, baja_motivo,
+  created_at, updated_at`
 
 // En la BD se guarda como CSV ("camion,utilitario"); hacia fuera se expone como
 // arreglo. NULL/'' significa "sin restricción".
@@ -39,10 +48,15 @@ function mapRow(row: ModeloRow): Modelo {
   return { ...row, tipos_permitidos: parseTipos(row.tipos_permitidos) }
 }
 
-export async function findAll(): Promise<Modelo[]> {
+// El catálogo. Por defecto solo los vigentes: los dados de baja siguen en la
+// base y se resuelven por id, pero no se ofrecen para dar de alta unidades.
+// `incluirBajas` es para la pantalla de modelos, que necesita poder verlos
+// para reactivarlos.
+export async function findAll(incluirBajas = false): Promise<Modelo[]> {
   const pool = await getPool()
+  const filtro = incluirBajas ? '' : 'WHERE baja_en IS NULL'
   const r = await pool.request()
-    .query(`SELECT ${COLS} FROM modelos ORDER BY marca, nombre`)
+    .query(`SELECT ${COLS} FROM modelos ${filtro} ORDER BY marca, nombre`)
   return r.recordset.map(mapRow)
 }
 
@@ -117,23 +131,26 @@ export async function countVehiculos(id: number): Promise<number> {
   return r.recordset[0].cnt
 }
 
-// El modelo solo se borra cuando ya no tiene vehículos (lo comprueba el
-// servicio), así que aquí no quedan garantías de unidades que soltar. Las del
-// catálogo sí se sueltan a mano antes que el modelo: cascadean desde él, pero
-// borrarlas explícitamente deja el orden a la vista en vez de dejarlo al motor.
-export async function remove(id: number): Promise<boolean> {
+// Baja y reactivación. No hay borrado: un modelo es el padre del programa de
+// mantenimiento, de las garantías del catálogo y de la lista de tipos de pieza,
+// y borrarlo se llevaba todo eso sin vuelta (migración 032).
+export async function darDeBaja(id: number, motivo: string | null): Promise<Modelo | null> {
   const pool = await getPool()
-  const tx = pool.transaction()
-  await tx.begin()
-  try {
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM garantias_modelo WHERE modelo_id = @id')
-    const r = await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM modelos OUTPUT DELETED.id WHERE id = @id')
-    await tx.commit()
-    return r.recordset.length > 0
-  } catch (err) {
-    await tx.rollback()
-    throw err
-  }
+  const r = await pool.request()
+    .input('id',     sql.Int,           id)
+    .input('motivo', sql.NVarChar(200), motivo)
+    .query(`
+      UPDATE modelos SET baja_en = SYSDATETIME(), baja_motivo = @motivo, updated_at = SYSDATETIME()
+      OUTPUT INSERTED.id WHERE id = @id AND baja_en IS NULL`)
+  return r.recordset[0] ? findById(id) : null
+}
+
+export async function reactivar(id: number): Promise<Modelo | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query(`
+      UPDATE modelos SET baja_en = NULL, baja_motivo = NULL, updated_at = SYSDATETIME()
+      OUTPUT INSERTED.id WHERE id = @id AND baja_en IS NOT NULL`)
+  return r.recordset[0] ? findById(id) : null
 }

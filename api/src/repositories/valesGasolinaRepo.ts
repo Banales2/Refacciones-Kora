@@ -89,14 +89,6 @@ export async function update(id: number, data: ValeGasolinaUpdate): Promise<Vale
   return findById(id)
 }
 
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM vales_gasolina OUTPUT DELETED.id WHERE id = @id')
-  return r.recordset.length > 0
-}
-
 // El folio identifica al papel: no se repite entre vales. `exceptId` deja fuera
 // al vale que se esta editando, que si conserva el suyo.
 export async function existsFolio(folio: string, exceptId?: number): Promise<boolean> {

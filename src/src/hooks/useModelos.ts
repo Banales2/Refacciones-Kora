@@ -14,6 +14,12 @@ export interface Modelo {
   anio:             string | null
   // Tipos de vehículo que este modelo puede generar. Vacío = sin restricción.
   tipos_permitidos: TipoVehiculo[]
+  // Desde cuándo dejó de ofrecerse el modelo al dar de alta unidades, y por
+  // qué. Null = vigente. Un modelo dado de baja conserva todo —programa,
+  // garantías, tipos de pieza— y los vehículos que ya lo usan lo siguen
+  // mostrando; no se borra nunca.
+  baja_en:          string | null
+  baja_motivo:      string | null
   created_at:       string
   updated_at:       string
 }
@@ -25,10 +31,13 @@ export interface ModeloPayload {
   tipos_permitidos?: TipoVehiculo[]
 }
 
-export function useModelos() {
+// Por defecto solo los modelos vigentes, que es lo que se ofrece al dar de alta
+// una unidad. `incluirBajas` es para la pantalla de modelos, que necesita verlos
+// para poder reactivarlos.
+export function useModelos(incluirBajas = false) {
   return useQuery({
-    queryKey: ['modelos'],
-    queryFn: () => api.get<{ data: Modelo[] }>('/modelos'),
+    queryKey: ['modelos', incluirBajas ? 'con-bajas' : 'vigentes'],
+    queryFn: () => api.get<{ data: Modelo[] }>(incluirBajas ? '/modelos?bajas=1' : '/modelos'),
     staleTime: 10 * 60 * 1000,
   })
 }
@@ -51,10 +60,22 @@ export function useUpdateModelo() {
   })
 }
 
-export function useDeleteModelo() {
+// Un modelo no se borra: se da de baja. Deja de ofrecerse al dar de alta
+// unidades, pero su programa, sus garantías y sus tipos de pieza siguen ahí, y
+// los vehículos que ya lo usan lo siguen mostrando.
+export function useBajaModelo() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete(`/modelos/${id}`),
+    mutationFn: ({ id, motivo }: { id: number; motivo?: string }) =>
+      api.post<{ data: Modelo }>(`/modelos/${id}/baja`, { motivo }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['modelos'] }),
+  })
+}
+
+export function useReactivarModelo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.delete<{ data: Modelo }>(`/modelos/${id}/baja`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['modelos'] }),
   })
 }

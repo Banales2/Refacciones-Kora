@@ -97,10 +97,3 @@ export function useUpdateIncidencia(vehiculoId: number) {
   })
 }
 
-export function useDeleteIncidencia(vehiculoId: number) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete(`/incidencias/${id}`),
-    onSuccess: () => invalidar(qc, vehiculoId),
-  })
-}

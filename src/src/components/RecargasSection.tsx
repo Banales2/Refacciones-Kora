@@ -12,9 +12,9 @@ import {
   ActionIcon, Modal, Tooltip, NumberInput, Badge, Accordion,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
-import { IconPencil, IconTrash, IconPlus } from '@tabler/icons-react'
+import { IconPencil, IconPlus } from '@tabler/icons-react'
 import {
-  useRecargas, useCreateRecarga, useUpdateRecarga, useDeleteRecarga,
+  useRecargas, useCreateRecarga, useUpdateRecarga,
 } from '../hooks/useRecargas'
 import type { Recarga, RecargaPayload } from '../hooks/useRecargas'
 import { useGasolineras } from '../hooks/useGasolineras'
@@ -359,12 +359,11 @@ function RecargaForm({
 // ── Tabla de las recargas de un mes ───────────────────────────────────────────
 
 function RecargasTabla({
-  items, rendimientos, onEdit, onDelete,
+  items, rendimientos, onEdit,
 }: {
   items: Recarga[]
   rendimientos: Map<number, number | null>
   onEdit: (r: Recarga) => void
-  onDelete: (r: Recarga) => void
 }) {
   return (
     <Table highlightOnHover verticalSpacing="xs">
@@ -379,7 +378,7 @@ function RecargasTabla({
           <Table.Th style={{ textAlign: 'right' }}>Costo</Table.Th>
           <Table.Th style={{ textAlign: 'right' }}>$/L</Table.Th>
           <Table.Th style={{ textAlign: 'right' }}>km/L</Table.Th>
-          <Table.Th style={{ width: 90 }} />
+          <Table.Th style={{ width: 48 }} />
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
@@ -427,11 +426,6 @@ function RecargasTabla({
                       <IconPencil size={14} />
                     </ActionIcon>
                   </Tooltip>
-                  <Tooltip label="Eliminar">
-                    <ActionIcon variant="subtle" color="red" size="sm" onClick={() => onDelete(r)}>
-                      <IconTrash size={14} />
-                    </ActionIcon>
-                  </Tooltip>
                 </Group>
               </Table.Td>
             </Table.Tr>
@@ -472,7 +466,6 @@ export default function RecargasSection({
 }) {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Recarga | null>(null)
-  const [deleting, setDeleting]   = useState<Recarga | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
   const { data, isLoading, error } = useRecargas(vehiculoId)
@@ -496,7 +489,6 @@ export default function RecargasSection({
 
   const createMut = useCreateRecarga(vehiculoId)
   const updateMut = useUpdateRecarga(vehiculoId)
-  const deleteMut = useDeleteRecarga(vehiculoId)
 
   const totalLitros = items.reduce((s, r) => s + Number(r.litros), 0)
   const totalCosto  = items.reduce((s, r) => s + Number(r.costo), 0)
@@ -559,7 +551,7 @@ export default function RecargasSection({
                           <ResumenGrupo label={m.label} litros={m.litros} costo={m.costo} fw={500} />
                         </Accordion.Control>
                         <Accordion.Panel>
-                          <RecargasTabla items={m.items} rendimientos={rendimientos} onEdit={openEdit} onDelete={setDeleting} />
+                          <RecargasTabla items={m.items} rendimientos={rendimientos} onEdit={openEdit} />
                         </Accordion.Panel>
                       </Accordion.Item>
                     ))}
@@ -604,28 +596,6 @@ export default function RecargasSection({
         />
       </Modal>
 
-      <Modal
-        opened={deleting !== null} onClose={() => setDeleting(null)}
-        title="Eliminar recarga" centered size="sm"
-      >
-        <Stack gap="md">
-          <Text>
-            ¿Eliminar la recarga del{' '}
-            <strong>{deleting ? formatFecha(deleting.fecha) : ''}</strong> en{' '}
-            <strong>{deleting?.gasolinera}</strong>? Esta acción no se puede deshacer.
-          </Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>
-              Cancelar
-            </Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </>
   )
 }

@@ -6,7 +6,10 @@ import * as service from '../services/modelosService'
 export async function modelosList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
     requireRole(req, 'admin', 'editor', 'viewer')
-    const data = await service.getAll()
+    // ?bajas=1 incluye los modelos dados de baja. Solo lo pide la pantalla de
+    // modelos, para poder verlos y reactivarlos; los selectores del alta usan
+    // la lista normal, que ya los deja fuera.
+    const data = await service.getAll(req.query.get('bajas') === '1')
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
 }

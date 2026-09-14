@@ -6,16 +6,13 @@
 import { useState, useMemo } from 'react'
 import {
   Stack, Group, Text, TextInput, Table, Badge, Select, Paper,
-  Alert, Loader, Center, Button, ActionIcon, Modal, Anchor, Tooltip, Menu,
+  Alert, Loader, Center, Button, Anchor, Menu,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
-  IconTrash, IconSearch, IconFileTypePdf, IconFileSpreadsheet, IconReportAnalytics,
+  IconSearch, IconFileTypePdf, IconFileSpreadsheet, IconReportAnalytics,
 } from '@tabler/icons-react'
-import {
-  useTodosLosMantenimientos, useDeleteMantenimiento,
-} from '../hooks/useMantenimientos'
-import type { MantenimientoDeFlota } from '../hooks/useMantenimientos'
+import { useTodosLosMantenimientos } from '../hooks/useMantenimientos'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import {
   exportMantenimientosPdf, exportMantenimientosExcel,
@@ -68,11 +65,9 @@ export default function Mantenimientos({
   const [desde, setDesde] = useState('')
   const [hasta, setHasta] = useState('')
   const [detalleId, setDetalleId] = useState<number | null>(null)
-  const [aEliminar, setAEliminar] = useState<MantenimientoDeFlota | null>(null)
   const [generando, setGenerando] = useState<'pdf' | 'excel' | null>(null)
 
   const { data, isLoading, isError } = useTodosLosMantenimientos()
-  const deleteMut = useDeleteMantenimiento()
 
   const todos = useMemo(() => data?.data ?? [], [data])
 
@@ -133,16 +128,6 @@ export default function Mantenimientos({
     } finally {
       setGenerando(null)
     }
-  }
-
-  function handleDelete() {
-    if (!aEliminar) return
-    deleteMut.mutate(aEliminar.id, {
-      onSuccess: () => {
-        if (detalleId === aEliminar.id) setDetalleId(null)
-        setAEliminar(null)
-      },
-    })
   }
 
   return (
@@ -269,7 +254,6 @@ export default function Mantenimientos({
                   <Table.Th style={{ textAlign: 'right', width: 120 }}>Mano de obra</Table.Th>
                   <Table.Th style={{ textAlign: 'right', width: 120 }}>Refacciones</Table.Th>
                   <Table.Th style={{ textAlign: 'right', width: 120 }}>Total</Table.Th>
-                  <Table.Th style={{ width: 48 }} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -309,16 +293,6 @@ export default function Mantenimientos({
                     <Table.Td style={{ textAlign: 'right' }} fw={600}>
                       {formatMXN((m.costo ?? 0) + (m.piezas_total ?? 0))}
                     </Table.Td>
-                    <Table.Td onClick={(e) => e.stopPropagation()}>
-                      <Tooltip label="Eliminar mantenimiento">
-                        <ActionIcon
-                          variant="subtle" color="red" aria-label="Eliminar"
-                          onClick={() => setAEliminar(m)}
-                        >
-                          <IconTrash size={16} />
-                        </ActionIcon>
-                      </Tooltip>
-                    </Table.Td>
                   </Table.Tr>
                 ))}
               </Table.Tbody>
@@ -333,39 +307,6 @@ export default function Mantenimientos({
       />
 
       {/* Modal: confirmar eliminación */}
-      <Modal
-        opened={aEliminar !== null}
-        onClose={() => setAEliminar(null)}
-        title="Eliminar mantenimiento"
-        centered
-        size="sm"
-      >
-        <Stack gap="md">
-          <Text>
-            ¿Seguro que deseas eliminar el mantenimiento del{' '}
-            <Text component="span" fw={700}>{aEliminar ? fmtFecha(aEliminar.fecha) : ''}</Text>
-            {' '}de{' '}
-            <Text component="span" fw={700}>{aEliminar?.vehiculo_serie}</Text>?
-          </Text>
-          <Text size="sm" c="dimmed">
-            Las refacciones que consumió regresan al inventario y los requerimientos
-            e incidencias que cerraba vuelven a quedar abiertos.
-          </Text>
-          {deleteMut.error && (
-            <Alert color="red" title="Error">
-              {(deleteMut.error as Error).message}
-            </Alert>
-          )}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setAEliminar(null)} disabled={deleteMut.isPending}>
-              Cancelar
-            </Button>
-            <Button color="red" onClick={handleDelete} loading={deleteMut.isPending}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-    </>
+          </>
   )
 }

@@ -1,8 +1,8 @@
 import * as repo from '../repositories/modelosRepo'
 import { NotFoundError, ConflictError } from '../shared/errors'
 
-export function getAll() {
-  return repo.findAll()
+export function getAll(incluirBajas = false) {
+  return repo.findAll(incluirBajas)
 }
 
 export async function create(marca: string, nombre: string, anio: string | null, tiposPermitidos?: string[]) {
@@ -30,10 +30,23 @@ export async function update(id: number, marca?: string, nombre?: string, anio?:
   return result
 }
 
-export async function remove(id: number) {
-  const count = await repo.countVehiculos(id)
-  if (count > 0)
-    throw new ConflictError(`Este modelo tiene ${count} vehículo(s) asignado(s) y no puede eliminarse`)
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Modelo')
+// Dar de baja, no borrar. El modelo se retira del catálogo y del selector del
+// alta, pero se queda entero: su programa de mantenimiento, sus garantías y sus
+// tipos de pieza siguen ahí, y los vehículos que ya lo usan lo siguen mostrando.
+export async function darDeBaja(id: number, motivo?: string) {
+  const actual = await repo.findById(id)
+  if (!actual) throw new NotFoundError('Modelo')
+  if (actual.baja_en) throw new ConflictError('Este modelo ya está dado de baja')
+  const result = await repo.darDeBaja(id, motivo?.trim() || null)
+  if (!result) throw new NotFoundError('Modelo')
+  return result
+}
+
+export async function reactivar(id: number) {
+  const actual = await repo.findById(id)
+  if (!actual) throw new NotFoundError('Modelo')
+  if (!actual.baja_en) throw new ConflictError('Este modelo ya está vigente')
+  const result = await repo.reactivar(id)
+  if (!result) throw new NotFoundError('Modelo')
+  return result
 }

@@ -145,14 +145,6 @@ export function useUpdateVehiculo() {
   })
 }
 
-export function useDeleteVehiculo() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete(`/vehiculos/${id}`),
-    onSuccess: () => invalidarFlota(qc),
-  })
-}
-
 // Categorías de carrocería ya usadas en la flota, para sugerirlas al capturar.
 // No hay catálogo: el vocabulario se arma con lo que se escribe.
 export function useCategoriasVehiculo() {

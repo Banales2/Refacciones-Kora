@@ -59,26 +59,6 @@ export function useTodosLosMantenimientos() {
   })
 }
 
-// Borrar un mantenimiento devuelve al inventario las refacciones que consumió y
-// reabre los pendientes que cerraba: casi todo el caché queda obsoleto.
-function invalidarTrasBorrado(qc: ReturnType<typeof useQueryClient>) {
-  qc.invalidateQueries({ queryKey: ['mantenimientos'] })
-  qc.invalidateQueries({ queryKey: ['incidencias'] })
-  qc.invalidateQueries({ queryKey: ['pendientes'] })
-  qc.invalidateQueries({ queryKey: ['dashboard'] })
-  qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
-  qc.invalidateQueries({ queryKey: ['lotes'] })
-  qc.invalidateQueries({ queryKey: ['refacciones'] })
-}
-
-export function useDeleteMantenimiento() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete(`/mantenimientos/${id}`),
-    onSuccess: () => invalidarTrasBorrado(qc),
-  })
-}
-
 export function useCreateMantenimiento(vehiculoId: number) {
   const qc = useQueryClient()
   return useMutation({

@@ -18,7 +18,7 @@ import {
   IconFileTypePdf, IconReportAnalytics, IconTool, IconExternalLink,
 } from '@tabler/icons-react'
 import {
-  useVehiculos, useVehiculo, useCreateVehiculo, useUpdateVehiculo, useDeleteVehiculo, vehiculoLabel,
+  useVehiculos, useVehiculo, useCreateVehiculo, useUpdateVehiculo, vehiculoLabel,
   fetchTodosLosVehiculos,
 } from '../hooks/useVehiculos'
 import { useSucursales } from '../hooks/useSucursales'
@@ -30,7 +30,7 @@ import { type Periodo, dentroDelPeriodo, PERIODO_DEFAULT } from '../lib/reportes
 import { useRecargas } from '../hooks/useRecargas'
 import { limpiarTextoSimple, KM_MAX } from '../lib/validaciones'
 import {
-  useMantenimientos, useCreateMantenimiento, useUpdateMantenimiento, useDeleteMantenimiento,
+  useMantenimientos, useCreateMantenimiento, useUpdateMantenimiento,
 } from '../hooks/useMantenimientos'
 import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimientos'
 import MantenimientoForm from '../components/MantenimientoForm'
@@ -41,7 +41,7 @@ import GarantiasVehiculoSection from '../components/GarantiasVehiculoSection'
 import ProgramaVehiculoSection from '../components/ProgramaVehiculoSection'
 import { useProgramaVehiculo } from '../hooks/useProgramaVehiculo'
 import {
-  useIncidenciasVehiculo, useCreateIncidencia, useUpdateIncidencia, useDeleteIncidencia,
+  useIncidenciasVehiculo, useCreateIncidencia, useUpdateIncidencia,
 } from '../hooks/useIncidencias'
 import type { Incidencia, IncidenciaPayload, StatusIncidencia } from '../hooks/useIncidencias'
 import IncidenciaForm from '../components/IncidenciaForm'
@@ -179,25 +179,23 @@ function todayIso() {
 
 // Cómo deshacer el cierre de una incidencia si el mantenimiento que lo
 // justifica no llega a registrarse. Se comparte con la página de Incidencias.
-export type DeshacerAtencion =
-  | { tipo: 'eliminar' }
-  | { tipo: 'revertir'; status: StatusIncidencia }
+export type DeshacerAtencion = { tipo: 'revertir'; status: StatusIncidencia }
 
 function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; tipoVehiculo?: TipoVehiculo }) {
   const { data, isLoading } = useIncidenciasVehiculo(vehiculoId)
   const createMut = useCreateIncidencia(vehiculoId)
   const updateMut = useUpdateIncidencia(vehiculoId)
-  const deleteMut = useDeleteIncidencia(vehiculoId)
   const mantMut   = useCreateMantenimiento(vehiculoId)
   const piezasMut = useCreateDetallesMtto()
 
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Incidencia | null>(null)
-  const [deleting, setDeleting]   = useState<Incidencia | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   // Incidencia marcada como atendida: hay que registrarle el mantenimiento que
-  // la cerró antes de darla por buena. `deshacer` dice cómo revertir el cambio
-  // si se cancela: borrarla si nació así, o devolverle su status si se editó.
+  // la cerró antes de darla por buena. `deshacer` dice a qué status devolverla
+  // si se cancela: el que tenía antes de editarla, o 'activo' si nació atendida
+  // —la incidencia se queda, porque el reporte ocurrió; lo que no ocurrió es el
+  // servicio que la cerraba—.
   const [atendiendo, setAtendiendo]   = useState<Incidencia | null>(null)
   // La ficha que se abre al hacer clic en el renglón. Es aparte de `atendiendo`
   // porque atender se dispara también desde el formulario (al marcarla como
@@ -264,7 +262,7 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
         setFormOpen(false)
         if (pideMantenimiento) {
           setMantError(null)
-          setDeshacer({ tipo: 'eliminar' })
+          setDeshacer({ tipo: 'revertir', status: 'activo' })
           setAtendiendo(data)
         }
       },
@@ -272,9 +270,9 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
     })
   }
 
-  // Cancelar deja la incidencia como estaba: borrada si nació atendida (sin el
-  // mantenimiento el alta nunca se completó) o con su status anterior si se
-  // editó para cerrarla.
+  // Cancelar devuelve la incidencia a su status anterior: el que tenía antes de
+  // editarla, o 'activo' si nació atendida. No se borra: el reporte existió, y
+  // lo único que no llegó a pasar es el servicio que lo cerraba.
   function cancelarAtencion() {
     if (!atendiendo || !deshacer) { setAtendiendo(null); return }
     setMantError(null)
@@ -282,14 +280,10 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
     const onError = (e: unknown) =>
       setMantError(`No se pudo deshacer el cambio en la incidencia: ${(e as Error).message}`)
 
-    if (deshacer.tipo === 'eliminar') {
-      deleteMut.mutate(atendiendo.id, { onSuccess: cerrar, onError })
-    } else {
-      updateMut.mutate(
-        { id: atendiendo.id, payload: { status: deshacer.status } },
-        { onSuccess: cerrar, onError },
-      )
-    }
+    updateMut.mutate(
+      { id: atendiendo.id, payload: { status: deshacer.status } },
+      { onSuccess: cerrar, onError },
+    )
   }
 
   function handleAtender(payload: MantenimientoPayload, piezas: DetalleMttoPayload[]) {
@@ -410,11 +404,6 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
                             <IconPencil size={14} />
                           </ActionIcon>
                         </Tooltip>
-                        <Tooltip label="Eliminar">
-                          <ActionIcon variant="subtle" color="red" size="sm" onClick={() => setDeleting(i)}>
-                            <IconTrash size={14} />
-                          </ActionIcon>
-                        </Tooltip>
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -531,8 +520,7 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
               tipoVehiculo={tipoVehiculo}
               pendienteFijo={{ id: atendiendo.id, nombre: atendiendo.nombre }}
               tipoInicial="Correctivo"
-              isPending={mantMut.isPending || piezasMut.isPending
-                || deleteMut.isPending || updateMut.isPending}
+              isPending={mantMut.isPending || piezasMut.isPending || updateMut.isPending}
               error={mantError}
               onSubmit={handleAtender}
               onCancel={cancelarAtencion}
@@ -548,25 +536,6 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
         />
       )}
 
-      <Modal
-        opened={deleting !== null} onClose={() => setDeleting(null)}
-        title="Eliminar incidencia" centered size="sm"
-      >
-        <Stack gap="md">
-          <Text>¿Eliminar <strong>{deleting?.nombre}</strong>? Esta acción no se puede deshacer.</Text>
-          <Text size="sm" c="dimmed">
-            Si solo quieres que deje de alertar sin perder el registro, edítala y ponla como cancelada.
-          </Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </>
   )
 }
@@ -605,12 +574,11 @@ function groupByYearMonth<T>(
 // Antes se entraba directo al formulario y lo demás quedaba escondido detrás de
 // un clic en la fila que nadie descubría.
 function MantenimientoTable({
-  items, mostrarKm = true, onOpenDetalle, onDelete,
+  items, mostrarKm = true, onOpenDetalle,
 }: {
   items:         Mantenimiento[]
   mostrarKm?:    boolean
   onOpenDetalle: (id: number) => void
-  onDelete:      (m: Mantenimiento) => void
 }) {
   function fmtFecha(iso: string | null) {
     if (!iso) return '—'
@@ -629,7 +597,7 @@ function MantenimientoTable({
             <Table.Th>Técnico</Table.Th>
             {mostrarKm && <Table.Th style={{ textAlign: 'right' }}>Kilometraje</Table.Th>}
             <Table.Th style={{ textAlign: 'right' }}>Costo total</Table.Th>
-            <Table.Th style={{ width: 80 }} />
+            <Table.Th style={{ width: 48 }} />
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -669,11 +637,6 @@ function MantenimientoTable({
                       <IconPencil size={14} />
                     </ActionIcon>
                   </Tooltip>
-                  <Tooltip label="Eliminar">
-                    <ActionIcon variant="subtle" color="red" size="sm" onClick={() => onDelete(m)}>
-                      <IconTrash size={14} />
-                    </ActionIcon>
-                  </Tooltip>
                 </Group>
               </Table.Td>
             </Table.Tr>
@@ -688,7 +651,6 @@ function MantenimientoTable({
 function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; tipoVehiculo?: TipoVehiculo }) {
   const [formOpen, setFormOpen]     = useState(false)
   const [editing, setEditing]       = useState<Mantenimiento | null>(null)
-  const [deleting, setDeleting]     = useState<Mantenimiento | null>(null)
   const [formError, setFormError]   = useState<string | null>(null)
   const [detalleId, setDetalleId]   = useState<number | null>(null)
 
@@ -696,7 +658,6 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
   const items      = data?.data ?? []
   const createMut  = useCreateMantenimiento(vehiculoId)
   const updateMut  = useUpdateMantenimiento(vehiculoId)
-  const deleteMut  = useDeleteMantenimiento()
   const piezasMut  = useCreateDetallesMtto()
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
@@ -734,13 +695,6 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
         })
       },
       onError: (e: Error) => setFormError(e.message),
-    })
-  }
-
-  function fmtFecha(iso: string | null) {
-    if (!iso) return '—'
-    return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
-      day: '2-digit', month: 'short', year: 'numeric',
     })
   }
 
@@ -795,7 +749,7 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
                             <MantenimientoTable
                               items={mesItems}
                               mostrarKm={!tipoVehiculo || !sinKilometraje(tipoVehiculo)}
-                              onOpenDetalle={setDetalleId} onDelete={setDeleting}
+                              onOpenDetalle={setDetalleId}
                             />
                           </div>
                         ))}
@@ -825,31 +779,6 @@ function MantenimientosSection({ vehiculoId, tipoVehiculo }: { vehiculoId: numbe
         />
       </Modal>
 
-      <Modal
-        opened={deleting !== null} onClose={() => setDeleting(null)}
-        title="Eliminar mantenimiento" centered size="sm"
-      >
-        <Stack gap="md">
-          <Text>¿Eliminar el mantenimiento del <strong>{fmtFecha(deleting?.fecha ?? null)}</strong>?</Text>
-          {/* Si además cerró una columna del programa, borrarlo deshace ese
-              avance: era el único respaldo de que el servicio se hizo. */}
-          {deleting?.servicio_programa_km != null && (
-            <Alert color="orange" title="Es la visita de un servicio del programa" variant="light">
-              Este mantenimiento cerró el servicio de{' '}
-              <strong>{deleting.servicio_programa_km.toLocaleString('es-MX')} km</strong> del
-              programa de mantenimiento. Al borrarlo, esa columna vuelve a pedirse.
-            </Alert>
-          )}
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
 
       <MantenimientoDetalleDrawer
         mantenimientoId={detalleId}
@@ -1314,7 +1243,7 @@ function HistorialPiezasSection({ vehiculoId }: { vehiculoId: number }) {
 }
 
 function VehiculoDetalle({
-  vehiculo, onBack, backLabel, onEdit, onDelete, onVehiculoUpdate, onNavigateModelo,
+  vehiculo, onBack, backLabel, onEdit, onVehiculoUpdate, onNavigateModelo,
 }: {
   vehiculo: VehiculoRow
   onBack: () => void
@@ -1322,7 +1251,6 @@ function VehiculoDetalle({
   // regreso vuelve ahí; si no, regresa a la lista de vehículos.
   backLabel?: string
   onEdit: (v: VehiculoRow) => void
-  onDelete: (v: VehiculoRow) => void
   onVehiculoUpdate: (v: VehiculoRow) => void
   onNavigateModelo?: (modeloId: number) => void
 }) {
@@ -1634,12 +1562,6 @@ function VehiculoDetalle({
                 <IconPencil size={16} />
               </ActionIcon>
             </Tooltip>
-            <Tooltip label="Eliminar vehículo">
-              <ActionIcon variant="light" color="red" size="lg"
-                aria-label="Eliminar vehículo" onClick={() => onDelete(vehiculo)}>
-                <IconTrash size={16} />
-              </ActionIcon>
-            </Tooltip>
           </Group>
         </Group>
       </Paper>
@@ -1702,14 +1624,13 @@ interface KmEditProps {
 }
 
 function VehiculosTable({
-  items, showTipo = false, extraColumn, onSelect, onEdit, onDelete, km,
+  items, showTipo = false, extraColumn, onSelect, onEdit, km,
 }: {
   items:        VehiculoRow[]
   showTipo?:    boolean
   extraColumn?: { header: string; render: (v: VehiculoRow) => string | null }
   onSelect:     (v: VehiculoRow) => void
   onEdit:       (v: VehiculoRow, e?: React.MouseEvent) => void
-  onDelete:     (v: VehiculoRow, e: React.MouseEvent) => void
   km:           KmEditProps
 }) {
   if (items.length === 0) {
@@ -1807,11 +1728,6 @@ function VehiculosTable({
                         <IconPencil size={14} />
                       </ActionIcon>
                     </Tooltip>
-                    <Tooltip label="Eliminar">
-                      <ActionIcon variant="subtle" color="red" size="sm" onClick={(e) => onDelete(v, e)}>
-                        <IconTrash size={14} />
-                      </ActionIcon>
-                    </Tooltip>
                     <IconChevronRight size={14} color="var(--mantine-color-dimmed)" />
                   </Group>
                 </Table.Td>
@@ -1838,13 +1754,12 @@ function GroupHeader({ label, count }: { label: string; count: number }) {
 }
 
 function VehiculosAgrupados({
-  vehiculos, sucursales, onSelect, onEdit, onDelete, km,
+  vehiculos, sucursales, onSelect, onEdit, km,
 }: {
   vehiculos:  VehiculoRow[]
   sucursales: Sucursal[]
   onSelect:   (v: VehiculoRow) => void
   onEdit:     (v: VehiculoRow, e?: React.MouseEvent) => void
-  onDelete:   (v: VehiculoRow, e: React.MouseEvent) => void
   km:         KmEditProps
 }) {
   const rutas       = vehiculos.filter(v => v.tipo === 'tractocamion' || v.tipo === 'caja_trailer')
@@ -1868,7 +1783,7 @@ function VehiculosAgrupados({
           <VehiculosTable
             items={rutas} showTipo
             extraColumn={{ header: 'Translado', render: v => v.ruta }}
-            onSelect={onSelect} onEdit={onEdit} onDelete={onDelete} km={km}
+            onSelect={onSelect} onEdit={onEdit} km={km}
           />
         </Accordion.Panel>
       </Accordion.Item>
@@ -1877,7 +1792,7 @@ function VehiculosAgrupados({
         <Accordion.Item key={sucursal.id} value={`suc-${sucursal.id}`}>
           <Accordion.Control><GroupHeader label={sucursal.nombre} count={items.length} /></Accordion.Control>
           <Accordion.Panel>
-            <VehiculosTable items={items} showTipo onSelect={onSelect} onEdit={onEdit} onDelete={onDelete} km={km} />
+            <VehiculosTable items={items} showTipo onSelect={onSelect} onEdit={onEdit} km={km} />
           </Accordion.Panel>
         </Accordion.Item>
       ))}
@@ -1886,7 +1801,7 @@ function VehiculosAgrupados({
         <Accordion.Item value="sin-sucursal">
           <Accordion.Control><GroupHeader label="Sin sucursal" count={sinSucursal.length} /></Accordion.Control>
           <Accordion.Panel>
-            <VehiculosTable items={sinSucursal} showTipo onSelect={onSelect} onEdit={onEdit} onDelete={onDelete} km={km} />
+            <VehiculosTable items={sinSucursal} showTipo onSelect={onSelect} onEdit={onEdit} km={km} />
           </Accordion.Panel>
         </Accordion.Item>
       )}
@@ -1897,7 +1812,7 @@ function VehiculosAgrupados({
           <VehiculosTable
             items={unitarios}
             extraColumn={{ header: 'Ubicación', render: v => v.ubicacion }}
-            onSelect={onSelect} onEdit={onEdit} onDelete={onDelete} km={km}
+            onSelect={onSelect} onEdit={onEdit} km={km}
           />
         </Accordion.Panel>
       </Accordion.Item>
@@ -1961,15 +1876,8 @@ export default function Vehiculos({
     }
   }, [pendingVehiculoData])
 
-  // Se borró el vehículo con el que se entró desde otra sección. Sin esto, el
-  // guard de abajo volvería a mostrar el loader esperando una ficha que ya no
-  // existe. Se marca desde el manejador de la baja, no durante el render.
-  const [pendingBorrado, setPendingBorrado] = useState(false)
-
   const [formOpen,   setFormOpen]   = useState(false)
-  const [deleteOpen, setDeleteOpen] = useState(false)
   const [editing,    setEditing]    = useState<VehiculoRow | null>(null)
-  const [deleting,   setDeleting]   = useState<VehiculoRow | null>(null)
   const [formError,  setFormError]  = useState<string | null>(null)
 
   // Al cambiar la búsqueda se vuelve a la página 1. Se ajusta durante el
@@ -2026,7 +1934,6 @@ export default function Vehiculos({
 
   const createMut = useCreateVehiculo()
   const updateMut = useUpdateVehiculo()
-  const deleteMut = useDeleteVehiculo()
 
   const [exportando, setExportando] = useState(false)
 
@@ -2068,10 +1975,6 @@ export default function Vehiculos({
     setEditing(v); setFormError(null); setFormOpen(true)
   }
 
-  function openDelete(v: VehiculoRow, e: React.MouseEvent) {
-    e.stopPropagation(); setDeleting(v); setDeleteOpen(true)
-  }
-
   function handleFormSubmit(payload: VehiculoCreatePayload | VehiculoUpdatePayload) {
     setFormError(null)
     if (editing) {
@@ -2098,26 +2001,10 @@ export default function Vehiculos({
     }
   }
 
-  function handleDelete() {
-    if (!deleting) return
-    deleteMut.mutate(deleting.id, {
-      onSuccess: () => {
-        setDeleteOpen(false)
-        // Si se borró el vehículo que estaba abierto ya no hay ficha que
-        // mostrar: se sale por la misma vía que el botón de regreso.
-        if (selected?.id === deleting.id) {
-          setPendingBorrado(true)
-          handleDetailBack()
-        }
-      },
-      onError:   (e: Error) => alert(e.message),
-    })
-  }
-
   const isPending = createMut.isPending || updateMut.isPending
 
   // ── Esperando el vehículo referenciado desde otra pantalla ──
-  if (pendingId !== undefined && !selected && !pendingBorrado) {
+  if (pendingId !== undefined && !selected) {
     return <Center py="xl"><Loader /></Center>
   }
 
@@ -2130,7 +2017,6 @@ export default function Vehiculos({
           onBack={handleDetailBack}
           backLabel={externalEntry ? backLabel : undefined}
           onEdit={(v) => openEdit(v)}
-          onDelete={(v) => { setDeleting(v); setDeleteOpen(true) }}
           onVehiculoUpdate={(v) => setSelected(v)}
           onNavigateModelo={onNavigateModelo}
         />
@@ -2146,23 +2032,6 @@ export default function Vehiculos({
           />
         </Modal>
 
-        {/* El modal de baja se repite aquí porque la vista de detalle sale por
-            este return y no llega al de la lista. Al confirmar, handleDelete
-            limpia `selected` y la pantalla regresa sola al listado. */}
-        <Modal opened={deleteOpen} onClose={() => setDeleteOpen(false)}
-          title="Eliminar vehículo" centered size="sm">
-          <Stack gap="md">
-            <Text>¿Eliminar <strong>{deleting ? vehiculoLabel(deleting) : ''}</strong>? Esta acción no se puede deshacer.</Text>
-            <Text size="sm" c="dimmed">
-              Su avance en el programa de mantenimiento se elimina automáticamente. No podrá
-              eliminarse si tiene mantenimientos, recargas o vales registrados.
-            </Text>
-            <Group justify="flex-end">
-              <Button variant="default" onClick={() => setDeleteOpen(false)} disabled={deleteMut.isPending}>Cancelar</Button>
-              <Button color="red" onClick={handleDelete} loading={deleteMut.isPending}>Eliminar</Button>
-            </Group>
-          </Stack>
-        </Modal>
       </>
     )
   }
@@ -2266,7 +2135,7 @@ export default function Vehiculos({
           <>
             <VehiculosTable
               items={data?.data ?? []} showTipo
-              onSelect={selectFromList} onEdit={openEdit} onDelete={openDelete} km={kmEdit}
+              onSelect={selectFromList} onEdit={openEdit} km={kmEdit}
             />
             {totalPages > 1 && (
               <Group justify="center">
@@ -2283,7 +2152,7 @@ export default function Vehiculos({
         <VehiculosAgrupados
           vehiculos={allData?.data ?? []}
           sucursales={sucursalesData?.data ?? []}
-          onSelect={selectFromList} onEdit={openEdit} onDelete={openDelete} km={kmEdit}
+          onSelect={selectFromList} onEdit={openEdit} km={kmEdit}
         />
       )}
 
@@ -2297,17 +2166,6 @@ export default function Vehiculos({
         />
       </Modal>
 
-      <Modal opened={deleteOpen} onClose={() => setDeleteOpen(false)}
-        title="Eliminar vehículo" size="sm">
-        <Stack gap="md">
-          <Text>¿Eliminar <strong>{deleting ? vehiculoLabel(deleting) : ''}</strong>? Esta acción no se puede deshacer.</Text>
-          <Text size="sm" c="dimmed">Su avance en el programa de mantenimiento se eliminará automáticamente.</Text>
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleteOpen(false)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" onClick={handleDelete} loading={deleteMut.isPending}>Eliminar</Button>
-          </Group>
-        </Stack>
-      </Modal>
     </Stack>
   )
 }

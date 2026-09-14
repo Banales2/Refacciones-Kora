@@ -50,10 +50,3 @@ export function useUpdateValeGasolina() {
   })
 }
 
-export function useDeleteValeGasolina() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/vales-gasolina/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vales-gasolina'] }),
-  })
-}

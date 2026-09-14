@@ -28,7 +28,3 @@ export async function update(id: number, data: IncidenciaUpdate) {
   return updated
 }
 
-export async function remove(id: number) {
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Incidencia')
-}

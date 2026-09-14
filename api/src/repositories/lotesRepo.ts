@@ -230,14 +230,6 @@ export async function update(
   return findById(id)
 }
 
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const result = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM lotes_pieza OUTPUT DELETED.id WHERE id = @id')
-  return result.recordset.length > 0
-}
-
 export async function findProveedores(): Promise<{ id: number; nombre: string }[]> {
   const pool = await getPool()
   const result = await pool.request()

@@ -42,11 +42,6 @@ export async function updateLote(id: number, data: LoteUpdate): Promise<LoteConP
   return result
 }
 
-export async function deleteLote(id: number): Promise<void> {
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Lote')
-}
-
 export async function getProveedores(): Promise<{ id: number; nombre: string }[]> {
   return repo.findProveedores()
 }

@@ -8,12 +8,12 @@
 // comparación solo existía para el catálogo completo.
 import { useState } from 'react'
 import {
-  Drawer, Stack, Group, Text, Badge, Table, Loader, Center, Alert,
+  Drawer, Stack, Group, Text, Badge, Table, Loader, Center,
   ActionIcon, Button, Modal, Tooltip,
 } from '@mantine/core'
-import { IconPencil, IconTrash, IconPlus, IconFileTypePdf } from '@tabler/icons-react'
+import { IconPencil, IconPlus, IconFileTypePdf } from '@tabler/icons-react'
 import {
-  useLotes, useCreateLote, useUpdateLote, useDeleteLote,
+  useLotes, useCreateLote, useUpdateLote,
 } from '../hooks/useLotes'
 import type { Lote, LotePayload } from '../hooks/useLotes'
 import { useComparativaPieza } from '../hooks/usePreciosProveedor'
@@ -55,7 +55,6 @@ interface Props {
 export default function LotesDrawer({ piezaId, onClose }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editLote, setEditLote] = useState<Lote | null>(null)
-  const [deleteLote, setDeleteLote] = useState<Lote | null>(null)
   const [generando, setGenerando]   = useState(false)
 
   const { data, isLoading } = useLotes(piezaId)
@@ -65,7 +64,6 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
   const { data: comparativa, isLoading: cargandoComparativa } = useComparativaPieza(piezaId)
   const createMut = useCreateLote()
   const updateMut = useUpdateLote()
-  const deleteMut = useDeleteLote()
 
   function toPayload(values: LoteFormValues): LotePayload {
     return {
@@ -101,11 +99,6 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
       { id: editLote.id, ...payload },
       { onSuccess: () => setEditLote(null) }
     )
-  }
-
-  function handleDelete() {
-    if (!deleteLote) return
-    deleteMut.mutate(deleteLote.id, { onSuccess: () => setDeleteLote(null) })
   }
 
   const stockTotal = data?.lotes.reduce((s, l) => s + l.cantidad_disponible, 0) ?? 0
@@ -256,15 +249,6 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                             >
                               <IconPencil size={14} />
                             </ActionIcon>
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              size="sm"
-                              aria-label="Eliminar lote"
-                              onClick={() => setDeleteLote(lote)}
-                            >
-                              <IconTrash size={14} />
-                            </ActionIcon>
                           </Group>
                         </Table.Td>
                       </Table.Tr>
@@ -318,41 +302,6 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
         )}
       </Modal>
 
-      {/* Modal: confirmar eliminación */}
-      <Modal
-        opened={deleteLote !== null}
-        onClose={() => setDeleteLote(null)}
-        title="Eliminar lote"
-        centered
-        size="sm"
-      >
-        <Stack gap="md">
-          <Text>
-            ¿Seguro que deseas eliminar el lote del{' '}
-            <Text component="span" fw={700}>
-              {deleteLote ? formatDate(deleteLote.fecha_compra) : ''}
-            </Text>
-            {' '}de{' '}
-            <Text component="span" fw={700}>
-              {deleteLote?.proveedor ?? 'piezas recuperadas'}
-            </Text>?
-            Esta acción no se puede deshacer.
-          </Text>
-          {deleteMut.error && (
-            <Alert color="red" title="Error">
-              {(deleteMut.error as Error).message}
-            </Alert>
-          )}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleteLote(null)} disabled={deleteMut.isPending}>
-              Cancelar
-            </Button>
-            <Button color="red" onClick={handleDelete} loading={deleteMut.isPending}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </>
   )
 }

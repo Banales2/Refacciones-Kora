@@ -196,5 +196,3 @@ export async function update(id: number, data: IncidenciaUpdate): Promise<Incide
   }
   return findById(id)
 }
-
-export const remove = pendientes.remove

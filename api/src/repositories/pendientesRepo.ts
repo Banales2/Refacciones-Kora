@@ -83,27 +83,6 @@ export async function applyUpdate(
   await req.query(`UPDATE pendientes SET ${sets.join(',')} WHERE id=@id`)
 }
 
-// Los vínculos con mantenimientos y agendas son NO ACTION: hay que soltarlos a
-// mano o el FK aborta el DELETE. El hijo, en cambio, se va solo por CASCADE.
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const tx = pool.transaction()
-  await tx.begin()
-  try {
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM mantenimiento_pendientes WHERE pendiente_id=@id')
-    await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM agenda_pendientes WHERE pendiente_id=@id')
-    const r = await tx.request().input('id', sql.Int, id)
-      .query('DELETE FROM pendientes OUTPUT DELETED.id WHERE id=@id')
-    await tx.commit()
-    return r.recordset.length > 0
-  } catch (err) {
-    await tx.rollback()
-    throw err
-  }
-}
-
 // Una incidencia se cierra sola en cuanto un mantenimiento que la atiende ya
 // ocurrió, y se reabre si ese vínculo desaparece. Un mantenimiento programado a
 // futuro todavía no cuenta: solo cierra cuando su fecha llega.

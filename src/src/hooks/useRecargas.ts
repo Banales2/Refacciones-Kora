@@ -64,10 +64,3 @@ export function useUpdateRecarga(vehiculoId: number) {
   })
 }
 
-export function useDeleteRecarga(vehiculoId: number) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/recargas/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['recargas', vehiculoId] }),
-  })
-}

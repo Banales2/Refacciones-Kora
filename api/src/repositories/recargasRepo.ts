@@ -109,14 +109,6 @@ export async function update(id: number, data: RecargaUpdate): Promise<RecargaCo
   return findById(id)
 }
 
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM recargas_combustible OUTPUT DELETED.id WHERE id = @id')
-  return r.recordset.length > 0
-}
-
 // ¿El vale ya se usó en otra recarga? exceptId excluye la propia al editar.
 // Duplica lo que garantiza el índice único UQ_recargas_vale, pero permite
 // responder con un mensaje claro en vez de un error del motor.

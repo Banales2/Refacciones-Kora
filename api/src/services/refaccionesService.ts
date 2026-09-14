@@ -64,8 +64,8 @@ export async function remove(id: number): Promise<void> {
   const consumos = await repo.countConsumosEnMantenimientos(id)
   if (consumos > 0) {
     throw new ConflictError(
-      `Esta refacción se usó en ${consumos} mantenimiento(s) y no puede eliminarse. ` +
-      `Elimina primero esos mantenimientos.`
+      `Esta refacción se usó en ${consumos} mantenimiento(s) y no puede eliminarse: ` +
+      `esos mantenimientos quedarían sin la refacción que dicen haber usado.`
     )
   }
   // Lo mismo con el historial de instalaciones: aunque la pieza ya no esté
