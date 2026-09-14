@@ -7,7 +7,7 @@
 //
 // PERO NO A COSTA DE LA CAPTURA. Un servicio de posgarantía es un chequeo
 // general: una lista larga donde casi todo sale bien y solo algunas cosas se
-// atienden. Por eso todo arranca en "sin novedad" y aquí solo se tocan las
+// atienden. Por eso todo arranca en "no se ocupó" y aquí solo se tocan las
 // excepciones —lo que sí se cambió y lo que no se alcanzó a ver—. Obligar a
 // marcar treinta renglones a mano no lo haría nadie dos veces, y a la tercera
 // se marcaría todo de corrido: el candado se volvería mentira.
@@ -63,9 +63,9 @@ export default function ActaVisitaPrograma({
           {cuenta('atendida') > 0 && (
             <Badge size="sm" variant="light" color="blue">{cuenta('atendida')} atendidas</Badge>
           )}
-          <Badge size="sm" variant="light" color="teal">{cuenta('revisada')} sin novedad</Badge>
+          <Badge size="sm" variant="light" color="teal">{cuenta('revisada')} no se ocuparon</Badge>
           {cuenta('omitida') > 0 && (
-            <Badge size="sm" variant="light" color="yellow">{cuenta('omitida')} sin revisar</Badge>
+            <Badge size="sm" variant="light" color="yellow">{cuenta('omitida')} pendientes</Badge>
           )}
           {porElegir > 0 && (
             <Badge size="sm" variant="light" color="gray">{porElegir} por decidir</Badge>
@@ -73,8 +73,9 @@ export default function ActaVisitaPrograma({
         </Group>
       </Group>
       <Text size="xs" c="dimmed">
-        Todo arranca como revisado y sin novedad: toca solo lo que se haya cambiado y lo que no
-        se haya alcanzado a ver. Lo que quede sin revisar se anota con su motivo y sigue vencido.
+        Todo arranca en «No se ocupó»: se revisó y no hizo falta cambiar nada. Toca solo lo
+        que sí se haya atendido y lo que no se haya alcanzado a ver. Lo que quede pendiente se
+        anota con su motivo y sigue vencido.
       </Text>
 
       <Stack gap={6}>
@@ -124,7 +125,7 @@ export default function ActaVisitaPrograma({
               {resp?.resultado === 'omitida' && (
                 <TextInput
                   mt={6} size="xs" maxLength={300}
-                  placeholder="Por qué no se revisó (no había filtro en existencia, no dio tiempo…)"
+                  placeholder="Por qué quedó pendiente (no había filtro en existencia, no dio tiempo…)"
                   value={resp.nota}
                   onChange={(e) => anotar(r, e.currentTarget.value)}
                 />

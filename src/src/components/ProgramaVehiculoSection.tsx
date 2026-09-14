@@ -283,7 +283,7 @@ function ProximaVisita({
 
 // Qué salió de la columna en esa visita. Lo que importa de un chequeo general no
 // es cuántos renglones se tocaron —casi todos salen bien— sino qué se cambió y
-// qué se quedó sin ver. Las visitas anteriores a que el acta existiera llegan
+// qué se quedó pendiente. Las visitas anteriores a que el acta existiera llegan
 // con la lista vacía: eso no es "no se hizo nada", es que no se preguntó.
 function ActaDeLaVisita({
   acta, programa,
@@ -293,7 +293,7 @@ function ActaDeLaVisita({
 }) {
   if (!acta.length) {
     return (
-      <Tooltip label="Se registró antes de que se llevara el detalle: no se sabe qué quedó sin revisar." multiline w={230}>
+      <Tooltip label="Se registró antes de que se llevara el detalle: no se sabe qué quedó pendiente." multiline w={230}>
         <Text size="sm" c="dimmed">—</Text>
       </Tooltip>
     )
@@ -305,7 +305,7 @@ function ActaDeLaVisita({
 
   const detalle = [
     ...atendidas.map((a) => `Se atendió: ${nombre(a.operacion_id)}`),
-    ...omitidas.map((a) => `Sin revisar: ${nombre(a.operacion_id)} — ${a.nota ?? 'sin motivo'}`),
+    ...omitidas.map((a) => `Pendiente: ${nombre(a.operacion_id)} — ${a.nota ?? 'sin motivo'}`),
   ]
 
   return (
@@ -313,14 +313,14 @@ function ActaDeLaVisita({
       multiline w={320}
       label={detalle.length
         ? detalle.join(' · ')
-        : `Se revisaron los ${acta.length} renglones y no hubo novedad`}
+        : `Se revisaron los ${acta.length} renglones y no se ocupó nada`}
     >
       <Group gap={4} justify="center" wrap="nowrap">
         <Badge size="sm" variant="light" color={atendidas.length ? 'blue' : 'teal'}>
           {atendidas.length} de {acta.length}
         </Badge>
         {omitidas.length > 0 && (
-          <Badge size="sm" variant="light" color="yellow">{omitidas.length} sin ver</Badge>
+          <Badge size="sm" variant="light" color="yellow">{omitidas.length} pendientes</Badge>
         )}
       </Group>
     </Tooltip>
@@ -379,7 +379,7 @@ export default function ProgramaVehiculoSection({
   const [fechaTrabajo, setFechaTrabajo] = useState(hoyIso())
   const [kmTrabajo, setKmTrabajo]       = useState<number | null>(null)
   // Lo que se toca a mano de cada renglón de la columna; lo demás corre con su
-  // arranque —"revisado, sin novedad"— y se resuelve al leerlo. Vive aquí y no
+  // arranque —"revisado, no se ocupó"— y se resuelve al leerlo. Vive aquí y no
   // en el formulario porque es esta pantalla la que cierra la columna: el
   // formulario solo lo pinta y lo revisa contra las refacciones capturadas.
   const [acta, setActa]                 = useState<ActaValor>({})
@@ -744,7 +744,7 @@ export default function ProgramaVehiculoSection({
                 <Table.Th>Columna</Table.Th>
                 <Table.Th>Fecha</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>Odómetro</Table.Th>
-                {/* El acta: qué se cambió de verdad y qué se quedó sin ver.
+                {/* El acta: qué se cambió de verdad y qué se quedó pendiente.
                     Antes se daban todos por hechos y no quedaba registro. */}
                 <Table.Th style={{ textAlign: 'center' }}>Se atendió</Table.Th>
                 {/* Lo que costó de verdad, que es lo que se gana con que la
@@ -824,9 +824,9 @@ export default function ProgramaVehiculoSection({
         <Stack gap="sm">
           <Alert color="blue" variant="light">
             Se registra como un mantenimiento normal. Abajo van las {proxima?.operaciones.length ?? 0}{' '}
-            operaciones de la columna, todas como revisadas y sin novedad: marca solo lo que se
-            haya cambiado y lo que no se haya alcanzado a ver. Lo que quede sin revisar sigue
-            vencido; lo demás vuelve a contar sus meses desde esta fecha.
+            operaciones de la columna, todas como revisadas y sin que se ocupara nada: marca solo
+            lo que sí se haya atendido y lo que no se haya alcanzado a ver. Lo que quede
+            pendiente sigue vencido; lo demás vuelve a contar sus meses desde esta fecha.
           </Alert>
           <MantenimientoForm
             vehiculoId={vehiculoId}

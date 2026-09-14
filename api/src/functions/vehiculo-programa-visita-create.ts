@@ -29,7 +29,7 @@ export async function vehiculoProgramaVisitaCreate(req: HttpRequest, ctx: Invoca
         vehiculo_id: vehiculoId,
         cerro_servicio_del_programa: true,
         // Lo que se saltó y lo que sí se cambió: es lo que vale la pena poder
-        // rastrear después. Lo revisado sin novedad es el relleno de siempre.
+        // rastrear después. Lo revisado que no se ocupó es el relleno de siempre.
         operaciones_atendidas: body.operaciones.filter((o) => o.resultado === 'atendida').length,
         operaciones_omitidas:  body.operaciones.filter((o) => o.resultado === 'omitida').length,
       },

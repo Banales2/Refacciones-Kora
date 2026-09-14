@@ -18,8 +18,8 @@ export type ResultadoRenglon = 'atendida' | 'revisada' | 'omitida'
 
 export const RESULTADO_LABEL: Record<ResultadoRenglon, string> = {
   atendida: 'Se atendió',
-  revisada: 'Sin novedad',
-  omitida:  'No se revisó',
+  revisada: 'No se ocupó',
+  omitida:  'Quedó pendiente',
 }
 
 /** Un renglón de la columna que se está cerrando, listo para preguntarse. */
@@ -49,7 +49,7 @@ export type ActaValor = Record<number, RespuestaRenglon>
  * El renglón exige que se elija a mano, sin arranque posible.
  *
  * Reemplazar no tiene desenlace por omisión: o se cambió la pieza o no se
- * cambió, y arrancarlo en "sin novedad" sería el sistema contestando por el
+ * cambió, y arrancarlo en "no se ocupó" sería el sistema contestando por el
  * taller justo en lo único que cuesta dinero —que es la mentira que todo esto
  * vino a quitar—. Son pocos por columna, así que no estorba la captura rápida.
  */
@@ -61,7 +61,7 @@ export function exigeRespuesta(r: RenglonColumna): boolean {
  * Lo contestado de un renglón, con el arranque ya aplicado.
  *
  * Un chequeo general es una lista larga donde casi todo sale bien, así que
- * arranca en "revisada, sin novedad" y el capturista solo toca las excepciones:
+ * arranca en "revisada, no se ocupó" y el capturista solo toca las excepciones:
  * lo que sí se cambió y lo que no se alcanzó a ver. Marcar treinta renglones a
  * mano no lo haría nadie dos veces.
  *
@@ -98,11 +98,11 @@ export function revisarActa(
     if (!resp) {
       errores[r.operacion_id] = 'Falta decir si se cambió'
     } else if (resp.resultado === 'omitida' && !resp.nota.trim()) {
-      errores[r.operacion_id] = 'Di por qué no se revisó'
+      errores[r.operacion_id] = 'Di por qué quedó pendiente'
     } else if (exigePiezaFaltante(r, resp, tiposCargados)) {
       errores[r.operacion_id] =
         `Agrega la refacción (${r.tipo_pieza_nombre ?? 'del tipo que corresponde'}) ` +
-        'abajo, o márcalo como sin novedad'
+        'abajo, o márcalo como que no se ocupó'
     }
   }
   return errores

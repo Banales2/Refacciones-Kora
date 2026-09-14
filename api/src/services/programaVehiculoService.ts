@@ -687,8 +687,8 @@ async function revisarActa(
     if (consumidos.has(o.operacion.tipo_pieza_id!)) continue
     throw new ValidationError(
       `«${o.operacion.nombre}» se marcó como atendida, pero el mantenimiento no tiene ` +
-      `cargada ninguna refacción de su tipo. Agrégala, o márcala como revisada sin ` +
-      `novedad si no hizo falta cambiarla.`
+      `cargada ninguna refacción de su tipo. Agrégala, o márcala como «no se ocupó» ` +
+      `si no hizo falta cambiarla.`
     )
   }
 
@@ -697,7 +697,7 @@ async function revisarActa(
     const nota = d.nota?.trim() || null
     if (d.resultado === 'omitida' && !nota) {
       throw new ValidationError(
-        `«${o.operacion.nombre}» quedó sin revisar: hay que decir por qué.`
+        `«${o.operacion.nombre}» quedó pendiente: hay que decir por qué.`
       )
     }
     // La acción se sella con la de hoy: el catálogo del modelo se edita y el
