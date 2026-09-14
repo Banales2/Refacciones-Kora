@@ -10,12 +10,12 @@ import {
   Stack, Group, Text, TextInput, Table, Badge,
   Pagination, Loader, Center, Alert, Button, Select,
   Modal, ActionIcon, Tooltip, NumberInput,
-  Divider, Grid, Paper, Accordion,
+  Divider, Grid, Paper, Accordion, Anchor,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
   IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight, IconAlertTriangle,
-  IconFileTypePdf, IconReportAnalytics, IconTool,
+  IconFileTypePdf, IconReportAnalytics, IconTool, IconExternalLink,
 } from '@tabler/icons-react'
 import {
   useVehiculos, useVehiculo, useCreateVehiculo, useUpdateVehiculo, useDeleteVehiculo, vehiculoLabel,
@@ -1462,7 +1462,26 @@ function VehiculoDetalle({
             </Group>
             <Grid mt={4} gap="md">
               <Grid.Col span={{ base: 6, sm: 3 }}>
-                <InfoItem label="Marca / Modelo" value={`${vehiculo.marca} ${vehiculo.modelo}`} />
+                {/* El modelo es una ficha propia —ahí viven sus garantías, sus
+                    tipos de pieza y su programa de mantenimiento—, así que desde
+                    la unidad se puede ir. Sin el callback queda como texto: la
+                    sección se usa también donde no hay a dónde navegar. */}
+                <InfoItem
+                  label="Marca / Modelo"
+                  value={onNavigateModelo ? (
+                    <Tooltip label="Ir a la ficha del modelo" withArrow>
+                      <Anchor
+                        component="button" type="button" size="sm" inherit
+                        onClick={() => onNavigateModelo(vehiculo.modelo_id)}
+                      >
+                        <Group gap={4} wrap="nowrap" component="span">
+                          <span>{vehiculo.marca} {vehiculo.modelo}</span>
+                          <IconExternalLink size={13} style={{ flexShrink: 0 }} />
+                        </Group>
+                      </Anchor>
+                    </Tooltip>
+                  ) : `${vehiculo.marca} ${vehiculo.modelo}`}
+                />
               </Grid.Col>
               <Grid.Col span={{ base: 6, sm: 3 }}>
                 <InfoItem label="Año del modelo" value={vehiculo.modelo_anio} />
