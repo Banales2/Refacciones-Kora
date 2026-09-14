@@ -16,6 +16,7 @@ import {
   useExistencias, useTraspasos, useCreateTraspaso,
   useMinimos, useCreateMinimo, useUpdateMinimo, useDeleteMinimo,
 } from '../hooks/useInventario'
+import ConfirmarQuitar from '../components/ConfirmarQuitar'
 import type { ExistenciaEnSucursal, MinimoSucursal } from '../hooks/useInventario'
 import { useDescuadres, useResolverDescuadre } from '../hooks/useDescuadres'
 import { useCuadreUnidades } from '../hooks/useCuadreUnidades'
@@ -264,6 +265,9 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
   const { data, isLoading } = useMinimos(sucursalId)
   const updateMut = useUpdateMinimo()
   const deleteMut = useDeleteMinimo()
+  // Quitar el mínimo apaga el aviso de faltante de esa refacción en esta
+  // sucursal, y apagado no vuelve a pedir atención solo: se pregunta.
+  const [quitando, setQuitando] = useState<{ id: number; nombre: string } | null>(null)
 
   const filas = data?.data ?? []
   const faltantes = filas.filter((m) => m.existencia < m.minimo)
@@ -311,7 +315,10 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
                   key={m.id}
                   minimo={m}
                   onGuardar={(valor) => updateMut.mutate({ id: m.id, minimo: valor })}
-                  onBorrar={() => deleteMut.mutate(m.id)}
+                  onBorrar={() => {
+                    deleteMut.reset()
+                    setQuitando({ id: m.id, nombre: m.numero_serie })
+                  }}
                   guardando={updateMut.isPending && updateMut.variables?.id === m.id}
                   borrando={deleteMut.isPending && deleteMut.variables === m.id}
                 />
@@ -320,6 +327,20 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
           </Table>
         </Table.ScrollContainer>
       )}
+
+      <ConfirmarQuitar
+        abierto={quitando !== null}
+        titulo="Quitar el mínimo"
+        mensaje={<>¿Dejar de vigilar el mínimo de <strong>{quitando?.nombre}</strong> en esta sucursal?</>}
+        advertencia={
+          'El inventario no se toca: lo que se quita es el aviso de faltante. Puedes ' +
+          'volver a ponerlo cuando quieras.'
+        }
+        error={deleteMut.error}
+        cargando={deleteMut.isPending}
+        onCancelar={() => setQuitando(null)}
+        onConfirmar={() => deleteMut.mutate(quitando!.id, { onSuccess: () => setQuitando(null) })}
+      />
     </Stack>
   )
 }

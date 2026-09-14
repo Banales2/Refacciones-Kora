@@ -2,8 +2,9 @@
 // agrupar la flota en las vistas y los reportes.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { CamposArchivado } from './useArchivado'
 
-export interface Sucursal {
+export interface Sucursal extends CamposArchivado {
   id:        number
   nombre:    string
   ubicacion: string
@@ -14,10 +15,13 @@ export interface SucursalPayload {
   ubicacion: string
 }
 
-export function useSucursales() {
+// Por defecto solo lo que está en uso. `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export function useSucursales(incluirArchivados = false) {
   return useQuery({
-    queryKey: ['sucursales'],
-    queryFn: () => api.get<{ data: Sucursal[] }>('/sucursales'),
+    queryKey: ['sucursales', incluirArchivados ? 'con-archivados' : 'en-uso'],
+    queryFn: () => api.get<{ data: Sucursal[] }>(
+      incluirArchivados ? '/sucursales?archivados=1' : '/sucursales'),
     staleTime: 10 * 60 * 1000,
   })
 }
@@ -40,10 +44,3 @@ export function useUpdateSucursal() {
   })
 }
 
-export function useDeleteSucursal() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete(`/sucursales/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['sucursales'] }),
-  })
-}

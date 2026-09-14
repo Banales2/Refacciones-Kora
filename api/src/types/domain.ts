@@ -8,6 +8,11 @@ export interface Pieza {
   // hasta que se editen. Solo las tipificadas pueden asignarse a un vehículo.
   tipo_pieza_id: number | null
   tipo_pieza: string | null
+  // Cuándo se archivó la refacción y por qué. Null = en uso. Archivada sigue
+  // entera en la base y se resuelve por id —sus lotes, consumos e instalaciones
+  // la siguen nombrando—; solo deja de ofrecerse en el catálogo (migración 033).
+  archivado_en: string | null
+  archivado_motivo: string | null
 }
 
 export interface PiezaConCantidad extends Pieza {

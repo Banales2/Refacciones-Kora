@@ -2,8 +2,9 @@
 // de cada vehículo.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { CamposArchivado } from './useArchivado'
 
-export interface Conductor {
+export interface Conductor extends CamposArchivado {
   id:        number
   nombre:    string
   // Base desde donde opera. Etiqueta corta, no un domicilio.
@@ -34,10 +35,13 @@ export interface ConductorPayload {
   licencia_federal_expediente_vigencia: string | null
 }
 
-export function useConductores() {
+// Por defecto solo lo que está en uso. `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export function useConductores(incluirArchivados = false) {
   return useQuery({
-    queryKey: ['conductores'],
-    queryFn: () => api.get<{ data: Conductor[] }>('/conductores'),
+    queryKey: ['conductores', incluirArchivados ? 'con-archivados' : 'en-uso'],
+    queryFn: () => api.get<{ data: Conductor[] }>(
+      incluirArchivados ? '/conductores?archivados=1' : '/conductores'),
     staleTime: 5 * 60 * 1000,
   })
 }
@@ -64,10 +68,3 @@ export function useUpdateConductor() {
   })
 }
 
-export function useDeleteConductor() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/conductores/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['conductores'] }),
-  })
-}

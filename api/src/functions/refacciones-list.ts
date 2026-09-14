@@ -17,6 +17,8 @@ export async function refaccionesList(
       pageSize: request.query.get('pageSize') ?? undefined,
       search: request.query.get('search') ?? undefined,
       searchBy: request.query.get('searchBy') ?? undefined,
+      // Solo lo pide la pantalla del catálogo, para poder verlas y restaurarlas.
+      incluirArchivados: request.query.get('archivados') ?? undefined,
     })
 
     const result = await service.getAll(params)

@@ -3,8 +3,8 @@ import type { Tecnico } from '../repositories/tecnicosRepo'
 import type { TecnicoCreate, TecnicoUpdate } from '../schemas/tecnicoSchema'
 import { NotFoundError, ConflictError } from '../shared/errors'
 
-export async function getAll(): Promise<Tecnico[]> {
-  return repo.findAll()
+export async function getAll(incluirArchivados = false): Promise<Tecnico[]> {
+  return repo.findAll(incluirArchivados)
 }
 
 export async function create(data: TecnicoCreate): Promise<Tecnico> {
@@ -23,7 +23,3 @@ export async function update(id: number, data: TecnicoUpdate): Promise<Tecnico> 
   return result
 }
 
-export async function remove(id: number): Promise<void> {
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Técnico')
-}

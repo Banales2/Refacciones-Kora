@@ -12,18 +12,21 @@
 import { useState } from 'react'
 import {
   Drawer, Stack, Group, Text, TextInput, Switch, Button, Alert, Loader, Center,
-  Paper, ActionIcon, Tooltip, Modal, Badge,
+  Paper, ActionIcon, Tooltip, Badge,
 } from '@mantine/core'
-import { IconPencil, IconTrash, IconCheck, IconX, IconTag } from '@tabler/icons-react'
 import {
-  useTiposPieza, useUpdateTipoPieza, useDeleteTipoPieza,
+  IconPencil, IconCheck, IconX, IconTag, IconArchive, IconArchiveOff,
+} from '@tabler/icons-react'
+import {
+  useTiposPieza, useUpdateTipoPieza,
 } from '../hooks/useTiposPieza'
+import ArchivarCatalogoModal from './ArchivarCatalogoModal'
 import type { TipoPieza } from '../hooks/useTiposPieza'
 import { limpiarTextoSimple } from '../lib/validaciones'
 import IdentificarExistentesModal from './IdentificarExistentesModal'
 
 /** Un renglón del catálogo: nombre editable en sitio y su interruptor. */
-function TipoRow({ tipo, onBorrar }: { tipo: TipoPieza; onBorrar: () => void }) {
+function TipoRow({ tipo, onArchivar }: { tipo: TipoPieza; onArchivar: () => void }) {
   const [editando, setEditando] = useState(false)
   const [nombre, setNombre] = useState(tipo.nombre)
   // Al encender el rastreo se abre la captura de lo que ya estaba en el estante.
@@ -74,7 +77,12 @@ function TipoRow({ tipo, onBorrar }: { tipo: TipoPieza; onBorrar: () => void }) 
           ) : (
             <>
               <Group gap={6} wrap="nowrap">
-                <Text size="sm" fw={500}>{tipo.nombre}</Text>
+                <Text size="sm" fw={500} c={tipo.archivado_en ? 'dimmed' : undefined}>
+                  {tipo.nombre}
+                </Text>
+                {tipo.archivado_en && (
+                  <Badge size="xs" variant="light" color="gray">Archivado</Badge>
+                )}
                 {tipo.rastreo_individual && (
                   <Badge size="xs" variant="light" color="teal">Rastreo individual</Badge>
                 )}
@@ -88,12 +96,14 @@ function TipoRow({ tipo, onBorrar }: { tipo: TipoPieza; onBorrar: () => void }) 
                     <IconPencil size={14} />
                   </ActionIcon>
                 </Tooltip>
-                <Tooltip label="Eliminar">
+                <Tooltip label={tipo.archivado_en ? 'Restaurar' : 'Archivar'}>
                   <ActionIcon
-                    variant="subtle" color="red" size="sm" aria-label={`Eliminar ${tipo.nombre}`}
-                    onClick={onBorrar}
+                    variant="subtle" size="sm"
+                    color={tipo.archivado_en ? 'teal' : 'orange'}
+                    aria-label={`${tipo.archivado_en ? 'Restaurar' : 'Archivar'} ${tipo.nombre}`}
+                    onClick={onArchivar}
                   >
-                    <IconTrash size={14} />
+                    {tipo.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
                   </ActionIcon>
                 </Tooltip>
               </Group>
@@ -154,11 +164,16 @@ export default function TiposPiezaDrawer({
   opened:  boolean
   onClose: () => void
 }) {
-  const { data, isLoading, isError } = useTiposPieza()
-  const [borrando, setBorrando] = useState<TipoPieza | null>(null)
-  const deleteMut = useDeleteTipoPieza()
+  // Siempre se piden con archivados: así el switch puede decir cuántos hay sin
+  // una segunda consulta, y prenderlo no dispara un refetch.
+  const { data, isLoading, isError } = useTiposPieza(true)
+  // Tipo que se está por archivar (o restaurar). No hay borrado.
+  const [archivando, setArchivando] = useState<TipoPieza | null>(null)
+  const [verArchivados, setVerArchivados] = useState(false)
 
-  const tipos = data?.data ?? []
+  const todos      = data?.data ?? []
+  const archivados = todos.filter((t) => t.archivado_en).length
+  const tipos      = todos.filter((t) => verArchivados || !t.archivado_en)
 
   return (
     <>
@@ -178,6 +193,14 @@ export default function TiposPiezaDrawer({
             por pieza.
           </Text>
 
+          {(archivados > 0 || verArchivados) && (
+            <Switch
+              size="sm" label={`Ver archivados (${archivados})`}
+              checked={verArchivados}
+              onChange={(e) => setVerArchivados(e.currentTarget.checked)}
+            />
+          )}
+
           {isError ? (
             <Alert color="red" title="Error">No se pudieron cargar los tipos de pieza.</Alert>
           ) : isLoading ? (
@@ -189,45 +212,18 @@ export default function TiposPiezaDrawer({
           ) : (
             <Stack gap="xs">
               {tipos.map((t) => (
-                <TipoRow key={t.id} tipo={t} onBorrar={() => { deleteMut.reset(); setBorrando(t) }} />
+                <TipoRow key={t.id} tipo={t} onArchivar={() => setArchivando(t)} />
               ))}
             </Stack>
           )}
         </Stack>
       </Drawer>
 
-      <Modal
-        opened={borrando !== null}
-        onClose={() => setBorrando(null)}
-        title="Eliminar tipo de pieza"
-        centered
-        size="sm"
-        zIndex={400}
-      >
-        <Stack gap="md">
-          <Text size="sm">
-            ¿Eliminar <Text component="span" fw={700}>{borrando?.nombre}</Text>? Solo se
-            puede si ningún modelo lo pide, ninguna unidad lo necesita y ninguna
-            refacción es de este tipo.
-          </Text>
-          {deleteMut.error && (
-            <Alert color="red" title="No se pudo eliminar">
-              {(deleteMut.error as Error).message}
-            </Alert>
-          )}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setBorrando(null)} disabled={deleteMut.isPending}>
-              Cancelar
-            </Button>
-            <Button
-              color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(borrando!.id, { onSuccess: () => setBorrando(null) })}
-            >
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      {/* zIndex por encima del cajón, que si no lo tapa. */}
+      <ArchivarCatalogoModal
+        recurso="tipos-pieza" item={archivando} etiqueta="el tipo de pieza"
+        onClose={() => setArchivando(null)}
+      />
     </>
   )
 }

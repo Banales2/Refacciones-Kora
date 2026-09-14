@@ -3,8 +3,9 @@
 // mantenimientos sigue siendo texto libre y no apunta aquí.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { CamposArchivado } from './useArchivado'
 
-export interface Tecnico {
+export interface Tecnico extends CamposArchivado {
   id:        number
   nombre:    string
   ubicacion: string
@@ -17,10 +18,13 @@ export interface TecnicoPayload {
   contacto:  string | null
 }
 
-export function useTecnicos() {
+// Por defecto solo lo que está en uso. `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export function useTecnicos(incluirArchivados = false) {
   return useQuery({
-    queryKey: ['tecnicos'],
-    queryFn: () => api.get<{ data: Tecnico[] }>('/tecnicos'),
+    queryKey: ['tecnicos', incluirArchivados ? 'con-archivados' : 'en-uso'],
+    queryFn: () => api.get<{ data: Tecnico[] }>(
+      incluirArchivados ? '/tecnicos?archivados=1' : '/tecnicos'),
     staleTime: 5 * 60 * 1000,
   })
 }
@@ -43,10 +47,3 @@ export function useUpdateTecnico() {
   })
 }
 
-export function useDeleteTecnico() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/tecnicos/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tecnicos'] }),
-  })
-}

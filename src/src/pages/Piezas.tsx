@@ -7,15 +7,19 @@ import { useState } from 'react'
 import {
   Stack, Group, Text, TextInput, Table, Badge,
   Pagination, Alert, Loader, Center,
-  Button, ActionIcon, Modal, Select, Accordion,
+  Button, ActionIcon, Modal, Select, Accordion, Switch,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconTrash, IconPlus, IconFileTypePdf, IconReceipt, IconTags } from '@tabler/icons-react'
 import {
-  useRefacciones, useTodasLasPiezas, useCreateRefaccion, useUpdateRefaccion, useDeleteRefaccion,
+  IconPencil, IconPlus, IconFileTypePdf, IconReceipt, IconTags,
+  IconArchive, IconArchiveOff,
+} from '@tabler/icons-react'
+import {
+  useRefacciones, useTodasLasPiezas, useCreateRefaccion, useUpdateRefaccion,
   fetchTodasLasPiezas,
 } from '../hooks/useRefacciones'
 import type { Pieza, SearchBy } from '../hooks/useRefacciones'
+import ArchivarCatalogoModal from '../components/ArchivarCatalogoModal'
 import LotesDrawer from '../components/LotesDrawer'
 import FacturasDrawer from '../components/FacturasDrawer'
 import TiposPiezaDrawer from '../components/TiposPiezaDrawer'
@@ -32,12 +36,12 @@ function stockColor(qty: number) {
 
 
 function PiezasTable({
-  items, onSelect, onEdit, onDelete,
+  items, onSelect, onEdit, onArchivar,
 }: {
   items:    Pieza[]
   onSelect: (id: number) => void
   onEdit:   (p: Pieza) => void
-  onDelete: (p: Pieza) => void
+  onArchivar: (p: Pieza) => void
 }) {
   return (
     <Table.ScrollContainer minWidth={480}>
@@ -58,7 +62,14 @@ function PiezasTable({
               onClick={() => onSelect(pieza.id)}
               style={{ cursor: 'pointer' }}
             >
-              <Table.Td fw={500}>{pieza.numero_serie}</Table.Td>
+              <Table.Td fw={500} c={pieza.archivado_en ? 'dimmed' : undefined}>
+                <Group gap={6} wrap="nowrap">
+                  {pieza.numero_serie}
+                  {pieza.archivado_en && (
+                    <Badge variant="light" color="gray" size="xs">Archivada</Badge>
+                  )}
+                </Group>
+              </Table.Td>
               <Table.Td c="dimmed">{pieza.descripcion}</Table.Td>
               <Table.Td>
                 {pieza.tipo_pieza
@@ -75,8 +86,13 @@ function PiezasTable({
                   <ActionIcon variant="subtle" color="blue" aria-label="Editar" onClick={() => onEdit(pieza)}>
                     <IconPencil size={16} />
                   </ActionIcon>
-                  <ActionIcon variant="subtle" color="red" aria-label="Eliminar" onClick={() => onDelete(pieza)}>
-                    <IconTrash size={16} />
+                  <ActionIcon
+                    variant="subtle"
+                    color={pieza.archivado_en ? 'teal' : 'orange'}
+                    aria-label={pieza.archivado_en ? 'Restaurar' : 'Archivar'}
+                    onClick={() => onArchivar(pieza)}
+                  >
+                    {pieza.archivado_en ? <IconArchiveOff size={16} /> : <IconArchive size={16} />}
                   </ActionIcon>
                 </Group>
               </Table.Td>
@@ -89,12 +105,12 @@ function PiezasTable({
 }
 
 function PiezasAgrupadas({
-  piezas, onSelect, onEdit, onDelete,
+  piezas, onSelect, onEdit, onArchivar,
 }: {
   piezas:   Pieza[]
   onSelect: (id: number) => void
   onEdit:   (p: Pieza) => void
-  onDelete: (p: Pieza) => void
+  onArchivar: (p: Pieza) => void
 }) {
   const porTipo = agruparPorTipo(piezas)
 
@@ -111,7 +127,7 @@ function PiezasAgrupadas({
             </Group>
           </Accordion.Control>
           <Accordion.Panel>
-            <PiezasTable items={items} onSelect={onSelect} onEdit={onEdit} onDelete={onDelete} />
+            <PiezasTable items={items} onSelect={onSelect} onEdit={onEdit} onArchivar={onArchivar} />
           </Accordion.Panel>
         </Accordion.Item>
       ))}
@@ -131,7 +147,10 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
   const [facturasOpen, setFacturasOpen] = useState(false)
   const [tiposOpen, setTiposOpen] = useState(false)
   const [editPieza, setEditPieza] = useState<Pieza | null>(null)
-  const [deletePieza, setDeletePieza] = useState<Pieza | null>(null)
+  // Refacción que se está por archivar (o restaurar). No hay borrado.
+  const [archivando, setArchivando] = useState<Pieza | null>(null)
+  // Las archivadas se ocultan por defecto; el switch las trae para restaurarlas.
+  const [verArchivados, setVerArchivados] = useState(false)
   const [exportando, setExportando] = useState(false)
 
   // Al cambiar la búsqueda o el campo de búsqueda se vuelve a la página 1.
@@ -144,13 +163,13 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
   }
 
   const searching = debouncedSearch.length > 0
-  const { data, isLoading, isError } = useRefacciones(page, debouncedSearch, searchBy, undefined, searching)
+  const { data, isLoading, isError } =
+    useRefacciones(page, debouncedSearch, searchBy, undefined, searching, verArchivados)
   const { data: allData, isLoading: allLoading, isError: allError } =
     useTodasLasPiezas(!searching)
 
   const createMut = useCreateRefaccion()
   const updateMut = useUpdateRefaccion()
-  const deleteMut = useDeleteRefaccion()
 
   const totalPages = Math.ceil((data?.pagination?.total ?? 0) / (data?.pagination?.pageSize ?? 20))
 
@@ -170,13 +189,6 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
     if (!editPieza) return
     updateMut.mutate({ id: editPieza.id, ...toPayload(values) }, {
       onSuccess: () => setEditPieza(null),
-    })
-  }
-
-  function handleDelete() {
-    if (!deletePieza) return
-    deleteMut.mutate(deletePieza.id, {
-      onSuccess: () => setDeletePieza(null),
     })
   }
 
@@ -236,6 +248,11 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
             >
               Generar reporte
             </Button>
+            <Switch
+              size="sm" label="Ver archivadas"
+              checked={verArchivados}
+              onChange={(e) => setVerArchivados(e.currentTarget.checked)}
+            />
             <Button
               leftSection={<IconPlus size={16} />}
               onClick={() => setCreateOpen(true)}
@@ -300,7 +317,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
             <>
               <PiezasTable
                 items={data?.data ?? []}
-                onSelect={setSelectedId} onEdit={setEditPieza} onDelete={setDeletePieza}
+                onSelect={setSelectedId} onEdit={setEditPieza} onArchivar={setArchivando}
               />
               {totalPages > 1 && (
                 <Group justify="center">
@@ -318,7 +335,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
         ) : (
           <PiezasAgrupadas
             piezas={allData?.data ?? []}
-            onSelect={setSelectedId} onEdit={setEditPieza} onDelete={setDeletePieza}
+            onSelect={setSelectedId} onEdit={setEditPieza} onArchivar={setArchivando}
           />
         )}
       </Stack>
@@ -360,39 +377,11 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
         )}
       </Modal>
 
-      {/* Modal: confirmar eliminación */}
-      <Modal
-        opened={deletePieza !== null}
-        onClose={() => setDeletePieza(null)}
-        title="Eliminar refacción"
-        centered
-        size="sm"
-      >
-        <Stack gap="md">
-          <Text>
-            ¿Seguro que deseas eliminar{' '}
-            <Text component="span" fw={700}>{deletePieza?.numero_serie}</Text>?
-            Esta acción no se puede deshacer.
-          </Text>
-          <Text size="sm" c="dimmed">
-            Se eliminan también sus lotes de compra. No podrá eliminarse si alguno
-            de esos lotes ya se usó en un mantenimiento.
-          </Text>
-          {deleteMut.error && (
-            <Alert color="red" title="Error">
-              {(deleteMut.error as Error).message}
-            </Alert>
-          )}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeletePieza(null)} disabled={deleteMut.isPending}>
-              Cancelar
-            </Button>
-            <Button color="red" onClick={handleDelete} loading={deleteMut.isPending}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <ArchivarCatalogoModal
+        recurso="refacciones" item={archivando && { ...archivando, nombre: archivando.numero_serie }}
+        etiqueta="la refacción"
+        onClose={() => setArchivando(null)}
+      />
 
       <LotesDrawer piezaId={selectedId} onClose={() => setSelectedId(null)} />
 

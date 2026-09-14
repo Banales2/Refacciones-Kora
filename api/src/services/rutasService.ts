@@ -1,7 +1,7 @@
 import * as repo from '../repositories/rutasRepo'
 import { NotFoundError, ConflictError } from '../shared/errors'
 
-export function getAll() { return repo.findAll() }
+export function getAll(incluirArchivados = false) { return repo.findAll(incluirArchivados) }
 
 export async function create(nombre: string, ubicacion: string) {
   const n = nombre.trim()
@@ -21,10 +21,3 @@ export async function update(id: number, nombre?: string, ubicacion?: string) {
   return result
 }
 
-export async function remove(id: number) {
-  const count = await repo.countTractocamiones(id)
-  if (count > 0)
-    throw new ConflictError(`Esta ruta tiene ${count} tractocamión(es) asignado(s) y no puede eliminarse`)
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Ruta')
-}

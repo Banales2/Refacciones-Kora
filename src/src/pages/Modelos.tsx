@@ -22,6 +22,7 @@ import {
   useRenameEtiquetaModelo,
 } from '../hooks/useTiposPiezaModelo'
 import EtiquetaEditable from '../components/EtiquetaEditable'
+import ConfirmarQuitar from '../components/ConfirmarQuitar'
 import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
 import type { Modelo, ModeloPayload } from '../hooks/useModelos'
 import GarantiasModeloSection from '../components/GarantiasModeloSection'
@@ -211,6 +212,9 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
   const { data: tiposData }       = useTiposPieza()
   const addMut    = useAddTiposPiezaModelo()
   const removeMut = useRemoveTipoPiezaModelo()
+  // Quitar un tipo de aquí no afecta solo al modelo: borra la refacción que
+  // CADA unidad de ese modelo tenía elegida para ese renglón. Se pregunta.
+  const [quitando, setQuitando] = useState<{ tipoId: number; etiqueta: string; nombre: string } | null>(null)
   const renameMut = useRenameEtiquetaModelo()
   const crearMut  = useCreateTipoPieza()
 
@@ -367,7 +371,10 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
                           removeMut.variables?.tipoId === t.id &&
                           removeMut.variables?.etiqueta === t.etiqueta
                         }
-                        onClick={() => removeMut.mutate({ modeloId, tipoId: t.id, etiqueta: t.etiqueta })}
+                        onClick={() => {
+                          removeMut.reset()
+                          setQuitando({ tipoId: t.id, etiqueta: t.etiqueta, nombre: t.nombre })
+                        }}
                       >
                         <IconTrash size={14} />
                       </ActionIcon>
@@ -379,6 +386,24 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
           </Table>
         </Table.ScrollContainer>
       )}
+
+      <ConfirmarQuitar
+        abierto={quitando !== null}
+        titulo="Quitar del modelo"
+        mensaje={<>¿Quitar <strong>{quitando?.nombre}</strong> de este modelo?</>}
+        advertencia={
+          'Las unidades de este modelo dejan de pedir ese renglón, y se borra la ' +
+          'refacción que cada una tenía elegida para él. Volver a agregarlo no la ' +
+          'devuelve: hay que elegirla otra vez unidad por unidad.'
+        }
+        error={removeMut.error}
+        cargando={removeMut.isPending}
+        onCancelar={() => setQuitando(null)}
+        onConfirmar={() => removeMut.mutate(
+          { modeloId, tipoId: quitando!.tipoId, etiqueta: quitando!.etiqueta },
+          { onSuccess: () => setQuitando(null) },
+        )}
+      />
     </>
   )
 }

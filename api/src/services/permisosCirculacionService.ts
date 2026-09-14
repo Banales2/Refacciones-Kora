@@ -1,7 +1,8 @@
 import * as repo from '../repositories/permisosCirculacionRepo'
 import type { PermisoCirculacion } from '../repositories/permisosCirculacionRepo'
 import type { PermisoCirculacionCreate, PermisoCirculacionUpdate } from '../schemas/permisoCirculacionSchema'
-import { NotFoundError, ConflictError } from '../shared/errors'
+import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
+import { fechaMexico } from '../shared/fechaMexico'
 
 export async function getAll(): Promise<PermisoCirculacion[]> {
   return repo.findAll()
@@ -30,15 +31,33 @@ export async function update(id: number, data: PermisoCirculacionUpdate): Promis
   return result
 }
 
-export async function remove(id: number): Promise<void> {
-  const vehiculos = await repo.countVehiculos(id)
-  if (vehiculos > 0) {
-    throw new ConflictError(
-      `Este permiso está asignado a ${vehiculos} vehículo(s) y no puede eliminarse`
+/**
+ * Dar por terminado un permiso (o revivirlo). Es lo que sustituye al borrado:
+ * el permiso se queda como registro de hasta cuándo la unidad estuvo en regla,
+ * pero deja de pedir una renovación que ya no va a llegar.
+ *
+ * SOLO SE TERMINAN LOS VENCIDOS, igual que las pólizas: archivar uno vigente no
+ * arreglaría nada, solo escondería el aviso de renovarlo. Si se canceló antes de
+ * tiempo, lo que corresponde es corregirle la fecha de expiración —eso es lo que
+ * pasó— y entonces terminarlo.
+ *
+ * No toca las unidades asignadas a propósito: que sigan ahí es lo que permite
+ * saber con qué permiso circularon por última vez.
+ */
+export async function terminar(id: number, terminado: boolean): Promise<PermisoCirculacion> {
+  const permiso = await repo.findById(id)
+  if (!permiso) throw new NotFoundError('Permiso de circulación')
+
+  if (terminado && permiso.fecha_expiracion >= fechaMexico()) {
+    throw new ValidationError(
+      `Este permiso sigue vigente (vence el ${permiso.fecha_expiracion}): terminarlo ` +
+      'solo escondería el aviso de renovarlo. Se terminan los que ya vencieron.'
     )
   }
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Permiso de circulación')
+
+  const result = await repo.setTerminado(id, terminado)
+  if (!result) throw new NotFoundError('Permiso de circulación')
+  return result
 }
 
 export async function assignVehiculos(id: number, vehiculoIds: number[]): Promise<void> {

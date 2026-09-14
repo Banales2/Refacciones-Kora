@@ -1,7 +1,8 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { COLS_ARCHIVADO, filtroArchivado, type CamposArchivado } from './archivadoRepo'
 
-export interface Proveedor {
+export interface Proveedor extends CamposArchivado {
   id:       number
   nombre:   string
   contacto: string | null
@@ -10,12 +11,17 @@ export interface Proveedor {
 }
 
 const COLS = 'id, nombre, contacto, telefono'
-const OUT  = COLS.split(', ').map((c) => `INSERTED.${c}`).join(', ')
+const OUT  = COLS.split(', ').map((c) => `INSERTED.${c}`).join(', ') +
+             ', INSERTED.archivado_en, INSERTED.archivado_motivo'
+const COLS_LEER = `${COLS}, ${COLS_ARCHIVADO}`
 
-export async function findAll(): Promise<Proveedor[]> {
+// Por defecto solo lo que está en uso; `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export async function findAll(incluirArchivados = false): Promise<Proveedor[]> {
   const pool = await getPool()
+  const filtro = filtroArchivado(incluirArchivados)
   const result = await pool.request()
-    .query(`SELECT ${COLS} FROM proveedores ORDER BY nombre`)
+    .query(`SELECT ${COLS_LEER} FROM proveedores ${filtro ? `WHERE ${filtro}` : ''} ORDER BY nombre`)
   return result.recordset
 }
 
@@ -23,7 +29,7 @@ export async function findById(id: number): Promise<Proveedor | null> {
   const pool = await getPool()
   const result = await pool.request()
     .input('id', sql.Int, id)
-    .query(`SELECT ${COLS} FROM proveedores WHERE id = @id`)
+    .query(`SELECT ${COLS_LEER} FROM proveedores WHERE id = @id`)
   return result.recordset[0] ?? null
 }
 
@@ -61,18 +67,3 @@ export async function existsNombre(nombre: string, exceptId?: number): Promise<b
   return r.recordset.length > 0
 }
 
-export async function countLotes(id: number): Promise<number> {
-  const pool = await getPool()
-  const result = await pool.request()
-    .input('id', sql.Int, id)
-    .query('SELECT COUNT(*) AS cnt FROM lotes_pieza WHERE proveedor_id = @id')
-  return result.recordset[0].cnt
-}
-
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const result = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM proveedores OUTPUT DELETED.id WHERE id = @id')
-  return result.recordset.length > 0
-}

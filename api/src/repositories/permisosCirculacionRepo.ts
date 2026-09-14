@@ -7,11 +7,20 @@ export interface PermisoCirculacion {
   zona_circulacion: string
   fecha_emision:    string | null
   fecha_expiracion: string
+  /**
+   * Cuándo se dio por terminado. Null = sigue contando (avisa al vencer). Con
+   * fecha = archivado: ya lo reemplazó otro, o es tan viejo que reclamarlo no
+   * lleva a ninguna parte. No borra nada ni autoriza a nadie a circular: solo
+   * calla el aviso del documento. Mismo nombre y misma idea que `seguros`
+   * (migración 029); la columna la agrega la 033.
+   */
+  terminado_en:     string | null
 }
 
 const COLS = `id, zona_circulacion,
   CONVERT(char(10), fecha_emision, 23)    AS fecha_emision,
-  CONVERT(char(10), fecha_expiracion, 23) AS fecha_expiracion`
+  CONVERT(char(10), fecha_expiracion, 23) AS fecha_expiracion,
+  CONVERT(char(10), terminado_en, 23)     AS terminado_en`
 
 export async function findAll(): Promise<PermisoCirculacion[]> {
   const pool = await getPool()
@@ -30,7 +39,23 @@ export async function findById(id: number): Promise<PermisoCirculacion | null> {
 
 const OUTPUT_COLS = `INSERTED.id, INSERTED.zona_circulacion,
   CONVERT(char(10), INSERTED.fecha_emision, 23)    AS fecha_emision,
-  CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion`
+  CONVERT(char(10), INSERTED.fecha_expiracion, 23) AS fecha_expiracion,
+  CONVERT(char(10), INSERTED.terminado_en, 23)     AS terminado_en`
+
+// Archivar el permiso o revivirlo. Espejo de `segurosRepo.setTerminado`.
+export async function setTerminado(
+  id: number, terminado: boolean,
+): Promise<PermisoCirculacion | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query(`
+      UPDATE permisos_circulacion
+      SET terminado_en = ${terminado ? 'CAST(GETDATE() AS date)' : 'NULL'}
+      OUTPUT ${OUTPUT_COLS}
+      WHERE id=@id`)
+  return r.recordset[0] ?? null
+}
 
 export async function create(
   zonaCirculacion: string, fechaEmision: string, fechaExpiracion: string
@@ -78,22 +103,6 @@ export async function existsMismaZonaYFecha(
       SELECT TOP 1 id FROM permisos_circulacion
       WHERE zona_circulacion = @zona AND fecha_emision = @emision
         AND (@except IS NULL OR id <> @except)`)
-  return r.recordset.length > 0
-}
-
-export async function countVehiculos(id: number): Promise<number> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query(`SELECT COUNT(*) AS cnt FROM (${vehiculosConDocumento('permiso_id', '@id')}) x`)
-  return r.recordset[0].cnt
-}
-
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM permisos_circulacion OUTPUT DELETED.id WHERE id = @id')
   return r.recordset.length > 0
 }
 

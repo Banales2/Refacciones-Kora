@@ -134,31 +134,14 @@ export async function setTerminado(id: number, terminado: boolean): Promise<Segu
   return r.recordset[0] ? mapSeguro(r.recordset[0]) : null
 }
 
-// Las unidades que cubre la póliza. `countVehiculos` responde cuántas son;
-// esto responde cuáles, que es lo que hace falta para pasarlas a la póliza
-// nueva al renovar.
+// Las unidades que cubre la póliza, que es lo que hace falta para pasarlas a la
+// póliza nueva al renovar.
 export async function findVehiculoIds(id: number): Promise<number[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, id)
     .query(`SELECT vehiculo_id FROM (${vehiculosConDocumento('seguro_id', '@id')}) x`)
   return r.recordset.map((row: { vehiculo_id: number }) => row.vehiculo_id)
-}
-
-export async function countVehiculos(id: number): Promise<number> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query(`SELECT COUNT(*) AS cnt FROM (${vehiculosConDocumento('seguro_id', '@id')}) x`)
-  return r.recordset[0].cnt
-}
-
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM seguros OUTPUT DELETED.id WHERE id = @id')
-  return r.recordset.length > 0
 }
 
 // Asigna este seguro a los vehículos indicados (los mueve desde cualquier

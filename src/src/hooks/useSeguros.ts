@@ -63,14 +63,6 @@ export function useUpdateSeguro() {
   })
 }
 
-export function useDeleteSeguro() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/seguros/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['seguros'] }),
-  })
-}
-
 // Asigna uno o más vehículos a este seguro (los mueve desde su seguro previo).
 export function useAssignVehiculosSeguro() {
   const qc = useQueryClient()

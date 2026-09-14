@@ -130,17 +130,6 @@ export async function terminar(id: number, terminado: boolean): Promise<Seguro> 
   return result
 }
 
-export async function remove(id: number): Promise<void> {
-  const vehiculos = await repo.countVehiculos(id)
-  if (vehiculos > 0) {
-    throw new ConflictError(
-      `Este seguro está asignado a ${vehiculos} vehículo(s) y no puede eliminarse`
-    )
-  }
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Seguro')
-}
-
 export async function assignVehiculos(id: number, vehiculoIds: number[]): Promise<void> {
   const seguro = await repo.findById(id)
   if (!seguro) throw new NotFoundError('Seguro')

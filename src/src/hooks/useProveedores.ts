@@ -1,8 +1,9 @@
 // Catálogo de proveedores de refacciones; se referencian desde los lotes de compra.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { CamposArchivado } from './useArchivado'
 
-export interface Proveedor {
+export interface Proveedor extends CamposArchivado {
   id:       number
   nombre:   string
   contacto: string | null
@@ -10,10 +11,13 @@ export interface Proveedor {
   telefono: string | null
 }
 
-export function useProveedores() {
+// Por defecto solo lo que está en uso. `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export function useProveedores(incluirArchivados = false) {
   return useQuery({
-    queryKey: ['proveedores'],
-    queryFn: () => api.get<{ data: Proveedor[] }>('/proveedores'),
+    queryKey: ['proveedores', incluirArchivados ? 'con-archivados' : 'en-uso'],
+    queryFn: () => api.get<{ data: Proveedor[] }>(
+      incluirArchivados ? '/proveedores?archivados=1' : '/proveedores'),
     staleTime: 5 * 60 * 1000,
   })
 }
@@ -38,14 +42,6 @@ export function useUpdateProveedor() {
   return useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: ProveedorPayload }) =>
       api.put<{ data: Proveedor }>(`/proveedores/${id}`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['proveedores'] }),
-  })
-}
-
-export function useDeleteProveedor() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/proveedores/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['proveedores'] }),
   })
 }

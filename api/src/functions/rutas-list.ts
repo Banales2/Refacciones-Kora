@@ -6,7 +6,10 @@ import * as service from '../services/rutasService'
 export async function rutasList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
     requireRole(req, 'admin', 'editor', 'viewer')
-    return { status: 200, jsonBody: { data: await service.getAll() } }
+    // ?archivados=1 los incluye. Solo lo pide la pantalla del catálogo, para poder
+    // verlos y restaurarlos; los selectores del alta usan la lista normal.
+    const data = await service.getAll(req.query.get('archivados') === '1')
+    return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
 }
 

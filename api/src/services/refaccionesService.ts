@@ -9,9 +9,13 @@ export async function getAll(params: {
   pageSize: number
   search?: string
   searchBy?: SearchBy
+  incluirArchivados?: boolean
 }): Promise<{ data: PiezaConCantidad[]; total: number; page: number; pageSize: number }> {
   const offset = (params.page - 1) * params.pageSize
-  const result = await repo.findAll({ offset, pageSize: params.pageSize, search: params.search, searchBy: params.searchBy })
+  const result = await repo.findAll({
+    offset, pageSize: params.pageSize, search: params.search, searchBy: params.searchBy,
+    incluirArchivados: params.incluirArchivados,
+  })
   return { ...result, page: params.page, pageSize: params.pageSize }
 }
 
@@ -51,33 +55,3 @@ export async function update(id: number, data: RefaccionUpdate): Promise<Pieza> 
   return item
 }
 
-export async function remove(id: number): Promise<void> {
-  const vehiculos = await piezasVehiculoRepo.countVehiculosConPieza(id)
-  if (vehiculos > 0) {
-    throw new ConflictError(
-      `Esta refacción está asignada a ${vehiculos} vehículo(s) y no puede eliminarse`
-    )
-  }
-  // Los lotes de compra se van con la pieza (repo.remove), pero sólo mientras
-  // ninguno se haya consumido: un mantenimiento ya registrado no puede quedarse
-  // sin la refacción que dice haber usado.
-  const consumos = await repo.countConsumosEnMantenimientos(id)
-  if (consumos > 0) {
-    throw new ConflictError(
-      `Esta refacción se usó en ${consumos} mantenimiento(s) y no puede eliminarse: ` +
-      `esos mantenimientos quedarían sin la refacción que dicen haber usado.`
-    )
-  }
-  // Lo mismo con el historial de instalaciones: aunque la pieza ya no esté
-  // montada en ningún vehículo, los renglones cerrados registran qué se usó y
-  // cuánto duró. Borrarla los dejaría sin identificar.
-  const instalaciones = await repo.countInstalaciones(id)
-  if (instalaciones > 0) {
-    throw new ConflictError(
-      `Esta refacción tiene ${instalaciones} registro(s) en el historial de instalaciones ` +
-      `y no puede eliminarse.`
-    )
-  }
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Refacción')
-}

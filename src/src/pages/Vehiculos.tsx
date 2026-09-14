@@ -45,6 +45,7 @@ import {
 } from '../hooks/useIncidencias'
 import type { Incidencia, IncidenciaPayload, StatusIncidencia } from '../hooks/useIncidencias'
 import IncidenciaForm from '../components/IncidenciaForm'
+import ConfirmarQuitar from '../components/ConfirmarQuitar'
 import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
 import { llevaPermiso, llevaSeguro } from '../lib/tipoVehiculo'
 import { VehiculoForm } from '../components/VehiculoForm'
@@ -832,6 +833,10 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
   const removeMut    = useRemovePiezaVehiculo()
   const addTipoMut   = useAddTiposPiezaVehiculo()
   const quitaTipoMut = useRemoveTipoPiezaVehiculo()
+  // Quitar el renglón se lleva la refacción que la unidad tenía elegida para
+  // él, así que se pregunta antes.
+  const [quitandoTipo, setQuitandoTipo] =
+    useState<{ tipoId: number; etiqueta: string; nombre: string } | null>(null)
   const renameMut    = useRenameEtiquetaVehiculo()
 
   const [nuevoTipo, setNuevoTipo] = useState<string | null>(null)
@@ -937,7 +942,7 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
       {setMut.error       && <Alert color="red">{(setMut.error as Error).message}</Alert>}
       {removeMut.error    && <Alert color="red">{(removeMut.error as Error).message}</Alert>}
       {addTipoMut.error   && <Alert color="red">{(addTipoMut.error as Error).message}</Alert>}
-      {quitaTipoMut.error && <Alert color="red">{(quitaTipoMut.error as Error).message}</Alert>}
+
       {renameMut.error    && <Alert color="red">{(renameMut.error    as Error).message}</Alert>}
 
       <Group gap="xs" align="flex-end">
@@ -1077,9 +1082,13 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
                               quitaTipoMut.isPending &&
                               esteRenglon(quitaTipoMut.variables)
                             }
-                            onClick={() => quitaTipoMut.mutate({
-                              vehiculoId, tipoId: f.tipo_pieza_id, etiqueta: f.etiqueta,
-                            })}
+                            onClick={() => {
+                              quitaTipoMut.reset()
+                              setQuitandoTipo({
+                                tipoId: f.tipo_pieza_id, etiqueta: f.etiqueta,
+                                nombre: nombreDeFila(f),
+                              })
+                            }}
                           >
                             <IconTrash size={14} />
                           </ActionIcon>
@@ -1093,6 +1102,23 @@ function PiezasVehiculoSection({ vehiculoId, kmVehiculo }: { vehiculoId: number;
           </Table.ScrollContainer>
         </>
       )}
+
+      <ConfirmarQuitar
+        abierto={quitandoTipo !== null}
+        titulo="Quitar renglón de la unidad"
+        mensaje={<>¿Quitar <strong>{quitandoTipo?.nombre}</strong> de esta unidad?</>}
+        advertencia={
+          'Se borra también la refacción que esta unidad tenía elegida para ese ' +
+          'renglón. El historial de lo que se le montó antes no se toca.'
+        }
+        error={quitaTipoMut.error}
+        cargando={quitaTipoMut.isPending}
+        onCancelar={() => setQuitandoTipo(null)}
+        onConfirmar={() => quitaTipoMut.mutate(
+          { vehiculoId, tipoId: quitandoTipo!.tipoId, etiqueta: quitandoTipo!.etiqueta },
+          { onSuccess: () => setQuitandoTipo(null) },
+        )}
+      />
 
       <HistorialPiezasSection vehiculoId={vehiculoId} />
 

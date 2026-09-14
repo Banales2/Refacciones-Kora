@@ -18,36 +18,37 @@ import {
   exportConsumoGasolineraPdf, exportConsumoGasolineraExcel,
 } from '../lib/reportes/consumoGasolinera'
 import ConductorForm from '../components/ConductorForm'
+import ArchivarCatalogoModal from '../components/ArchivarCatalogoModal'
 import { TIPOS_CON_PERMISO, TIPOS_CON_SEGURO } from '../lib/tipoVehiculo'
 import { useForm } from '@mantine/form'
 import {
-  IconPencil, IconTrash, IconPlus, IconAlertTriangle, IconRefresh,
+  IconPencil, IconPlus, IconAlertTriangle, IconRefresh,
   IconSearch, IconFileTypePdf, IconFileSpreadsheet, IconArchive, IconArchiveOff,
 } from '@tabler/icons-react'
 import {
-  useSucursales, useCreateSucursal, useUpdateSucursal, useDeleteSucursal,
+  useSucursales, useCreateSucursal, useUpdateSucursal,
 } from '../hooks/useSucursales'
 import {
-  useRutas, useCreateRuta, useUpdateRuta, useDeleteRuta,
+  useRutas, useCreateRuta, useUpdateRuta,
 } from '../hooks/useRutas'
 import {
-  useGasolineras, useCreateGasolinera, useUpdateGasolinera, useDeleteGasolinera,
+  useGasolineras, useCreateGasolinera, useUpdateGasolinera,
 } from '../hooks/useGasolineras'
 import {
-  useConductores, useCreateConductor, useUpdateConductor, useDeleteConductor,
+  useConductores, useCreateConductor, useUpdateConductor,
 } from '../hooks/useConductores'
 import {
-  useSeguros, useCreateSeguro, useUpdateSeguro, useDeleteSeguro,
+  useSeguros, useCreateSeguro, useUpdateSeguro,
   useAssignVehiculosSeguro, useUnassignVehiculoSeguro, useRenovarSeguro,
   useTerminarSeguro,
 } from '../hooks/useSeguros'
 import {
   usePermisosCirculacion, useCreatePermisoCirculacion,
-  useUpdatePermisoCirculacion, useDeletePermisoCirculacion,
+  useUpdatePermisoCirculacion, useTerminarPermisoCirculacion,
   useAssignVehiculosPermiso, useUnassignVehiculoPermiso,
 } from '../hooks/usePermisosCirculacion'
 import {
-  useTecnicos, useCreateTecnico, useUpdateTecnico, useDeleteTecnico,
+  useTecnicos, useCreateTecnico, useUpdateTecnico,
 } from '../hooks/useTecnicos'
 import { AsignarVehiculosDrawer } from '../components/AsignarVehiculosDrawer'
 import TecnicoForm from '../components/TecnicoForm'
@@ -113,14 +114,20 @@ function SitioForm({
 function SucursalesPanel() {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Sucursal | null>(null)
-  const [deleting, setDeleting]   = useState<Sucursal | null>(null)
+  const [archivando, setArchivando] = useState<Sucursal | null>(null)
+  // Los archivados se ocultan por defecto: el catálogo es sobre todo la lista
+  // de lo que se puede elegir. El switch los trae para poder restaurarlos.
+  const [verArchivados, setVerArchivados] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const { data, isLoading, isError } = useSucursales()
+  const { data, isLoading, isError } = useSucursales(true)
   const createMut = useCreateSucursal()
   const updateMut = useUpdateSucursal()
-  const deleteMut = useDeleteSucursal()
-  const items = data?.data ?? []
+  // Siempre se piden con archivados: así el switch puede decir cuántos hay sin
+  // una segunda consulta, y prenderlo no dispara un refetch.
+  const todos      = data?.data ?? []
+  const archivados = todos.filter((x) => x.archivado_en).length
+  const items      = todos.filter((x) => verArchivados || !x.archivado_en)
   const isPending = createMut.isPending || updateMut.isPending
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
@@ -146,7 +153,16 @@ function SucursalesPanel() {
       <Stack gap="md">
         <Group justify="space-between">
           <Text size="sm" c="dimmed">{items.length} sucursal{items.length !== 1 ? 'es' : ''}</Text>
-          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nueva sucursal</Button>
+          <Group gap="sm">
+            {(archivados > 0 || verArchivados) && (
+              <Switch
+                size="sm" label={`Ver archivados (${archivados})`}
+                checked={verArchivados}
+                onChange={(e) => setVerArchivados(e.currentTarget.checked)}
+              />
+            )}
+            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nueva sucursal</Button>
+          </Group>
         </Group>
 
         {isLoading ? <Center py="xl"><Loader /></Center>
@@ -165,12 +181,26 @@ function SucursalesPanel() {
               <Table.Tbody>
                 {items.map((s) => (
                   <Table.Tr key={s.id}>
-                    <Table.Td fw={500}>{s.nombre}</Table.Td>
+                    <Table.Td fw={500} c={s.archivado_en ? 'dimmed' : undefined}>
+                      <Group gap={6} wrap="nowrap">
+                        {s.nombre}
+                        {s.archivado_en && <Badge variant="light" color="gray" size="xs">Archivado</Badge>}
+                      </Group>
+                    </Table.Td>
                     <Table.Td c="dimmed">{s.ubicacion}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
                         <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(s)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                        <Tooltip label="Eliminar"><ActionIcon variant="subtle" color="red"  size="sm" onClick={() => setDeleting(s)}><IconTrash  size={14} /></ActionIcon></Tooltip>
+                        <Tooltip label={s.archivado_en ? 'Restaurar' : 'Archivar'}>
+                          <ActionIcon
+                            variant="subtle" size="sm"
+                            color={s.archivado_en ? 'teal' : 'orange'}
+                            aria-label={s.archivado_en ? 'Restaurar' : 'Archivar'}
+                            onClick={() => setArchivando(s)}
+                          >
+                            {s.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                          </ActionIcon>
+                        </Tooltip>
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -191,20 +221,10 @@ function SucursalesPanel() {
         />
       </Modal>
 
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar sucursal" centered size="sm">
-        <Stack gap="md">
-          <Text>¿Eliminar <strong>{deleting?.nombre}</strong>?</Text>
-          <Text size="sm" c="dimmed">No podrá eliminarse si tiene unidades de reparto asignadas.</Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <ArchivarCatalogoModal
+        recurso="sucursales" item={archivando} etiqueta="la sucursal"
+        onClose={() => setArchivando(null)}
+      />
     </>
   )
 }
@@ -214,14 +234,20 @@ function SucursalesPanel() {
 function RutasPanel() {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Ruta | null>(null)
-  const [deleting, setDeleting]   = useState<Ruta | null>(null)
+  const [archivando, setArchivando] = useState<Ruta | null>(null)
+  // Los archivados se ocultan por defecto: el catálogo es sobre todo la lista
+  // de lo que se puede elegir. El switch los trae para poder restaurarlos.
+  const [verArchivados, setVerArchivados] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const { data, isLoading, isError } = useRutas()
+  const { data, isLoading, isError } = useRutas(true)
   const createMut = useCreateRuta()
   const updateMut = useUpdateRuta()
-  const deleteMut = useDeleteRuta()
-  const items = data?.data ?? []
+  // Siempre se piden con archivados: así el switch puede decir cuántos hay sin
+  // una segunda consulta, y prenderlo no dispara un refetch.
+  const todos      = data?.data ?? []
+  const archivados = todos.filter((x) => x.archivado_en).length
+  const items      = todos.filter((x) => verArchivados || !x.archivado_en)
   const isPending = createMut.isPending || updateMut.isPending
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
@@ -247,7 +273,16 @@ function RutasPanel() {
       <Stack gap="md">
         <Group justify="space-between">
           <Text size="sm" c="dimmed">{items.length} translado{items.length !== 1 ? 's' : ''}</Text>
-          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo translado</Button>
+          <Group gap="sm">
+            {(archivados > 0 || verArchivados) && (
+              <Switch
+                size="sm" label={`Ver archivados (${archivados})`}
+                checked={verArchivados}
+                onChange={(e) => setVerArchivados(e.currentTarget.checked)}
+              />
+            )}
+            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo translado</Button>
+          </Group>
         </Group>
 
         {isLoading ? <Center py="xl"><Loader /></Center>
@@ -266,12 +301,26 @@ function RutasPanel() {
               <Table.Tbody>
                 {items.map((r) => (
                   <Table.Tr key={r.id}>
-                    <Table.Td fw={500}>{r.nombre}</Table.Td>
+                    <Table.Td fw={500} c={r.archivado_en ? 'dimmed' : undefined}>
+                      <Group gap={6} wrap="nowrap">
+                        {r.nombre}
+                        {r.archivado_en && <Badge variant="light" color="gray" size="xs">Archivado</Badge>}
+                      </Group>
+                    </Table.Td>
                     <Table.Td c="dimmed">{r.ubicacion}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
                         <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(r)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                        <Tooltip label="Eliminar"><ActionIcon variant="subtle" color="red"  size="sm" onClick={() => setDeleting(r)}><IconTrash  size={14} /></ActionIcon></Tooltip>
+                        <Tooltip label={r.archivado_en ? 'Restaurar' : 'Archivar'}>
+                          <ActionIcon
+                            variant="subtle" size="sm"
+                            color={r.archivado_en ? 'teal' : 'orange'}
+                            aria-label={r.archivado_en ? 'Restaurar' : 'Archivar'}
+                            onClick={() => setArchivando(r)}
+                          >
+                            {r.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                          </ActionIcon>
+                        </Tooltip>
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -292,20 +341,10 @@ function RutasPanel() {
         />
       </Modal>
 
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar translado" centered size="sm">
-        <Stack gap="md">
-          <Text>¿Eliminar <strong>{deleting?.nombre}</strong>?</Text>
-          <Text size="sm" c="dimmed">No podrá eliminarse si tiene unidades de translado asignadas.</Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <ArchivarCatalogoModal
+        recurso="rutas" item={archivando} etiqueta="el translado"
+        onClose={() => setArchivando(null)}
+      />
     </>
   )
 }
@@ -548,15 +587,21 @@ function ConsumosGasolineraDrawer({
 function GasolinerasPanel() {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Gasolinera | null>(null)
-  const [deleting, setDeleting]   = useState<Gasolinera | null>(null)
+  const [archivando, setArchivando] = useState<Gasolinera | null>(null)
+  // Los archivados se ocultan por defecto: el catálogo es sobre todo la lista
+  // de lo que se puede elegir. El switch los trae para poder restaurarlos.
+  const [verArchivados, setVerArchivados] = useState(false)
   const [viendo, setViendo]       = useState<Gasolinera | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const { data, isLoading, isError } = useGasolineras()
+  const { data, isLoading, isError } = useGasolineras(true)
   const createMut = useCreateGasolinera()
   const updateMut = useUpdateGasolinera()
-  const deleteMut = useDeleteGasolinera()
-  const items = data?.data ?? []
+  // Siempre se piden con archivados: así el switch puede decir cuántos hay sin
+  // una segunda consulta, y prenderlo no dispara un refetch.
+  const todos      = data?.data ?? []
+  const archivados = todos.filter((x) => x.archivado_en).length
+  const items      = todos.filter((x) => verArchivados || !x.archivado_en)
   const isPending = createMut.isPending || updateMut.isPending
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
@@ -584,7 +629,16 @@ function GasolinerasPanel() {
           <Text size="sm" c="dimmed">
             {items.length} gasolinera{items.length !== 1 ? 's' : ''} · clic en un renglón para ver sus recargas
           </Text>
-          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nueva gasolinera</Button>
+          <Group gap="sm">
+            {(archivados > 0 || verArchivados) && (
+              <Switch
+                size="sm" label={`Ver archivados (${archivados})`}
+                checked={verArchivados}
+                onChange={(e) => setVerArchivados(e.currentTarget.checked)}
+              />
+            )}
+            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nueva gasolinera</Button>
+          </Group>
         </Group>
 
         {isLoading ? <Center py="xl"><Loader /></Center>
@@ -603,12 +657,26 @@ function GasolinerasPanel() {
               <Table.Tbody>
                 {items.map((g) => (
                   <Table.Tr key={g.id} onClick={() => setViendo(g)} style={{ cursor: 'pointer' }}>
-                    <Table.Td fw={500}>{g.nombre}</Table.Td>
+                    <Table.Td fw={500} c={g.archivado_en ? 'dimmed' : undefined}>
+                      <Group gap={6} wrap="nowrap">
+                        {g.nombre}
+                        {g.archivado_en && <Badge variant="light" color="gray" size="xs">Archivado</Badge>}
+                      </Group>
+                    </Table.Td>
                     <Table.Td c="dimmed">{g.ubicacion}</Table.Td>
                     <Table.Td onClick={(e) => e.stopPropagation()}>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
                         <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(g)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                        <Tooltip label="Eliminar"><ActionIcon variant="subtle" color="red"  size="sm" onClick={() => setDeleting(g)}><IconTrash  size={14} /></ActionIcon></Tooltip>
+                        <Tooltip label={g.archivado_en ? 'Restaurar' : 'Archivar'}>
+                          <ActionIcon
+                            variant="subtle" size="sm"
+                            color={g.archivado_en ? 'teal' : 'orange'}
+                            aria-label={g.archivado_en ? 'Restaurar' : 'Archivar'}
+                            onClick={() => setArchivando(g)}
+                          >
+                            {g.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                          </ActionIcon>
+                        </Tooltip>
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -631,20 +699,10 @@ function GasolinerasPanel() {
         />
       </Modal>
 
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar gasolinera" centered size="sm">
-        <Stack gap="md">
-          <Text>¿Eliminar <strong>{deleting?.nombre}</strong>?</Text>
-          <Text size="sm" c="dimmed">No podrá eliminarse si tiene recargas registradas.</Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <ArchivarCatalogoModal
+        recurso="gasolineras" item={archivando} etiqueta="la gasolinera"
+        onClose={() => setArchivando(null)}
+      />
     </>
   )
 }
@@ -701,14 +759,20 @@ function CeldaDocumento({ numero, vigencia }: { numero: string | null; vigencia:
 function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Conductor | null>(null)
-  const [deleting, setDeleting]   = useState<Conductor | null>(null)
+  const [archivando, setArchivando] = useState<Conductor | null>(null)
+  // Los archivados se ocultan por defecto: el catálogo es sobre todo la lista
+  // de lo que se puede elegir. El switch los trae para poder restaurarlos.
+  const [verArchivados, setVerArchivados] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const { data, isLoading, isError } = useConductores()
+  const { data, isLoading, isError } = useConductores(true)
   const createMut = useCreateConductor()
   const updateMut = useUpdateConductor()
-  const deleteMut = useDeleteConductor()
-  const items = data?.data ?? []
+  // Siempre se piden con archivados: así el switch puede decir cuántos hay sin
+  // una segunda consulta, y prenderlo no dispara un refetch.
+  const todos      = data?.data ?? []
+  const archivados = todos.filter((x) => x.archivado_en).length
+  const items      = todos.filter((x) => verArchivados || !x.archivado_en)
   const isPending = createMut.isPending || updateMut.isPending
 
   // Al llegar desde otra pantalla (el chofer de un vale) la lista puede ser
@@ -748,7 +812,16 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
       <Stack gap="md">
         <Group justify="space-between">
           <Text size="sm" c="dimmed">{items.length} conductor{items.length !== 1 ? 'es' : ''}</Text>
-          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo conductor</Button>
+          <Group gap="sm">
+            {(archivados > 0 || verArchivados) && (
+              <Switch
+                size="sm" label={`Ver archivados (${archivados})`}
+                checked={verArchivados}
+                onChange={(e) => setVerArchivados(e.currentTarget.checked)}
+              />
+            )}
+            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo conductor</Button>
+          </Group>
         </Group>
 
         {alertas.length > 0 && (
@@ -787,7 +860,12 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
                     ref={c.id === destacadoId ? filaDestacada : undefined}
                     bg={c.id === destacadoId ? 'var(--mantine-color-yellow-light)' : undefined}
                   >
-                    <Table.Td fw={500}>{c.nombre}</Table.Td>
+                    <Table.Td fw={500} c={c.archivado_en ? 'dimmed' : undefined}>
+                      <Group gap={6} wrap="nowrap">
+                        {c.nombre}
+                        {c.archivado_en && <Badge variant="light" color="gray" size="xs">Archivado</Badge>}
+                      </Group>
+                    </Table.Td>
                     <Table.Td>{c.ubicacion ?? <SinDato />}</Table.Td>
                     <Table.Td>
                       <CeldaDocumento
@@ -810,7 +888,16 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
                         <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(c)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                        <Tooltip label="Eliminar"><ActionIcon variant="subtle" color="red"  size="sm" onClick={() => setDeleting(c)}><IconTrash  size={14} /></ActionIcon></Tooltip>
+                        <Tooltip label={c.archivado_en ? 'Restaurar' : 'Archivar'}>
+                          <ActionIcon
+                            variant="subtle" size="sm"
+                            color={c.archivado_en ? 'teal' : 'orange'}
+                            aria-label={c.archivado_en ? 'Restaurar' : 'Archivar'}
+                            onClick={() => setArchivando(c)}
+                          >
+                            {c.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                          </ActionIcon>
+                        </Tooltip>
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -830,20 +917,10 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
         />
       </Modal>
 
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar conductor" centered size="sm">
-        <Stack gap="md">
-          <Text>¿Eliminar <strong>{deleting?.nombre}</strong>?</Text>
-          <Text size="sm" c="dimmed">No podrá eliminarse si tiene recargas registradas.</Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <ArchivarCatalogoModal
+        recurso="conductores" item={archivando} etiqueta="el conductor"
+        onClose={() => setArchivando(null)}
+      />
     </>
   )
 }
@@ -855,14 +932,20 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
 function TecnicosPanel() {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Tecnico | null>(null)
-  const [deleting, setDeleting]   = useState<Tecnico | null>(null)
+  const [archivando, setArchivando] = useState<Tecnico | null>(null)
+  // Los archivados se ocultan por defecto: el catálogo es sobre todo la lista
+  // de lo que se puede elegir. El switch los trae para poder restaurarlos.
+  const [verArchivados, setVerArchivados] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const { data, isLoading, isError } = useTecnicos()
+  const { data, isLoading, isError } = useTecnicos(true)
   const createMut = useCreateTecnico()
   const updateMut = useUpdateTecnico()
-  const deleteMut = useDeleteTecnico()
-  const items = data?.data ?? []
+  // Siempre se piden con archivados: así el switch puede decir cuántos hay sin
+  // una segunda consulta, y prenderlo no dispara un refetch.
+  const todos      = data?.data ?? []
+  const archivados = todos.filter((x) => x.archivado_en).length
+  const items      = todos.filter((x) => verArchivados || !x.archivado_en)
   const isPending = createMut.isPending || updateMut.isPending
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
@@ -883,7 +966,16 @@ function TecnicosPanel() {
       <Stack gap="md">
         <Group justify="space-between">
           <Text size="sm" c="dimmed">{items.length} técnico{items.length !== 1 ? 's' : ''}</Text>
-          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo técnico</Button>
+          <Group gap="sm">
+            {(archivados > 0 || verArchivados) && (
+              <Switch
+                size="sm" label={`Ver archivados (${archivados})`}
+                checked={verArchivados}
+                onChange={(e) => setVerArchivados(e.currentTarget.checked)}
+              />
+            )}
+            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo técnico</Button>
+          </Group>
         </Group>
 
         {isLoading ? <Center py="xl"><Loader /></Center>
@@ -903,13 +995,27 @@ function TecnicosPanel() {
               <Table.Tbody>
                 {items.map((t) => (
                   <Table.Tr key={t.id}>
-                    <Table.Td fw={500}>{t.nombre}</Table.Td>
+                    <Table.Td fw={500} c={t.archivado_en ? 'dimmed' : undefined}>
+                      <Group gap={6} wrap="nowrap">
+                        {t.nombre}
+                        {t.archivado_en && <Badge variant="light" color="gray" size="xs">Archivado</Badge>}
+                      </Group>
+                    </Table.Td>
                     <Table.Td c="dimmed">{t.ubicacion}</Table.Td>
                     <Table.Td c="dimmed">{t.contacto ?? '—'}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
                         <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(t)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                        <Tooltip label="Eliminar"><ActionIcon variant="subtle" color="red"  size="sm" onClick={() => setDeleting(t)}><IconTrash  size={14} /></ActionIcon></Tooltip>
+                        <Tooltip label={t.archivado_en ? 'Restaurar' : 'Archivar'}>
+                          <ActionIcon
+                            variant="subtle" size="sm"
+                            color={t.archivado_en ? 'teal' : 'orange'}
+                            aria-label={t.archivado_en ? 'Restaurar' : 'Archivar'}
+                            onClick={() => setArchivando(t)}
+                          >
+                            {t.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                          </ActionIcon>
+                        </Tooltip>
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -929,19 +1035,10 @@ function TecnicosPanel() {
         />
       </Modal>
 
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar técnico" centered size="sm">
-        <Stack gap="md">
-          <Text>¿Eliminar <strong>{deleting?.nombre}</strong>?</Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <ArchivarCatalogoModal
+        recurso="tecnicos" item={archivando} etiqueta="el técnico"
+        onClose={() => setArchivando(null)}
+      />
     </>
   )
 }
@@ -1185,7 +1282,6 @@ function SegurosPanel({
 }) {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Seguro | null>(null)
-  const [deleting, setDeleting]   = useState<Seguro | null>(null)
   const [renovando, setRenovando] = useState<Seguro | null>(null)
   // Lo que resultó de la última renovación, para decir qué pasó en vez de
   // cerrar el modal y dejar al usuario adivinando si se movieron las unidades.
@@ -1200,7 +1296,6 @@ function SegurosPanel({
   const { data, isLoading, isError } = useSeguros()
   const createMut = useCreateSeguro()
   const updateMut = useUpdateSeguro()
-  const deleteMut = useDeleteSeguro()
   const renovarMut = useRenovarSeguro()
   const terminarMut = useTerminarSeguro()
   const assignMut = useAssignVehiculosSeguro()
@@ -1341,7 +1436,6 @@ function SegurosPanel({
                             </>
                           )}
                           <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(s)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                          <Tooltip label="Eliminar"><ActionIcon variant="subtle" color="red"  size="sm" onClick={() => setDeleting(s)}><IconTrash  size={14} /></ActionIcon></Tooltip>
                         </Group>
                       </Table.Td>
                     </Table.Tr>
@@ -1454,21 +1548,6 @@ function SegurosPanel({
         </Stack>
       </Modal>
 
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar seguro" centered size="sm">
-        <Stack gap="md">
-          <Text>¿Eliminar la póliza <strong>{deleting?.poliza}</strong>?</Text>
-          <Text size="sm" c="dimmed">No podrá eliminarse si está asignado a algún vehículo.</Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-
       <AsignarVehiculosDrawer
         opened={asignando !== null}
         onClose={() => onOpenIdChange?.(null)}
@@ -1553,16 +1632,21 @@ function PermisosPanel({
 }) {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<PermisoCirculacion | null>(null)
-  const [deleting, setDeleting]   = useState<PermisoCirculacion | null>(null)
+  const [terminando, setTerminando] = useState<PermisoCirculacion | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  // Los terminados se archivaron para quitarlos de enfrente, así que arrancan
+  // ocultos; el interruptor solo aparece cuando hay alguno que enseñar.
+  const [verTerminados, setVerTerminados] = useState(false)
 
   const { data, isLoading, isError } = usePermisosCirculacion()
   const createMut = useCreatePermisoCirculacion()
   const updateMut = useUpdatePermisoCirculacion()
-  const deleteMut = useDeletePermisoCirculacion()
+  const terminarMut = useTerminarPermisoCirculacion()
   const assignMut = useAssignVehiculosPermiso()
   const unassignMut = useUnassignVehiculoPermiso()
-  const items = data?.data ?? []
+  const todos = data?.data ?? []
+  const terminados = todos.filter((p) => p.terminado_en != null).length
+  const items = verTerminados ? todos : todos.filter((p) => p.terminado_en == null)
   const isPending = createMut.isPending || updateMut.isPending
   // El drawer abierto se deriva del id que Layout conserva.
   const asignando = items.find((p) => p.id === openId) ?? null
@@ -1595,7 +1679,16 @@ function PermisosPanel({
       <Stack gap="md">
         <Group justify="space-between">
           <Text size="sm" c="dimmed">{items.length} permiso{items.length !== 1 ? 's' : ''} · clic en un renglón para asignar vehículos</Text>
-          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo permiso</Button>
+          <Group gap="sm">
+            {(terminados > 0 || verTerminados) && (
+              <Switch
+                size="sm" label={`Ver terminados (${terminados})`}
+                checked={verTerminados}
+                onChange={(e) => setVerTerminados(e.currentTarget.checked)}
+              />
+            )}
+            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo permiso</Button>
+          </Group>
         </Group>
 
         {isLoading ? <Center py="xl"><Loader /></Center>
@@ -1614,8 +1707,11 @@ function PermisosPanel({
               </Table.Thead>
               <Table.Tbody>
                 {items.map((p) => {
-                  const vencido    = p.fecha_expiracion < hoy
-                  const porExpirar = !vencido && p.fecha_expiracion <= limite
+                  const terminado  = p.terminado_en != null
+                  // Un permiso terminado ya no reclama nada: venció y se archivó
+                  // a propósito, así que su fecha deja de ir en rojo.
+                  const vencido    = !terminado && p.fecha_expiracion < hoy
+                  const porExpirar = !terminado && !vencido && p.fecha_expiracion <= limite
                   return (
                     <Table.Tr
                       key={p.id}
@@ -1624,18 +1720,41 @@ function PermisosPanel({
                       onClick={() => onOpenIdChange?.(p.id)}
                       style={{ cursor: 'pointer' }}
                     >
-                      <Table.Td fw={500}>{p.zona_circulacion}</Table.Td>
+                      <Table.Td fw={500} c={terminado ? 'dimmed' : undefined}>
+                        <Group gap={6} wrap="nowrap">
+                          {p.zona_circulacion}
+                          {terminado && <Badge variant="light" color="gray" size="xs">Terminado</Badge>}
+                        </Group>
+                      </Table.Td>
                       <Table.Td c={p.fecha_emision ? undefined : 'dimmed'}>{p.fecha_emision ?? '—'}</Table.Td>
                       <Table.Td
-                        c={vencido ? 'red' : porExpirar ? 'yellow.8' : undefined}
+                        c={vencido ? 'red' : porExpirar ? 'yellow.8' : terminado ? 'dimmed' : undefined}
                         fw={vencido || porExpirar ? 600 : undefined}
                       >
-                        {p.fecha_expiracion}{vencido ? ' (vencido)' : porExpirar ? ' (por expirar)' : ''}
+                        {p.fecha_expiracion}
+                        {vencido ? ' (vencido)' : porExpirar ? ' (por expirar)'
+                          : terminado ? ` (terminado el ${p.terminado_en})` : ''}
                       </Table.Td>
                       <Table.Td onClick={(e) => e.stopPropagation()}>
                         <Group gap={4} justify="flex-end" wrap="nowrap">
+                          {/* Terminar solo donde tiene sentido: un permiso vigente
+                              se renueva, no se archiva. */}
+                          {terminado ? (
+                            <Tooltip label="Reactivar: vuelve a contar como documento por vencer">
+                              <ActionIcon variant="subtle" color="gray" size="sm"
+                                loading={terminarMut.isPending && terminarMut.variables?.id === p.id}
+                                onClick={() => terminarMut.mutate({ id: p.id, terminado: false })}>
+                                <IconArchiveOff size={14} />
+                              </ActionIcon>
+                            </Tooltip>
+                          ) : vencido && (
+                            <Tooltip label="Terminar: deja de pedir renovación">
+                              <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => setTerminando(p)}>
+                                <IconArchive size={14} />
+                              </ActionIcon>
+                            </Tooltip>
+                          )}
                           <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(p)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                          <Tooltip label="Eliminar"><ActionIcon variant="subtle" color="red"  size="sm" onClick={() => setDeleting(p)}><IconTrash  size={14} /></ActionIcon></Tooltip>
                         </Group>
                       </Table.Td>
                     </Table.Tr>
@@ -1660,16 +1779,29 @@ function PermisosPanel({
         />
       </Modal>
 
-      <Modal opened={deleting !== null} onClose={() => setDeleting(null)} title="Eliminar permiso" centered size="sm">
+      {/* Terminar no borra ni descubre a nadie, pero apaga un aviso, y un aviso
+          apagado por error no vuelve a pedir atención solo: por eso se pregunta,
+          diciendo también lo que NO hace. */}
+      <Modal opened={terminando !== null} onClose={() => setTerminando(null)} title="Terminar permiso" centered size="sm">
         <Stack gap="md">
-          <Text>¿Eliminar el permiso de <strong>{deleting?.zona_circulacion}</strong>?</Text>
-          <Text size="sm" c="dimmed">No podrá eliminarse si está asignado a algún vehículo.</Text>
-          {deleteMut.error && <Alert color="red" title="Error">{(deleteMut.error as Error).message}</Alert>}
+          <Text>
+            ¿Dar por terminado el permiso de <strong>{terminando?.zona_circulacion}</strong>,
+            vencido el {terminando?.fecha_expiracion}?
+          </Text>
+          <Text size="sm" c="dimmed">
+            Deja de aparecer en “Documentos por vencer” del tablero. El permiso no se borra
+            —sigue siendo el registro de hasta cuándo la unidad estuvo en regla— y las
+            unidades que tenía asignadas se quedan como estaban. Se puede reactivar después.
+          </Text>
+          {terminarMut.error && <Alert color="red" title="Error">{(terminarMut.error as Error).message}</Alert>}
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => setDeleting(null)} disabled={deleteMut.isPending}>Cancelar</Button>
-            <Button color="red" loading={deleteMut.isPending}
-              onClick={() => deleteMut.mutate(deleting!.id, { onSuccess: () => setDeleting(null) })}>
-              Eliminar
+            <Button variant="default" onClick={() => setTerminando(null)} disabled={terminarMut.isPending}>Cancelar</Button>
+            <Button color="gray" loading={terminarMut.isPending}
+              onClick={() => terminarMut.mutate(
+                { id: terminando!.id, terminado: true },
+                { onSuccess: () => setTerminando(null) },
+              )}>
+              Terminar
             </Button>
           </Group>
         </Stack>

@@ -28,6 +28,9 @@ export const RefaccionQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().max(100).optional(),
   searchBy: z.enum(['all', 'numero_serie', 'descripcion']).optional().default('all'),
+  // ?archivados=1 incluye las refacciones archivadas. Llega como texto y sale
+  // como booleano; cualquier otro valor (incluido "0") cuenta como que no.
+  incluirArchivados: z.string().optional().transform((v) => v === '1'),
 })
 
 export type RefaccionCreate = z.infer<typeof RefaccionCreateSchema>

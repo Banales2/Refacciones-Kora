@@ -3,8 +3,8 @@ import type { TipoPieza } from '../repositories/tiposPiezaRepo'
 import type { TipoPiezaCreate, TipoPiezaUpdate } from '../schemas/tipoPiezaSchema'
 import { NotFoundError, ConflictError } from '../shared/errors'
 
-export async function getAll(): Promise<TipoPieza[]> {
-  return repo.findAll()
+export async function getAll(incluirArchivados = false): Promise<TipoPieza[]> {
+  return repo.findAll(incluirArchivados)
 }
 
 export async function create(data: TipoPiezaCreate): Promise<TipoPieza> {
@@ -36,16 +36,3 @@ export async function update(id: number, data: TipoPiezaUpdate): Promise<TipoPie
   return result
 }
 
-export async function remove(id: number): Promise<void> {
-  const { modelos, vehiculos, piezas } = await repo.countReferencias(id)
-  if (modelos > 0 || vehiculos > 0 || piezas > 0) {
-    const partes = [
-      modelos   > 0 ? `${modelos} modelo(s) lo requieren`          : null,
-      vehiculos > 0 ? `${vehiculos} vehículo(s) lo necesitan`      : null,
-      piezas    > 0 ? `${piezas} refacción(es) son de este tipo`   : null,
-    ].filter(Boolean)
-    throw new ConflictError(`No se puede eliminar: ${partes.join(', ')}`)
-  }
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Tipo de pieza')
-}

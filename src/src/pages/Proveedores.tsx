@@ -8,23 +8,25 @@
 import { useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert,
-  Button, ActionIcon, Modal, Tooltip, TextInput,
+  Button, ActionIcon, Modal, Tooltip, TextInput, Switch, Badge,
 } from '@mantine/core'
 import {
-  IconPencil, IconTrash, IconPlus, IconScale, IconSearch,
+  IconPencil, IconPlus, IconScale, IconSearch, IconArchive, IconArchiveOff,
 } from '@tabler/icons-react'
 import {
-  useProveedores, useCreateProveedor, useUpdateProveedor, useDeleteProveedor,
+  useProveedores, useCreateProveedor, useUpdateProveedor,
 } from '../hooks/useProveedores'
 import type { Proveedor } from '../hooks/useProveedores'
 import ProveedorForm from '../components/ProveedorForm'
 import ProveedorDetalle from './ProveedorDetalle'
 import ComparativaPrecios from './ComparativaPrecios'
+import ArchivarCatalogoModal from '../components/ArchivarCatalogoModal'
 
 export default function Proveedores() {
   const [createOpen, setCreateOpen]       = useState(false)
   const [editProveedor, setEditProveedor] = useState<Proveedor | null>(null)
-  const [deleteProveedor, setDeleteProveedor] = useState<Proveedor | null>(null)
+  // Proveedor que se está por archivar (o restaurar). No hay borrado.
+  const [archivando, setArchivando] = useState<Proveedor | null>(null)
   // Proveedor cuyo detalle está abierto; null = la lista.
   const [detalleId, setDetalleId] = useState<number | null>(null)
   // La comparativa cruza todas las refacciones contra todos los proveedores, así
@@ -33,13 +35,20 @@ export default function Proveedores() {
   // Filtro de la barra de búsqueda del catálogo.
   const [busqueda, setBusqueda] = useState('')
 
-  const { data, isLoading, isError } = useProveedores()
+  // Los archivados se ocultan por defecto: el catálogo es sobre todo la lista de
+  // a quién se le puede comprar. El switch los trae para poder restaurarlos.
+  const [verArchivados, setVerArchivados] = useState(false)
+
+  // Siempre se piden con archivados: así el switch puede decir cuántos hay sin
+  // una segunda consulta, y prenderlo no dispara un refetch.
+  const { data, isLoading, isError } = useProveedores(true)
 
   const createMut = useCreateProveedor()
   const updateMut = useUpdateProveedor()
-  const deleteMut = useDeleteProveedor()
 
-  const proveedores = data?.data ?? []
+  const todos       = data?.data ?? []
+  const archivados  = todos.filter((p) => p.archivado_en).length
+  const proveedores = todos.filter((p) => verArchivados || !p.archivado_en)
 
   // Se busca en la lista en vez de guardar el objeto: así el detalle refleja
   // una edición del proveedor sin tener que cerrarlo y volver a abrirlo.
@@ -92,6 +101,13 @@ export default function Proveedores() {
                 Comparativa de precios
               </Button>
             </Tooltip>
+            {(archivados > 0 || verArchivados) && (
+              <Switch
+                size="sm" label={`Ver archivados (${archivados})`}
+                checked={verArchivados}
+                onChange={(e) => setVerArchivados(e.currentTarget.checked)}
+              />
+            )}
             <Button
               size="xs"
               leftSection={<IconPlus size={14} />}
@@ -134,7 +150,12 @@ export default function Proveedores() {
                     onClick={() => setDetalleId(p.id)}
                     style={{ cursor: 'pointer' }}
                   >
-                    <Table.Td fw={500}>{p.nombre}</Table.Td>
+                    <Table.Td fw={500} c={p.archivado_en ? 'dimmed' : undefined}>
+                      <Group gap={6} wrap="nowrap">
+                        {p.nombre}
+                        {p.archivado_en && <Badge variant="light" color="gray" size="xs">Archivado</Badge>}
+                      </Group>
+                    </Table.Td>
                     <Table.Td c={p.contacto ? undefined : 'dimmed'}>
                       {p.contacto ?? '—'}
                     </Table.Td>
@@ -153,11 +174,11 @@ export default function Proveedores() {
                         </ActionIcon>
                         <ActionIcon
                           variant="subtle"
-                          color="red"
-                          aria-label="Eliminar"
-                          onClick={(e) => { e.stopPropagation(); setDeleteProveedor(p) }}
+                          color={p.archivado_en ? 'teal' : 'orange'}
+                          aria-label={p.archivado_en ? 'Restaurar' : 'Archivar'}
+                          onClick={(e) => { e.stopPropagation(); setArchivando(p) }}
                         >
-                          <IconTrash size={16} />
+                          {p.archivado_en ? <IconArchiveOff size={16} /> : <IconArchive size={16} />}
                         </ActionIcon>
                       </Group>
                     </Table.Td>
@@ -211,49 +232,10 @@ export default function Proveedores() {
         )}
       </Modal>
 
-      {/* Modal: confirmar eliminación */}
-      <Modal
-        opened={deleteProveedor !== null}
-        onClose={() => setDeleteProveedor(null)}
-        title="Eliminar proveedor"
-        centered
-        size="sm"
-      >
-        <Stack gap="md">
-          <Text>
-            ¿Seguro que deseas eliminar{' '}
-            <Text component="span" fw={700}>{deleteProveedor?.nombre}</Text>?
-          </Text>
-          <Text size="sm" c="dimmed">
-            No podrá eliminarse si tiene lotes registrados.
-          </Text>
-          {deleteMut.error && (
-            <Alert color="red" title="Error">
-              {(deleteMut.error as Error).message}
-            </Alert>
-          )}
-          <Group justify="flex-end">
-            <Button
-              variant="default"
-              onClick={() => setDeleteProveedor(null)}
-              disabled={deleteMut.isPending}
-            >
-              Cancelar
-            </Button>
-            <Button
-              color="red"
-              loading={deleteMut.isPending}
-              onClick={() =>
-                deleteMut.mutate(deleteProveedor!.id, {
-                  onSuccess: () => setDeleteProveedor(null),
-                })
-              }
-            >
-              Eliminar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <ArchivarCatalogoModal
+        recurso="proveedores" item={archivando} etiqueta="el proveedor"
+        onClose={() => setArchivando(null)}
+      />
     </>
   )
 }

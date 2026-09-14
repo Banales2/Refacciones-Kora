@@ -9,6 +9,13 @@ export interface PermisoCirculacion {
   zona_circulacion: string
   fecha_emision:    string | null
   fecha_expiracion: string
+  /**
+   * Cuándo se dio por terminado. Null = sigue contando (avisa al vencer). Con
+   * fecha = archivado: deja de pedir una renovación que ya no va a llegar. No
+   * se borra: es el registro de hasta cuándo la unidad estuvo en regla. Mismo
+   * mecanismo que `terminado_en` de los seguros.
+   */
+  terminado_en:     string | null
 }
 
 export interface PermisoCirculacionPayload {
@@ -47,11 +54,19 @@ export function useUpdatePermisoCirculacion() {
   })
 }
 
-export function useDeletePermisoCirculacion() {
+// Dar por terminado un permiso vencido —o revivirlo si fue un error—. El
+// permiso no se borra: se archiva, y deja de aparecer en "Documentos por
+// vencer". Espejo de useTerminarSeguro.
+export function useTerminarPermisoCirculacion() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/permisos-circulacion/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['permisos-circulacion'] }),
+    mutationFn: ({ id, terminado }: { id: number; terminado: boolean }) =>
+      api.post<{ data: PermisoCirculacion }>(`/permisos-circulacion/${id}/terminar`, { terminado }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['permisos-circulacion'] })
+      // Es justo el aviso del tablero lo que cambia.
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }
 

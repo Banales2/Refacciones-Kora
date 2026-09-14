@@ -2,8 +2,9 @@
 // recargas de combustible de cada vehículo.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { CamposArchivado } from './useArchivado'
 
-export interface Gasolinera {
+export interface Gasolinera extends CamposArchivado {
   id:        number
   nombre:    string
   ubicacion: string
@@ -14,10 +15,13 @@ export interface GasolineraPayload {
   ubicacion: string
 }
 
-export function useGasolineras() {
+// Por defecto solo lo que está en uso. `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export function useGasolineras(incluirArchivados = false) {
   return useQuery({
-    queryKey: ['gasolineras'],
-    queryFn: () => api.get<{ data: Gasolinera[] }>('/gasolineras'),
+    queryKey: ['gasolineras', incluirArchivados ? 'con-archivados' : 'en-uso'],
+    queryFn: () => api.get<{ data: Gasolinera[] }>(
+      incluirArchivados ? '/gasolineras?archivados=1' : '/gasolineras'),
     staleTime: 5 * 60 * 1000,
   })
 }
@@ -41,14 +45,6 @@ export function useUpdateGasolinera() {
       // El nombre de la gasolinera viene embebido en cada recarga.
       qc.invalidateQueries({ queryKey: ['recargas'] })
     },
-  })
-}
-
-export function useDeleteGasolinera() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/gasolineras/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['gasolineras'] }),
   })
 }
 

@@ -3,6 +3,7 @@ import { getPool } from '../shared/db'
 import { Pieza, PiezaConCantidad, LoteConProveedor } from '../types/domain'
 import { RefaccionCreate, RefaccionUpdate, SearchBy } from '../schemas/refaccionSchema'
 import { disponibleDelLote } from './inventarioSql'
+import { COLS_ARCHIVADO, filtroArchivado } from './archivadoRepo'
 import { colsCabecera, fechaDelLote, joinFactura, joinProveedorDelLote } from './facturaSql'
 
 export async function findAll(params: {
@@ -10,32 +11,45 @@ export async function findAll(params: {
   pageSize: number
   search?: string
   searchBy?: SearchBy
+  /** La pantalla del catálogo los pide para poder restaurarlos. */
+  incluirArchivados?: boolean
 }): Promise<{ data: PiezaConCantidad[]; total: number }> {
   const pool = await getPool()
   const req = pool.request()
     .input('offset', params.offset)
     .input('pageSize', params.pageSize)
 
-  let mainWhere = ''
-  let countWhere = ''
+  // Condiciones de las dos consultas: la principal usa el alias `p`, la del
+  // total lee la tabla pelada. Se juntan al final para no repetir el armado de
+  // WHERE/AND según cuántas haya.
+  const mainConds: string[] = []
+  const countConds: string[] = []
+  const archivado = filtroArchivado(params.incluirArchivados ?? false)
+  if (archivado) {
+    mainConds.push(`p.${archivado}`)
+    countConds.push(archivado)
+  }
   if (params.search) {
     req.input('search', `%${params.search}%`)
     if (params.searchBy === 'numero_serie') {
-      mainWhere = 'WHERE p.numero_serie LIKE @search'
-      countWhere = 'WHERE numero_serie LIKE @search'
+      mainConds.push('p.numero_serie LIKE @search')
+      countConds.push('numero_serie LIKE @search')
     } else if (params.searchBy === 'descripcion') {
-      mainWhere = 'WHERE p.descripcion LIKE @search'
-      countWhere = 'WHERE descripcion LIKE @search'
+      mainConds.push('p.descripcion LIKE @search')
+      countConds.push('descripcion LIKE @search')
     } else {
-      mainWhere = 'WHERE (p.numero_serie LIKE @search OR p.descripcion LIKE @search)'
-      countWhere = 'WHERE (numero_serie LIKE @search OR descripcion LIKE @search)'
+      mainConds.push('(p.numero_serie LIKE @search OR p.descripcion LIKE @search)')
+      countConds.push('(numero_serie LIKE @search OR descripcion LIKE @search)')
     }
   }
+  const mainWhere  = mainConds.length  ? `WHERE ${mainConds.join(' AND ')}`  : ''
+  const countWhere = countConds.length ? `WHERE ${countConds.join(' AND ')}` : ''
 
   const result = await req.query(`
     SELECT
       p.id, p.numero_serie, p.descripcion,
       p.tipo_pieza_id, t.nombre AS tipo_pieza,
+      CONVERT(char(10), p.archivado_en, 23) AS archivado_en, p.archivado_motivo,
       COALESCE(SUM(ex.cantidad), 0) AS cantidad_total
     FROM piezas p
     LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id
@@ -44,7 +58,8 @@ export async function findAll(params: {
     -- (migración 002). Un lote sin existencias no suma nada.
     LEFT JOIN existencias_lote ex ON ex.lote_id = l.id
     ${mainWhere}
-    GROUP BY p.id, p.numero_serie, p.descripcion, p.tipo_pieza_id, t.nombre
+    GROUP BY p.id, p.numero_serie, p.descripcion, p.tipo_pieza_id, t.nombre,
+             p.archivado_en, p.archivado_motivo
     -- Las piezas sin tipo al final: el CASE evita que los NULL se ordenen
     -- primero, como hace SQL Server por defecto.
     ORDER BY CASE WHEN t.nombre IS NULL THEN 1 ELSE 0 END, t.nombre, p.numero_serie
@@ -58,7 +73,8 @@ export async function findAll(params: {
 
 // tipo_pieza viene del catálogo, no de la tabla: se lee siempre con el join.
 const SELECT_PIEZA = `
-  SELECT p.id, p.numero_serie, p.descripcion, p.tipo_pieza_id, t.nombre AS tipo_pieza
+  SELECT p.id, p.numero_serie, p.descripcion, p.tipo_pieza_id, t.nombre AS tipo_pieza,
+         CONVERT(char(10), p.archivado_en, 23) AS archivado_en, p.archivado_motivo
   FROM piezas p
   LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id`
 
@@ -142,54 +158,11 @@ export async function update(id: number, data: RefaccionUpdate): Promise<Pieza |
 // Lotes de esta pieza que ya se consumieron en algún mantenimiento. Son los
 // que impiden borrarla: el detalle del mantenimiento los referencia y borrarlos
 // falsearía un gasto ya registrado.
-export async function countConsumosEnMantenimientos(piezaId: number): Promise<number> {
-  const pool = await getPool()
-  const result = await pool
-    .request()
-    .input('id', sql.Int, piezaId)
-    .query(`
-      SELECT COUNT(DISTINCT d.mantenimiento_id) AS n
-      FROM detalle_mtto_pieza d
-      JOIN lotes_pieza l ON l.id = d.lote_id
-      WHERE l.pieza_id = @id
-    `)
-  return result.recordset[0].n as number
-}
-
 // Renglones de la bitácora que apuntan a esta pieza, incluidos los ya cerrados.
 // Impiden borrarla: el historial dice qué se montó en cada vehículo y cuánto
 // duró, y sin la pieza esos renglones no se pueden leer. El FK lo bloquearía de
 // todas formas; contarlo aquí permite responder con un mensaje en lugar de con
 // un error de SQL.
-export async function countInstalaciones(piezaId: number): Promise<number> {
-  const pool = await getPool()
-  const result = await pool
-    .request()
-    .input('id', sql.Int, piezaId)
-    .query('SELECT COUNT(*) AS n FROM instalaciones_pieza WHERE pieza_id = @id')
-  return result.recordset[0].n as number
-}
-
 // Arrastra los lotes de compra: son parte de la pieza, no registros propios, y
 // dejarlos sueltos no tendría sentido. Los que ya se usaron en un mantenimiento
 // se descartan antes, en el service.
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const tx = pool.transaction()
-  await tx.begin()
-  try {
-    await tx.request()
-      .input('id', sql.Int, id)
-      .query('DELETE FROM lotes_pieza WHERE pieza_id = @id')
-
-    const result = await tx.request()
-      .input('id', sql.Int, id)
-      .query('DELETE FROM piezas OUTPUT DELETED.id WHERE id = @id')
-
-    await tx.commit()
-    return result.recordset.length > 0
-  } catch (err) {
-    await tx.rollback()
-    throw err
-  }
-}

@@ -3,8 +3,9 @@
 // lotes de compra de cada pieza (useLotes).
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { CamposArchivado } from './useArchivado'
 
-export interface Pieza {
+export interface Pieza extends CamposArchivado {
   id: number
   numero_serie: string
   descripcion: string
@@ -31,15 +32,19 @@ interface ListResponse {
 
 export type SearchBy = 'all' | 'numero_serie' | 'descripcion'
 
+// `incluirArchivados` es para la pantalla del catálogo, que necesita verlas
+// para poder restaurarlas. Los selectores usan la lista normal.
 export function useRefacciones(
-  page = 1, search = '', searchBy: SearchBy = 'all', pageSize?: number, enabled = true
+  page = 1, search = '', searchBy: SearchBy = 'all', pageSize?: number, enabled = true,
+  incluirArchivados = false,
 ) {
   return useQuery({
-    queryKey: ['refacciones', page, search, searchBy, pageSize],
+    queryKey: ['refacciones', page, search, searchBy, pageSize, incluirArchivados],
     queryFn: () => {
       const qs = new URLSearchParams({ page: String(page) })
       if (search) { qs.set('search', search); qs.set('searchBy', searchBy) }
       if (pageSize) qs.set('pageSize', String(pageSize))
+      if (incluirArchivados) qs.set('archivados', '1')
       return api.get<ListResponse>(`/refacciones?${qs}`)
     },
     enabled,
@@ -95,10 +100,3 @@ export function useUpdateRefaccion() {
   })
 }
 
-export function useDeleteRefaccion() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/refacciones/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['refacciones'] }),
-  })
-}

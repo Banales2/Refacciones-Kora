@@ -3,8 +3,8 @@ import type { Conductor } from '../repositories/conductoresRepo'
 import type { ConductorCreate, ConductorUpdate } from '../schemas/conductorSchema'
 import { NotFoundError, ConflictError } from '../shared/errors'
 
-export async function getAll(): Promise<Conductor[]> {
-  return repo.findAll()
+export async function getAll(incluirArchivados = false): Promise<Conductor[]> {
+  return repo.findAll(incluirArchivados)
 }
 
 export async function create(data: ConductorCreate): Promise<Conductor> {
@@ -23,13 +23,3 @@ export async function update(id: number, data: ConductorUpdate): Promise<Conduct
   return result
 }
 
-export async function remove(id: number): Promise<void> {
-  const recargas = await repo.countRecargas(id)
-  if (recargas > 0) {
-    throw new ConflictError(
-      `Este conductor tiene ${recargas} recarga(s) registrada(s) y no puede eliminarse`
-    )
-  }
-  const deleted = await repo.remove(id)
-  if (!deleted) throw new NotFoundError('Conductor')
-}

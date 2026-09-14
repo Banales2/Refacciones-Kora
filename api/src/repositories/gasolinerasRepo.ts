@@ -1,16 +1,23 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { COLS_ARCHIVADO, filtroArchivado, type CamposArchivado } from './archivadoRepo'
 
-export interface Gasolinera {
+export interface Gasolinera extends CamposArchivado {
   id:        number
   nombre:    string
   ubicacion: string
 }
 
-export async function findAll(): Promise<Gasolinera[]> {
+const COLS = `id, nombre, ubicacion, ${COLS_ARCHIVADO}`
+const OUT  = 'INSERTED.id, INSERTED.nombre, INSERTED.ubicacion, INSERTED.archivado_en, INSERTED.archivado_motivo'
+
+// Por defecto solo lo que está en uso; `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export async function findAll(incluirArchivados = false): Promise<Gasolinera[]> {
   const pool = await getPool()
+  const filtro = filtroArchivado(incluirArchivados)
   const r = await pool.request()
-    .query('SELECT id, nombre, ubicacion FROM gasolineras ORDER BY nombre')
+    .query(`SELECT ${COLS} FROM gasolineras ${filtro ? `WHERE ${filtro}` : ''} ORDER BY nombre`)
   return r.recordset
 }
 
@@ -18,7 +25,7 @@ export async function findById(id: number): Promise<Gasolinera | null> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, id)
-    .query('SELECT id, nombre, ubicacion FROM gasolineras WHERE id = @id')
+    .query(`SELECT ${COLS} FROM gasolineras WHERE id = @id`)
   return r.recordset[0] ?? null
 }
 
@@ -27,7 +34,7 @@ export async function create(nombre: string, ubicacion: string): Promise<Gasolin
   const r = await pool.request()
     .input('nombre',    sql.NVarChar(120), nombre)
     .input('ubicacion', sql.NVarChar(200), ubicacion)
-    .query('INSERT INTO gasolineras (nombre, ubicacion) OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.ubicacion VALUES (@nombre, @ubicacion)')
+    .query(`INSERT INTO gasolineras (nombre, ubicacion) OUTPUT ${OUT} VALUES (@nombre, @ubicacion)`)
   return r.recordset[0]
 }
 
@@ -39,7 +46,7 @@ export async function update(id: number, nombre?: string, ubicacion?: string): P
   if (ubicacion !== undefined) { req.input('ubicacion', sql.NVarChar(200), ubicacion); sets.push('ubicacion=@ubicacion') }
   if (!sets.length) return findById(id)
   const r = await req.query(
-    `UPDATE gasolineras SET ${sets.join(',')} OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.ubicacion WHERE id=@id`
+    `UPDATE gasolineras SET ${sets.join(',')} OUTPUT ${OUT} WHERE id=@id`
   )
   return r.recordset[0] ?? null
 }
@@ -54,18 +61,3 @@ export async function existsNombre(nombre: string, exceptId?: number): Promise<b
   return r.recordset.length > 0
 }
 
-export async function countRecargas(id: number): Promise<number> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('SELECT COUNT(*) AS cnt FROM recargas_combustible WHERE gasolinera_id = @id')
-  return r.recordset[0].cnt
-}
-
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM gasolineras OUTPUT DELETED.id WHERE id = @id')
-  return r.recordset.length > 0
-}

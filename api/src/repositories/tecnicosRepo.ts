@@ -1,19 +1,25 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { COLS_ARCHIVADO, filtroArchivado, type CamposArchivado } from './archivadoRepo'
 
-export interface Tecnico {
+export interface Tecnico extends CamposArchivado {
   id:        number
   nombre:    string
   ubicacion: string
   contacto:  string | null
 }
 
-const COLS = 'id, nombre, ubicacion, contacto'
+const COLS = `id, nombre, ubicacion, contacto, ${COLS_ARCHIVADO}`
+const OUT  = 'INSERTED.id, INSERTED.nombre, INSERTED.ubicacion, INSERTED.contacto, ' +
+             'INSERTED.archivado_en, INSERTED.archivado_motivo'
 
-export async function findAll(): Promise<Tecnico[]> {
+// Por defecto solo lo que está en uso; `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export async function findAll(incluirArchivados = false): Promise<Tecnico[]> {
   const pool = await getPool()
+  const filtro = filtroArchivado(incluirArchivados)
   const r = await pool.request()
-    .query(`SELECT ${COLS} FROM tecnicos ORDER BY nombre`)
+    .query(`SELECT ${COLS} FROM tecnicos ${filtro ? `WHERE ${filtro}` : ''} ORDER BY nombre`)
   return r.recordset
 }
 
@@ -35,7 +41,7 @@ export async function create(
     .input('contacto',  sql.NVarChar(40),  contacto ?? null)
     .query(`
       INSERT INTO tecnicos (nombre, ubicacion, contacto)
-      OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.ubicacion, INSERTED.contacto
+      OUTPUT ${OUT}
       VALUES (@nombre, @ubicacion, @contacto)`)
   return r.recordset[0]
 }
@@ -52,7 +58,7 @@ export async function update(
   if (!sets.length) return findById(id)
   const r = await req.query(
     `UPDATE tecnicos SET ${sets.join(',')}
-     OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.ubicacion, INSERTED.contacto
+     OUTPUT ${OUT}
      WHERE id=@id`
   )
   return r.recordset[0] ?? null
@@ -68,10 +74,3 @@ export async function existsNombre(nombre: string, exceptId?: number): Promise<b
   return r.recordset.length > 0
 }
 
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM tecnicos OUTPUT DELETED.id WHERE id = @id')
-  return r.recordset.length > 0
-}

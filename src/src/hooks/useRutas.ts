@@ -1,8 +1,9 @@
 // Catálogo de rutas de transporte; se asignan a tractocamiones y cajas de trailer.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { CamposArchivado } from './useArchivado'
 
-export interface Ruta {
+export interface Ruta extends CamposArchivado {
   id:        number
   nombre:    string
   ubicacion: string
@@ -13,10 +14,13 @@ export interface RutaPayload {
   ubicacion: string
 }
 
-export function useRutas() {
+// Por defecto solo lo que está en uso. `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export function useRutas(incluirArchivados = false) {
   return useQuery({
-    queryKey: ['rutas'],
-    queryFn: () => api.get<{ data: Ruta[] }>('/rutas'),
+    queryKey: ['rutas', incluirArchivados ? 'con-archivados' : 'en-uso'],
+    queryFn: () => api.get<{ data: Ruta[] }>(
+      incluirArchivados ? '/rutas?archivados=1' : '/rutas'),
     staleTime: 10 * 60 * 1000,
   })
 }
@@ -39,10 +43,3 @@ export function useUpdateRuta() {
   })
 }
 
-export function useDeleteRuta() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete(`/rutas/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['rutas'] }),
-  })
-}

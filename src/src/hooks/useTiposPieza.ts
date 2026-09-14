@@ -3,8 +3,9 @@
 // cada vehículo elige, por tipo, la refacción que usa.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { CamposArchivado } from './useArchivado'
 
-export interface TipoPieza {
+export interface TipoPieza extends CamposArchivado {
   id:     number
   nombre: string
   /**
@@ -15,10 +16,13 @@ export interface TipoPieza {
   rastreo_individual: boolean
 }
 
-export function useTiposPieza() {
+// Por defecto solo lo que está en uso. `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export function useTiposPieza(incluirArchivados = false) {
   return useQuery({
-    queryKey: ['tipos-pieza'],
-    queryFn: () => api.get<{ data: TipoPieza[] }>('/tipos-pieza'),
+    queryKey: ['tipos-pieza', incluirArchivados ? 'con-archivados' : 'en-uso'],
+    queryFn: () => api.get<{ data: TipoPieza[] }>(
+      incluirArchivados ? '/tipos-pieza?archivados=1' : '/tipos-pieza'),
   })
 }
 
@@ -45,10 +49,3 @@ export function useUpdateTipoPieza() {
   })
 }
 
-export function useDeleteTipoPieza() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/tipos-pieza/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tipos-pieza'] }),
-  })
-}

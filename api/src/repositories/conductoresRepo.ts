@@ -1,7 +1,8 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { COLS_ARCHIVADO, filtroArchivado, type CamposArchivado } from './archivadoRepo'
 
-export interface Conductor {
+export interface Conductor extends CamposArchivado {
   id:        number
   nombre:    string
   // Base desde donde opera. Etiqueta corta, no un domicilio.
@@ -40,12 +41,20 @@ const COLS = [
   'licencia_federal_numero', 'licencia_federal_expediente', 'licencia_federal_vigencia',
   'licencia_federal_expediente_vigencia',
 ].join(', ')
-const OUT  = COLS.split(', ').map((c) => `INSERTED.${c}`).join(', ')
+// El OUT sale de las columnas propias, antes de sumarle las del archivado: esas
+// dos se agregan aparte porque COLS_ARCHIVADO trae un CONVERT con alias y en un
+// OUTPUT no se puede repetir tal cual.
+const OUT  = COLS.split(', ').map((c) => `INSERTED.${c}`).join(', ') +
+             ', INSERTED.archivado_en, INSERTED.archivado_motivo'
+const COLS_LEER = `${COLS}, ${COLS_ARCHIVADO}`
 
-export async function findAll(): Promise<Conductor[]> {
+// Por defecto solo lo que está en uso; `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export async function findAll(incluirArchivados = false): Promise<Conductor[]> {
   const pool = await getPool()
+  const filtro = filtroArchivado(incluirArchivados)
   const r = await pool.request()
-    .query(`SELECT ${COLS} FROM conductores ORDER BY nombre`)
+    .query(`SELECT ${COLS_LEER} FROM conductores ${filtro ? `WHERE ${filtro}` : ''} ORDER BY nombre`)
   return r.recordset
 }
 
@@ -133,18 +142,3 @@ export async function existsNombre(nombre: string, exceptId?: number): Promise<b
   return r.recordset.length > 0
 }
 
-export async function countRecargas(id: number): Promise<number> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('SELECT COUNT(*) AS cnt FROM recargas_combustible WHERE conductor_id = @id')
-  return r.recordset[0].cnt
-}
-
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM conductores OUTPUT DELETED.id WHERE id = @id')
-  return r.recordset.length > 0
-}

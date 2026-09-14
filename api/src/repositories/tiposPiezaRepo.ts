@@ -1,9 +1,10 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { COLS_ARCHIVADO, filtroArchivado, type CamposArchivado } from './archivadoRepo'
 
 // Tipo de pieza: lo que un modelo necesita ("filtro de aire"), sin decir cuál
 // pieza concreta. La pieza que lo cubre se elige por vehículo.
-export interface TipoPieza {
+export interface TipoPieza extends CamposArchivado {
   id:     number
   nombre: string
   /**
@@ -14,7 +15,9 @@ export interface TipoPieza {
 }
 
 // Las tres consultas devuelven lo mismo, y el flag llega del driver como 0/1.
-const COLS = 'id, nombre, rastreo_individual'
+const COLS = `id, nombre, rastreo_individual, ${COLS_ARCHIVADO}`
+const OUT  = 'INSERTED.id, INSERTED.nombre, INSERTED.rastreo_individual, ' +
+             'INSERTED.archivado_en, INSERTED.archivado_motivo'
 
 // `bit` no es booleano en JS: sin esto, `rastreo_individual` viajaría como 0 o 1
 // y cualquier `if` del cliente trataría el 0 como falso por accidente, no por
@@ -23,10 +26,13 @@ function aTipo(r: Record<string, unknown>): TipoPieza {
   return { ...r, rastreo_individual: !!r.rastreo_individual } as TipoPieza
 }
 
-export async function findAll(): Promise<TipoPieza[]> {
+// Por defecto solo lo que está en uso; `incluirArchivados` es para la pantalla
+// del catálogo, que necesita verlos para poder restaurarlos.
+export async function findAll(incluirArchivados = false): Promise<TipoPieza[]> {
   const pool = await getPool()
+  const filtro = filtroArchivado(incluirArchivados)
   const r = await pool.request()
-    .query(`SELECT ${COLS} FROM tipos_pieza ORDER BY nombre`)
+    .query(`SELECT ${COLS} FROM tipos_pieza ${filtro ? `WHERE ${filtro}` : ''} ORDER BY nombre`)
   return r.recordset.map(aTipo)
 }
 
@@ -45,7 +51,7 @@ export async function create(nombre: string, rastreo = false): Promise<TipoPieza
     .input('rastreo', sql.Bit,          rastreo)
     .query(`
       INSERT INTO tipos_pieza (nombre, rastreo_individual)
-      OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.rastreo_individual
+      OUTPUT ${OUT}
       VALUES (@nombre, @rastreo)`)
   return aTipo(r.recordset[0])
 }
@@ -67,7 +73,7 @@ export async function update(
       UPDATE tipos_pieza SET
         nombre             = COALESCE(@nombre, nombre),
         rastreo_individual = COALESCE(@rastreo, rastreo_individual)
-      OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.rastreo_individual
+      OUTPUT ${OUT}
       WHERE id = @id`)
   return r.recordset[0] ? aTipo(r.recordset[0]) : null
 }
@@ -106,10 +112,3 @@ export async function countReferencias(id: number): Promise<{ modelos: number; v
   return r.recordset[0]
 }
 
-export async function remove(id: number): Promise<boolean> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id', sql.Int, id)
-    .query('DELETE FROM tipos_pieza OUTPUT DELETED.id WHERE id = @id')
-  return r.recordset.length > 0
-}

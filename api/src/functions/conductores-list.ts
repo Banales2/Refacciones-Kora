@@ -9,7 +9,9 @@ export async function conductoresList(
 ): Promise<HttpResponseInit> {
   try {
     requireRole(request, 'admin', 'editor', 'lector', 'viewer')
-    const data = await service.getAll()
+    // ?archivados=1 los incluye. Solo lo pide la pantalla del catálogo, para poder
+    // verlos y restaurarlos; los selectores del alta usan la lista normal.
+    const data = await service.getAll(request.query.get('archivados') === '1')
     return { status: 200, jsonBody: { data } }
   } catch (err) {
     return handleError(err, context)
