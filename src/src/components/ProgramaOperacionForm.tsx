@@ -11,12 +11,19 @@ import SelectCatalogo from './SelectCatalogo'
 import type { OperacionPrograma, OperacionPayload } from '../hooks/usePrograma'
 
 export default function ProgramaOperacionForm({
-  modeloId, initial, categorias, isPending, error, onSubmit, onCancel,
+  modeloId, initial, categorias, tipoPiezaObligatorio, isPending, error, onSubmit, onCancel,
 }: {
   modeloId:   number
   initial?:   OperacionPrograma
   /** Las categorías que ya usa este programa, para no reescribirlas a mano. */
   categorias: string[]
+  /**
+   * El renglón ya manda reemplazar en alguna columna. Entonces el tipo de pieza
+   * no es opcional: es lo que el acta de la visita va a exigir cargado —"el
+   * cambio de aceite exige un aceite"— y sin él el reemplazo se colaría como
+   * una inspección más.
+   */
+  tipoPiezaObligatorio?: boolean
   isPending:  boolean
   error:      string | null
   onSubmit:   (payload: OperacionPayload) => void
@@ -37,6 +44,10 @@ export default function ProgramaOperacionForm({
       limite_meses:  initial?.limite_meses ?? (null as number | null),
     },
     validate: {
+      tipo_pieza_id: (v) =>
+        tipoPiezaObligatorio && !v
+          ? 'Requerido: este renglón manda reemplazar y hay que decir qué se cambia'
+          : null,
       nombre: (v) =>
         !v.trim() ? 'Requerido' :
         v.length > 200 ? 'Máximo 200 caracteres' :
@@ -94,9 +105,18 @@ export default function ProgramaOperacionForm({
         <SelectCatalogo
           estado={tiposQuery}
           nombre="tipos de pieza"
-          label="Tipo de pieza" clearable
-          placeholder={tiposOpts.length ? 'Ninguna en particular' : 'El modelo no declara tipos de pieza'}
-          description="Opcional: muchos renglones son revisiones que no tocan una pieza del inventario."
+          label="Tipo de pieza" clearable required={tipoPiezaObligatorio}
+          placeholder={tiposOpts.length
+            ? (tipoPiezaObligatorio ? 'Qué pieza se cambia' : 'Ninguna en particular')
+            : 'Primero declara los tipos de pieza del modelo'}
+          // El selector solo ofrece los tipos que el modelo declara, no el
+          // catálogo entero. Cuando la lista está vacía el campo queda sin
+          // salida, así que hay que decir dónde se arregla.
+          description={!tiposQuery.isLoading && !tiposQuery.isError && !tiposOpts.length
+            ? 'Este modelo no tiene tipos de pieza declarados. Se agregan en «Tipos de pieza del modelo», arriba en esta misma ficha.'
+            : tipoPiezaObligatorio
+              ? 'Este renglón manda reemplazar: al cerrar la visita se va a exigir una refacción de este tipo.'
+              : 'Opcional: muchos renglones son revisiones que no tocan una pieza del inventario. Si después lo marcas como reemplazo, va a hacer falta.'}
           data={tiposOpts}
           // Vacío por lento o por caído no es lo mismo que vacío de verdad:
           // deshabilitarlo mientras carga esconde el aviso y el reintento.

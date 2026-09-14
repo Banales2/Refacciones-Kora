@@ -97,6 +97,21 @@ export async function createOperacion(programaId: number, data: OperacionCreate)
 }
 
 export async function updateOperacion(id: number, data: OperacionUpdate) {
+  // Quitarle el tipo de pieza a un renglón que manda reemplazar dejaría el
+  // reemplazo sin nada que exigir al cerrar la visita: el acta lo trataría como
+  // una revisión más. Es el mismo candado que en `setCeldas`, por el otro lado.
+  if (data.tipo_pieza_id === null) {
+    const actual = await repo.findOperacion(id)
+    if (!actual) throw new NotFoundError('Operación')
+    const exigen = await accionesQueConsumenPieza()
+    const conPieza = Object.values(actual.celdas).find((a) => exigen.has(a))
+    if (conPieza) {
+      throw new ValidationError(
+        'Este renglón manda reemplazar en alguna columna, así que necesita decir qué tipo ' +
+        'de pieza se cambia. Quita esas marcas de la cuadrícula primero, o deja el tipo puesto.'
+      )
+    }
+  }
   if (!await repo.updateOperacion(id, data)) throw new NotFoundError('Operación')
   return (await repo.findOperacion(id))!
 }
@@ -117,6 +132,19 @@ export async function reordenarOperaciones(programaId: number, ids: number[]) {
 
 // ─── Celdas ─────────────────────────────────────────────────────────────────
 
+/**
+ * Los códigos de acción que consumen una refacción, hoy solo 'R'.
+ *
+ * Sale del catálogo y no de una constante porque es un interruptor que se
+ * prende y se apaga por acción (migración 031): el día que lubricar tenga que
+ * exigir la grasa, es un UPDATE y no un despliegue.
+ */
+async function accionesQueConsumenPieza(): Promise<Set<string>> {
+  return new Set(
+    (await repo.findAcciones()).filter((a) => a.requiere_pieza).map((a) => a.codigo)
+  )
+}
+
 export async function setCeldas(
   operacionId: number,
   celdas: { fase_id: number; accion: string }[],
@@ -133,6 +161,25 @@ export async function setCeldas(
   const acciones = new Set((await repo.findAcciones()).map((a) => a.codigo))
   const desconocida = celdas.find((c) => !acciones.has(c.accion))
   if (desconocida) throw new ValidationError(`La acción "${desconocida.accion}" no está en el catálogo`)
+
+  // Marcar un reemplazo exige haber dicho QUÉ se reemplaza.
+  //
+  // De eso vive el candado de la visita: al cerrar la columna, un renglón que
+  // consume refacción obliga a cargar una pieza de su tipo —"el cambio de
+  // aceite exige un aceite"—. Sin tipo amarrado no hay nada que exigir y el
+  // renglón se cuela como si fuera una inspección, que es justo el silencio que
+  // se quitó en la migración 031. Se pide aquí y no al crear el renglón porque
+  // es aquí donde se sabe: las celdas se marcan después, sobre la cuadrícula.
+  const exigen = await accionesQueConsumenPieza()
+  if (celdas.some((c) => exigen.has(c.accion))) {
+    const operacion = await repo.findOperacion(operacionId)
+    if (operacion && operacion.tipo_pieza_id == null) {
+      throw new ValidationError(
+        `«${operacion.nombre}» manda reemplazar, así que primero hay que decir qué tipo de ` +
+        `pieza se cambia. Edita el renglón y ponle su tipo de pieza.`
+      )
+    }
+  }
 
   await repo.setCeldas(operacionId, celdas)
   return getById(programa.id)

@@ -188,6 +188,19 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
   }
 
   function marcar(op: OperacionPrograma, faseId: number) {
+    // Marcar un reemplazo en un renglón que no dice qué pieza se cambia deja al
+    // acta de la visita sin nada que exigir: el renglón se colaría como si
+    // fuera una inspección. La API lo rechaza igual; aquí se ataja antes de
+    // pintar la celda para no tener que despintarla.
+    const consume = acciones.find((a) => a.codigo === pincel)?.requiere_pieza
+    if (consume && op.tipo_pieza_id == null) {
+      setCeldaError(
+        `«${op.nombre}» manda reemplazar, así que primero hay que decir qué tipo de pieza ` +
+        `se cambia. Edita el renglón y ponle su tipo de pieza.`
+      )
+      return
+    }
+
     const fila = { ...filaDe(op) }
     // Volver a pintar con la misma acción borra: es lo que uno espera de una
     // brocha, y evita tener que cambiar a la goma para corregir un dedazo.
@@ -501,6 +514,13 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
           modeloId={modeloId}
           initial={editandoOp ?? undefined}
           categorias={categorias}
+          // Ya manda reemplazar en alguna columna: el tipo de pieza deja de ser
+          // opcional, porque es lo que la visita va a exigir cargado.
+          tipoPiezaObligatorio={
+            !!editandoOp && Object.values(editandoOp.celdas).some(
+              (a) => acciones.find((x) => x.codigo === a)?.requiere_pieza
+            )
+          }
           isPending={crearOpMut.isPending || editarOpMut.isPending}
           error={formError}
           onSubmit={guardarOperacion}
