@@ -52,6 +52,48 @@ export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string)
   return repo.createTraspaso(data, usuarioEmail)
 }
 
+/**
+ * Resolver un traspaso pendiente: el destino lo acepta o lo rechaza, o el origen
+ * lo cancela.
+ *
+ * Mientras los roles sean planos —admin/editor sobre toda la flota— no hay a
+ * quién bloquearle cuál de las tres acciones. Lo que sí queda es el rastro: el
+ * repositorio guarda quién lo resolvió y cuándo. El día que existan roles por
+ * sucursal, el candado entra aquí y no hay que volver a tocar el modelo.
+ */
+export async function resolverTraspaso(
+  id: number, estado: 'aceptado' | 'rechazado' | 'cancelado',
+  usuarioEmail: string, motivo: string | null,
+) {
+  const traspaso = await repo.findTraspasoById(id)
+  if (!traspaso) throw new NotFoundError('Traspaso')
+
+  // El 409 y no un 400: la petición era válida, lo que cambió es el estado del
+  // traspaso. Casi siempre es que alguien más lo resolvió primero, así que el
+  // mensaje dice cómo quedó en vez de solo negarse.
+  if (traspaso.estado !== 'pendiente') {
+    throw new ConflictError(
+      `Este traspaso ya no está pendiente: quedó como ${ESTADO_TEXTO[traspaso.estado]}` +
+      (traspaso.resuelto_por ? ` por ${traspaso.resuelto_por}.` : '.')
+    )
+  }
+
+  const resuelto = await repo.resolverTraspaso(id, estado, usuarioEmail, motivo)
+  // Null significa que entre la lectura de arriba y el UPDATE alguien más lo
+  // resolvió. Es la misma situación, contada por la carrera en vez de por la
+  // consulta previa.
+  if (!resuelto) {
+    throw new ConflictError('Alguien más resolvió este traspaso hace un momento.')
+  }
+  return resuelto
+}
+
+const ESTADO_TEXTO: Record<string, string> = {
+  aceptado:  'aceptado',
+  rechazado: 'rechazado',
+  cancelado: 'cancelado',
+}
+
 // ---------------------------------------------------------------------------
 // Mínimos
 // ---------------------------------------------------------------------------

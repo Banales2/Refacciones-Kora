@@ -11,7 +11,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 export type EstadoUnidad =
-  | 'almacen' | 'montada' | 'desechada' | 'vendida' | 'devuelta' | 'reacondicionar'
+  | 'almacen' | 'en_traspaso' | 'montada' | 'desechada' | 'vendida' | 'devuelta'
+  | 'reacondicionar'
 
 export interface UnidadPieza {
   id:             number
@@ -40,6 +41,7 @@ export interface UnidadPieza {
 
 export const ESTADO_UNIDAD: Record<EstadoUnidad, { label: string; color: string }> = {
   almacen:        { label: 'En almacén',      color: 'green'  },
+  en_traspaso:    { label: 'En traspaso',     color: 'cyan'   },
   montada:        { label: 'Montada',         color: 'blue'   },
   desechada:      { label: 'Desechada',       color: 'gray'   },
   vendida:        { label: 'Vendida',         color: 'grape'  },

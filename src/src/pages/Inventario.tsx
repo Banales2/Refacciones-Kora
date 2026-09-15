@@ -7,17 +7,18 @@
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Title, Text, Tabs, Table, Badge, Button, Alert, Center,
-  Loader, Modal, NumberInput, Textarea, ActionIcon, Paper,
+  Loader, Modal, NumberInput, Textarea, ActionIcon, Paper, Tooltip,
 } from '@mantine/core'
 import { IconArrowsExchange, IconPlus, IconTrash, IconAlertTriangle } from '@tabler/icons-react'
 import { useSucursales } from '../hooks/useSucursales'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
 import {
-  useExistencias, useTraspasos, useCreateTraspaso,
+  useExistencias, useTraspasos, useCreateTraspaso, useResolverTraspaso,
+  ESTADO_TRASPASO,
   useMinimos, useCreateMinimo, useUpdateMinimo, useDeleteMinimo,
 } from '../hooks/useInventario'
 import ConfirmarQuitar from '../components/ConfirmarQuitar'
-import type { ExistenciaEnSucursal, MinimoSucursal } from '../hooks/useInventario'
+import type { ExistenciaEnSucursal, MinimoSucursal, Traspaso } from '../hooks/useInventario'
 import { useDescuadres, useResolverDescuadre } from '../hooks/useDescuadres'
 import { useCuadreUnidades } from '../hooks/useCuadreUnidades'
 import type { Descuadre, ResolucionDescuadre } from '../hooks/useDescuadres'
@@ -193,6 +194,10 @@ function PanelExistencias({
   }
 
   const total = filas.reduce((s, f) => s + f.cantidad * f.costo_unitario, 0)
+  // Lo que ya salió del estante y espera que la otra sucursal lo acepte. No
+  // entra en el total de piezas: el total dice lo que hay aquí, y esto es justo
+  // lo que no está.
+  const enCamino = filas.reduce((s, f) => s + f.en_camino, 0)
 
   return (
     <Stack gap="sm">
@@ -206,6 +211,12 @@ function PanelExistencias({
             <Text size="xs" c="dimmed">Valor a costo</Text>
             <Text fw={600}>{formatMXN(total)}</Text>
           </Stack>
+          {enCamino > 0 && (
+            <Stack gap={0}>
+              <Text size="xs" c="dimmed">En camino</Text>
+              <Text fw={600} c="orange">{enCamino.toLocaleString('es-MX')}</Text>
+            </Stack>
+          )}
         </Group>
       </Paper>
 
@@ -238,16 +249,35 @@ function PanelExistencias({
                     {f.num_factura ? `Fact. ${f.num_factura}` : 'Sin factura'} · {formatearFecha(f.fecha_compra)}
                   </Text>
                 </Table.Td>
-                <Table.Td ta="right"><Text size="sm" fw={500}>{f.cantidad}</Text></Table.Td>
+                <Table.Td ta="right">
+                  <Text size="sm" fw={500}>{f.cantidad}</Text>
+                  {/* Salieron de este estante y nadie las ha aceptado todavía.
+                      Sin esto, un lote que se traspasó completo desaparece del
+                      inventario sin dejar rastro de a dónde se fue. */}
+                  {f.en_camino > 0 && (
+                    <Text size="xs" c="orange">{f.en_camino} en camino</Text>
+                  )}
+                </Table.Td>
                 <Table.Td ta="right"><Text size="xs">{formatMXN(f.costo_unitario)}</Text></Table.Td>
                 <Table.Td>
-                  <ActionIcon
-                    variant="subtle"
-                    aria-label={`Traspasar ${f.numero_serie} a otra sucursal`}
-                    onClick={() => onTraspasar(f)}
+                  <Tooltip
+                    label={f.cantidad > 0
+                      ? 'Traspasar a otra sucursal'
+                      : 'No queda nada en el estante: todo va en camino'}
                   >
-                    <IconArrowsExchange size={16} />
-                  </ActionIcon>
+                    {/* El span es para que el tooltip siga apareciendo con el
+                        botón deshabilitado, que es cuando hace falta. */}
+                    <span>
+                      <ActionIcon
+                        variant="subtle"
+                        disabled={f.cantidad === 0}
+                        aria-label={`Traspasar ${f.numero_serie} a otra sucursal`}
+                        onClick={() => onTraspasar(f)}
+                      >
+                        <IconArrowsExchange size={16} />
+                      </ActionIcon>
+                    </span>
+                  </Tooltip>
                 </Table.Td>
               </Table.Tr>
             ))}
@@ -409,7 +439,21 @@ function FilaMinimo({
 
 function PanelTraspasos({ sucursalId }: { sucursalId: number }) {
   const { data, isLoading } = useTraspasos(sucursalId)
+  const resolverMut = useResolverTraspaso()
   const filas = data?.data ?? []
+
+  // El traspaso que se está rechazando o cancelando: las dos piden un motivo
+  // antes de devolver la mercancía, y aceptar no pasa por aquí.
+  const [devolviendo, setDevolviendo] = useState<
+    { traspaso: Traspaso; accion: 'rechazar' | 'cancelar' } | null
+  >(null)
+
+  // Lo que está esperando que esta sucursal lo acepte. Va arriba como aviso
+  // porque es trabajo pendiente de alguien, no historial: la mercancía ya salió
+  // del otro almacén y no está en ningún estante hasta que se resuelva.
+  const porAceptar = filas.filter(
+    (t) => t.estado === 'pendiente' && t.destino_sucursal_id === sucursalId,
+  ).length
 
   if (isLoading) return <Center py="xl"><Loader /></Center>
   if (filas.length === 0) {
@@ -417,44 +461,189 @@ function PanelTraspasos({ sucursalId }: { sucursalId: number }) {
   }
 
   return (
-    <Table.ScrollContainer minWidth={880}>
-      <Table striped withTableBorder>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Fecha</Table.Th>
-            <Table.Th>Refacción</Table.Th>
-            <Table.Th>Movimiento</Table.Th>
-            <Table.Th ta="right">Cantidad</Table.Th>
-            <Table.Th>Autorizó</Table.Th>
-            <Table.Th>Registró</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {filas.map((t) => {
-            const salio = t.origen_sucursal_id === sucursalId
-            return (
-              <Table.Tr key={t.id}>
-                <Table.Td><Text size="xs">{formatearFecha(t.fecha)}</Text></Table.Td>
-                <Table.Td>
-                  <Text size="sm">{t.numero_serie}</Text>
-                  <Text size="xs" c="dimmed">{t.descripcion}</Text>
-                </Table.Td>
-                <Table.Td>
-                  <Badge size="xs" variant="light" color={salio ? 'orange' : 'green'}>
-                    {salio ? 'Salida' : 'Entrada'}
-                  </Badge>
-                  <Text size="xs" c="dimmed">{t.origen} → {t.destino}</Text>
-                </Table.Td>
-                <Table.Td ta="right"><Text size="sm" fw={500}>{t.cantidad}</Text></Table.Td>
-                {/* Vacío en los traspasos anteriores a que se empezara a pedir. */}
-                <Table.Td><Text size="xs">{t.autorizado_por ?? '—'}</Text></Table.Td>
-                <Table.Td><Text size="xs" c="dimmed">{t.usuario_email ?? '—'}</Text></Table.Td>
-              </Table.Tr>
-            )
-          })}
-        </Table.Tbody>
-      </Table>
-    </Table.ScrollContainer>
+    <>
+      {porAceptar > 0 && (
+        <Alert
+          color="yellow"
+          variant="light"
+          mb="sm"
+          icon={<IconAlertTriangle size={16} />}
+          title={`${porAceptar} traspaso${porAceptar !== 1 ? 's' : ''} por aceptar`}
+        >
+          {porAceptar !== 1 ? 'Están en camino' : 'Está en camino'} a esta sucursal y{' '}
+          {porAceptar !== 1 ? 'no aparecen' : 'no aparece'} en el inventario hasta que{' '}
+          {porAceptar !== 1 ? 'los aceptes' : 'lo aceptes'}. Si la mercancía no llegó o no
+          es la que se pidió, recházala y vuelve al almacén de origen.
+        </Alert>
+      )}
+
+      <Table.ScrollContainer minWidth={1100}>
+        <Table striped withTableBorder>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Fecha</Table.Th>
+              <Table.Th>Refacción</Table.Th>
+              <Table.Th>Movimiento</Table.Th>
+              <Table.Th ta="right">Cantidad</Table.Th>
+              <Table.Th>Estado</Table.Th>
+              <Table.Th>Autorizó</Table.Th>
+              <Table.Th>Registró</Table.Th>
+              <Table.Th style={{ width: 150 }} />
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {filas.map((t) => {
+              const salio = t.origen_sucursal_id === sucursalId
+              const est = ESTADO_TRASPASO[t.estado]
+              // Quién resuelve depende del lado en que esté esta sucursal: el
+              // destino acepta o rechaza, el origen solo puede retirarlo.
+              const puedeAceptar  = t.estado === 'pendiente' && !salio
+              const puedeCancelar = t.estado === 'pendiente' && salio
+              return (
+                <Table.Tr key={t.id}>
+                  <Table.Td><Text size="xs">{formatearFecha(t.fecha)}</Text></Table.Td>
+                  <Table.Td>
+                    <Text size="sm">{t.numero_serie}</Text>
+                    <Text size="xs" c="dimmed">{t.descripcion}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge size="xs" variant="light" color={salio ? 'orange' : 'green'}>
+                      {salio ? 'Salida' : 'Entrada'}
+                    </Badge>
+                    <Text size="xs" c="dimmed">{t.origen} &rarr; {t.destino}</Text>
+                  </Table.Td>
+                  <Table.Td ta="right"><Text size="sm" fw={500}>{t.cantidad}</Text></Table.Td>
+                  <Table.Td>
+                    <Badge size="xs" variant="light" color={est.color}>{est.label}</Badge>
+                    {/* Por qué se rechazó o se canceló, si alguien lo escribió. */}
+                    {t.motivo_resolucion && (
+                      <Text size="xs" c="dimmed">{t.motivo_resolucion}</Text>
+                    )}
+                    {t.resuelto_por && (
+                      <Text size="xs" c="dimmed">{t.resuelto_por}</Text>
+                    )}
+                  </Table.Td>
+                  {/* Vacío en los traspasos anteriores a que se empezara a pedir. */}
+                  <Table.Td><Text size="xs">{t.autorizado_por ?? '—'}</Text></Table.Td>
+                  <Table.Td><Text size="xs" c="dimmed">{t.usuario_email ?? '—'}</Text></Table.Td>
+                  <Table.Td>
+                    <Group gap={4} justify="flex-end" wrap="nowrap">
+                      {puedeAceptar && (
+                        <>
+                          <Button
+                            size="compact-xs" color="teal"
+                            loading={resolverMut.isPending}
+                            onClick={() => resolverMut.mutate({ id: t.id, accion: 'aceptar' })}
+                          >
+                            Aceptar
+                          </Button>
+                          <Button
+                            size="compact-xs" variant="subtle" color="red"
+                            onClick={() => setDevolviendo({ traspaso: t, accion: 'rechazar' })}
+                          >
+                            Rechazar
+                          </Button>
+                        </>
+                      )}
+                      {puedeCancelar && (
+                        <Button
+                          size="compact-xs" variant="subtle" color="gray"
+                          onClick={() => setDevolviendo({ traspaso: t, accion: 'cancelar' })}
+                        >
+                          Cancelar envío
+                        </Button>
+                      )}
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              )
+            })}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+
+      {devolviendo && (
+        <DevolverTraspasoModal
+          traspaso={devolviendo.traspaso}
+          accion={devolviendo.accion}
+          onClose={() => setDevolviendo(null)}
+        />
+      )}
+    </>
+  )
+}
+
+// Rechazar y cancelar hacen lo mismo con la mercancía —devolverla al origen— y
+// solo se distinguen en quién lo hizo y por qué, así que comparten el modal. El
+// motivo es opcional: frenar la devolución del stock por un texto es peor que
+// quedarse sin el texto.
+function DevolverTraspasoModal({
+  traspaso, accion, onClose,
+}: {
+  traspaso: Traspaso
+  accion: 'rechazar' | 'cancelar'
+  onClose: () => void
+}) {
+  const resolverMut = useResolverTraspaso()
+  const [motivo, setMotivo] = useState('')
+
+  const esRechazo = accion === 'rechazar'
+
+  return (
+    <Modal
+      opened onClose={onClose} size="md"
+      title={esRechazo ? 'Rechazar el traspaso' : 'Cancelar el envío'}
+    >
+      <Stack gap="sm">
+        <Paper withBorder p="xs">
+          <Text size="sm" fw={500}>
+            {traspaso.numero_serie} — {traspaso.descripcion}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {traspaso.cantidad} pieza(s) · {traspaso.origen} &rarr; {traspaso.destino}
+          </Text>
+        </Paper>
+
+        <Alert color={esRechazo ? 'red' : 'gray'} variant="light">
+          {traspaso.cantidad} pieza(s) vuelven al inventario de{' '}
+          <strong>{traspaso.origen}</strong>
+          {esRechazo
+            ? ', que es de donde salieron. Úsalo cuando la mercancía no llegó o no es la que se pidió.'
+            : '. Úsalo cuando el envío se capturó mal y todavía nadie lo aceptó.'}
+        </Alert>
+
+        <Textarea
+          label="Motivo"
+          placeholder={esRechazo
+            ? 'Opcional: por qué no se recibió'
+            : 'Opcional: por qué se retira'}
+          rows={2}
+          maxLength={300}
+          value={motivo}
+          onChange={(e) => setMotivo(e.currentTarget.value)}
+        />
+
+        {resolverMut.error && (
+          <Alert color="red" title="Error">{(resolverMut.error as Error).message}</Alert>
+        )}
+
+        <Group justify="flex-end" mt="xs">
+          <Button variant="default" onClick={onClose} disabled={resolverMut.isPending}>
+            Volver
+          </Button>
+          <Button
+            color={esRechazo ? 'red' : 'gray'}
+            loading={resolverMut.isPending}
+            onClick={() => resolverMut.mutate(
+              { id: traspaso.id, accion, motivo: motivo.trim() || null },
+              { onSuccess: onClose },
+            )}
+          >
+            {esRechazo ? 'Rechazar' : 'Cancelar envío'}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   )
 }
 
@@ -508,6 +697,12 @@ function TraspasoModal({
   return (
     <Modal opened onClose={onClose} title="Traspasar piezas a otra sucursal" size="md">
       <Stack gap="sm">
+        <Alert color="blue" variant="light">
+          Las piezas salen de <strong>{existencia.sucursal}</strong> en cuanto se registre, y
+          entran al inventario de destino hasta que alguien de esa sucursal lo acepte.
+          Mientras tanto quedan en camino, sin aparecer en ninguno de los dos almacenes.
+        </Alert>
+
         <Paper withBorder p="xs">
           <Text size="sm" fw={500}>{existencia.numero_serie} — {existencia.descripcion}</Text>
           <Text size="xs" c="dimmed">
@@ -566,7 +761,7 @@ function TraspasoModal({
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onClose} disabled={crearMut.isPending}>Cancelar</Button>
           <Button onClick={confirmar} loading={crearMut.isPending} disabled={!listo}>
-            Traspasar
+            Enviar traspaso
           </Button>
         </Group>
       </Stack>

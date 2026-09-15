@@ -25,13 +25,27 @@ export interface ExistenciaEnSucursal {
   num_factura:    string | null
   costo_unitario: number
   fecha_compra:   string
+  /**
+   * Cuántas piezas de este lote salieron de esta sucursal en un traspaso que
+   * nadie ha aceptado todavía. Ya no están en `cantidad` —salieron del estante
+   * al enviarse, migración 035— y por eso hay que decirlo: si no, una caja que
+   * va en camino se ve igual que una que se esfumó.
+   */
+  en_camino:      number
 }
 
-/** Qué hay en una sucursal, renglón por lote. Sin sucursal, toda la flota. */
+/**
+ * Qué hay en una sucursal, renglón por lote. Sin sucursal, toda la flota.
+ *
+ * Un renglón puede tener `cantidad` en cero y aun así aparecer, si todo lo que
+ * había salió en un traspaso sin aceptar. Es justo el caso en el que la pieza
+ * desaparecería de la pantalla sin explicación, que es lo que este renglón
+ * existe para evitar.
+ */
 export async function findExistencias(sucursalId?: number): Promise<ExistenciaEnSucursal[]> {
   const pool = await getPool()
   const req = pool.request()
-  let where = 'WHERE ex.cantidad > 0'
+  let where = 'WHERE (ex.cantidad > 0 OR cam.en_camino > 0)'
   if (sucursalId !== undefined) {
     req.input('suc', sql.Int, sucursalId)
     where += ' AND ex.sucursal_id = @suc'
@@ -42,7 +56,8 @@ export async function findExistencias(sucursalId?: number): Promise<ExistenciaEn
            p.tipo_pieza_id, t.nombre AS tipo_pieza,
            pr.nombre AS proveedor, l.costo_unitario,
            ${folioDelLote()} AS num_factura,
-           ${fechaDelLote()} AS fecha_compra
+           ${fechaDelLote()} AS fecha_compra,
+           cam.en_camino
     FROM existencias_lote ex
     JOIN sucursales s      ON s.id  = ex.sucursal_id
     JOIN lotes_pieza l     ON l.id  = ex.lote_id
@@ -52,6 +67,16 @@ export async function findExistencias(sucursalId?: number): Promise<ExistenciaEn
     -- aquí tiene que aparecer — es stock real en el estante.
     ${joinProveedorDelLote()}
     LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id
+    -- Lo que salió de este estante y sigue sin aceptarse en el otro. Va como
+    -- APPLY y no como subconsulta repetida porque se usa dos veces: en el
+    -- SELECT y en el filtro que deja pasar los renglones que quedaron en cero.
+    OUTER APPLY (
+      SELECT COALESCE(SUM(tr.cantidad), 0) AS en_camino
+      FROM traspasos_pieza tr
+      WHERE tr.estado = 'pendiente'
+        AND tr.lote_id = ex.lote_id
+        AND tr.origen_sucursal_id = ex.sucursal_id
+    ) cam
     ${where}
     ORDER BY s.nombre, p.numero_serie, ${fechaDelLote()}`)
   return r.recordset
@@ -82,6 +107,8 @@ export async function findResumen(sucursalId: number): Promise<{
 // Traspasos
 // ---------------------------------------------------------------------------
 
+export type EstadoTraspaso = 'pendiente' | 'aceptado' | 'rechazado' | 'cancelado'
+
 export interface Traspaso {
   id:                  number
   lote_id:             number
@@ -96,6 +123,13 @@ export interface Traspaso {
   // solo en los traspasos anteriores a la migración 034.
   usuario_email:       string | null
   autorizado_por:      string | null
+  // Un traspaso nace 'pendiente' y lo resuelve el destino aceptándolo o
+  // rechazándolo, o el origen cancelándolo (migración 035). Mientras siga
+  // pendiente, su mercancía no está en ninguna sucursal.
+  estado:              EstadoTraspaso
+  resuelto_por:        string | null
+  resuelto_en:         string | null
+  motivo_resolucion:   string | null
   observaciones:       string | null
   pieza_id:            number
   numero_serie:        string
@@ -105,7 +139,10 @@ export interface Traspaso {
 const SELECT_TRASPASO = `
   SELECT tr.id, tr.lote_id, tr.origen_sucursal_id, so.nombre AS origen,
          tr.destino_sucursal_id, sd.nombre AS destino,
-         tr.cantidad, tr.fecha, tr.usuario_email, tr.autorizado_por, tr.observaciones,
+         tr.cantidad, tr.fecha, tr.usuario_email, tr.autorizado_por,
+         tr.estado, tr.resuelto_por,
+         CONVERT(varchar(19), tr.resuelto_en, 126) AS resuelto_en,
+         tr.motivo_resolucion, tr.observaciones,
          p.id AS pieza_id, p.numero_serie, p.descripcion
   FROM traspasos_pieza tr
   JOIN sucursales so ON so.id = tr.origen_sucursal_id
@@ -124,8 +161,21 @@ export async function findTraspasos(sucursalId?: number): Promise<Traspaso[]> {
     // que entregó.
     where = 'WHERE tr.origen_sucursal_id = @suc OR tr.destino_sucursal_id = @suc'
   }
-  const r = await req.query(`${SELECT_TRASPASO} ${where} ORDER BY tr.fecha DESC, tr.id DESC`)
+  // Los pendientes arriba: son los únicos sobre los que hay algo que hacer, y
+  // se pierden si quedan mezclados por fecha entre el historial ya resuelto.
+  const r = await req.query(`
+    ${SELECT_TRASPASO} ${where}
+    ORDER BY CASE WHEN tr.estado = 'pendiente' THEN 0 ELSE 1 END,
+             tr.fecha DESC, tr.id DESC`)
   return r.recordset
+}
+
+export async function findTraspasoById(id: number): Promise<Traspaso | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query(`${SELECT_TRASPASO} WHERE tr.id = @id`)
+  return r.recordset[0] ?? null
 }
 
 // Quienes ya han autorizado un traspaso, para ofrecerlos en el formulario. No
@@ -161,9 +211,12 @@ export interface TraspasoCreate {
   observaciones?:      string | null
 }
 
-// Restar del origen y sumar al destino tiene que ser atómico: a medias, el
-// inventario pierde o inventa piezas. El CHECK de cantidad >= 0 es la red por
-// si la validación previa se quedó corta por una captura concurrente.
+// Enviar es la primera mitad del traspaso: la mercancía sale del origen y se
+// queda en camino —sin estante— hasta que el destino la acepte (migración 035).
+// Restar la existencia, reservar las unidades y registrar el traspaso van en la
+// misma transacción: a medias, el inventario pierde o inventa piezas. El CHECK
+// de cantidad >= 0 es la red por si la validación previa se quedó corta por una
+// captura concurrente.
 export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string): Promise<Traspaso> {
   const pool = await getPool()
   const tx = pool.transaction()
@@ -177,25 +230,6 @@ export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string)
         UPDATE existencias_lote SET cantidad = cantidad - @cant
         WHERE lote_id = @lid AND sucursal_id = @suc`)
 
-    await tx.request()
-      .input('lid',  sql.Int, data.lote_id)
-      .input('suc',  sql.Int, data.destino_sucursal_id)
-      .input('cant', sql.Int, data.cantidad)
-      .query(`
-        UPDATE existencias_lote SET cantidad = cantidad + @cant
-        WHERE lote_id = @lid AND sucursal_id = @suc;
-
-        IF @@ROWCOUNT = 0
-          INSERT INTO existencias_lote (lote_id, sucursal_id, cantidad)
-          VALUES (@lid, @suc, @cant);`)
-
-    // Las piezas identificadas se van con su stock. Sin esto, traspasar dejaba
-    // las unidades diciendo que siguen en el estante de origen. En los tipos a
-    // granel no hay unidades y no mueve nada.
-    await unidadesRepo.moverEntreSucursales(
-      tx, data.lote_id, data.origen_sucursal_id, data.destino_sucursal_id, data.cantidad,
-    )
-
     const ins = await tx.request()
       .input('lid',    sql.Int,           data.lote_id)
       .input('origen', sql.Int,           data.origen_sucursal_id)
@@ -208,17 +242,91 @@ export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string)
       .query(`
         INSERT INTO traspasos_pieza
           (lote_id, origen_sucursal_id, destino_sucursal_id, cantidad, fecha,
-           usuario_email, autorizado_por, observaciones)
+           usuario_email, autorizado_por, estado, observaciones)
         OUTPUT INSERTED.id
-        VALUES (@lid, @origen, @dest, @cant, @fecha, @user, @autoriza, @obs)`)
+        VALUES (@lid, @origen, @dest, @cant, @fecha, @user, @autoriza, 'pendiente', @obs)`)
+
+    const traspasoId: number = ins.recordset[0].id
+
+    // Las piezas identificadas van con su stock, pero reservadas y no movidas:
+    // su sucursal sigue siendo la de origen hasta que alguien acepte. Así,
+    // rechazar es no hacer nada con ellas. En los tipos a granel no hay unidades
+    // y no reserva ninguna.
+    await unidadesRepo.reservarParaTraspaso(
+      tx, traspasoId, data.lote_id, data.origen_sucursal_id, data.cantidad,
+    )
 
     await tx.commit()
+    return (await findTraspasoById(traspasoId))!
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+}
 
-    const pool2 = await getPool()
-    const r = await pool2.request()
-      .input('id', sql.Int, ins.recordset[0].id)
-      .query(`${SELECT_TRASPASO} WHERE tr.id = @id`)
-    return r.recordset[0]
+/**
+ * La segunda mitad. `aceptado` mete la mercancía al estante del destino;
+ * `rechazado` y `cancelado` la devuelven al del origen. En los tres casos las
+ * unidades reservadas dejan de estar en camino.
+ *
+ * El cambio de estado va como UPDATE condicionado a que siga pendiente, y si no
+ * mueve ningún renglón la transacción se deshace: es lo que impide que dos
+ * personas acepten el mismo traspaso a la vez y la mercancía entre dos veces.
+ * Devuelve null si el traspaso ya no estaba pendiente.
+ */
+export async function resolverTraspaso(
+  id: number, estado: Exclude<EstadoTraspaso, 'pendiente'>,
+  usuarioEmail: string, motivo: string | null,
+): Promise<Traspaso | null> {
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    const cambio = await tx.request()
+      .input('id',     sql.Int,           id)
+      .input('estado', sql.NVarChar(20),  estado)
+      .input('user',   sql.NVarChar(255), usuarioEmail)
+      .input('motivo', sql.NVarChar(300), motivo)
+      .query(`
+        UPDATE traspasos_pieza
+        SET estado = @estado, resuelto_por = @user, resuelto_en = SYSDATETIME(),
+            motivo_resolucion = @motivo
+        OUTPUT INSERTED.lote_id, INSERTED.origen_sucursal_id,
+               INSERTED.destino_sucursal_id, INSERTED.cantidad
+        WHERE id = @id AND estado = 'pendiente'`)
+
+    const t = cambio.recordset[0]
+    if (!t) {
+      await tx.rollback()
+      return null
+    }
+
+    // A dónde va la mercancía: al destino si la aceptaron, de vuelta al origen
+    // si no. Es la única diferencia entre los tres desenlaces.
+    const sucursalDestino = estado === 'aceptado'
+      ? t.destino_sucursal_id
+      : t.origen_sucursal_id
+
+    await tx.request()
+      .input('lid',  sql.Int, t.lote_id)
+      .input('suc',  sql.Int, sucursalDestino)
+      .input('cant', sql.Int, t.cantidad)
+      .query(`
+        UPDATE existencias_lote SET cantidad = cantidad + @cant
+        WHERE lote_id = @lid AND sucursal_id = @suc;
+
+        IF @@ROWCOUNT = 0
+          INSERT INTO existencias_lote (lote_id, sucursal_id, cantidad)
+          VALUES (@lid, @suc, @cant);`)
+
+    if (estado === 'aceptado') {
+      await unidadesRepo.confirmarTraspaso(tx, id, t.destino_sucursal_id)
+    } else {
+      await unidadesRepo.liberarTraspaso(tx, id)
+    }
+
+    await tx.commit()
+    return await findTraspasoById(id)
   } catch (err) {
     await tx.rollback()
     throw err

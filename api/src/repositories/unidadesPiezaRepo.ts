@@ -13,6 +13,7 @@ import { getPool } from '../shared/db'
 
 export type EstadoUnidad =
   | 'almacen'     // en el estante, lista para usarse
+  | 'en_traspaso' // va en camino a otra sucursal y nadie la ha aceptado aún
   | 'montada'     // puesta en un vehículo ahora mismo
   | 'desechada'
   | 'vendida'
@@ -59,8 +60,14 @@ export interface UnidadPieza {
 //                                 que es lo que pasa cuando se cambia una pieza
 //                                 y no se captura el destino.
 //   sin instalaciones          -> nunca se ha usado: está en el estante.
+//
+// La reserva de un traspaso gana sobre todo lo demás (035): su `sucursal_id`
+// sigue diciendo el estante de origen, pero la pieza va en una camioneta y su
+// existencia ya se descontó. Sin esta rama la lista la mostraría "En almacén"
+// en una sucursal donde ya no está.
 const ESTADO = `
   CASE
+    WHEN u.traspaso_id IS NOT NULL     THEN 'en_traspaso'
     WHEN ult.id IS NULL                THEN 'almacen'
     WHEN ult.fecha_retiro IS NULL      THEN 'montada'
     WHEN ult.destino = 'desecho'       THEN 'desechada'
@@ -322,6 +329,10 @@ export async function tomarDisponible(
       SELECT TOP 1 u.id
       FROM unidades_pieza u
       WHERE u.pieza_id = @piezaId
+        -- Reservada a un traspaso que va en camino (035): su existencia ya se
+        -- descontó del origen y todavía no llega al destino, así que no hay nada
+        -- que montar con ella.
+        AND u.traspaso_id IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM instalaciones_pieza i
           WHERE i.unidad_id = u.id AND i.fecha_retiro IS NULL)
@@ -335,39 +346,71 @@ export async function tomarDisponible(
 }
 
 /**
- * Mueve N unidades de un lote de una sucursal a otra, para acompañar un traspaso
- * de existencias.
+ * Reserva N unidades libres del lote en el origen para un traspaso que acaba de
+ * salir. No las mueve: mientras `traspaso_id` apunte a algo, la unidad va en
+ * camino y no cuenta como disponible en ninguna sucursal (migración 035).
  *
- * Sin esto, traspasar stock movía las piezas en `existencias_lote` y dejaba sus
- * unidades diciendo que siguen en el estante de origen. Solo se mueven las que
- * están libres: una unidad con instalación abierta está puesta en un vehículo y
- * no es parte del stock que se traspasa.
+ * Solo toma las que están libres: una unidad con instalación abierta está
+ * puesta en un vehículo y no es parte del stock que se traspasa; una que ya
+ * está reservada va en otra camioneta.
  *
- * Puede mover menos de las pedidas si no hay tantas libres —los tipos a granel
- * no tienen unidades en absoluto, y ahí mueve cero—. Eso no es un error: la
- * existencia es la que manda, y el descuadre lo reporta la comprobación de
- * `contarPorSucursal`.
+ * Puede reservar menos de las pedidas si no hay tantas libres —los tipos a
+ * granel no tienen unidades en absoluto, y ahí reserva cero—. Eso no es un
+ * error: la existencia es la que manda, y el descuadre lo reporta la
+ * comprobación de `contarPorSucursal`.
  */
-export async function moverEntreSucursales(
-  tx: sql.Transaction, loteId: number, origenId: number, destinoId: number, cuantas: number,
+export async function reservarParaTraspaso(
+  tx: sql.Transaction, traspasoId: number, loteId: number, origenId: number, cuantas: number,
 ): Promise<number> {
   const r = await tx.request()
-    .input('lote',    sql.Int, loteId)
-    .input('origen',  sql.Int, origenId)
-    .input('destino', sql.Int, destinoId)
-    .input('n',       sql.Int, cuantas)
+    .input('traspaso', sql.Int, traspasoId)
+    .input('lote',     sql.Int, loteId)
+    .input('origen',   sql.Int, origenId)
+    .input('n',        sql.Int, cuantas)
     .query(`
-      UPDATE u SET u.sucursal_id = @destino
+      UPDATE u SET u.traspaso_id = @traspaso
       FROM unidades_pieza u
       JOIN (
         SELECT TOP (@n) up.id
         FROM unidades_pieza up
         WHERE up.lote_id = @lote AND up.sucursal_id = @origen
+          AND up.traspaso_id IS NULL
           AND NOT EXISTS (
             SELECT 1 FROM instalaciones_pieza i
             WHERE i.unidad_id = up.id AND i.fecha_retiro IS NULL)
         ORDER BY up.id
       ) elegidas ON elegidas.id = u.id`)
+  return r.rowsAffected[0] ?? 0
+}
+
+/**
+ * El destino aceptó: las unidades reservadas llegan a su estante y dejan de
+ * estar en camino. Es el único momento en que el traspaso toca su `sucursal_id`.
+ */
+export async function confirmarTraspaso(
+  tx: sql.Transaction, traspasoId: number, destinoId: number,
+): Promise<number> {
+  const r = await tx.request()
+    .input('traspaso', sql.Int, traspasoId)
+    .input('destino',  sql.Int, destinoId)
+    .query(`
+      UPDATE unidades_pieza
+      SET sucursal_id = @destino, traspaso_id = NULL
+      WHERE traspaso_id = @traspaso`)
+  return r.rowsAffected[0] ?? 0
+}
+
+/**
+ * Se rechazó o se canceló: las unidades vuelven a estar disponibles donde
+ * siempre estuvieron. No se les toca la sucursal porque nunca se les cambió —esa
+ * es justo la ventaja de reservar en vez de mover—.
+ */
+export async function liberarTraspaso(
+  tx: sql.Transaction, traspasoId: number,
+): Promise<number> {
+  const r = await tx.request()
+    .input('traspaso', sql.Int, traspasoId)
+    .query('UPDATE unidades_pieza SET traspaso_id = NULL WHERE traspaso_id = @traspaso')
   return r.rowsAffected[0] ?? 0
 }
 
@@ -395,9 +438,13 @@ export async function contarPorSucursal(): Promise<CuadreUnidades[]> {
     WITH libres AS (
       SELECT u.pieza_id, u.sucursal_id, COUNT(*) AS unidades
       FROM unidades_pieza u
-      WHERE NOT EXISTS (
-        SELECT 1 FROM instalaciones_pieza i
-        WHERE i.unidad_id = u.id AND i.fecha_retiro IS NULL)
+      -- Las que van en un traspaso sin aceptar no están libres en ningún
+      -- estante, y su existencia ya se restó del origen: contarlas ahí
+      -- reportaría un descuadre por cada caja en la camioneta.
+      WHERE u.traspaso_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM instalaciones_pieza i
+          WHERE i.unidad_id = u.id AND i.fecha_retiro IS NULL)
       GROUP BY u.pieza_id, u.sucursal_id
     ),
     stock AS (
