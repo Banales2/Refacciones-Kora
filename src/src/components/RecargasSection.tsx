@@ -40,11 +40,19 @@ function formatKm(n: number) {
 }
 
 // Rendimiento por recarga: los km recorridos son el kilometraje de esta recarga
-// menos el de la recarga anterior (en orden cronológico); en la primera el
-// anterior se toma como 0. km/L = km recorridos / litros.
+// menos el de la recarga anterior (en orden cronológico). km/L = km recorridos
+// / litros.
 //
-// Devuelve un mapa id → km por litro (null si no se puede calcular: recarga sin
-// kilometraje, sin litros, o si el kilometraje bajó respecto al anterior).
+// La primera carga capturada no tiene rendimiento, y no es lo mismo que tenerlo
+// en cero: los kilómetros que traía la unidad antes de esa carga los pagó
+// combustible que nadie registró aquí. Tomar el anterior como 0 le atribuía el
+// odómetro completo —30 000 km con un tanque en una unidad que se dio de alta
+// usada—. Es el mismo criterio de lib/reportes/vehiculo y del análisis de
+// costos de la flota: solo se mide de tanque a tanque.
+//
+// Devuelve un mapa id → km por litro (null si no se puede calcular: la primera
+// carga, una sin kilometraje, sin litros, o si el kilometraje bajó respecto al
+// anterior).
 function calcularRendimientos(items: Recarga[]): Map<number, number | null> {
   const asc = [...items].sort((a, b) => {
     const fa = a.fecha.split('T')[0]
@@ -53,10 +61,17 @@ function calcularRendimientos(items: Recarga[]): Map<number, number | null> {
   })
 
   const rend = new Map<number, number | null>()
-  let kmAnterior = 0
+  let kmAnterior: number | null = null
   for (const r of asc) {
     if (r.kilometraje == null) {
       rend.set(r.id, null)
+      continue
+    }
+    if (kmAnterior == null) {
+      // La que abre el historial: deja la referencia para la siguiente, que sí
+      // cierra un tramo completo.
+      rend.set(r.id, null)
+      kmAnterior = r.kilometraje
       continue
     }
     const kmRecorridos = r.kilometraje - kmAnterior
