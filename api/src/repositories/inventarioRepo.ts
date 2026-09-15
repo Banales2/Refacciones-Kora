@@ -91,7 +91,11 @@ export interface Traspaso {
   destino:             string
   cantidad:            number
   fecha:               string
+  // Quien lo capturó (la cuenta de la sesión) y quien dio el visto bueno para
+  // mover la mercancía. El segundo es texto libre: rara vez tiene cuenta. NULL
+  // solo en los traspasos anteriores a la migración 034.
   usuario_email:       string | null
+  autorizado_por:      string | null
   observaciones:       string | null
   pieza_id:            number
   numero_serie:        string
@@ -101,7 +105,7 @@ export interface Traspaso {
 const SELECT_TRASPASO = `
   SELECT tr.id, tr.lote_id, tr.origen_sucursal_id, so.nombre AS origen,
          tr.destino_sucursal_id, sd.nombre AS destino,
-         tr.cantidad, tr.fecha, tr.usuario_email, tr.observaciones,
+         tr.cantidad, tr.fecha, tr.usuario_email, tr.autorizado_por, tr.observaciones,
          p.id AS pieza_id, p.numero_serie, p.descripcion
   FROM traspasos_pieza tr
   JOIN sucursales so ON so.id = tr.origen_sucursal_id
@@ -124,6 +128,19 @@ export async function findTraspasos(sucursalId?: number): Promise<Traspaso[]> {
   return r.recordset
 }
 
+// Quienes ya han autorizado un traspaso, para ofrecerlos en el formulario. No
+// hay catálogo de jefes de almacén: el nombre es texto libre y las repeticiones
+// salen de lo ya capturado, igual que los reportadores de incidencias.
+export async function findAutorizadores(): Promise<string[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT DISTINCT autorizado_por FROM traspasos_pieza
+    WHERE autorizado_por IS NOT NULL AND LTRIM(RTRIM(autorizado_por)) <> ''
+    ORDER BY autorizado_por
+  `)
+  return r.recordset.map((row: { autorizado_por: string }) => row.autorizado_por)
+}
+
 /** Existencia de un lote en una sucursal. 0 si no hay fila. */
 export async function getExistencia(loteId: number, sucursalId: number): Promise<number> {
   const pool = await getPool()
@@ -140,6 +157,7 @@ export interface TraspasoCreate {
   destino_sucursal_id: number
   cantidad:            number
   fecha:               string
+  autorizado_por:      string
   observaciones?:      string | null
 }
 
@@ -185,12 +203,14 @@ export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string)
       .input('cant',   sql.Int,           data.cantidad)
       .input('fecha',  sql.Date,          data.fecha)
       .input('user',   sql.NVarChar(255), usuarioEmail)
+      .input('autoriza', sql.NVarChar(120), data.autorizado_por)
       .input('obs',    sql.NVarChar(300), data.observaciones ?? null)
       .query(`
         INSERT INTO traspasos_pieza
-          (lote_id, origen_sucursal_id, destino_sucursal_id, cantidad, fecha, usuario_email, observaciones)
+          (lote_id, origen_sucursal_id, destino_sucursal_id, cantidad, fecha,
+           usuario_email, autorizado_por, observaciones)
         OUTPUT INSERTED.id
-        VALUES (@lid, @origen, @dest, @cant, @fecha, @user, @obs)`)
+        VALUES (@lid, @origen, @dest, @cant, @fecha, @user, @autoriza, @obs)`)
 
     await tx.commit()
 

@@ -23,6 +23,7 @@ export async function inventarioTraspasoCreate(req: HttpRequest, ctx: Invocation
         de: created.origen,
         a: created.destino,
         cantidad: created.cantidad,
+        autorizo: created.autorizado_por,
       },
       ipAddress: getClientIp(req),
     })

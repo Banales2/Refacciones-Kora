@@ -24,6 +24,8 @@ import type { Descuadre, ResolucionDescuadre } from '../hooks/useDescuadres'
 import { FechaInput } from '../components/FechaInput'
 import SelectCatalogo from '../components/SelectCatalogo'
 import { formatearFecha } from '../lib/fechas'
+import { useAutorizadorOptions } from '../hooks/useAutorizadorOptions'
+import { limpiarTextoSimple } from '../lib/validaciones'
 
 const formatMXN = (n: number) =>
   n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -415,7 +417,7 @@ function PanelTraspasos({ sucursalId }: { sucursalId: number }) {
   }
 
   return (
-    <Table.ScrollContainer minWidth={760}>
+    <Table.ScrollContainer minWidth={880}>
       <Table striped withTableBorder>
         <Table.Thead>
           <Table.Tr>
@@ -423,6 +425,7 @@ function PanelTraspasos({ sucursalId }: { sucursalId: number }) {
             <Table.Th>Refacción</Table.Th>
             <Table.Th>Movimiento</Table.Th>
             <Table.Th ta="right">Cantidad</Table.Th>
+            <Table.Th>Autorizó</Table.Th>
             <Table.Th>Registró</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -443,6 +446,8 @@ function PanelTraspasos({ sucursalId }: { sucursalId: number }) {
                   <Text size="xs" c="dimmed">{t.origen} → {t.destino}</Text>
                 </Table.Td>
                 <Table.Td ta="right"><Text size="sm" fw={500}>{t.cantidad}</Text></Table.Td>
+                {/* Vacío en los traspasos anteriores a que se empezara a pedir. */}
+                <Table.Td><Text size="xs">{t.autorizado_por ?? '—'}</Text></Table.Td>
                 <Table.Td><Text size="xs" c="dimmed">{t.usuario_email ?? '—'}</Text></Table.Td>
               </Table.Tr>
             )
@@ -466,7 +471,13 @@ function TraspasoModal({
   const [destino, setDestino] = useState<string | null>(null)
   const [cantidad, setCantidad] = useState<number | string>(1)
   const [fecha, setFecha] = useState(hoy())
+  const [autorizo, setAutorizo] = useState('')
   const [obs, setObs] = useState('')
+
+  const {
+    options: autorizadorOptions, setSearch: setAutorizadorSearch,
+    estado: autorizadorEstado,
+  } = useAutorizadorOptions(autorizo)
 
   // El origen no puede ser también el destino: se saca de la lista en vez de
   // dejar que el usuario lo elija y reciba un error después.
@@ -474,8 +485,12 @@ function TraspasoModal({
     .filter((s) => s.id !== existencia.sucursal_id)
     .map((s) => ({ value: String(s.id), label: s.nombre }))
 
+  // Sin autorizador no se manda: es el dato por el que se pregunta cuando
+  // aparecen piezas en una sucursal que no las pidió.
+  const listo = destino !== null && autorizo.trim() !== ''
+
   function confirmar() {
-    if (!destino) return
+    if (!listo) return
     crearMut.mutate(
       {
         lote_id:             existencia.lote_id,
@@ -483,6 +498,7 @@ function TraspasoModal({
         destino_sucursal_id: Number(destino),
         cantidad:            Number(cantidad),
         fecha,
+        autorizado_por:      autorizo.trim(),
         observaciones:       obs.trim() || null,
       },
       { onSuccess: onClose },
@@ -523,6 +539,19 @@ function TraspasoModal({
           onChange={(v) => setCantidad(v === '' ? '' : Number(v))}
         />
         <FechaInput label="Fecha" maxDate={hoy()} value={fecha} onChange={setFecha} />
+        <SelectCatalogo
+          estado={autorizadorEstado}
+          nombre="autorizadores"
+          creable
+          label="Autorizó" required
+          placeholder="Selecciona o escribe quién autorizó el movimiento"
+          description="Quién dio el visto bueno para mover la mercancía. Quién lo registra se toma de tu cuenta"
+          data={autorizadorOptions}
+          value={autorizo}
+          onChange={(v) => { setAutorizo(v ?? ''); setAutorizadorSearch('') }}
+          onSearchChange={(v) => setAutorizadorSearch(limpiarTextoSimple(v, 120))}
+          nothingFoundMessage="Escribe el nombre de quién autorizó"
+        />
         <Textarea
           label="Observaciones"
           placeholder="Opcional: por qué se movieron"
@@ -536,7 +565,7 @@ function TraspasoModal({
 
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onClose} disabled={crearMut.isPending}>Cancelar</Button>
-          <Button onClick={confirmar} loading={crearMut.isPending} disabled={!destino}>
+          <Button onClick={confirmar} loading={crearMut.isPending} disabled={!listo}>
             Traspasar
           </Button>
         </Group>

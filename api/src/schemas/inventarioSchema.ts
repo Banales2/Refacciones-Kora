@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { TEXTO_LIBRE } from './common'
+import { TEXTO_LIBRE, TEXTO_SIMPLE } from './common'
 
 // Fecha local (no UTC) para no rechazar "hoy" en zonas horarias detrás de UTC.
 function todayIso() {
@@ -23,6 +23,15 @@ export const TraspasoCreateSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato inválido (YYYY-MM-DD)')
     .refine((v) => v <= todayIso(), 'No puede ser una fecha futura'),
+  // Quien dio el visto bueno para mover la mercancía. Obligatorio: un traspaso
+  // sin autorizador es justo el que nadie reconoce después. Quien lo capturó no
+  // viene aquí —sale de la cuenta de la sesión—.
+  autorizado_por: z
+    .string()
+    .trim()
+    .min(1, 'Requerido')
+    .max(120, 'Máximo 120 caracteres')
+    .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones'),
   observaciones,
 })
   // Se valida aquí y no solo en la base para poder dar el mensaje en español;

@@ -29,6 +29,10 @@ export async function getTraspasos(sucursalId?: number) {
   return repo.findTraspasos(sucursalId)
 }
 
+export async function getAutorizadores() {
+  return repo.findAutorizadores()
+}
+
 export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string) {
   const origen  = await exigirSucursal(data.origen_sucursal_id)
   await exigirSucursal(data.destino_sucursal_id)

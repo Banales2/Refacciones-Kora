@@ -33,7 +33,10 @@ export interface Traspaso {
   destino:             string
   cantidad:            number
   fecha:               string
+  // Quién lo capturó (la cuenta de la sesión) y quién lo autorizó. El segundo es
+  // NULL solo en los traspasos anteriores a que se empezara a pedir.
   usuario_email:       string | null
+  autorizado_por:      string | null
   observaciones:       string | null
   pieza_id:            number
   numero_serie:        string
@@ -82,7 +85,16 @@ export interface TraspasoPayload {
   destino_sucursal_id: number
   cantidad:            number
   fecha:               string
+  autorizado_por:      string
   observaciones?:      string | null
+}
+
+// Nombres ya usados al autorizar, para ofrecerlos en el formulario.
+export function useTraspasoAutorizadores() {
+  return useQuery({
+    queryKey: ['inventario-traspaso-autorizadores'],
+    queryFn: () => api.get<{ data: string[] }>('/inventario/traspasos/autorizadores'),
+  })
 }
 
 export function useCreateTraspaso() {
@@ -96,6 +108,7 @@ export function useCreateTraspaso() {
       // lotes del mantenimiento.
       qc.invalidateQueries({ queryKey: ['inventario-existencias'] })
       qc.invalidateQueries({ queryKey: ['inventario-traspasos'] })
+      qc.invalidateQueries({ queryKey: ['inventario-traspaso-autorizadores'] })
       qc.invalidateQueries({ queryKey: ['inventario-minimos'] })
       qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
       qc.invalidateQueries({ queryKey: ['lotes'] })
