@@ -23,7 +23,8 @@ export async function vehiculoPiezasHistorial(
 app.http('vehiculo-piezas-historial', {
   methods: ['GET'],
   // Antes de `{tipoId}` en el archivo, pero las rutas no compiten: `historial`
-  // solo responde a GET y el set/remove por tipo son PUT y DELETE.
+  // solo responde a GET, el set por tipo es PUT y el quitar es POST sobre
+  // `{tipoId}/quitar`.
   route: 'vehiculos/{id}/piezas/historial',
   authLevel: 'anonymous',
   handler: vehiculoPiezasHistorial,
