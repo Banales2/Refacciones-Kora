@@ -9,7 +9,7 @@ import {
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
-  IconPencil, IconPlus, IconAlertTriangle, IconSearch, IconTool,
+  IconPencil, IconPlus, IconAlertTriangle, IconSearch, IconTool, IconClipboardList,
 } from '@tabler/icons-react'
 import {
   useIncidencias, useCreateIncidencia, useUpdateIncidencia,
@@ -72,8 +72,9 @@ export default function Incidencias({ onNavigateVehiculo }: {
   // La incidencia quedó marcada como atendida: el mantenimiento que la cierra es
   // obligatorio, y `deshacer` dice cómo revertir el cambio si se cancela.
   const [deshacer, setDeshacer] = useState<DeshacerAtencion | null>(null)
-  // Mantenimiento recién registrado cuyo detalle se abre cuando sus refacciones
-  // no se pudieron guardar completas.
+  // Mantenimiento cuyo detalle se está viendo: el que atendió a una incidencia
+  // ya cerrada, o el recién registrado cuyas refacciones no se pudieron guardar
+  // completas.
   const [detalleMttoId, setDetalleMttoId] = useState<number | null>(null)
 
   // Las mutaciones necesitan el id del vehículo para invalidar sus listas.
@@ -201,6 +202,13 @@ export default function Incidencias({ onNavigateVehiculo }: {
       },
       onError: (e: Error) => setMantError(e.message),
     })
+  }
+
+  // El mantenimiento que cerró la incidencia. Cierra la ficha antes de abrir el
+  // drawer para no encimarlo sobre el modal.
+  function verMantenimiento(mantenimientoId: number) {
+    setDetalle(null)
+    setDetalleMttoId(mantenimientoId)
   }
 
   function irAlVehiculo(vehiculoId: number) {
@@ -339,6 +347,16 @@ export default function Incidencias({ onNavigateVehiculo }: {
                               </ActionIcon>
                             </Tooltip>
                           )}
+                          {/* Y al revés, la que ya se atendió lleva al servicio
+                              con el que se cerró. */}
+                          {i.mantenimiento_id !== null && (
+                            <Tooltip label="Ver el mantenimiento que la atendió">
+                              <ActionIcon variant="subtle" color="gray" size="sm"
+                                onClick={() => verMantenimiento(i.mantenimiento_id!)}>
+                                <IconClipboardList size={14} />
+                              </ActionIcon>
+                            </Tooltip>
+                          )}
                           <Tooltip label="Editar">
                             <ActionIcon variant="subtle" color="blue" size="sm"
                               onClick={() => { setFormError(null); setEditando(i) }}>
@@ -442,6 +460,12 @@ export default function Incidencias({ onNavigateVehiculo }: {
                 Editar
               </Button>
               <Group gap="sm">
+                {detalle.mantenimiento_id !== null && (
+                  <Button variant="light" leftSection={<IconClipboardList size={16} />}
+                    onClick={() => verMantenimiento(detalle.mantenimiento_id!)}>
+                    Ver mantenimiento
+                  </Button>
+                )}
                 {detalle.status === 'activo' && (
                   <Button color="teal" leftSection={<IconTool size={16} />}
                     onClick={() => abrirAtender(detalle)}>
@@ -486,6 +510,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
               {...(deshacer
                 ? { pendienteFijo: { id: atendiendo.id, nombre: atendiendo.nombre } }
                 : { prefillPendienteIds: [atendiendo.id] })}
+              tipoInicial="Correctivo"
               isPending={mantMut.isPending || piezasMut.isPending || updateMut.isPending}
               error={mantError}
               onSubmit={handleAtender}

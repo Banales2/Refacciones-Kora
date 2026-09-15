@@ -28,6 +28,9 @@ export interface Incidencia {
   // Quien reporta detectó el problema; quien registra la incidencia la autoriza.
   // Lo pone la API con la cuenta de la sesión: no se manda ni se edita.
   autorizado_por: string
+  // El mantenimiento que la atendió, para abrir su detalle desde la ficha.
+  // NULL mientras siga sin atenderse.
+  mantenimiento_id: number | null
 }
 
 export interface IncidenciaConVehiculo extends Incidencia {

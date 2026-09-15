@@ -15,7 +15,7 @@ import {
 import { useDebouncedValue } from '@mantine/hooks'
 import {
   IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight, IconAlertTriangle,
-  IconFileTypePdf, IconReportAnalytics, IconTool, IconExternalLink,
+  IconFileTypePdf, IconReportAnalytics, IconTool, IconExternalLink, IconClipboardList,
 } from '@tabler/icons-react'
 import {
   useVehiculos, useVehiculo, useCreateVehiculo, useUpdateVehiculo, vehiculoLabel,
@@ -204,6 +204,8 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
   const [detalle, setDetalle]         = useState<Incidencia | null>(null)
   const [deshacer, setDeshacer]       = useState<DeshacerAtencion | null>(null)
   const [mantError, setMantError]     = useState<string | null>(null)
+  // Mantenimiento cuyo detalle se está viendo: el que atendió a una incidencia
+  // ya cerrada, o el recién registrado al que le faltaron refacciones.
   const [detalleMttoId, setDetalleMttoId] = useState<number | null>(null)
 
   const items = data?.data ?? []
@@ -230,6 +232,13 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
     setDeshacer(null)
     setDetalle(null)
     setAtendiendo(i)
+  }
+
+  // Y al revés: la que ya se atendió lleva al servicio con el que se cerró. La
+  // ficha se cierra antes para no encimarle el drawer.
+  function verMantenimiento(mantenimientoId: number) {
+    setDetalle(null)
+    setDetalleMttoId(mantenimientoId)
   }
 
   // Marcar una incidencia como atendida obliga a registrar el mantenimiento que
@@ -400,6 +409,14 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
                             </ActionIcon>
                           </Tooltip>
                         )}
+                        {i.mantenimiento_id !== null && (
+                          <Tooltip label="Ver el mantenimiento que la atendió">
+                            <ActionIcon variant="subtle" color="gray" size="sm"
+                              onClick={() => verMantenimiento(i.mantenimiento_id!)}>
+                              <IconClipboardList size={14} />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
                         <Tooltip label="Editar">
                           <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(i)}>
                             <IconPencil size={14} />
@@ -479,12 +496,20 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
                 onClick={() => { setDetalle(null); openEdit(detalle) }}>
                 Editar
               </Button>
-              {detalle.status === 'activo' && (
-                <Button color="teal" leftSection={<IconTool size={16} />}
-                  onClick={() => abrirAtender(detalle)}>
-                  Registrar mantenimiento
-                </Button>
-              )}
+              <Group gap="sm">
+                {detalle.mantenimiento_id !== null && (
+                  <Button variant="light" leftSection={<IconClipboardList size={16} />}
+                    onClick={() => verMantenimiento(detalle.mantenimiento_id!)}>
+                    Ver mantenimiento
+                  </Button>
+                )}
+                {detalle.status === 'activo' && (
+                  <Button color="teal" leftSection={<IconTool size={16} />}
+                    onClick={() => abrirAtender(detalle)}>
+                    Registrar mantenimiento
+                  </Button>
+                )}
+              </Group>
             </Group>
           </Stack>
         )}

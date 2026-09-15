@@ -34,6 +34,9 @@ export interface Incidencia {
   // Registrar la incidencia es autorizarla, así que el autorizador es la cuenta
   // de la sesión: no llega del cliente y no se edita después.
   autorizado_por: string
+  // El mantenimiento que la atendió, para poder abrir su detalle desde la
+  // incidencia ya cerrada. NULL mientras nadie la haya atendido.
+  mantenimiento_id: number | null
 }
 
 export interface IncidenciaConVehiculo extends Incidencia {
@@ -71,10 +74,19 @@ export interface IncidenciaUpdate {
 // obliga al front a desenredar una fecha que no existe.
 const HORA_TXT = `CONVERT(varchar(5), i.hora, 108) AS hora`
 
+// Con qué mantenimiento se cerró. La base admite uno solo, pero se ordena de
+// todos modos: una columna que depende de qué renglón devuelva el motor primero
+// sería distinta en cada consulta.
+const MTTO_ATENDIO = `
+  (SELECT TOP 1 mp.mantenimiento_id
+     FROM mantenimiento_pendientes mp
+    WHERE mp.pendiente_id = p.id
+    ORDER BY mp.fecha DESC, mp.mantenimiento_id DESC) AS mantenimiento_id`
+
 const SELECT_INC = `
   SELECT ${PENDIENTE_COLS},
          i.reportado_por, i.severidad, i.fecha, ${HORA_TXT}, i.ubicacion,
-         i.autorizado_por
+         i.autorizado_por, ${MTTO_ATENDIO}
   FROM pendientes p
   JOIN incidencias i ON i.id = p.id`
 
@@ -92,7 +104,7 @@ export async function findAllConVehiculo(): Promise<IncidenciaConVehiculo[]> {
   const r = await pool.request().query(`
     SELECT ${PENDIENTE_COLS},
            i.reportado_por, i.severidad, i.fecha, ${HORA_TXT}, i.ubicacion,
-           i.autorizado_por,
+           i.autorizado_por, ${MTTO_ATENDIO},
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
            v.tipo AS vehiculo_tipo
     FROM pendientes p
