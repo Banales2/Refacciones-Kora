@@ -25,8 +25,10 @@ export async function detalleMttoDelete(req: HttpRequest, ctx: InvocationContext
 }
 
 app.http('detalle-mtto-delete', {
-  methods: ['DELETE'],
-  route: 'detalle-mtto/{id}',
+  // POST y no DELETE: la API no expone el verbo DELETE en ninguna ruta, para
+  // poder bloquearlo entero en el borde. Ver docs/sin-delete.md.
+  methods: ['POST'],
+  route: 'detalle-mtto/{id}/quitar',
   authLevel: 'anonymous',
   handler: detalleMttoDelete,
 })

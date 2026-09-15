@@ -22,8 +22,10 @@ export async function inventarioMinimoDelete(req: HttpRequest, ctx: InvocationCo
 }
 
 app.http('inventario-minimo-delete', {
-  methods: ['DELETE'],
-  route: 'inventario/minimos/{id}',
+  // POST y no DELETE: la API no expone el verbo DELETE en ninguna ruta, para
+  // poder bloquearlo entero en el borde. Ver docs/sin-delete.md.
+  methods: ['POST'],
+  route: 'inventario/minimos/{id}/quitar',
   authLevel: 'anonymous',
   handler: inventarioMinimoDelete,
 })

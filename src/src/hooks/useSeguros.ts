@@ -82,7 +82,7 @@ export function useUnassignVehiculoSeguro() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, vehiculoId }: { id: number; vehiculoId: number }) =>
-      api.delete<void>(`/seguros/${id}/vehiculos/${vehiculoId}`),
+      api.accion<void>(`/seguros/${id}/vehiculos/${vehiculoId}/quitar`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['vehiculos'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })

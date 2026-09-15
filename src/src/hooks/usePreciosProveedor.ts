@@ -100,7 +100,7 @@ export function useUpdatePrecioProveedor() {
 export function useDeletePrecioProveedor() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/precios-proveedor/${id}`),
+    mutationFn: (id: number) => api.accion<void>(`/precios-proveedor/${id}/quitar`),
     onSuccess: () => invalidar(qc),
   })
 }

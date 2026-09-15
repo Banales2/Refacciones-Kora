@@ -25,8 +25,10 @@ export async function programaOperacionDelete(req: HttpRequest, ctx: InvocationC
 }
 
 app.http('programa-operacion-delete', {
-  methods: ['DELETE'],
-  route: 'programa-operaciones/{id}',
+  // POST y no DELETE: la API no expone el verbo DELETE en ninguna ruta, para
+  // poder bloquearlo entero en el borde. Ver docs/sin-delete.md.
+  methods: ['POST'],
+  route: 'programa-operaciones/{id}/quitar',
   authLevel: 'anonymous',
   handler: programaOperacionDelete,
 })

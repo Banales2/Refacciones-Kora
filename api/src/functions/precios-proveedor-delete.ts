@@ -33,8 +33,10 @@ export async function preciosProveedorDelete(
 }
 
 app.http('precios-proveedor-delete', {
-  methods: ['DELETE'],
-  route: 'precios-proveedor/{id}',
+  // POST y no DELETE: la API no expone el verbo DELETE en ninguna ruta, para
+  // poder bloquearlo entero en el borde. Ver docs/sin-delete.md.
+  methods: ['POST'],
+  route: 'precios-proveedor/{id}/quitar',
   authLevel: 'anonymous',
   handler: preciosProveedorDelete,
 })

@@ -119,7 +119,7 @@ export function useRemovePiezaVehiculo() {
           .filter(([, v]) => v !== undefined && v !== '')
           .map(([k, v]) => [k, String(v)] as [string, string]),
       ]).toString()
-      return api.delete<void>(`/vehiculos/${vehiculoId}/piezas/${tipoId}?${qs}`)
+      return api.accion<void>(`/vehiculos/${vehiculoId}/piezas/${tipoId}/quitar?${qs}`)
     },
     onSuccess: (_d, { vehiculoId }) => invalidar(qc, vehiculoId),
   })

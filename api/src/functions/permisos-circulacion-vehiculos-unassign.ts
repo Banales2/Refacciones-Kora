@@ -29,8 +29,10 @@ export async function permisosCirculacionVehiculosUnassign(
 }
 
 app.http('permisos-circulacion-vehiculos-unassign', {
-  methods: ['DELETE'],
-  route: 'permisos-circulacion/{id}/vehiculos/{vehiculoId}',
+  // POST y no DELETE: la API no expone el verbo DELETE en ninguna ruta, para
+  // poder bloquearlo entero en el borde. Ver docs/sin-delete.md.
+  methods: ['POST'],
+  route: 'permisos-circulacion/{id}/vehiculos/{vehiculoId}/quitar',
   authLevel: 'anonymous',
   handler: permisosCirculacionVehiculosUnassign,
 })

@@ -150,7 +150,7 @@ export function useUpdateDetalleMtto(mantenimientoId: number | null) {
 export function useDeleteDetalleMtto(mantenimientoId: number | null) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/detalle-mtto/${id}`),
+    mutationFn: (id: number) => api.accion<void>(`/detalle-mtto/${id}/quitar`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['detalle-mtto', mantenimientoId] })
       qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })

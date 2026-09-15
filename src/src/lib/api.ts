@@ -113,7 +113,14 @@ export const api = {
     request<T>(path, { method: 'POST', body: JSON.stringify(body) }, timeoutMs),
   put: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
-  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  /**
+   * Acción sobre un recurso, sin cuerpo: quitar un vínculo, deshacer una visita,
+   * restaurar un archivado. Va por POST y no por DELETE porque la API no expone
+   * ese verbo en ninguna ruta —así se puede bloquear entero en el borde— y por
+   * eso aquí tampoco hay un `api.delete`: si hiciera falta uno, lo que hay que
+   * revisar es el endpoint. Ver docs/sin-delete.md.
+   */
+  accion: <T>(path: string) => request<T>(path, { method: 'POST' }),
 }
 
 export { ApiError }

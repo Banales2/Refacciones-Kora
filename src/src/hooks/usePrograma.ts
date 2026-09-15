@@ -166,7 +166,7 @@ export function useUpdatePrograma(modeloId: number) {
 export function useDeletePrograma(modeloId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete(`/programa/${id}`),
+    mutationFn: (id: number) => api.accion(`/programa/${id}/quitar`),
     onSuccess: () => invalidar(qc, modeloId),
   })
 }
@@ -204,7 +204,7 @@ export function useUpdateOperacion(modeloId: number) {
 export function useDeleteOperacion(modeloId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete(`/programa-operaciones/${id}`),
+    mutationFn: (id: number) => api.accion(`/programa-operaciones/${id}/quitar`),
     onSuccess: () => invalidar(qc, modeloId),
   })
 }

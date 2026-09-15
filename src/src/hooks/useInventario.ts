@@ -140,7 +140,7 @@ export function useUpdateMinimo() {
 export function useDeleteMinimo() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/inventario/minimos/${id}`),
+    mutationFn: (id: number) => api.accion<void>(`/inventario/minimos/${id}/quitar`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['inventario-minimos'] }),
   })
 }

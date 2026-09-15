@@ -91,7 +91,7 @@ export function useCancelarAgenda(vehiculoId: number) {
 export function useDeleteAgenda(vehiculoId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete(`/agendas-mantenimiento/${id}`),
+    mutationFn: (id: number) => api.accion(`/agendas-mantenimiento/${id}/quitar`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agendas-mantenimiento', vehiculoId] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })

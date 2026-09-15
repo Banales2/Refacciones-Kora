@@ -28,7 +28,7 @@ export function useArchivarCatalogo(recurso: CatalogoArchivable) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, motivo }: { id: number; motivo?: string }) =>
-      api.post<void>(`/${recurso}/${id}/archivado`, { motivo }),
+      api.post<void>(`/${recurso}/${id}/archivar`, { motivo }),
     onSuccess: () => qc.invalidateQueries({ queryKey: [recurso] }),
   })
 }
@@ -36,7 +36,7 @@ export function useArchivarCatalogo(recurso: CatalogoArchivable) {
 export function useRestaurarCatalogo(recurso: CatalogoArchivable) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/${recurso}/${id}/archivado`),
+    mutationFn: (id: number) => api.accion<void>(`/${recurso}/${id}/restaurar`),
     onSuccess: () => qc.invalidateQueries({ queryKey: [recurso] }),
   })
 }

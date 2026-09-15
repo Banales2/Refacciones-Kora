@@ -225,7 +225,7 @@ export function useQuitarPrograma(vehiculoId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (etapa: Etapa = 'fabricante') =>
-      api.delete(`/vehiculos/${vehiculoId}/programa?etapa=${etapa}`),
+      api.accion(`/vehiculos/${vehiculoId}/programa/quitar?etapa=${etapa}`),
     onSuccess: () => invalidar(qc, vehiculoId),
   })
 }
@@ -291,7 +291,7 @@ export function useDeshacerVisita(vehiculoId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (mantenimientoId: number) =>
-      api.delete<{ data: EstadoProgramaVehiculo }>(`/programa-visitas/${mantenimientoId}`),
+      api.accion<{ data: EstadoProgramaVehiculo }>(`/programa-visitas/${mantenimientoId}/deshacer`),
     onSuccess: (r) => {
       guardar(qc, vehiculoId, r.data)
       qc.invalidateQueries({ queryKey: ['mantenimientos'] })

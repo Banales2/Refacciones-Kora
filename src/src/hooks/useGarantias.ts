@@ -137,7 +137,7 @@ export function useUpdateGarantiaModelo(modeloId: number) {
 export function useDeleteGarantiaModelo(modeloId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete(`/garantias-modelo/${id}`),
+    mutationFn: (id: number) => api.accion(`/garantias-modelo/${id}/quitar`),
     onSuccess: () => invalidarModelo(qc, modeloId),
   })
 }
@@ -183,7 +183,7 @@ export function useUpdateGarantiaVehiculo(vehiculoId: number) {
 export function useDeleteGarantiaVehiculo(vehiculoId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete(`/garantias/${id}`),
+    mutationFn: (id: number) => api.accion(`/garantias/${id}/quitar`),
     onSuccess: () => invalidarVehiculo(qc, vehiculoId),
   })
 }

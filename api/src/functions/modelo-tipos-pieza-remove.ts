@@ -34,8 +34,10 @@ export async function modeloTiposPiezaRemove(
 }
 
 app.http('modelo-tipos-pieza-remove', {
-  methods: ['DELETE'],
-  route: 'modelos/{id}/tipos-pieza/{tipoId}',
+  // POST y no DELETE: la API no expone el verbo DELETE en ninguna ruta, para
+  // poder bloquearlo entero en el borde. Ver docs/sin-delete.md.
+  methods: ['POST'],
+  route: 'modelos/{id}/tipos-pieza/{tipoId}/quitar',
   authLevel: 'anonymous',
   handler: modeloTiposPiezaRemove,
 })

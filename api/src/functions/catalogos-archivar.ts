@@ -7,9 +7,13 @@ import { capturar } from '../shared/snapshot'
 import * as service from '../services/archivadoService'
 import type { TablaArchivable } from '../repositories/archivadoRepo'
 
-// Archivar un catálogo sustituye a borrarlo (migración 033). POST lo archiva,
-// DELETE lo restaura: lo que se crea y se quita aquí es el archivado, no el
-// renglón, que no se borra nunca desde la aplicación.
+// Archivar un catálogo sustituye a borrarlo (migración 033). Dos acciones, las
+// dos POST: `/archivar` y `/restaurar`. Lo que se pone y se quita aquí es el
+// archivado, no el renglón, que no se borra nunca desde la aplicación.
+//
+// Son dos rutas y no una con dos verbos porque la API no expone DELETE en
+// ninguna parte, para poder bloquear el verbo entero en el borde. Ver
+// docs/sin-delete.md.
 //
 // Las ocho rutas se registran desde un solo archivo porque el manejador es
 // literalmente el mismo y lo único que cambia es la tabla. Ocho copias del
@@ -42,7 +46,7 @@ const CATALOGOS: Catalogo[] = [
   { tabla: 'tipos_pieza', ruta: 'tipos-pieza', etiqueta: 'El tipo de pieza' },
 ]
 
-function handler(cat: Catalogo) {
+function handler(cat: Catalogo, accion: 'archivar' | 'restaurar') {
   return async function archivarCatalogo(
     req: HttpRequest, ctx: InvocationContext,
   ): Promise<HttpResponseInit> {
@@ -52,7 +56,7 @@ function handler(cat: Catalogo) {
       if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 
       const antes = await capturar(cat.tabla, id)
-      if (req.method === 'DELETE') {
+      if (accion === 'restaurar') {
         await service.restaurar(cat.tabla, cat.etiqueta, id)
       } else {
         const { motivo } = Schema.parse(await req.json().catch(() => ({})))
@@ -74,10 +78,12 @@ function handler(cat: Catalogo) {
 }
 
 for (const cat of CATALOGOS) {
-  app.http(`${cat.ruta}-archivar`, {
-    methods: ['POST', 'DELETE'],
-    route: `${cat.ruta}/{id}/archivado`,
-    authLevel: 'anonymous',
-    handler: handler(cat),
-  })
+  for (const accion of ['archivar', 'restaurar'] as const) {
+    app.http(`${cat.ruta}-${accion}`, {
+      methods: ['POST'],
+      route: `${cat.ruta}/{id}/${accion}`,
+      authLevel: 'anonymous',
+      handler: handler(cat, accion),
+    })
+  }
 }

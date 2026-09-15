@@ -44,8 +44,9 @@ export function useRemoveTipoPiezaVehiculo() {
     mutationFn: ({ vehiculoId, tipoId, etiqueta }: {
       vehiculoId: number; tipoId: number; etiqueta?: string
     }) =>
-      api.delete<void>(
-        `/vehiculos/${vehiculoId}/tipos-pieza/${tipoId}?etiqueta=${encodeURIComponent(etiqueta ?? '')}`
+      api.accion<void>(
+        `/vehiculos/${vehiculoId}/tipos-pieza/${tipoId}/quitar` +
+        `?etiqueta=${encodeURIComponent(etiqueta ?? '')}`
       ),
     onSuccess: (_d, { vehiculoId }) =>
       qc.invalidateQueries({ queryKey: ['piezas-vehiculo', vehiculoId] }),

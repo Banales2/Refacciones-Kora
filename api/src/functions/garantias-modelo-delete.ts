@@ -27,8 +27,10 @@ export async function garantiasModeloDelete(req: HttpRequest, ctx: InvocationCon
 }
 
 app.http('garantias-modelo-delete', {
-  methods: ['DELETE'],
-  route: 'garantias-modelo/{id}',
+  // POST y no DELETE: la API no expone el verbo DELETE en ninguna ruta, para
+  // poder bloquearlo entero en el borde. Ver docs/sin-delete.md.
+  methods: ['POST'],
+  route: 'garantias-modelo/{id}/quitar',
   authLevel: 'anonymous',
   handler: garantiasModeloDelete,
 })

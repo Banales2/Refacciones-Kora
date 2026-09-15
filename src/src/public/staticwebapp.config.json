@@ -13,6 +13,12 @@
   },
   "routes": [
     {
+      "_comment": "El verbo DELETE se rechaza en el borde, antes de llegar a la funcion. La API no expone ni una ruta DELETE (ver docs/sin-delete.md), asi que esto no bloquea nada que se use: es la red para que una ruta descuidada en el futuro tampoco quede expuesta a un borrado en masa. Va primero porque gana la primera regla que empata.",
+      "route": "/api/*",
+      "methods": ["DELETE"],
+      "statusCode": 405
+    },
+    {
       "route": "/login",
       "redirect": "/.auth/login/aad",
       "statusCode": 302

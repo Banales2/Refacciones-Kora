@@ -25,8 +25,10 @@ export async function agendaMantenimientoDelete(req: HttpRequest, ctx: Invocatio
 }
 
 app.http('agenda-mantenimiento-delete', {
-  methods: ['DELETE'],
-  route: 'agendas-mantenimiento/{id}',
+  // POST y no DELETE: la API no expone el verbo DELETE en ninguna ruta, para
+  // poder bloquearlo entero en el borde. Ver docs/sin-delete.md.
+  methods: ['POST'],
+  route: 'agendas-mantenimiento/{id}/quitar',
   authLevel: 'anonymous',
   handler: agendaMantenimientoDelete,
 })

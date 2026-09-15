@@ -29,8 +29,10 @@ export async function segurosVehiculosUnassign(
 }
 
 app.http('seguros-vehiculos-unassign', {
-  methods: ['DELETE'],
-  route: 'seguros/{id}/vehiculos/{vehiculoId}',
+  // POST y no DELETE: la API no expone el verbo DELETE en ninguna ruta, para
+  // poder bloquearlo entero en el borde. Ver docs/sin-delete.md.
+  methods: ['POST'],
+  route: 'seguros/{id}/vehiculos/{vehiculoId}/quitar',
   authLevel: 'anonymous',
   handler: segurosVehiculosUnassign,
 })

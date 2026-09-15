@@ -85,7 +85,7 @@ export function useUnassignVehiculoPermiso() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, vehiculoId }: { id: number; vehiculoId: number }) =>
-      api.delete<void>(`/permisos-circulacion/${id}/vehiculos/${vehiculoId}`),
+      api.accion<void>(`/permisos-circulacion/${id}/vehiculos/${vehiculoId}/quitar`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['vehiculos'] }),
   })
 }

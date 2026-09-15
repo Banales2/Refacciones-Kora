@@ -68,7 +68,7 @@ export function useDescontinuarModelo() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, motivo }: { id: number; motivo?: string }) =>
-      api.post<{ data: Modelo }>(`/modelos/${id}/descontinuado`, { motivo }),
+      api.post<{ data: Modelo }>(`/modelos/${id}/descontinuar`, { motivo }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['modelos'] }),
   })
 }
@@ -76,7 +76,7 @@ export function useDescontinuarModelo() {
 export function useRevivirModelo() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.delete<{ data: Modelo }>(`/modelos/${id}/descontinuado`),
+    mutationFn: (id: number) => api.accion<{ data: Modelo }>(`/modelos/${id}/revivir`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['modelos'] }),
   })
 }
