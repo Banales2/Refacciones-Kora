@@ -136,6 +136,7 @@ export function useCreateTraspaso() {
       qc.invalidateQueries({ queryKey: ['inventario-minimos'] })
       qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
       qc.invalidateQueries({ queryKey: ['lotes'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-pendientes-almacen'] })
     },
   })
 }
@@ -159,6 +160,7 @@ export function useResolverTraspaso() {
       qc.invalidateQueries({ queryKey: ['inventario-minimos'] })
       qc.invalidateQueries({ queryKey: ['lotes-disponibles'] })
       qc.invalidateQueries({ queryKey: ['lotes'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-pendientes-almacen'] })
       // Las piezas identificadas cambian de estante al aceptar, y dejan de
       // estar «en traspaso» en los tres desenlaces.
       qc.invalidateQueries({ queryKey: ['unidades-pieza'] })

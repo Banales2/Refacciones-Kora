@@ -16,12 +16,13 @@ import {
   IconChevronRight, IconAlertTriangle, IconTool,
   IconShoppingCart, IconClockExclamation, IconExclamationCircle, IconCashBanknote,
   IconLayoutDashboard, IconDiscount2, IconCalendarExclamation, IconClipboardList,
-  IconReportAnalytics, IconCalendar,
+  IconReportAnalytics, IconCalendar, IconArrowsExchange, IconTags,
 } from '@tabler/icons-react'
 import {
   useResumenMes, useRequerimientosVencidos, useRequerimientosPorVencer, useRequerimientosHistorial,
   useDocumentosPorVencer, useIncidenciasAbiertas, useAnalisisCostos,
-  type RequerimientoVencido, type VentanaCostos,
+  usePendientesAlmacen,
+  type RequerimientoVencido, type VentanaCostos, type TraspasoPendienteDash,
 } from '../hooks/useDashboard'
 import { SEVERIDAD_META } from '../lib/incidenciaMeta'
 import { useSucursales } from '../hooks/useSucursales'
@@ -200,6 +201,54 @@ function RequerimientosPorVehiculoTable({
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
+// Mercancía que salió de una sucursal y sigue sin llegar a ninguna. Se ordena
+// por antigüedad —la manda así la API— porque el problema no es que exista un
+// traspaso pendiente, sino que lleve semanas siéndolo: esas piezas no están en
+// el inventario de nadie y nadie las echa de menos hasta que hacen falta.
+function TraspasosPendientesTable({ items }: { items: TraspasoPendienteDash[] }) {
+  if (items.length === 0) {
+    return <Text c="dimmed" size="sm" py="md">No hay traspasos esperando aceptación.</Text>
+  }
+  return (
+    <Table.ScrollContainer minWidth={520}>
+      <Table striped withTableBorder>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Refacción</Table.Th>
+            <Table.Th>Movimiento</Table.Th>
+            <Table.Th ta="right">Cantidad</Table.Th>
+            <Table.Th ta="right">En camino</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {items.map((t) => (
+            <Table.Tr key={t.id}>
+              <Table.Td>
+                <Text size="sm" fw={500}>{t.numero_serie}</Text>
+                <Text size="xs" c="dimmed">{t.descripcion}</Text>
+              </Table.Td>
+              <Table.Td>
+                <Text size="xs">{t.origen} &rarr; {t.destino}</Text>
+                {t.autorizado_por && (
+                  <Text size="xs" c="dimmed">Autorizó: {t.autorizado_por}</Text>
+                )}
+              </Table.Td>
+              <Table.Td ta="right"><Text size="sm" fw={500}>{t.cantidad}</Text></Table.Td>
+              <Table.Td ta="right">
+                {/* Una semana es el umbral: por debajo suele ser un traspaso en
+                    curso; por encima, uno que a nadie le tocó aceptar. */}
+                <Badge size="sm" variant="light" color={t.dias >= 7 ? 'red' : 'yellow'}>
+                  {t.dias === 0 ? 'Hoy' : `${t.dias} día${t.dias !== 1 ? 's' : ''}`}
+                </Badge>
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
+  )
+}
+
 export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavigateDocumento }: {
   onNavigateVehiculo?: (vehiculoId: number) => void
   onNavigatePieza?:    (piezaId: number) => void
@@ -213,6 +262,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
   const { data: documentosData, isLoading: loadingDocumentos } = useDocumentosPorVencer()
   const { data: incidenciasData, isLoading: loadingIncidencias } = useIncidenciasAbiertas()
   const { data: sucursalesData } = useSucursales()
+  const { data: almacenData, isLoading: loadingAlmacen } = usePendientesAlmacen()
   const [tab, setTab] = useState<string | null>('resumen')
   const [reportesAbierto, setReportesAbierto] = useState(false)
   // La ventana del análisis de costos vive aquí y no dentro de la pestaña
@@ -220,6 +270,9 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
   // periodo que se está viendo. React Query deduplica la consulta entre ambos.
   const [ventanaCostos, setVentanaCostos] = useState<VentanaCostos>(90)
   const { data: analisisData } = useAnalisisCostos(ventanaCostos)
+
+  const traspasosPendientes = almacenData?.data.traspasos ?? []
+  const sinMarca            = almacenData?.data.refacciones_sin_marca ?? 0
 
   const vencidos = vencidosData?.data ?? []
   const porVencer = porVencerData?.data ?? []
@@ -249,7 +302,10 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
 
   // Lo que reclama acción en cada pestaña, para el contador de la etiqueta.
   const nVencimientos = documentosPorVencer.length + sinDocumento.length
-  const nPendientes   = vencidos.length + incidencias.length
+  // Los traspasos cuentan aquí: mientras nadie los acepte, esa mercancía no
+  // está en ningún inventario. Las refacciones sin marca no, porque son una
+  // deuda de captura que no crece sola y taparía a lo que sí urge.
+  const nPendientes   = vencidos.length + incidencias.length + traspasosPendientes.length
 
   const vehiculosChartData = (resumen?.data.mantenimientos.por_vehiculo ?? []).map(v => ({
     vehiculo: v.vehiculo_nombre,
@@ -381,6 +437,23 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
                 sub="Últimos 30 días"
                 color="blue" icon={IconCashBanknote}
                 ayuda="Lo que salió de caja: mano de obra más refacciones compradas. Las refacciones consumidas por los servicios no se suman aparte porque ya se pagaron al comprarlas."
+              />
+              <StatCard
+                label="Traspasos por aceptar"
+                value={loadingAlmacen ? '—' : String(traspasosPendientes.length)}
+                sub={traspasosPendientes.length > 0
+                  ? `El más viejo, hace ${traspasosPendientes[0].dias} día(s)`
+                  : 'Nada en camino'}
+                color="yellow" icon={IconArrowsExchange}
+                onClick={() => setTab('pendientes')}
+                ayuda="Mercancía que salió de una sucursal y espera que la de destino la acepte. Mientras tanto no aparece en ningún inventario."
+              />
+              <StatCard
+                label="Refacciones sin marca"
+                value={loadingAlmacen ? '—' : String(sinMarca)}
+                sub={sinMarca > 0 ? 'Falta capturarla' : 'Catálogo completo'}
+                color="orange" icon={IconTags}
+                ayuda="Refacciones activas que siguen con «Marca Faltante». Se arreglan en Refacciones, editando cada una. Sin marca, comparar precios entre proveedores compara cosas que no son iguales."
               />
             </SimpleGrid>
 
@@ -723,6 +796,27 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
                 />
               )}
             </Seccion>
+
+            <Seccion
+              titulo="Traspasos esperando aceptación"
+              descripcion="Salieron del almacén de origen y no han entrado al de destino, así que ahora mismo no están en el inventario de ninguna sucursal. Se aceptan o se rechazan en Inventario → Traspasos."
+            >
+              {loadingAlmacen ? (
+                <Center py="xl"><Loader size="sm" /></Center>
+              ) : (
+                <TraspasosPendientesTable items={traspasosPendientes} />
+              )}
+            </Seccion>
+
+            {sinMarca > 0 && (
+              <Alert color="orange" variant="light" icon={<IconTags size={16} />}
+                title={`${sinMarca} refacción${sinMarca !== 1 ? 'es' : ''} sin marca capturada`}>
+                {sinMarca !== 1 ? 'Siguen' : 'Sigue'} marcadas como «Marca Faltante», que no es lo
+                mismo que una refacción genérica sin marca. Se corrigen en Refacciones —la barra de
+                búsqueda ya filtra por marca— y hasta entonces comparar precios entre proveedores
+                compara cosas que pueden no ser iguales.
+              </Alert>
+            )}
           </Stack>
         </Tabs.Panel>
 

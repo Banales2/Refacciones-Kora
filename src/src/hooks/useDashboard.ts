@@ -393,3 +393,36 @@ export function useAnalisisCostos(dias: VentanaCostos = 90) {
     queryFn: () => api.get<{ data: AnalisisCostos }>(`/dashboard/analisis-costos?dias=${dias}`),
   })
 }
+
+
+// ─── Pendientes del almacén ──────────────────────────────────────────────────
+
+export interface TraspasoPendienteDash {
+  id:            number
+  numero_serie:  string
+  descripcion:   string
+  origen:        string
+  destino:       string
+  cantidad:      number
+  fecha:         string
+  /** Días desde que salió del almacén de origen. */
+  dias:          number
+  autorizado_por: string | null
+}
+
+export interface PendientesAlmacen {
+  traspasos:             TraspasoPendienteDash[]
+  refacciones_sin_marca: number
+}
+
+/**
+ * Trabajo del almacén que no alerta solo: mercancía en camino esperando que la
+ * acepten, y refacciones sin marca capturada. Ninguna de las dos vence ni cae en
+ * una bandeja, así que sin el tablero solo se descubren tropezando con ellas.
+ */
+export function usePendientesAlmacen() {
+  return useQuery({
+    queryKey: ['dashboard-pendientes-almacen'],
+    queryFn: () => api.get<{ data: PendientesAlmacen }>('/dashboard/pendientes-almacen'),
+  })
+}

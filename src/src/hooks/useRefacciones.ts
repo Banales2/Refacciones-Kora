@@ -105,9 +105,18 @@ export function useTodasLasPiezas(enabled = true) {
 export function useCreateRefaccion() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: PiezaBody & { numero_serie: string; descripcion: string; tipo_pieza_id: number }) =>
+    // `marca` va en los obligatorios y no en `PiezaBody`: la API la exige al
+    // crear, y dejarla opcional aquí solo conseguía que el error saliera en
+    // tiempo de ejecucion en vez de al compilar.
+    mutationFn: (body: PiezaBody & {
+      numero_serie: string; descripcion: string; marca: string; tipo_pieza_id: number
+    }) =>
       api.post<{ data: Pieza }>('/refacciones', body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['refacciones'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['refacciones'] })
+      qc.invalidateQueries({ queryKey: ['refacciones-marcas'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-pendientes-almacen'] })
+    },
   })
 }
 
@@ -116,7 +125,11 @@ export function useUpdateRefaccion() {
   return useMutation({
     mutationFn: ({ id, ...body }: PiezaBody & { id: number }) =>
       api.put<{ data: Pieza }>(`/refacciones/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['refacciones'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['refacciones'] })
+      qc.invalidateQueries({ queryKey: ['refacciones-marcas'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-pendientes-almacen'] })
+    },
   })
 }
 

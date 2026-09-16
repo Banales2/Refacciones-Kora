@@ -397,3 +397,66 @@ export async function findHistorialCercano(fecha: string, toleranciaDias = 3): P
     `)
   return r.recordset[0] ?? null
 }
+
+
+// ─── Pendientes del almacén ──────────────────────────────────────────────────
+//
+// Dos cosas que el tablero no veía porque son nuevas: la mercancía que va en
+// camino entre sucursales y espera que alguien la acepte (migración 035), y el
+// catálogo de refacciones al que le falta capturar la marca (migración 036).
+//
+// Las dos son trabajo que nadie tiene asignado: no vencen, no alertan solas y
+// no aparecen en ninguna bandeja. Un traspaso olvidado es mercancía que no está
+// en ningún estante; una refacción sin marca es una comparación de precios que
+// compara cosas distintas.
+
+export interface TraspasoPendienteDash {
+  id:            number
+  numero_serie:  string
+  descripcion:   string
+  origen:        string
+  destino:       string
+  cantidad:      number
+  fecha:         string
+  /** Días desde que salió del almacén de origen. Es lo que lo vuelve urgente. */
+  dias:          number
+  autorizado_por: string | null
+}
+
+export async function findTraspasosPendientes(): Promise<TraspasoPendienteDash[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT tr.id, p.numero_serie, p.descripcion,
+           so.nombre AS origen, sd.nombre AS destino,
+           tr.cantidad, CONVERT(char(10), tr.fecha, 23) AS fecha,
+           DATEDIFF(day, tr.fecha, CAST(GETDATE() AS DATE)) AS dias,
+           tr.autorizado_por
+    FROM traspasos_pieza tr
+    JOIN sucursales so ON so.id = tr.origen_sucursal_id
+    JOIN sucursales sd ON sd.id = tr.destino_sucursal_id
+    JOIN lotes_pieza l ON l.id = tr.lote_id
+    JOIN piezas p      ON p.id = l.pieza_id
+    WHERE tr.estado = 'pendiente'
+    -- Los más viejos primero: son los que llevan más tiempo sin estar en ningún
+    -- inventario, que es justo el problema.
+    ORDER BY tr.fecha, tr.id
+  `)
+  return r.recordset
+}
+
+/**
+ * Cuántas refacciones vivas siguen con el centinela de marca. Solo el conteo:
+ * la lista se ve en su propia pantalla, que es donde se arreglan, y aquí lo que
+ * hace falta es saber que el pendiente existe.
+ *
+ * Las archivadas no cuentan: ya no se compran, así que capturarles la marca no
+ * arregla ninguna comparación de precios.
+ */
+export async function contarRefaccionesSinMarca(): Promise<number> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT COUNT(*) AS total FROM piezas
+    WHERE marca = 'Marca Faltante' AND archivado_en IS NULL
+  `)
+  return r.recordset[0].total
+}

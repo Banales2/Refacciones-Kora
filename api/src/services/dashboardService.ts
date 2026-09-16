@@ -521,3 +521,20 @@ export async function getReporteFlota(
     vehiculos,
   }
 }
+
+
+/**
+ * El bloque de pendientes del almacén. Va en una sola llamada porque el tablero
+ * los muestra juntos y son dos consultas baratas: partirlo en dos endpoints
+ * duplicaría el viaje sin ganar nada.
+ */
+export async function getPendientesAlmacen(): Promise<{
+  traspasos: repo.TraspasoPendienteDash[]
+  refacciones_sin_marca: number
+}> {
+  const [traspasos, refaccionesSinMarca] = await Promise.all([
+    repo.findTraspasosPendientes(),
+    repo.contarRefaccionesSinMarca(),
+  ])
+  return { traspasos, refacciones_sin_marca: refaccionesSinMarca }
+}
