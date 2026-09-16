@@ -161,8 +161,12 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
       ruta_id:     (v, vals) => needsField(vals.tipo, 'ruta')        && !v ? 'Requerido' : null,
       tonelaje:    (v, vals) => needsField(vals.tipo, 'tonelaje')    && (v === '' || v === null) ? 'Requerido' : null,
       pies:        (v, vals) => needsField(vals.tipo, 'pies')        && (v === '' || v === null) ? 'Requerido' : null,
+      // Al dar de alta es opcional: una unidad nueva arranca en cero, y exigir
+      // el dato solo lograba que se tecleara cualquier cosa con tal de guardar.
+      // Al editar sigue siendo obligatorio, porque el campo ya trae el odómetro
+      // real y vaciarlo lo regresaría a cero sin que nadie lo pidiera.
       kilometraje: (v, vals) =>
-        needsField(vals.tipo, 'km') && (v === '' || v === null) ? 'Requerido' :
+        isEdit && needsField(vals.tipo, 'km') && (v === '' || v === null) ? 'Requerido' :
         v !== '' && v !== null && !Number.isInteger(Number(v)) ? 'Solo números enteros' :
         validarKm(v),
     },
@@ -216,6 +220,14 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
 
   function submit(vals: FormVals) {
     const t = (isEdit ? initial!.tipo : vals.tipo) as TipoVehiculo
+
+    // Vacío significa "no lo capturaron", y el campo se omite del payload en
+    // vez de mandar un cero: así la regla de que eso vale 0 vive en un solo
+    // lugar —`data.kilometraje ?? 0` en vehiculosRepo— y no en dos que se
+    // pueden desincronizar. Al editar nunca está vacío: ahí es obligatorio.
+    const km = vals.kilometraje === '' || vals.kilometraje === null
+      ? {}
+      : { kilometraje: Number(vals.kilometraje) }
     // El seguro y el permiso solo viajan para los tipos que los llevan: si
     // alguien eligió una póliza y luego cambió el tipo a caja de trailer, el
     // valor sigue en el formulario pero no debe mandarse — la API lo rechaza.
@@ -234,7 +246,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
     if (t === 'camion') {
       extra = {
         combustible: vals.combustible,
-        kilometraje: Number(vals.kilometraje),
+        ...km,
         status:      vals.status,
         ubicacion:   vals.ubicacion || null,
         sucursal_id: parseInt(vals.sucursal_id),
@@ -244,7 +256,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
       extra = {
         tonelaje:    Number(vals.tonelaje),
         combustible: vals.combustible,
-        kilometraje: Number(vals.kilometraje),
+        ...km,
         status:      vals.status,
         ruta_id:     parseInt(vals.ruta_id),
       }
@@ -266,7 +278,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
         combustible: vals.combustible,
         ubicacion:   vals.ubicacion || null,
         status:      vals.status,
-        kilometraje: Number(vals.kilometraje),
+        ...km,
         tenencia_expiracion: vals.tenencia_expiracion || null,
       }
     }
@@ -423,7 +435,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               </Grid.Col>
               <Grid.Col span={6}>
                 <NumberInput
-                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required
+                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit}
+                  description={isEdit ? undefined : 'Opcional. Si lo dejas vacío, la unidad arranca en 0.'}
                   thousandSeparator=","
                   allowDecimal={false} allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
@@ -455,7 +468,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               </Grid.Col>
               <Grid.Col span={6}>
                 <NumberInput
-                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required
+                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit}
+                  description={isEdit ? undefined : 'Opcional. Si lo dejas vacío, la unidad arranca en 0.'}
                   thousandSeparator=","
                   allowDecimal={false} allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
@@ -520,7 +534,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               </Grid.Col>
               <Grid.Col span={6}>
                 <NumberInput
-                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required
+                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit}
+                  description={isEdit ? undefined : 'Opcional. Si lo dejas vacío, la unidad arranca en 0.'}
                   thousandSeparator=","
                   allowDecimal={false} allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
