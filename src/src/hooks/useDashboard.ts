@@ -422,7 +422,7 @@ export interface PendientesAlmacen {
  */
 export function usePendientesAlmacen() {
   return useQuery({
-    queryKey: ['dashboard-pendientes-almacen'],
+    queryKey: ['dashboard', 'pendientes-almacen'],
     queryFn: () => api.get<{ data: PendientesAlmacen }>('/dashboard/pendientes-almacen'),
   })
 }

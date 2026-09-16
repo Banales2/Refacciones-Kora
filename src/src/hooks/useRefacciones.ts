@@ -115,7 +115,7 @@ export function useCreateRefaccion() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['refacciones'] })
       qc.invalidateQueries({ queryKey: ['refacciones-marcas'] })
-      qc.invalidateQueries({ queryKey: ['dashboard-pendientes-almacen'] })
+      qc.invalidateQueries({ queryKey: ['dashboard', 'pendientes-almacen'] })
     },
   })
 }
@@ -128,7 +128,7 @@ export function useUpdateRefaccion() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['refacciones'] })
       qc.invalidateQueries({ queryKey: ['refacciones-marcas'] })
-      qc.invalidateQueries({ queryKey: ['dashboard-pendientes-almacen'] })
+      qc.invalidateQueries({ queryKey: ['dashboard', 'pendientes-almacen'] })
     },
   })
 }

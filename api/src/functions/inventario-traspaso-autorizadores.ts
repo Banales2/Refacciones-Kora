@@ -9,7 +9,7 @@ import * as service from '../services/inventarioService'
 // acabe escrita de cinco formas.
 export async function inventarioTraspasoAutorizadores(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer')
+    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
     const data = await service.getAutorizadores()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
