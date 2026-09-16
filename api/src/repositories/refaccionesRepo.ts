@@ -19,31 +19,29 @@ export async function findAll(params: {
     .input('offset', params.offset)
     .input('pageSize', params.pageSize)
 
-  // Condiciones de las dos consultas: la principal usa el alias `p`, la del
-  // total lee la tabla pelada. Se juntan al final para no repetir el armado de
-  // WHERE/AND según cuántas haya.
-  const mainConds: string[] = []
-  const countConds: string[] = []
+  // Las dos consultas —la página y el total— filtran por lo mismo, así que
+  // comparten condiciones y alias. El tipo obliga a que el conteo también
+  // traiga el join del catálogo: `tipo_pieza` no es una columna de `piezas`,
+  // vive en `tipos_pieza` y solo existe a través de él.
+  const conds: string[] = []
   const archivado = filtroArchivado(params.incluirArchivados ?? false)
-  if (archivado) {
-    mainConds.push(`p.${archivado}`)
-    countConds.push(archivado)
-  }
+  if (archivado) conds.push(`p.${archivado}`)
+
   if (params.search) {
     req.input('search', `%${params.search}%`)
     if (params.searchBy === 'numero_serie') {
-      mainConds.push('p.numero_serie LIKE @search')
-      countConds.push('numero_serie LIKE @search')
+      conds.push('p.numero_serie LIKE @search')
     } else if (params.searchBy === 'descripcion') {
-      mainConds.push('p.descripcion LIKE @search')
-      countConds.push('descripcion LIKE @search')
+      conds.push('p.descripcion LIKE @search')
+    } else if (params.searchBy === 'tipo_pieza') {
+      conds.push('t.nombre LIKE @search')
     } else {
-      mainConds.push('(p.numero_serie LIKE @search OR p.descripcion LIKE @search)')
-      countConds.push('(numero_serie LIKE @search OR descripcion LIKE @search)')
+      conds.push(
+        '(p.numero_serie LIKE @search OR p.descripcion LIKE @search OR t.nombre LIKE @search)'
+      )
     }
   }
-  const mainWhere  = mainConds.length  ? `WHERE ${mainConds.join(' AND ')}`  : ''
-  const countWhere = countConds.length ? `WHERE ${countConds.join(' AND ')}` : ''
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : ''
 
   const result = await req.query(`
     SELECT
@@ -57,7 +55,7 @@ export async function findAll(params: {
     -- El stock sale de las existencias por sucursal, no de la columna del lote
     -- (migración 002). Un lote sin existencias no suma nada.
     LEFT JOIN existencias_lote ex ON ex.lote_id = l.id
-    ${mainWhere}
+    ${where}
     GROUP BY p.id, p.numero_serie, p.descripcion, p.tipo_pieza_id, t.nombre,
              p.archivado_en, p.archivado_motivo
     -- Las piezas sin tipo al final: el CASE evita que los NULL se ordenen
@@ -65,8 +63,10 @@ export async function findAll(params: {
     ORDER BY CASE WHEN t.nombre IS NULL THEN 1 ELSE 0 END, t.nombre, p.numero_serie
     OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
 
-    SELECT COUNT(*) AS total FROM piezas
-    ${countWhere};
+    SELECT COUNT(*) AS total
+    FROM piezas p
+    LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id
+    ${where};
   `)
   return { data: result.recordsets[0], total: result.recordsets[1][0].total }
 }

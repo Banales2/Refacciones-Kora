@@ -269,10 +269,11 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
               { value: 'all', label: 'Todo' },
               { value: 'numero_serie', label: 'No. serie' },
               { value: 'descripcion', label: 'Descripción' },
+              { value: 'tipo_pieza', label: 'Tipo' },
             ]}
             value={searchBy}
             onChange={(v) => setSearchBy((v as SearchBy) ?? 'all')}
-            w={140}
+            w={150}
             allowDeselect={false}
           />
           <TextInput
@@ -280,7 +281,8 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
             placeholder={
               searchBy === 'numero_serie' ? 'Buscar por número de serie…'
               : searchBy === 'descripcion' ? 'Buscar por descripción…'
-              : 'Buscar por número de serie o descripción…'
+              : searchBy === 'tipo_pieza' ? 'Buscar por tipo de refacción…'
+              : 'Buscar por número de serie, descripción o tipo…'
             }
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}

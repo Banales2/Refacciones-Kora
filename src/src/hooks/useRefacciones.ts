@@ -30,7 +30,7 @@ interface ListResponse {
   pagination: { page: number; pageSize: number; total: number }
 }
 
-export type SearchBy = 'all' | 'numero_serie' | 'descripcion'
+export type SearchBy = 'all' | 'numero_serie' | 'descripcion' | 'tipo_pieza'
 
 // `incluirArchivados` es para la pantalla del catálogo, que necesita verlas
 // para poder restaurarlas. Los selectores usan la lista normal.
