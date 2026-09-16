@@ -57,16 +57,16 @@ export async function exportPiezasReporteToPdf(piezas: Pieza[]) {
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['No. serie', 'Descripción', 'En stock']],
+      head: [['No. serie', 'Descripción', 'Marca', 'En stock']],
       body: [...items]
         .sort((a, b) => a.numero_serie.localeCompare(b.numero_serie, 'es-MX'))
-        .map((p) => [p.numero_serie, p.descripcion, String(p.cantidad_total)]),
+        .map((p) => [p.numero_serie, p.descripcion, p.marca, String(p.cantidad_total)]),
       headStyles: { fillColor: [51, 51, 51], fontSize: 9 },
       styles: { fontSize: 9 },
-      columnStyles: { 2: { halign: 'center' } },
+      columnStyles: { 3: { halign: 'center' } },
       didParseCell: (data: CellHookData) => {
         if (data.section !== 'body') return
-        if (data.column.index === 2 && Number(data.cell.raw) === 0) {
+        if (data.column.index === 3 && Number(data.cell.raw) === 0) {
           data.cell.styles.textColor = [200, 40, 40]
           data.cell.styles.fontStyle = 'bold'
         }

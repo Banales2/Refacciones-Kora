@@ -2,6 +2,12 @@ export interface Pieza {
   id: number
   numero_serie: string
   descripcion: string
+  // Quién la fabrica. Texto libre, como en `modelos.marca`: las marcas salen
+  // más rápido de lo que nadie mantiene un catálogo. Nunca es null ni vacío; la
+  // refacción que todavía no la tiene capturada dice 'Marca Faltante', que es
+  // un dato distinto de una genérica que de verdad no trae marca (migración
+  // 036).
+  marca: string
   // Única clasificación de la pieza: qué tipo cubre ("filtro de aire"). Es
   // obligatorio al crear y no se puede quitar; sigue siendo nullable solo por
   // las piezas anteriores al catálogo de tipos, que se agrupan en "Sin tipo"

@@ -5,10 +5,19 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { CamposArchivado } from './useArchivado'
 
+/**
+ * Lo que dice una refacción a la que nadie le ha capturado la marca. No es lo
+ * mismo que una genérica que de verdad no trae marca: esa se escribe como tal.
+ * Espeja el valor de la migración 036 y el del schema de la API.
+ */
+export const MARCA_FALTANTE = 'Marca Faltante'
+
 export interface Pieza extends CamposArchivado {
   id: number
   numero_serie: string
   descripcion: string
+  /** Nunca vacía. `MARCA_FALTANTE` mientras nadie la capture. */
+  marca: string
   // Única clasificación de la pieza: qué tipo cubre ("filtro de aire").
   // Obligatorio al crear; null solo en las piezas anteriores al catálogo de
   // tipos. Solo las tipificadas pueden asignarse a un vehículo
@@ -21,6 +30,7 @@ export interface Pieza extends CamposArchivado {
 type PiezaBody = {
   numero_serie?:  string
   descripcion?:   string
+  marca?:         string
   // No admite null: el tipo es obligatorio y no se puede quitar una vez puesto.
   tipo_pieza_id?: number
 }
@@ -30,7 +40,17 @@ interface ListResponse {
   pagination: { page: number; pageSize: number; total: number }
 }
 
-export type SearchBy = 'all' | 'numero_serie' | 'descripcion' | 'tipo_pieza'
+export type SearchBy = 'all' | 'numero_serie' | 'descripcion' | 'tipo_pieza' | 'marca'
+
+// Marcas ya capturadas, para ofrecerlas en el formulario. Sin el centinela: la
+// lista existe para no escribir Bosch de cinco formas, no para dejar una
+// refacción nueva sin marca con un clic.
+export function useMarcasRefaccion() {
+  return useQuery({
+    queryKey: ['refacciones-marcas'],
+    queryFn: () => api.get<{ data: string[] }>('/refacciones/marcas'),
+  })
+}
 
 // `incluirArchivados` es para la pantalla del catálogo, que necesita verlas
 // para poder restaurarlas. Los selectores usan la lista normal.

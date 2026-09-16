@@ -19,6 +19,10 @@ export async function getAll(params: {
   return { ...result, page: params.page, pageSize: params.pageSize }
 }
 
+export async function getMarcas(): Promise<string[]> {
+  return repo.findMarcas()
+}
+
 export async function getById(id: number): Promise<Pieza> {
   const item = await repo.findById(id)
   if (!item) throw new NotFoundError('Refacción')

@@ -4,14 +4,24 @@
 import { Stack, Group, Alert, Button, TextInput, Textarea } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import TipoPiezaSelect from './TipoPiezaSelect'
-import { TEXTO_LIBRE, limpiarTextoLibre } from '../lib/validaciones'
+import SelectCatalogo from './SelectCatalogo'
+import { useMarcaOptions } from '../hooks/useMarcaOptions'
+import { MARCA_FALTANTE } from '../hooks/useRefacciones'
+import {
+  TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre,
+} from '../lib/validaciones'
 
 // El tipo indica qué necesidad de un modelo cubre la refacción ("filtro de
 // aire") y es obligatorio: sin él la refacción no se puede clasificar ni
 // asignar a un vehículo. Se maneja como string porque es el valor del Select;
 // '' solo aparece en las piezas anteriores al catálogo de tipos, que al
 // editarse quedan obligadas a elegir uno.
-export type PiezaFormValues = { numero_serie: string; descripcion: string; tipo_pieza_id: string }
+export type PiezaFormValues = {
+  numero_serie: string
+  descripcion: string
+  marca: string
+  tipo_pieza_id: string
+}
 
 export function PiezaForm({
   initial,
@@ -27,7 +37,9 @@ export function PiezaForm({
   onCancel: () => void
 }) {
   const form = useForm<PiezaFormValues>({
-    initialValues: initial ?? { numero_serie: '', descripcion: '', tipo_pieza_id: '' },
+    initialValues: initial ?? {
+      numero_serie: '', descripcion: '', marca: '', tipo_pieza_id: '',
+    },
     validate: {
       numero_serie: (v) =>
         !v.trim() ? 'Requerido' :
@@ -37,9 +49,21 @@ export function PiezaForm({
         v.trim().length < 3 ? 'Mínimo 3 caracteres' :
         v.length > 255 ? 'Máximo 255 caracteres' :
         !TEXTO_LIBRE.test(v.trim()) ? 'Contiene caracteres no permitidos' : null,
+      marca: (v) =>
+        !v.trim() ? 'Requerido' :
+        v.length > 80 ? 'Máximo 80 caracteres' :
+        !TEXTO_SIMPLE.test(v.trim()) ? 'Solo letras, números, espacios y guiones' : null,
       tipo_pieza_id: (v) => !v ? 'Requerido' : null,
     },
   })
+
+  const {
+    options: marcaOptions, setSearch: setMarcaSearch, estado: marcaEstado,
+  } = useMarcaOptions(form.values.marca, initial?.marca)
+
+  // La que llega con el centinela es una refacción vieja a la que nadie le ha
+  // puesto marca: se dice aquí, que es donde se puede arreglar.
+  const faltaMarca = form.values.marca === MARCA_FALTANTE
 
   return (
     <form onSubmit={form.onSubmit(onSubmit)}>
@@ -68,6 +92,21 @@ export function PiezaForm({
           maxLength={255}
           {...form.getInputProps('descripcion')}
           onChange={(e) => form.setFieldValue('descripcion', limpiarTextoLibre(e.currentTarget.value, 255))}
+        />
+        <SelectCatalogo
+          estado={marcaEstado}
+          nombre="marcas"
+          creable
+          label="Marca" required
+          placeholder="Selecciona o escribe la marca"
+          description={faltaMarca
+            ? 'Esta refacción quedó sin marca al capturarse. Escribe la real, o «Genérica» si de verdad no trae.'
+            : 'Quién la fabrica. Si es genérica y no trae marca, escríbelo así.'}
+          data={marcaOptions}
+          onSearchChange={(v) => setMarcaSearch(limpiarTextoSimple(v, 80))}
+          nothingFoundMessage="Escribe la marca"
+          {...form.getInputProps('marca')}
+          onChange={(v) => { form.setFieldValue('marca', v ?? ''); setMarcaSearch('') }}
         />
         <TipoPiezaSelect
           description="Qué necesidad del modelo cubre. Determina a qué vehículos puede asignarse la refacción."

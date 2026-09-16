@@ -1,7 +1,7 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { Pieza, PiezaConCantidad, LoteConProveedor } from '../types/domain'
-import { RefaccionCreate, RefaccionUpdate, SearchBy } from '../schemas/refaccionSchema'
+import { RefaccionCreate, RefaccionUpdate, SearchBy, MARCA_FALTANTE } from '../schemas/refaccionSchema'
 import { disponibleDelLote } from './inventarioSql'
 import { COLS_ARCHIVADO, filtroArchivado } from './archivadoRepo'
 import { colsCabecera, fechaDelLote, joinFactura, joinProveedorDelLote } from './facturaSql'
@@ -35,9 +35,12 @@ export async function findAll(params: {
       conds.push('p.descripcion LIKE @search')
     } else if (params.searchBy === 'tipo_pieza') {
       conds.push('t.nombre LIKE @search')
+    } else if (params.searchBy === 'marca') {
+      conds.push('p.marca LIKE @search')
     } else {
       conds.push(
-        '(p.numero_serie LIKE @search OR p.descripcion LIKE @search OR t.nombre LIKE @search)'
+        '(p.numero_serie LIKE @search OR p.descripcion LIKE @search' +
+        ' OR t.nombre LIKE @search OR p.marca LIKE @search)'
       )
     }
   }
@@ -45,7 +48,7 @@ export async function findAll(params: {
 
   const result = await req.query(`
     SELECT
-      p.id, p.numero_serie, p.descripcion,
+      p.id, p.numero_serie, p.descripcion, p.marca,
       p.tipo_pieza_id, t.nombre AS tipo_pieza,
       CONVERT(char(10), p.archivado_en, 23) AS archivado_en, p.archivado_motivo,
       COALESCE(SUM(ex.cantidad), 0) AS cantidad_total
@@ -56,8 +59,8 @@ export async function findAll(params: {
     -- (migración 002). Un lote sin existencias no suma nada.
     LEFT JOIN existencias_lote ex ON ex.lote_id = l.id
     ${where}
-    GROUP BY p.id, p.numero_serie, p.descripcion, p.tipo_pieza_id, t.nombre,
-             p.archivado_en, p.archivado_motivo
+    GROUP BY p.id, p.numero_serie, p.descripcion, p.marca, p.tipo_pieza_id,
+             t.nombre, p.archivado_en, p.archivado_motivo
     -- Las piezas sin tipo al final: el CASE evita que los NULL se ordenen
     -- primero, como hace SQL Server por defecto.
     ORDER BY CASE WHEN t.nombre IS NULL THEN 1 ELSE 0 END, t.nombre, p.numero_serie
@@ -71,9 +74,29 @@ export async function findAll(params: {
   return { data: result.recordsets[0], total: result.recordsets[1][0].total }
 }
 
+// Las marcas ya capturadas, para ofrecerlas en el formulario. No hay catálogo
+// de marcas: el nombre es texto libre y las repeticiones salen de lo ya
+// capturado, igual que los reportadores de incidencias.
+//
+// El centinela no se ofrece: sugerir 'Marca Faltante' sería invitar a dejar la
+// refacción nueva sin marca con un clic, que es justo lo que hay que dejar de
+// hacer. Quien no la sepa lo escribe.
+export async function findMarcas(): Promise<string[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('faltante', sql.NVarChar(80), MARCA_FALTANTE)
+    .query(`
+      SELECT DISTINCT marca FROM piezas
+      WHERE LTRIM(RTRIM(marca)) <> '' AND marca <> @faltante
+      ORDER BY marca
+    `)
+  return r.recordset.map((row: { marca: string }) => row.marca)
+}
+
 // tipo_pieza viene del catálogo, no de la tabla: se lee siempre con el join.
 const SELECT_PIEZA = `
-  SELECT p.id, p.numero_serie, p.descripcion, p.tipo_pieza_id, t.nombre AS tipo_pieza,
+  SELECT p.id, p.numero_serie, p.descripcion, p.marca,
+         p.tipo_pieza_id, t.nombre AS tipo_pieza,
          CONVERT(char(10), p.archivado_en, 23) AS archivado_en, p.archivado_motivo
   FROM piezas p
   LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id`
@@ -125,11 +148,12 @@ export async function create(data: RefaccionCreate): Promise<Pieza> {
     .request()
     .input('ns', sql.NVarChar(80), data.numero_serie)
     .input('desc', sql.NVarChar(300), data.descripcion)
+    .input('marca', sql.NVarChar(80), data.marca)
     .input('tipoPiezaId', sql.Int, data.tipo_pieza_id)
     .query(`
-      INSERT INTO piezas (numero_serie, descripcion, tipo_pieza_id)
+      INSERT INTO piezas (numero_serie, descripcion, marca, tipo_pieza_id)
       OUTPUT INSERTED.id
-      VALUES (@ns, @desc, @tipoPiezaId)
+      VALUES (@ns, @desc, @marca, @tipoPiezaId)
     `)
   // Relee para resolver el nombre del tipo, que OUTPUT no puede traer del join.
   return (await findById(result.recordset[0].id))!
@@ -142,6 +166,7 @@ export async function update(id: number, data: RefaccionUpdate): Promise<Pieza |
 
   if (data.numero_serie !== undefined) { req.input('ns', sql.NVarChar(80), data.numero_serie); sets.push('numero_serie = @ns') }
   if (data.descripcion !== undefined) { req.input('desc', sql.NVarChar(300), data.descripcion); sets.push('descripcion = @desc') }
+  if (data.marca !== undefined) { req.input('marca', sql.NVarChar(80), data.marca); sets.push('marca = @marca') }
   if (data.tipo_pieza_id !== undefined) { req.input('tipoPiezaId', sql.Int, data.tipo_pieza_id); sets.push('tipo_pieza_id = @tipoPiezaId') }
 
   if (sets.length === 0) return findById(id)

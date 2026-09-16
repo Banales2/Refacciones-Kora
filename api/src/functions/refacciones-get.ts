@@ -22,7 +22,10 @@ export async function refaccionesGet(
 
 app.http('refacciones-get', {
   methods: ['GET'],
-  route: 'refacciones/{id}',
+  // `{id:int}` y no `{id}`: comparte prefijo con `refacciones/marcas`, y la
+  // restricción deja claro cuál gana en vez de depender de que el host
+  // prefiera el segmento literal.
+  route: 'refacciones/{id:int}',
   authLevel: 'anonymous',
   handler: refaccionesGet,
 })

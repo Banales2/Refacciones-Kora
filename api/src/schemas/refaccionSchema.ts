@@ -1,5 +1,12 @@
 import { z } from 'zod'
-import { TEXTO_LIBRE } from './common'
+import { TEXTO_LIBRE, TEXTO_SIMPLE } from './common'
+
+/**
+ * Lo que dice una refacción a la que nadie le ha capturado la marca. No es lo
+ * mismo que una genérica sin marca: esa se escribe como tal. Espeja el valor de
+ * la migración 036 y el del frontend.
+ */
+export const MARCA_FALTANTE = 'Marca Faltante'
 
 export const RefaccionCreateSchema = z.object({
   numero_serie: z
@@ -13,6 +20,15 @@ export const RefaccionCreateSchema = z.object({
     .min(3, 'Mínimo 3 caracteres')
     .max(255, 'Máximo 255 caracteres')
     .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos'),
+  // Obligatoria, y sin default aquí: que el alta tenga que decir algo es lo que
+  // impide que sigan naciendo refacciones sin marca. Quien no la sepa deja el
+  // centinela, que la pantalla señala para volver después.
+  marca: z
+    .string()
+    .trim()
+    .min(1, 'Marca requerida')
+    .max(80, 'Máximo 80 caracteres')
+    .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones'),
   // Obligatorio: el tipo es la única clasificación de la pieza. No es nullable,
   // así que el update tampoco puede dejar sin tipo una pieza que ya lo tiene.
   tipo_pieza_id: z.coerce
@@ -27,7 +43,10 @@ export const RefaccionQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().max(100).optional(),
-  searchBy: z.enum(['all', 'numero_serie', 'descripcion', 'tipo_pieza']).optional().default('all'),
+  searchBy: z
+    .enum(['all', 'numero_serie', 'descripcion', 'tipo_pieza', 'marca'])
+    .optional()
+    .default('all'),
   // ?archivados=1 incluye las refacciones archivadas. Llega como texto y sale
   // como booleano; cualquier otro valor (incluido "0") cuenta como que no.
   incluirArchivados: z.string().optional().transform((v) => v === '1'),
@@ -36,4 +55,4 @@ export const RefaccionQuerySchema = z.object({
 export type RefaccionCreate = z.infer<typeof RefaccionCreateSchema>
 export type RefaccionUpdate = z.infer<typeof RefaccionUpdateSchema>
 export type RefaccionQuery = z.infer<typeof RefaccionQuerySchema>
-export type SearchBy = 'all' | 'numero_serie' | 'descripcion' | 'tipo_pieza'
+export type SearchBy = 'all' | 'numero_serie' | 'descripcion' | 'tipo_pieza' | 'marca'

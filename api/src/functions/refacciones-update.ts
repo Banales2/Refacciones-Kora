@@ -34,7 +34,7 @@ export async function refaccionesUpdate(
 
 app.http('refacciones-update', {
   methods: ['PUT', 'PATCH'],
-  route: 'refacciones/{id}',
+  route: 'refacciones/{id:int}',
   authLevel: 'anonymous',
   handler: refaccionesUpdate,
 })

@@ -19,6 +19,7 @@ import {
   fetchTodasLasPiezas,
 } from '../hooks/useRefacciones'
 import type { Pieza, SearchBy } from '../hooks/useRefacciones'
+import { MARCA_FALTANTE } from '../hooks/useRefacciones'
 import ArchivarCatalogoModal from '../components/ArchivarCatalogoModal'
 import LotesDrawer from '../components/LotesDrawer'
 import FacturasDrawer from '../components/FacturasDrawer'
@@ -50,6 +51,7 @@ function PiezasTable({
           <Table.Tr>
             <Table.Th>No. serie</Table.Th>
             <Table.Th>Descripción</Table.Th>
+            <Table.Th>Marca</Table.Th>
             <Table.Th>Tipo</Table.Th>
             <Table.Th style={{ textAlign: 'center' }}>En stock</Table.Th>
             <Table.Th style={{ width: 80 }} />
@@ -71,6 +73,13 @@ function PiezasTable({
                 </Group>
               </Table.Td>
               <Table.Td c="dimmed">{pieza.descripcion}</Table.Td>
+              <Table.Td>
+                {/* El centinela se señala en vez de mostrarse como una marca
+                    más: es trabajo por hacer, no el nombre del fabricante. */}
+                {pieza.marca === MARCA_FALTANTE
+                  ? <Badge variant="light" color="orange" size="sm">Falta marca</Badge>
+                  : <Text size="sm">{pieza.marca}</Text>}
+              </Table.Td>
               <Table.Td>
                 {pieza.tipo_pieza
                   ? <Badge variant="light" color="blue" size="sm">{pieza.tipo_pieza}</Badge>
@@ -270,6 +279,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
               { value: 'numero_serie', label: 'No. serie' },
               { value: 'descripcion', label: 'Descripción' },
               { value: 'tipo_pieza', label: 'Tipo' },
+              { value: 'marca', label: 'Marca' },
             ]}
             value={searchBy}
             onChange={(v) => setSearchBy((v as SearchBy) ?? 'all')}
@@ -282,7 +292,8 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
               searchBy === 'numero_serie' ? 'Buscar por número de serie…'
               : searchBy === 'descripcion' ? 'Buscar por descripción…'
               : searchBy === 'tipo_pieza' ? 'Buscar por tipo de refacción…'
-              : 'Buscar por número de serie, descripción o tipo…'
+              : searchBy === 'marca' ? 'Buscar por marca…'
+              : 'Buscar por número de serie, descripción, tipo o marca…'
             }
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
@@ -369,6 +380,7 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
             initial={{
               numero_serie:  editPieza.numero_serie,
               descripcion:   editPieza.descripcion,
+              marca:         editPieza.marca,
               tipo_pieza_id: editPieza.tipo_pieza_id != null ? String(editPieza.tipo_pieza_id) : '',
             }}
             isPending={updateMut.isPending}
