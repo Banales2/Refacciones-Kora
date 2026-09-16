@@ -20,7 +20,7 @@ import { useDisclosure, useNetwork } from '@mantine/hooks'
 import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import {
   IconRefresh, IconLayoutDashboard, IconTruck, IconCar, IconTool,
-  IconAlertTriangle, IconCalendar, IconGasStation, IconBox, IconBuildingStore, IconSettings,
+  IconAlertTriangle, IconGasStation, IconBox, IconBuildingStore, IconSettings,
   IconHistory,
 } from '@tabler/icons-react'
 import type { Icon } from '@tabler/icons-react'
@@ -32,7 +32,6 @@ import Vehiculos from '../pages/Vehiculos'
 import Incidencias from '../pages/Incidencias'
 import Modelos from '../pages/Modelos'
 import SitiosYRutas from '../pages/SitiosYRutas'
-import Calendario from '../pages/Calendario'
 import ValesGasolina from '../pages/ValesGasolina'
 import RegistrosCambios from '../pages/RegistrosCambios'
 import Mantenimientos from '../pages/Mantenimientos'
@@ -41,7 +40,7 @@ import type { DestinoDocumento } from '../lib/documentosDashboard'
 
 type Section =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
-  | 'mantenimientos' | 'sitios' | 'calendario' | 'vales' | 'registros'
+  | 'mantenimientos' | 'sitios' | 'vales' | 'registros'
 
 const SECTION_LABELS: Record<Section, string> = {
   dashboard:      'Dashboard',
@@ -52,7 +51,6 @@ const SECTION_LABELS: Record<Section, string> = {
   incidencias:    'Incidencias',
   mantenimientos: 'Mantenimientos',
   sitios:         'Catálogos',
-  calendario:     'Calendario',
   vales:          'Vales de gasolina',
   registros:      'Registros de cambios',
 }
@@ -77,7 +75,6 @@ const NAV_GROUPS: {
     items: [
       { section: 'mantenimientos', label: 'Mantenimientos', description: 'Historial de servicios de toda la flota', icon: IconTool          },
       { section: 'incidencias',    label: 'Incidencias',    description: 'Incidencias reportadas de la flota',      icon: IconAlertTriangle },
-      { section: 'calendario',     label: 'Calendario',     description: 'Fechas de mantenimiento',                 icon: IconCalendar      },
       { section: 'vales',          label: 'Vales',          description: 'Vales de gasolina entregados a choferes', icon: IconGasStation    },
     ],
   },
@@ -505,7 +502,6 @@ export default function Layout() {
         {section === 'mantenimientos' && (
           <Mantenimientos onNavigateVehiculo={navigateToVehiculoId} />
         )}
-        {section === 'calendario' && <Calendario onNavigateVehiculo={navigateToVehiculoId} />}
         {section === 'vales'      && (
           <ValesGasolina
             onNavigateVehiculo={navigateToVehiculoId}

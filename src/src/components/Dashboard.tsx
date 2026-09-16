@@ -16,7 +16,7 @@ import {
   IconChevronRight, IconAlertTriangle, IconTool,
   IconShoppingCart, IconClockExclamation, IconExclamationCircle, IconCashBanknote,
   IconLayoutDashboard, IconDiscount2, IconCalendarExclamation, IconClipboardList,
-  IconReportAnalytics,
+  IconReportAnalytics, IconCalendar,
 } from '@tabler/icons-react'
 import {
   useResumenMes, useRequerimientosVencidos, useRequerimientosPorVencer, useRequerimientosHistorial,
@@ -32,6 +32,7 @@ import { formatMXN, formatFecha, formatFechaCorta } from '../lib/formato'
 import { StatCard } from './StatCard'
 import DashboardCostos from './DashboardCostos'
 import ReportesDashboardModal from './ReportesDashboardModal'
+import Calendario from '../pages/Calendario'
 
 // ─── Piezas compartidas ──────────────────────────────────────────────────────
 
@@ -323,6 +324,9 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
             rightSection={<ContadorTab n={nPendientes} color="red" />}
           >
             Pendientes
+          </Tabs.Tab>
+          <Tabs.Tab value="calendario" leftSection={<IconCalendar size={16} />}>
+            Calendario
           </Tabs.Tab>
         </Tabs.List>
 
@@ -720,6 +724,17 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
               )}
             </Seccion>
           </Stack>
+        </Tabs.Panel>
+
+        {/* ══ Calendario ══ */}
+        {/* Vivía en la barra lateral. Se movió aquí porque lo que el calendario
+            contesta —qué pasó y qué viene este mes— es la misma pregunta que el
+            resto del tablero, y separarlo obligaba a saltar de sección para
+            cruzar un vencimiento con su fecha. El `keepMounted={false}` del
+            <Tabs> hace que solo se monte al abrir la pestaña, así que no le
+            cuesta nada a las demás. */}
+        <Tabs.Panel value="calendario" pt="lg">
+          <Calendario onNavigateVehiculo={onNavigateVehiculo} />
         </Tabs.Panel>
       </Tabs>
 
