@@ -106,6 +106,21 @@ const CONSULTAS: Record<string, string> = {
     LEFT JOIN vehiculos v ON v.id = p.vehiculo_id
     WHERE p.id = @id`,
 
+  // El chequeo diario. Se captura con la unidad resuelta —"vehiculo_id: 14" no
+  // se lee en la bitácora— y con el conteo de renglones que salieron mal, que
+  // es lo que distingue un chequeo limpio de uno que abrió media docena de
+  // incidencias. Los renglones no se capturan uno por uno: son hasta once por
+  // chequeo y el detalle ya vive en la pantalla del chequeo.
+  chequeos: `
+    SELECT ch.*, v.numero_serie AS vehiculo_serie, v.placas AS vehiculo_placas,
+           co.nombre AS conductor,
+           (SELECT COUNT(*) FROM chequeo_items ci
+             WHERE ci.chequeo_id = ch.id AND ci.resultado = 'falla') AS fallas
+    FROM chequeos ch
+    LEFT JOIN vehiculos   v  ON v.id = ch.vehiculo_id
+    LEFT JOIN conductores co ON co.id = ch.conductor_id
+    WHERE ch.id = @id`,
+
   programas_mantenimiento: `
     SELECT pr.*, m.marca, m.nombre AS modelo
     FROM programas_mantenimiento pr

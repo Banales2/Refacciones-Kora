@@ -69,6 +69,7 @@ const ENTIDADES: Record<string, { etiqueta: string; campos: string[] }> = {
   proveedores:                     { etiqueta: 'Proveedor',               campos: ['nombre', 'contacto'] },
   recargas_combustible:            { etiqueta: 'Recarga de combustible',  campos: ['vehiculo_serie', 'conductor', 'gasolinera', 'fecha', 'litros'] },
   incidencias:                     { etiqueta: 'Incidencia',              campos: ['nombre', 'severidad', 'vehiculo_serie', 'vehiculo_placas'] },
+  chequeos:                        { etiqueta: 'Chequeo diario',          campos: ['fecha', 'vehiculo_serie', 'vehiculo_placas', 'declarado_por'] },
   rutas:                           { etiqueta: 'Ruta',                    campos: ['nombre', 'ubicacion'] },
   seguros:                         { etiqueta: 'Seguro',                  campos: ['poliza', 'compania', 'fecha_expiracion', 'costo'] },
   sesion:                          { etiqueta: 'Sesión',                  campos: [] },

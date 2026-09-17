@@ -17,6 +17,7 @@ import {
   IconShoppingCart, IconClockExclamation, IconExclamationCircle, IconCashBanknote,
   IconLayoutDashboard, IconDiscount2, IconCalendarExclamation, IconClipboardList,
   IconReportAnalytics, IconCalendar, IconArrowsExchange, IconTags, IconCoin,
+  IconClipboardCheck, IconMessageReport,
 } from '@tabler/icons-react'
 import {
   useResumenMes, usePreventivosVencidos, usePreventivosPorVencer, useHistorialPreventivos,
@@ -24,6 +25,7 @@ import {
   usePendientesAlmacen,
   type ServicioPreventivo, type VentanaCostos, type TraspasoPendienteDash,
 } from '../hooks/useDashboard'
+import { useResumenChequeos } from '../hooks/useChequeos'
 import { SEVERIDAD_META } from '../lib/incidenciaMeta'
 import { useSucursales } from '../hooks/useSucursales'
 import { unificarDocumentos, agruparSinDocumento, estadoVencimiento } from '../lib/documentosDashboard'
@@ -264,6 +266,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
   const { data: incidenciasData, isLoading: loadingIncidencias } = useIncidenciasAbiertas()
   const { data: sucursalesData } = useSucursales()
   const { data: almacenData, isLoading: loadingAlmacen } = usePendientesAlmacen()
+  const { data: chequeos, isLoading: loadingChequeos } = useResumenChequeos()
   const [tab, setTab] = useState<string | null>('resumen')
   const [reportesAbierto, setReportesAbierto] = useState(false)
   // La ventana del análisis de costos vive aquí y no dentro de la pestaña
@@ -279,6 +282,9 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
   const porVencer = porVencerData?.data ?? []
   const incidencias = incidenciasData?.data ?? []
   const incidenciasGraves = incidencias.filter((i) => i.severidad === 'grave')
+
+  const faltanChequeo   = chequeos?.data.faltan.length ?? 0
+  const reportesSinLeer = chequeos?.data.por_revisar.length ?? 0
 
   // La unificación de las cuatro listas y el agrupado de las unidades sin
   // documento viven en lib/documentosDashboard: los reportes de esta pestaña
@@ -394,6 +400,30 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
         <Tabs.Panel value="resumen" pt="lg">
           <Stack gap="lg">
             <SimpleGrid cols={{ base: 1, sm: 2, md: 3, xl: 6 }} spacing="md">
+              {/* Las dos del chequeo diario van primero porque son las únicas
+                  que se resuelven hoy mismo: la cobertura dice si el chequeo se
+                  está haciendo, y los reportes sin leer dicen si sirve de algo.
+                  Las dos tienen que estar en cero al cerrar el día. */}
+              <StatCard
+                label="Chequeos de hoy"
+                value={loadingChequeos ? '—' : `${chequeos?.data.revisadas ?? 0}/${chequeos?.data.total ?? 0}`}
+                sub={faltanChequeo > 0
+                  ? `Faltan ${faltanChequeo} unidad${faltanChequeo !== 1 ? 'es' : ''}`
+                  : 'Toda la flota revisada'}
+                color={faltanChequeo > 0 ? 'orange' : 'teal'}
+                icon={IconClipboardCheck}
+                onClick={() => setTab('pendientes')}
+                ayuda="Unidades activas con su chequeo diario capturado. Se hace antes de salir: la declaración del chofer más la revisión de lo que se ve."
+              />
+              <StatCard
+                label="Reportes sin leer"
+                value={loadingChequeos ? '—' : String(reportesSinLeer)}
+                sub={reportesSinLeer > 0 ? 'Declaró el chofer' : 'Todo revisado'}
+                color={reportesSinLeer > 0 ? 'red' : 'teal'}
+                icon={IconMessageReport}
+                onClick={() => setTab('pendientes')}
+                ayuda="Lo que los choferes reportaron al entregar la unidad y nadie ha revisado todavía, de cualquier día: la bandeja se vacía, no rota. No se convierte en incidencia solo, alguien decide si hay que atenderlo."
+              />
               <StatCard
                 label="Mantenimientos"
                 value={loadingResumen ? '—' : String(resumen?.data.mantenimientos.count ?? 0)}
@@ -693,6 +723,70 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
         {/* ══ Pendientes ══ */}
         <Tabs.Panel value="pendientes" pt="lg">
           <Stack gap="lg">
+            {/* El chequeo diario va arriba: es lo de hoy, y a diferencia de un
+                preventivo atrasado deja de poderse hacer cuando la unidad sale
+                del patio. */}
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+              <Seccion
+                titulo="Unidades sin chequeo de hoy"
+                descripcion="Haz clic en una unidad para abrir su ficha y capturarlo."
+              >
+                {loadingChequeos ? (
+                  <Center py="xl"><Loader size="sm" /></Center>
+                ) : faltanChequeo === 0 ? (
+                  <Text size="sm" c="dimmed">Toda la flota activa lleva su chequeo de hoy.</Text>
+                ) : (
+                  <Stack gap={4}>
+                    {chequeos!.data.faltan.map((u) => (
+                      <Group
+                        key={u.vehiculo_id}
+                        gap="xs"
+                        wrap="nowrap"
+                        style={{ cursor: onNavigateVehiculo ? 'pointer' : undefined }}
+                        onClick={() => onNavigateVehiculo?.(u.vehiculo_id)}
+                      >
+                        <Badge size="xs" variant="light" color={TIPO_COLORS[u.tipo as keyof typeof TIPO_COLORS]}>
+                          {TIPO_LABELS[u.tipo as keyof typeof TIPO_LABELS] ?? u.tipo}
+                        </Badge>
+                        <Text size="sm" lineClamp={1}>{u.nombre}</Text>
+                        {u.placas && <Text size="xs" c="dimmed">{u.placas}</Text>}
+                      </Group>
+                    ))}
+                  </Stack>
+                )}
+              </Seccion>
+
+              <Seccion
+                titulo="Reportes del chofer sin leer"
+                descripcion="Lo que declararon al entregar la unidad. Se revisa desde la ficha del vehículo."
+              >
+                {loadingChequeos ? (
+                  <Center py="xl"><Loader size="sm" /></Center>
+                ) : reportesSinLeer === 0 ? (
+                  <Text size="sm" c="dimmed">No hay reportes pendientes de revisar.</Text>
+                ) : (
+                  <Stack gap="xs">
+                    {chequeos!.data.por_revisar.map((c) => (
+                      <Card
+                        key={c.id}
+                        withBorder
+                        radius="sm"
+                        padding="xs"
+                        style={{ cursor: onNavigateVehiculo ? 'pointer' : undefined }}
+                        onClick={() => onNavigateVehiculo?.(c.vehiculo_id)}
+                      >
+                        <Group justify="space-between" wrap="nowrap" gap="xs">
+                          <Text size="sm" fw={500} lineClamp={1}>{c.vehiculo_nombre}</Text>
+                          <Text size="xs" c="dimmed">{c.declarado_por}</Text>
+                        </Group>
+                        <Text size="sm" c="dimmed" lineClamp={2}>{c.declaracion}</Text>
+                      </Card>
+                    ))}
+                  </Stack>
+                )}
+              </Seccion>
+            </SimpleGrid>
+
             <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
               <Seccion
                 titulo="Vehículos con preventivos atrasados"

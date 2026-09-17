@@ -37,6 +37,7 @@ import MantenimientoForm from '../components/MantenimientoForm'
 import type { AlertaDocumento, AlertaVehiculo, TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
 import { useDocumentosPorVencer, usePreventivosVencidos } from '../hooks/useDashboard'
 import { useGarantiasVehiculo } from '../hooks/useGarantias'
+import ChequeosVehiculoSection from '../components/ChequeosVehiculoSection'
 import GarantiasVehiculoSection from '../components/GarantiasVehiculoSection'
 import ProgramaVehiculoSection from '../components/ProgramaVehiculoSection'
 import { useProgramaVehiculo } from '../hooks/useProgramaVehiculo'
@@ -1614,6 +1615,11 @@ function VehiculoDetalle({
           </Group>
         </Group>
       </Paper>
+
+      {/* El chequeo del día va primero: es lo único de esta ficha que alguien
+          tiene que hacer hoy, y el aviso de que falta no sirve si hay que
+          desplazarse para verlo. */}
+      <ChequeosVehiculoSection vehiculoId={vehiculo.id} />
 
       {/* Refacción que usa esta unidad por cada tipo que pide su modelo */}
       <PiezasVehiculoSection vehiculoId={vehiculo.id} kmVehiculo={vehiculo.kilometraje} />

@@ -137,32 +137,50 @@ export async function findById(id: number): Promise<Incidencia | null> {
   return r.recordset[0] ?? null
 }
 
+// El alta dentro de una transacción ajena, que devuelve solo el id.
+//
+// Existe para el chequeo diario: un chequeo con tres fallas abre tres
+// incidencias, y las cuatro cosas tienen que guardarse o no guardarse juntas.
+// Si `create` abriera su propia transacción, un fallo a la mitad dejaría
+// incidencias sin chequeo, o renglones marcados como falla sin la incidencia
+// que dicen haber abierto.
+//
+// Devuelve el id y no la fila porque la fila no se puede leer todavía: dentro
+// de una transacción sin confirmar, `findById` —que va por el pool— no la ve.
+// Quien la necesite la lee después del commit.
+export async function insertEnTx(
+  tx: sql.Transaction, data: IncidenciaCreate, autorizadoPor: string
+): Promise<number> {
+  const id = await pendientes.insert(tx, {
+    vehiculo_id: data.vehiculo_id,
+    origen:      'incidencia',
+    nombre:      data.nombre,
+    descripcion: data.descripcion,
+    categoria:   data.categoria,
+    status:      data.status,
+  })
+  await tx.request()
+    .input('id',        sql.Int,           id)
+    .input('reportado', sql.NVarChar(120), data.reportado_por)
+    .input('severidad', sql.NVarChar(20),  data.severidad)
+    .input('fecha',     sql.Date,          data.fecha)
+    .input('hora',      sql.VarChar(8),    data.hora ?? null)
+    .input('ubicacion', sql.NVarChar(160), data.ubicacion)
+    .input('autoriza',  sql.NVarChar(120), autorizadoPor)
+    .query(`
+      INSERT INTO incidencias (id, reportado_por, severidad, fecha, hora, ubicacion, autorizado_por)
+      VALUES (@id, @reportado, @severidad, @fecha, @hora, @ubicacion, @autoriza)
+    `)
+  return id
+}
+
 export async function create(data: IncidenciaCreate, autorizadoPor: string): Promise<Incidencia> {
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
   let id: number
   try {
-    id = await pendientes.insert(tx, {
-      vehiculo_id: data.vehiculo_id,
-      origen:      'incidencia',
-      nombre:      data.nombre,
-      descripcion: data.descripcion,
-      categoria:   data.categoria,
-      status:      data.status,
-    })
-    await tx.request()
-      .input('id',        sql.Int,           id)
-      .input('reportado', sql.NVarChar(120), data.reportado_por)
-      .input('severidad', sql.NVarChar(20),  data.severidad)
-      .input('fecha',     sql.Date,          data.fecha)
-      .input('hora',      sql.VarChar(8),    data.hora ?? null)
-      .input('ubicacion', sql.NVarChar(160), data.ubicacion)
-      .input('autoriza',  sql.NVarChar(120), autorizadoPor)
-      .query(`
-        INSERT INTO incidencias (id, reportado_por, severidad, fecha, hora, ubicacion, autorizado_por)
-        VALUES (@id, @reportado, @severidad, @fecha, @hora, @ubicacion, @autoriza)
-      `)
+    id = await insertEnTx(tx, data, autorizadoPor)
     await tx.commit()
   } catch (err) {
     await tx.rollback()
