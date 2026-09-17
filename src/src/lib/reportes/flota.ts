@@ -179,8 +179,8 @@ export async function exportReporteFlotaPdf(
     // La comparación del backend es de la flota entera; con filtro se reporta
     // el estado del alcance de hoy, sin inventar un histórico que no existe.
     pdf.datos([
-      ['Requerimientos vencidos en el alcance', String(t.vencidos)],
-      ['Requerimientos por vencer en el alcance', String(t.por_vencer)],
+      ['Preventivos vencidos en el alcance', String(t.vencidos)],
+      ['Preventivos por vencer en el alcance', String(t.por_vencer)],
       ['Mantenimientos realizados', String(t.mantenimientos)],
     ])
     pdf.nota(
@@ -190,8 +190,8 @@ export async function exportReporteFlotaPdf(
   } else {
     pdf.datos([[
       comp.origen_actual === 'historico'
-        ? 'Requerimientos vencidos al cierre del periodo'
-        : 'Requerimientos vencidos hoy',
+        ? 'Preventivos vencidos al cierre del periodo'
+        : 'Preventivos vencidos hoy',
       comp.vencidos_actual === null
         ? 'sin dato'
         : `${comp.vencidos_actual} ${deltaLabel(comp.vencidos_actual, comp.vencidos_anterior)}`,
@@ -275,8 +275,8 @@ export async function exportReporteFlotaExcel(
     ['Refacciones usadas en mantenimientos', t.piezas],
     ['Costo de mantenimiento del alcance', t.total],
     ['Mantenimientos realizados', t.mantenimientos],
-    ['Requerimientos vencidos', t.vencidos],
-    ['Requerimientos por vencer', t.por_vencer],
+    ['Preventivos vencidos', t.vencidos],
+    ['Preventivos por vencer', t.por_vencer],
   ]
   if (!parcial) {
     resumen.push(

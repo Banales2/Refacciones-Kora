@@ -5,7 +5,7 @@ export async function dashboardSnapshotTimer(_myTimer: Timer, ctx: InvocationCon
   try {
     await service.ensureDailySync()
   } catch (err) {
-    ctx.error('Error al registrar snapshot de requerimientos:', err)
+    ctx.error('Error al registrar snapshot de preventivos:', err)
     throw err
   }
 }

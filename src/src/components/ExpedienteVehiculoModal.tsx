@@ -52,7 +52,7 @@ export default function ExpedienteVehiculoModal({
         <div>
           <Text fw={600}>{etiqueta}</Text>
           <Text size="xs" c="dimmed">
-            Datos de la unidad, documentos, requerimientos, mantenimientos, incidencias, refacciones
+            Datos de la unidad, documentos, preventivos, mantenimientos, incidencias, refacciones
             montadas y consumo de combustible.
           </Text>
         </div>
@@ -68,7 +68,7 @@ export default function ExpedienteVehiculoModal({
           <Alert color="gray" variant="light" p="xs">
             <Text size="xs">
               El periodo acota lo que <strong>ocurrió</strong>: mantenimientos, incidencias y cargas
-              de combustible. Los datos de la unidad, sus documentos, sus requerimientos y las
+              de combustible. Los datos de la unidad, sus documentos, sus preventivos y las
               refacciones montadas salen como están hoy — son un estado, no un movimiento con fecha.
             </Text>
           </Alert>

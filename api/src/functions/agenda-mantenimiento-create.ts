@@ -12,7 +12,7 @@ const Schema = z.object({
   tipo:              z.enum(['Preventivo', 'Correctivo'], { error: 'Tipo requerido' }),
   tecnico_id:        z.coerce.number({ error: 'Técnico requerido' }).int().positive('Técnico requerido'),
   observaciones:     z.string().trim().nullable().optional(),
-  pendiente_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un requerimiento o incidencia'),
+  pendiente_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un servicio preventivo o incidencia'),
 })
 
 export async function agendaMantenimientoCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {

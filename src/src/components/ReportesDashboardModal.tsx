@@ -66,7 +66,7 @@ const PESTANA: Record<string, {
   },
   pendientes: {
     titulo: 'Pendientes de mantenimiento',
-    descripcion: 'Requerimientos vencidos y por vencer agrupados por unidad, e incidencias sin atender.',
+    descripcion: 'Servicios del programa preventivo vencidos y por vencer, agrupados por unidad, e incidencias sin atender.',
     default: 'Estado de hoy',
     fechable: false,
   },
@@ -283,7 +283,7 @@ export default function ReportesDashboardModal({
           {rangoFlota.modo !== 'default' && (
             <Alert color="gray" variant="light" p="xs">
               <Text size="xs">
-                La comparación de requerimientos vencidos se mide contra el periodo inmediato
+                La comparación de preventivos vencidos se mide contra el periodo inmediato
                 anterior del mismo largo — un año contra el año previo, una quincena contra la
                 quincena previa. Si el periodo ya cerró, el conteo es el que se registró al cierre y
                 no el de hoy; el reporte lo indica.

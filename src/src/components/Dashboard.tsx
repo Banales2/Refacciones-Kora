@@ -19,10 +19,10 @@ import {
   IconReportAnalytics, IconCalendar, IconArrowsExchange, IconTags, IconCoin,
 } from '@tabler/icons-react'
 import {
-  useResumenMes, useRequerimientosVencidos, useRequerimientosPorVencer, useRequerimientosHistorial,
+  useResumenMes, usePreventivosVencidos, usePreventivosPorVencer, useHistorialPreventivos,
   useDocumentosPorVencer, useIncidenciasAbiertas, useAnalisisCostos,
   usePendientesAlmacen,
-  type RequerimientoVencido, type VentanaCostos, type TraspasoPendienteDash,
+  type ServicioPreventivo, type VentanaCostos, type TraspasoPendienteDash,
 } from '../hooks/useDashboard'
 import { SEVERIDAD_META } from '../lib/incidenciaMeta'
 import { useSucursales } from '../hooks/useSucursales'
@@ -76,30 +76,30 @@ function ContadorTab({ n, color }: { n: number; color: string }) {
 
 // ─── Requerimientos agrupados por vehículo ───────────────────────────────────
 
-interface VehiculoConRequerimientos {
+interface VehiculoConPreventivos {
   vehiculo_id:     number
   vehiculo_nombre: string
-  requerimientos:  RequerimientoVencido[]
+  servicios:       ServicioPreventivo[]
 }
 
-function agruparPorVehiculo(items: RequerimientoVencido[]): VehiculoConRequerimientos[] {
-  const map = new Map<number, VehiculoConRequerimientos>()
+function agruparPorVehiculo(items: ServicioPreventivo[]): VehiculoConPreventivos[] {
+  const map = new Map<number, VehiculoConPreventivos>()
   for (const item of items) {
     const entry = map.get(item.vehiculo_id) ?? {
-      vehiculo_id: item.vehiculo_id, vehiculo_nombre: item.vehiculo_nombre, requerimientos: [],
+      vehiculo_id: item.vehiculo_id, vehiculo_nombre: item.vehiculo_nombre, servicios: [],
     }
-    entry.requerimientos.push(item)
+    entry.servicios.push(item)
     map.set(item.vehiculo_id, entry)
   }
   return [...map.values()].sort(
-    (a, b) => b.requerimientos.length - a.requerimientos.length || a.vehiculo_nombre.localeCompare(b.vehiculo_nombre)
+    (a, b) => b.servicios.length - a.servicios.length || a.vehiculo_nombre.localeCompare(b.vehiculo_nombre)
   )
 }
 
-function RequerimientosPorVehiculoTable({
+function PreventivosPorVehiculoTable({
   items, color, emptyMessage, onNavigateVehiculo,
 }: {
-  items: RequerimientoVencido[]
+  items: ServicioPreventivo[]
   color: string
   emptyMessage: string
   onNavigateVehiculo?: (vehiculoId: number) => void
@@ -155,7 +155,7 @@ function RequerimientosPorVehiculoTable({
                       {/* La unidad sigue en garantía y ya trae algo atrasado. Va
                           en el renglón del vehículo y no en cada servicio
                           porque lo que está en juego es de la unidad entera. */}
-                      {g.requerimientos.some(r => r.garantia_en_riesgo) && (
+                      {g.servicios.some(r => r.garantia_en_riesgo) && (
                         <Tooltip
                           label="Sigue en garantía y trae servicios del fabricante atrasados: se puede perder"
                           multiline w={240}
@@ -166,14 +166,14 @@ function RequerimientosPorVehiculoTable({
                     </Group>
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'center' }}>
-                    <Badge color={color} variant="light">{g.requerimientos.length}</Badge>
+                    <Badge color={color} variant="light">{g.servicios.length}</Badge>
                   </Table.Td>
                 </Table.Tr>
                 <Table.Tr>
                   <Table.Td colSpan={3} style={{ padding: abierto ? undefined : 0, border: abierto ? undefined : 'none' }}>
                     <Collapse expanded={abierto}>
                       <Stack gap={4} py="xs" pl="xl">
-                        {g.requerimientos.map(r => (
+                        {g.servicios.map(r => (
                           <Group key={`${r.tipo}-${r.id}`} justify="space-between" wrap="nowrap">
                             <Group gap={6} wrap="nowrap">
                               {/* La visita completa que toca por kilometraje, o
@@ -257,9 +257,9 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
   onNavigateDocumento?: (destino: DestinoDocumento) => void
 }) {
   const { data: resumen, isLoading: loadingResumen } = useResumenMes()
-  const { data: vencidosData, isLoading: loadingVencidos } = useRequerimientosVencidos()
-  const { data: porVencerData, isLoading: loadingPorVencer } = useRequerimientosPorVencer()
-  const { data: historialData, isLoading: loadingHistorial } = useRequerimientosHistorial(12)
+  const { data: vencidosData, isLoading: loadingVencidos } = usePreventivosVencidos()
+  const { data: porVencerData, isLoading: loadingPorVencer } = usePreventivosPorVencer()
+  const { data: historialData, isLoading: loadingHistorial } = useHistorialPreventivos(12)
   const { data: documentosData, isLoading: loadingDocumentos } = useDocumentosPorVencer()
   const { data: incidenciasData, isLoading: loadingIncidencias } = useIncidenciasAbiertas()
   const { data: sucursalesData } = useSucursales()
@@ -409,15 +409,15 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
                 ayuda="Lotes de refacción comprados al almacén en los últimos 30 días."
               />
               <StatCard
-                label="Requerimientos vencidos"
+                label="Preventivos vencidos"
                 value={loadingVencidos ? '—' : String(vencidos.length)}
                 sub="Sin cumplir hoy"
                 color="red" icon={IconAlertTriangle}
                 onClick={() => setTab('pendientes')}
-                ayuda="Mantenimientos preventivos cuyo intervalo de kilómetros o meses ya se pasó."
+                ayuda="Servicios del programa de mantenimiento preventivo cuyo intervalo de kilómetros o meses ya se pasó."
               />
               <StatCard
-                label="Requerimientos por vencer"
+                label="Preventivos por vencer"
                 value={loadingPorVencer ? '—' : String(porVencer.length)}
                 sub="Próximos a vencer"
                 color="orange" icon={IconClockExclamation}
@@ -695,32 +695,32 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
           <Stack gap="lg">
             <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
               <Seccion
-                titulo="Vehículos con requerimientos sin cumplir"
+                titulo="Vehículos con preventivos atrasados"
                 descripcion="Haz clic en la fila para ver el detalle, o en el nombre del vehículo para abrir su ficha."
               >
                 {loadingVencidos ? (
                   <Center py="xl"><Loader size="sm" /></Center>
                 ) : (
-                  <RequerimientosPorVehiculoTable
+                  <PreventivosPorVehiculoTable
                     items={vencidos}
                     color="red"
-                    emptyMessage="No hay requerimientos vencidos hoy."
+                    emptyMessage="No hay servicios preventivos vencidos hoy."
                     onNavigateVehiculo={onNavigateVehiculo}
                   />
                 )}
               </Seccion>
 
               <Seccion
-                titulo="Vehículos con requerimientos por vencer"
+                titulo="Vehículos con preventivos por vencer"
                 descripcion="Haz clic en la fila para ver el detalle, o en el nombre del vehículo para abrir su ficha."
               >
                 {loadingPorVencer ? (
                   <Center py="xl"><Loader size="sm" /></Center>
                 ) : (
-                  <RequerimientosPorVehiculoTable
+                  <PreventivosPorVehiculoTable
                     items={porVencer}
                     color="orange"
-                    emptyMessage="No hay requerimientos próximos a vencer."
+                    emptyMessage="No hay servicios preventivos próximos a vencer."
                     onNavigateVehiculo={onNavigateVehiculo}
                   />
                 )}
@@ -776,7 +776,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
             </Seccion>
 
             <Seccion
-              titulo="Tendencia de requerimientos sin atender"
+              titulo="Tendencia del programa preventivo sin atender"
               descripcion="Se registra un punto por día — el historial se va construyendo con el tiempo. Una línea que sube es mantenimiento que se está acumulando, y el preventivo acumulado se cobra después como correctivo."
             >
               {loadingHistorial ? (

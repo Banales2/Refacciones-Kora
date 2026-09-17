@@ -3,17 +3,17 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import * as service from '../services/dashboardService'
 
-export async function dashboardRequerimientosPendientes(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
+export async function dashboardPreventivosPorVencer(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
     requireRole(req, 'admin', 'editor', 'viewer', 'lector')
-    const data = await service.getRequerimientosVencidos()
+    const data = await service.getPreventivosPorVencer()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
 }
 
-app.http('dashboard-requerimientos-pendientes', {
+app.http('dashboard-preventivos-por-vencer', {
   methods: ['GET'],
-  route: 'dashboard/requerimientos-pendientes',
+  route: 'dashboard/preventivos-por-vencer',
   authLevel: 'anonymous',
-  handler: dashboardRequerimientosPendientes,
+  handler: dashboardPreventivosPorVencer,
 })

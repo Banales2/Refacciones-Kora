@@ -203,7 +203,7 @@ function toDateStr(d: string | Date | null | undefined): string | null {
 // Un renglón de las tarjetas de "vencidos" y "por vencer": lo que el programa
 // de mantenimiento de una unidad tiene atrasado, sea la visita completa que ya
 // toca o una operación que venció por su límite de meses.
-export interface RequerimientoVencido {
+export interface ServicioPreventivo {
   /**
    * Las alertas del programa no tienen un `pendiente` detrás, así que no traen
    * id propio: se les da uno negativo, que el tablero solo usa para distinguir
@@ -225,7 +225,7 @@ export interface RequerimientoVencido {
 
 function comoRenglon(
   alertas: programaVehiculoService.AlertaPrograma[],
-): RequerimientoVencido[] {
+): ServicioPreventivo[] {
   return alertas.map((a, i) => ({
     id:              -(i + 1),
     nombre:          a.nombre,
@@ -237,12 +237,12 @@ function comoRenglon(
   }))
 }
 
-export async function getRequerimientosVencidos(): Promise<RequerimientoVencido[]> {
+export async function getPreventivosVencidos(): Promise<ServicioPreventivo[]> {
   await ensureDailySync()
   return comoRenglon((await programaVehiculoService.clasificarFleet()).vencidos)
 }
 
-export async function getRequerimientosPorVencer(): Promise<RequerimientoVencido[]> {
+export async function getPreventivosPorVencer(): Promise<ServicioPreventivo[]> {
   await ensureDailySync()
   return comoRenglon((await programaVehiculoService.clasificarFleet()).porVencer)
 }

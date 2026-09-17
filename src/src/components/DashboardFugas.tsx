@@ -496,7 +496,7 @@ export default function DashboardFugas() {
       {/* ── 7 ── */}
       <Seccion
         titulo="Lo que cuesta el preventivo diferido"
-        descripcion={`Gasto correctivo por kilómetro de los últimos ${f.ventanas.correctivo} días, separando las unidades que hoy traen requerimientos del programa vencidos de las que están al corriente.`}
+        descripcion={`Gasto correctivo por kilómetro de los últimos ${f.ventanas.correctivo} días, separando las unidades que hoy traen servicios del programa preventivo vencidos de las que están al corriente.`}
       >
         <Stack gap="sm">
           <Alert color="blue" variant="light">
@@ -509,7 +509,7 @@ export default function DashboardFugas() {
 
           <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
             <GrupoCard
-              titulo="Con requerimientos vencidos"
+              titulo="Con preventivos vencidos"
               grupo={f.preventivo_diferido.con_atraso}
               color="red"
             />

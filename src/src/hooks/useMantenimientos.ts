@@ -66,7 +66,6 @@ export function useCreateMantenimiento(vehiculoId: number) {
       api.post<{ data: Mantenimiento }>(`/vehiculos/${vehiculoId}/mantenimientos`, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mantenimientos'] })
-      qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
       // El mantenimiento cierra las incidencias que atendió, así que sus listas
       // (la del vehículo, la de la flota y la de pendientes) quedan obsoletas.
       qc.invalidateQueries({ queryKey: ['incidencias'] })
@@ -85,7 +84,6 @@ export function useUpdateMantenimiento(vehiculoId: number) {
       api.put<{ data: Mantenimiento }>(`/mantenimientos/${id}`, payload),
     onSuccess: (_res, { id }) => {
       qc.invalidateQueries({ queryKey: ['mantenimientos'] })
-      qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
       // Cambiar qué atiende (o mover su fecha) abre o cierra incidencias.
       qc.invalidateQueries({ queryKey: ['incidencias'] })
       qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })

@@ -107,7 +107,6 @@ export function useCompletarAgenda(vehiculoId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agendas-mantenimiento', vehiculoId] })
       qc.invalidateQueries({ queryKey: ['mantenimientos', vehiculoId] })
-      qc.invalidateQueries({ queryKey: ['requerimientos', vehiculoId] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
       // Completar la agenda registra un mantenimiento, que avanza el odómetro.
       qc.invalidateQueries({ queryKey: ['vehiculos'] })

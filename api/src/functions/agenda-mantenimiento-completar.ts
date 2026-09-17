@@ -15,7 +15,7 @@ const Schema = z.object({
   km_actual:         z.coerce.number({ error: 'Kilometraje requerido' }).int().min(0).max(KM_MAX, 'Máximo 9,999,999 km'),
   observaciones:     z.string().trim().min(1, 'Observaciones requeridas').max(255, 'Máximo 255 caracteres')
                        .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos'),
-  pendiente_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un requerimiento o incidencia'),
+  pendiente_ids: z.array(z.number().int().positive()).min(1, 'Selecciona al menos un servicio preventivo o incidencia'),
 })
 
 export async function agendaMantenimientoCompletar(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {

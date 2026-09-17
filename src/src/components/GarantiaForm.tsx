@@ -231,7 +231,7 @@ export default function GarantiaForm({
             {porTiempo && !form.values.fecha_inicio && (
               <Alert color="yellow" title="Sin fecha de inicio">
                 Sin la fecha de arranque no se puede saber cuándo se acaba, así que la
-                garantía se tratará como vigente y sus requerimientos se seguirán pidiendo.
+                garantía se tratará como vigente y sus servicios preventivos se seguirán pidiendo.
               </Alert>
             )}
 
@@ -251,7 +251,7 @@ export default function GarantiaForm({
             <Divider label="¿Se perdió antes de tiempo?" labelPosition="left" />
             <Text size="xs" c="dimmed">
               Solo si esta unidad ya no la tiene (no se llevó a servicio, se modificó, un
-              choque). Cancelarla apaga los requerimientos que existían por ella.
+              choque). Cancelarla apaga los servicios preventivos que existían por ella.
             </Text>
             <Group grow align="flex-start">
               <FechaInput

@@ -35,7 +35,7 @@ import {
 import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimientos'
 import MantenimientoForm from '../components/MantenimientoForm'
 import type { AlertaDocumento, AlertaVehiculo, TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
-import { useDocumentosPorVencer, useRequerimientosVencidos } from '../hooks/useDashboard'
+import { useDocumentosPorVencer, usePreventivosVencidos } from '../hooks/useDashboard'
 import { useGarantiasVehiculo } from '../hooks/useGarantias'
 import GarantiasVehiculoSection from '../components/GarantiasVehiculoSection'
 import ProgramaVehiculoSection from '../components/ProgramaVehiculoSection'
@@ -1953,13 +1953,13 @@ export default function Vehiculos({
   // endpoints que alimentan los avisos del tablero, así que ambas pantallas
   // cuentan lo mismo.
   const { data: documentosData }   = useDocumentosPorVencer()
-  const { data: requerimientosData } = useRequerimientosVencidos()
+  const { data: preventivosData } = usePreventivosVencidos()
 
   const sinTenencia = documentosData?.data.sin_tenencia.length ?? 0
   const sinSeguro   = documentosData?.data.sin_seguro.length   ?? 0
   // Un vehículo puede traer varios servicios vencidos; aquí se cuentan unidades,
   // no servicios.
-  const conVencidos = new Set((requerimientosData?.data ?? []).map((r) => r.vehiculo_id)).size
+  const conVencidos = new Set((preventivosData?.data ?? []).map((r) => r.vehiculo_id)).size
   // Cada vehículo tiene un solo permiso, así que sumar los vehículos de cada
   // permiso por vencer no repite unidades.
   const conPermisoPorVencer = (documentosData?.data.permisos ?? [])
@@ -2040,7 +2040,7 @@ export default function Vehiculos({
     } else {
       createMut.mutate(payload as VehiculoCreatePayload, {
         // Tras crearlo se abre su ficha, para seguir capturando sus datos
-        // (requerimientos, mantenimientos) sin tener que buscarlo en la lista.
+        // (preventivos, mantenimientos) sin tener que buscarlo en la lista.
         onSuccess: (res) => {
           setFormOpen(false)
           setSelected(res.data)

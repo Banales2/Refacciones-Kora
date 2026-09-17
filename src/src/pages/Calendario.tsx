@@ -24,8 +24,8 @@ import type { ActividadDia, Vencimiento } from '../hooks/useActividadDia'
 import { VENCIMIENTO_META, urgencia, diasRestantes } from '../lib/vencimientoMeta'
 import { formatMXN, formatNum } from '../lib/formato'
 import {
-  useRequerimientosVencidos, useRequerimientosPorVencer,
-  type RequerimientoVencido,
+  usePreventivosVencidos, usePreventivosPorVencer,
+  type ServicioPreventivo,
 } from '../hooks/useDashboard'
 import {
   useAgendasCalendario, useCreateAgenda, useCancelarAgenda, useCompletarAgenda,
@@ -53,13 +53,13 @@ import SelectCatalogo from '../components/SelectCatalogo'
 interface VehiculoConServicios {
   vehiculo_id:     number
   vehiculo_nombre: string
-  servicios:       RequerimientoVencido[]
+  servicios:       ServicioPreventivo[]
 }
 
 // `items` ya viene ordenado por urgencia (más próximo a vencer primero) desde
 // el backend; al agrupar por vehículo preservando el orden de primera
 // aparición, el vehículo con el servicio más urgente queda primero.
-function agruparPorVehiculoOrdenado(items: RequerimientoVencido[]): VehiculoConServicios[] {
+function agruparPorVehiculoOrdenado(items: ServicioPreventivo[]): VehiculoConServicios[] {
   const map = new Map<number, VehiculoConServicios>()
   for (const item of items) {
     if (!map.has(item.vehiculo_id)) {
@@ -437,8 +437,8 @@ export default function Calendario({
   onNavigateVehiculo?: (vehiculoId: number) => void
 }) {
   const { data: agendasData } = useAgendasCalendario()
-  const { data: vencidosData } = useRequerimientosVencidos()
-  const { data: porVencerData } = useRequerimientosPorVencer()
+  const { data: vencidosData } = usePreventivosVencidos()
+  const { data: porVencerData } = usePreventivosPorVencer()
   const [detalleId, setDetalleId] = useState<number | null>(null)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [alertaAbierta, setAlertaAbierta] = useState<'vencidos' | 'porVencer' | null>(null)

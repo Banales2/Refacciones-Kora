@@ -4,15 +4,15 @@
 // Es la orden de trabajo del taller. Va agrupado por vehículo y no por servicio
 // porque así se atiende: la unidad entra una vez y se le hace todo lo que trae
 // pendiente.
-import type { RequerimientoVencido, IncidenciaAbierta, HistorialDia } from '../../hooks/useDashboard'
+import type { ServicioPreventivo, IncidenciaAbierta, HistorialDia } from '../../hooks/useDashboard'
 import { crearReportePdf, hoyISO, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
 import { formatFecha, formatFechaCorta } from '../formato'
 import { SEVERIDAD_META } from '../incidenciaMeta'
 
 export interface DatosPendientes {
-  vencidos:    RequerimientoVencido[]
-  porVencer:   RequerimientoVencido[]
+  vencidos:    ServicioPreventivo[]
+  porVencer:   ServicioPreventivo[]
   incidencias: IncidenciaAbierta[]
   historial:   HistorialDia[]
 }
@@ -20,10 +20,10 @@ export interface DatosPendientes {
 interface GrupoVehiculo {
   vehiculo_id:     number
   vehiculo_nombre: string
-  servicios:       RequerimientoVencido[]
+  servicios:       ServicioPreventivo[]
 }
 
-function agrupar(items: RequerimientoVencido[]): GrupoVehiculo[] {
+function agrupar(items: ServicioPreventivo[]): GrupoVehiculo[] {
   const map = new Map<number, GrupoVehiculo>()
   for (const item of items) {
     const entry = map.get(item.vehiculo_id) ?? {
@@ -168,9 +168,9 @@ export async function exportPendientesExcel(d: DatosPendientes) {
   // En Excel no se agrupa: se deja plano y con autofiltro, que es lo que
   // permite ordenar por vehículo o por categoría según lo que se busque.
   const columnasReq = [
-    { header: 'Vehículo',  width: 40, valor: (r: RequerimientoVencido) => r.vehiculo_nombre },
-    { header: 'Servicio',  width: 40, valor: (r: RequerimientoVencido) => r.nombre },
-    { header: 'Categoría', width: 22, valor: (r: RequerimientoVencido) => r.categoria ?? '—' },
+    { header: 'Vehículo',  width: 40, valor: (r: ServicioPreventivo) => r.vehiculo_nombre },
+    { header: 'Servicio',  width: 40, valor: (r: ServicioPreventivo) => r.nombre },
+    { header: 'Categoría', width: 22, valor: (r: ServicioPreventivo) => r.categoria ?? '—' },
   ]
 
   wb.hoja('Vencidos',   columnasReq, d.vencidos,  { vacio: 'No hay servicios vencidos hoy.' })

@@ -54,7 +54,7 @@ export function useResumenMes() {
 }
 
 // Lo que el programa de mantenimiento de una unidad tiene atrasado.
-export interface RequerimientoVencido {
+export interface ServicioPreventivo {
   /** Negativo: la alerta no tiene un registro propio detrás, solo distingue renglones. */
   id:              number
   nombre:          string
@@ -74,17 +74,17 @@ export interface RequerimientoVencido {
   garantia_en_riesgo: boolean
 }
 
-export function useRequerimientosVencidos() {
+export function usePreventivosVencidos() {
   return useQuery({
-    queryKey: ['dashboard', 'requerimientos-pendientes'],
-    queryFn: () => api.get<{ data: RequerimientoVencido[] }>('/dashboard/requerimientos-pendientes'),
+    queryKey: ['dashboard', 'preventivos-vencidos'],
+    queryFn: () => api.get<{ data: ServicioPreventivo[] }>('/dashboard/preventivos-vencidos'),
   })
 }
 
-export function useRequerimientosPorVencer() {
+export function usePreventivosPorVencer() {
   return useQuery({
-    queryKey: ['dashboard', 'requerimientos-por-vencer'],
-    queryFn: () => api.get<{ data: RequerimientoVencido[] }>('/dashboard/requerimientos-por-vencer'),
+    queryKey: ['dashboard', 'preventivos-por-vencer'],
+    queryFn: () => api.get<{ data: ServicioPreventivo[] }>('/dashboard/preventivos-por-vencer'),
   })
 }
 
@@ -178,10 +178,10 @@ export interface HistorialDia {
   por_vencer: number
 }
 
-export function useRequerimientosHistorial(meses = 12) {
+export function useHistorialPreventivos(meses = 12) {
   return useQuery({
-    queryKey: ['dashboard', 'requerimientos-historial', meses],
-    queryFn: () => api.get<{ data: HistorialDia[] }>(`/dashboard/requerimientos-historial?meses=${meses}`),
+    queryKey: ['dashboard', 'preventivos-historial', meses],
+    queryFn: () => api.get<{ data: HistorialDia[] }>(`/dashboard/preventivos-historial?meses=${meses}`),
   })
 }
 

@@ -3,7 +3,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import * as service from '../services/dashboardService'
 
-export async function dashboardRequerimientosHistorial(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
+export async function dashboardHistorialPreventivos(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
     requireRole(req, 'admin', 'editor', 'viewer', 'lector')
     const mesesParam = req.query.get('meses')
@@ -13,9 +13,9 @@ export async function dashboardRequerimientosHistorial(req: HttpRequest, ctx: In
   } catch (err) { return handleError(err, ctx) }
 }
 
-app.http('dashboard-requerimientos-historial', {
+app.http('dashboard-preventivos-historial', {
   methods: ['GET'],
-  route: 'dashboard/requerimientos-historial',
+  route: 'dashboard/preventivos-historial',
   authLevel: 'anonymous',
-  handler: dashboardRequerimientosHistorial,
+  handler: dashboardHistorialPreventivos,
 })

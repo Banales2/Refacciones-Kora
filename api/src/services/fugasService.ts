@@ -35,7 +35,7 @@ const DIAS = {
 }
 
 export interface PreventivoDiferido {
-  /** Unidades con al menos un requerimiento del programa vencido hoy. */
+  /** Unidades con al menos un servicio del programa preventivo vencido hoy. */
   con_atraso:    ComparativoGrupo
   /** Las que están al corriente. */
   al_corriente:  ComparativoGrupo
