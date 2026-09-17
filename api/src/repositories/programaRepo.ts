@@ -396,6 +396,112 @@ export async function setFases(programaId: number, fases: FaseEntrada[]): Promis
   }
 }
 
+/**
+ * Duplica un programa completo sobre otro modelo: la cabecera, las columnas, los
+ * renglones y cada cruce de la tabla.
+ *
+ * Existe porque un fabricante publica la misma tabla para media gama: capturar
+ * sesenta cruces a mano por segundo modelo es donde aparecen las diferencias que
+ * nadie quiso. Y cuando el programa se parece pero no es igual, copiar y
+ * corregir es más corto —y más fiable— que empezar de cero.
+ *
+ * ES UNA COPIA, NO UN VÍNCULO. Los dos programas quedan independientes: tocar
+ * uno no mueve el otro. Es lo que hace falta para el segundo caso, y para el
+ * primero significa que si el fabricante cambia la tabla hay que actualizar cada
+ * modelo. Compartir un programa entre modelos sería otro diseño —una tabla
+ * puente— y cambiaría el significado de `modelo_id`.
+ *
+ * Lo único que NO se copia es el avance: `vehiculo_operacion_estado`, las
+ * excepciones por unidad y las visitas son de las unidades que siguen el
+ * programa de origen, no del programa. El destino nace en blanco, que es lo
+ * correcto: sus unidades no han hecho ninguno de estos servicios.
+ *
+ * Todo va en una transacción. A medias quedaría un programa con columnas y sin
+ * renglones, o con cruces apuntando a fases de otro modelo.
+ */
+export async function copiar(
+  origenId: number,
+  destino: { modelo_id: number; tipo: TipoPrograma; nombre: string; descripcion?: string | null },
+): Promise<Programa | null> {
+  const origen = await findById(origenId)
+  if (!origen) return null
+
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    const nuevo = (await tx.request()
+      .input('modeloId',    sql.Int,               destino.modelo_id)
+      .input('tipo',        sql.NVarChar(20),      destino.tipo)
+      .input('nombre',      sql.NVarChar(160),     destino.nombre)
+      .input('descripcion', sql.NVarChar(sql.MAX), destino.descripcion ?? origen.descripcion)
+      .input('activo',      sql.Bit,               origen.activo)
+      .query(`
+        INSERT INTO programas_mantenimiento (modelo_id, tipo, nombre, descripcion, activo)
+        OUTPUT INSERTED.*
+        VALUES (@modeloId, @tipo, @nombre, @descripcion, @activo)
+      `)).recordset[0] as Programa
+
+    // Las fases nuevas nacen con otros ids, así que se guarda la equivalencia:
+    // los cruces del origen apuntan a los viejos y hay que traducirlos.
+    const faseNueva = new Map<number, number>()
+    for (const fase of origen.fases) {
+      const r = await tx.request()
+        .input('pid',   sql.Int,             nuevo.id)
+        .input('orden', sql.Int,             fase.orden)
+        .input('km',    sql.Int,             fase.km)
+        .input('unica', sql.Bit,             fase.unica)
+        .input('costo', sql.Decimal(18, 2),  fase.costo ?? null)
+        .query(`
+          INSERT INTO programa_fases (programa_id, orden, km, unica, costo)
+          OUTPUT INSERTED.id
+          VALUES (@pid, @orden, @km, @unica, @costo)`)
+      faseNueva.set(fase.id, r.recordset[0].id)
+    }
+
+    for (const op of origen.operaciones) {
+      // `tipo_pieza_id` se copia tal cual. El tipo de pieza es del catálogo
+      // general, no del modelo, y la API nunca ha exigido que esté asociado al
+      // modelo del programa; cambiar eso aquí sería inventar una regla que no
+      // existe en el alta normal de operaciones.
+      const r = await tx.request()
+        .input('pid',         sql.Int,               nuevo.id)
+        .input('orden',       sql.Int,               op.orden)
+        .input('nombre',      sql.NVarChar(200),     op.nombre)
+        .input('descripcion', sql.NVarChar(sql.MAX), op.descripcion   ?? null)
+        .input('categoria',   sql.NVarChar(80),      op.categoria     ?? null)
+        .input('tipoPieza',   sql.Int,               op.tipo_pieza_id ?? null)
+        .input('limiteMeses', sql.Int,               op.limite_meses  ?? null)
+        .query(`
+          INSERT INTO programa_operaciones
+            (programa_id, orden, nombre, descripcion, categoria, tipo_pieza_id, limite_meses)
+          OUTPUT INSERTED.id
+          VALUES (@pid, @orden, @nombre, @descripcion, @categoria, @tipoPieza, @limiteMeses)`)
+      const opNuevaId = r.recordset[0].id
+
+      for (const [faseId, accion] of Object.entries(op.celdas)) {
+        const destinoFase = faseNueva.get(Number(faseId))
+        // No debería faltar ninguna —las celdas salen del mismo programa—, pero
+        // un cruce huérfano apuntaría a la columna de otro modelo. Se salta.
+        if (destinoFase == null) continue
+        await tx.request()
+          .input('oid',    sql.Int,         opNuevaId)
+          .input('fid',    sql.Int,         destinoFase)
+          .input('accion', sql.NVarChar(2), accion)
+          .query(`
+            INSERT INTO programa_operacion_fase (operacion_id, fase_id, accion)
+            VALUES (@oid, @fid, @accion)`)
+      }
+    }
+
+    await tx.commit()
+    return nuevo
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+}
+
 // ─── Operaciones (los renglones) ────────────────────────────────────────────
 
 export async function createOperacion(programaId: number, data: OperacionCreate): Promise<Operacion> {

@@ -163,6 +163,29 @@ export function useUpdatePrograma(modeloId: number) {
   })
 }
 
+/**
+ * Copia el programa a otro modelo. Invalida los dos: el de origen no cambia,
+ * pero el destino estrena programa y su ficha tiene que enterarse.
+ */
+export function useCopiarPrograma(modeloId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, destinoModeloId, nombre }: {
+      id: number
+      destinoModeloId: number
+      nombre?: string
+    }) =>
+      api.post<{ data: Programa }>(`/programa/${id}/copiar`, {
+        modelo_id: destinoModeloId,
+        ...(nombre ? { nombre } : {}),
+      }),
+    onSuccess: (_res, vars) => {
+      invalidar(qc, modeloId)
+      invalidar(qc, vars.destinoModeloId)
+    },
+  })
+}
+
 export function useDeletePrograma(modeloId: number) {
   const qc = useQueryClient()
   return useMutation({

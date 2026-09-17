@@ -40,6 +40,44 @@ export async function create(modeloId: number, data: Omit<ProgramaCreate, 'model
   return repo.create({ ...data, modelo_id: modeloId })
 }
 
+/**
+ * Copiar el programa de un modelo a otro.
+ *
+ * Se niega si el destino ya tiene programa de ese tipo, en vez de reemplazarlo:
+ * reemplazar significa borrar el que estaba, y borrar un programa se lleva por
+ * delante el avance de cada unidad que lo sigue (ver `remove`). Eso tiene que
+ * ser una decisión explícita en la pantalla del modelo destino, no el efecto
+ * secundario de pegar algo encima.
+ */
+export async function copiar(
+  origenId: number,
+  destino: { modelo_id: number; tipo?: TipoPrograma; nombre?: string },
+) {
+  const origen = await repo.findCabecera(origenId)
+  if (!origen) throw new NotFoundError('Programa de mantenimiento')
+
+  // Lo normal es conservar tipo y nombre: es la misma tabla del mismo
+  // fabricante. Se dejan cambiar porque un programa de posgarantía se siembra a
+  // menudo del de fábrica, y porque el nombre suele llevar el modelo dentro.
+  const tipo   = destino.tipo   ?? origen.tipo
+  const nombre = destino.nombre ?? origen.nombre
+
+  if (origen.modelo_id === destino.modelo_id && origen.tipo === tipo) {
+    throw new ConflictError('El origen y el destino son el mismo programa')
+  }
+
+  if (await repo.findByModelo(destino.modelo_id, tipo)) {
+    throw new ConflictError(
+      `El modelo de destino ya tiene un programa de mantenimiento ${ETIQUETA_TIPO[tipo]}. ` +
+      'Bórralo o edítalo desde su ficha antes de copiar otro encima.'
+    )
+  }
+
+  const copia = await repo.copiar(origenId, { modelo_id: destino.modelo_id, tipo, nombre })
+  if (!copia) throw new NotFoundError('Programa de mantenimiento')
+  return copia
+}
+
 export async function update(id: number, data: ProgramaUpdate) {
   const updated = await repo.update(id, data)
   if (!updated) throw new NotFoundError('Programa de mantenimiento')

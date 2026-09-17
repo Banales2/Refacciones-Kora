@@ -35,6 +35,21 @@ export const ProgramaCreateSchema = z.object({
   activo: z.boolean().default(true),
 })
 
+// Copiar un programa a otro modelo. El destino es obligatorio; el tipo y el
+// nombre son opcionales porque lo normal es conservar los del origen —el mismo
+// fabricante, la misma tabla— y el servicio los rellena cuando no vienen.
+export const ProgramaCopiarSchema = z.object({
+  modelo_id: z.coerce.number().int().positive({ error: 'Modelo de destino requerido' }),
+  tipo: TipoProgramaSchema.optional(),
+  nombre: z
+    .string()
+    .trim()
+    .min(1, 'Requerido')
+    .max(160, 'Máximo 160 caracteres')
+    .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos')
+    .optional(),
+})
+
 // El tipo no se edita: cambiarlo movería el programa de etapa con las unidades
 // ya andando encima. Si se capturó en el lugar equivocado, se borra y se vuelve
 // a crear.

@@ -22,13 +22,17 @@ import {
   Tabs,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
-import { IconPlus, IconPencil, IconTrash, IconChecklist, IconColumns } from '@tabler/icons-react'
+import {
+  IconPlus, IconPencil, IconTrash, IconChecklist, IconColumns, IconCopy,
+} from '@tabler/icons-react'
 import {
   useProgramasModelo, useAccionesPrograma, useCreatePrograma, useUpdatePrograma,
   useDeletePrograma, useSetFases, useCreateOperacion, useUpdateOperacion,
-  useDeleteOperacion, useSetCeldas, proximosServicios,
+  useDeleteOperacion, useSetCeldas, useCopiarPrograma, proximosServicios,
   TIPO_PROGRAMA_LABEL, TIPO_PROGRAMA_DETALLE,
 } from '../hooks/usePrograma'
+import { useModelos } from '../hooks/useModelos'
+import SelectCatalogo from './SelectCatalogo'
 import type {
   Programa, OperacionPrograma, OperacionPayload, FasePayload, AccionPrograma,
   TipoPrograma,
@@ -146,6 +150,86 @@ function ProgramaForm({
 
 // ── Sección ──────────────────────────────────────────────────────────────────
 
+/**
+ * Copiar la tabla completa a otro modelo.
+ *
+ * El caso que lo justifica: un fabricante publica el mismo programa para media
+ * gama, y capturar sesenta cruces a mano por cada modelo es donde se cuelan las
+ * diferencias que nadie quiso. El otro caso es el parecido —copiar y corregir
+ * sobre la copia, que es más corto que empezar de cero—.
+ *
+ * Los modelos que ya tienen programa de este tipo salen deshabilitados en vez de
+ * ocultos: si alguien viene a buscar uno y no lo encuentra, la lista parecería
+ * incompleta. Deshabilitado con su motivo contesta la pregunta.
+ */
+function CopiarProgramaModal({ modeloId, programa, onClose }: {
+  modeloId: number
+  programa: Programa
+  onClose: () => void
+}) {
+  const modelosQuery = useModelos()
+  const copiarMut = useCopiarPrograma(modeloId)
+  const [destino, setDestino] = useState<string | null>(null)
+
+  const opciones = (modelosQuery.data?.data ?? [])
+    .filter((m) => m.id !== modeloId && !m.descontinuado_en)
+    .map((m) => ({
+      value: String(m.id),
+      label: `${m.marca} ${m.nombre}${m.anio ? ` (${m.anio})` : ''}`,
+    }))
+
+  return (
+    <Modal opened onClose={onClose} title="Copiar el programa a otro modelo" centered size="md">
+      <Stack gap="sm">
+        <Paper withBorder p="xs">
+          <Text size="sm" fw={500}>{programa.nombre}</Text>
+          <Text size="xs" c="dimmed">
+            {programa.fases.length} columna(s) · {programa.operaciones.length} renglón(es) ·{' '}
+            {TIPO_PROGRAMA_LABEL[programa.tipo]}
+          </Text>
+        </Paper>
+
+        <SelectCatalogo
+          estado={modelosQuery}
+          nombre="modelos"
+          label="Modelo de destino" required
+          placeholder="A qué modelo se copia"
+          data={opciones}
+          value={destino}
+          onChange={setDestino}
+          nothingFoundMessage="No hay otro modelo dado de alta"
+        />
+
+        <Alert color="blue" variant="light">
+          Se copian las columnas, los renglones y cada cruce de la tabla. <strong>No</strong> se
+          copia el avance: las unidades del modelo de destino empiezan sin ningún servicio hecho,
+          que es lo correcto porque no lo han hecho. Las dos copias quedan independientes — corregir
+          una después no mueve la otra.
+        </Alert>
+
+        {copiarMut.error && (
+          <Alert color="red" title="No se pudo copiar">{(copiarMut.error as Error).message}</Alert>
+        )}
+
+        <Group justify="flex-end" mt="xs">
+          <Button variant="default" onClick={onClose} disabled={copiarMut.isPending}>Cancelar</Button>
+          <Button
+            leftSection={<IconCopy size={16} />}
+            loading={copiarMut.isPending}
+            disabled={!destino}
+            onClick={() => destino && copiarMut.mutate(
+              { id: programa.id, destinoModeloId: Number(destino) },
+              { onSuccess: onClose },
+            )}
+          >
+            Copiar
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  )
+}
+
 function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
   modeloId: number
   tipo:     TipoPrograma
@@ -168,6 +252,7 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
   const [editandoOp, setEditandoOp] = useState<OperacionPrograma | null>(null)
   const [borrandoOp, setBorrandoOp] = useState<OperacionPrograma | null>(null)
   const [borrandoPrograma, setBorrandoPrograma] = useState(false)
+  const [copiando, setCopiando] = useState(false)
   const [formError, setFormError]   = useState<string | null>(null)
   const [celdaError, setCeldaError] = useState<string | null>(null)
 
@@ -290,6 +375,11 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
             {programa.descripcion && <Text size="xs" c="dimmed">{programa.descripcion}</Text>}
           </Stack>
           <Group gap="xs" wrap="nowrap">
+            <Tooltip label="Copiar este programa a otro modelo">
+              <ActionIcon variant="light" color="teal" onClick={() => setCopiando(true)}>
+                <IconCopy size={16} />
+              </ActionIcon>
+            </Tooltip>
             <Tooltip label="Editar columnas del programa">
               <ActionIcon variant="light" color="blue" onClick={() => { setFormError(null); setFasesOpen(true) }}>
                 <IconColumns size={16} />
@@ -308,6 +398,14 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
           </Group>
         </Group>
       </Paper>
+
+      {copiando && (
+        <CopiarProgramaModal
+          modeloId={modeloId}
+          programa={programa}
+          onClose={() => setCopiando(false)}
+        />
+      )}
 
       {fases.length === 0 ? (
         <Alert color="blue" variant="light" title="Faltan las columnas">
