@@ -426,3 +426,119 @@ export function usePendientesAlmacen() {
     queryFn: () => api.get<{ data: PendientesAlmacen }>('/dashboard/pendientes-almacen'),
   })
 }
+
+// ─── Fugas de dinero ─────────────────────────────────────────────────────────
+//
+// Siete cruces sobre datos ya capturados que buscan dinero perdido donde no
+// aparece como gasto. El análisis de costos mide lo que se gastó; esto mide lo
+// que se fue.
+
+export interface VidaPorMarca {
+  tipo_pieza_id:  number
+  tipo_pieza:     string
+  marca:          string
+  montajes:       number
+  km_promedio:    number
+  costo_promedio: number
+  /** Pesos por cada 1 000 km de servicio: la cifra que compara de verdad. */
+  costo_por_mil:  number
+}
+
+export interface MermaMes {
+  mes:      string
+  sucursal: string
+  /** Positivo = el sistema cuenta de más, o sea que en el estante hay menos. */
+  piezas:   number
+  monto:    number
+}
+
+export interface LoteInmovil {
+  lote_id:        number
+  pieza_id:       number
+  numero_serie:   string
+  descripcion:    string
+  marca:          string
+  sucursal:       string | null
+  cantidad:       number
+  costo_unitario: number
+  monto:          number
+  fecha_compra:   string | null
+  dias_parado:    number | null
+  /** Ya no queda ningún modelo vivo que use esta refacción. */
+  descontinuada:  boolean
+}
+
+export interface ValeSinRecarga {
+  id:        number
+  folio:     string
+  fecha:     string
+  conductor: string
+  vehiculo:  string
+  dias:      number
+}
+
+export interface DerivaPrecio {
+  pieza_id:      number
+  numero_serie:  string
+  descripcion:   string
+  marca:         string
+  compras:       number
+  primer_precio: number
+  primera_fecha: string
+  ultimo_precio: number
+  ultima_fecha:  string
+  variacion_pct: number
+}
+
+export interface CorrectivoEnGarantia {
+  mantenimiento_id: number
+  vehiculo_id:      number
+  vehiculo:         string
+  fecha:            string
+  costo:            number
+  garantia:         string
+  folio:            string | null
+  cobertura:        string
+}
+
+export interface ComparativoGrupo {
+  vehiculos:     number
+  correctivos:   number
+  costo:         number
+  km:            number
+  costo_por_mil: number | null
+}
+
+export interface PreventivoDiferido {
+  con_atraso:         ComparativoGrupo
+  al_corriente:       ComparativoGrupo
+  sobrecosto_por_mil: number | null
+}
+
+export interface Fugas {
+  ventanas: {
+    merma: number; compras: number; inmovil: number
+    vales: number; correctivo: number; garantia: number
+  }
+  vida_por_marca:       VidaPorMarca[]
+  merma:                MermaMes[]
+  lotes_inmoviles:      LoteInmovil[]
+  vales_sin_recarga:    ValeSinRecarga[]
+  deriva_precios:       DerivaPrecio[]
+  correctivos_garantia: CorrectivoEnGarantia[]
+  preventivo_diferido:  PreventivoDiferido
+  totales: {
+    merma:                number
+    capital_parado:       number
+    capital_obsoleto:     number
+    correctivos_garantia: number
+    vales_sin_recarga:    number
+  }
+}
+
+export function useFugas() {
+  return useQuery({
+    queryKey: ['dashboard', 'fugas'],
+    queryFn: () => api.get<{ data: Fugas }>('/dashboard/fugas'),
+  })
+}

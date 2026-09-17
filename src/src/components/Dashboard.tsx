@@ -16,7 +16,7 @@ import {
   IconChevronRight, IconAlertTriangle, IconTool,
   IconShoppingCart, IconClockExclamation, IconExclamationCircle, IconCashBanknote,
   IconLayoutDashboard, IconDiscount2, IconCalendarExclamation, IconClipboardList,
-  IconReportAnalytics, IconCalendar, IconArrowsExchange, IconTags,
+  IconReportAnalytics, IconCalendar, IconArrowsExchange, IconTags, IconCoin,
 } from '@tabler/icons-react'
 import {
   useResumenMes, useRequerimientosVencidos, useRequerimientosPorVencer, useRequerimientosHistorial,
@@ -33,6 +33,7 @@ import { formatMXN, formatFecha, formatFechaCorta } from '../lib/formato'
 import { StatCard } from './StatCard'
 import DashboardCostos from './DashboardCostos'
 import ReportesDashboardModal from './ReportesDashboardModal'
+import DashboardFugas from './DashboardFugas'
 import Calendario from '../pages/Calendario'
 
 // ─── Piezas compartidas ──────────────────────────────────────────────────────
@@ -380,6 +381,9 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
             rightSection={<ContadorTab n={nPendientes} color="red" />}
           >
             Pendientes
+          </Tabs.Tab>
+          <Tabs.Tab value="fugas" leftSection={<IconCoin size={16} />}>
+            Fugas
           </Tabs.Tab>
           <Tabs.Tab value="calendario" leftSection={<IconCalendar size={16} />}>
             Calendario
@@ -818,6 +822,15 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
               </Alert>
             )}
           </Stack>
+        </Tabs.Panel>
+
+        {/* ══ Fugas ══ */}
+        {/* Aparte de Costos a propósito: esa pestaña mide lo que se gastó y si
+            se pagó de más; esta busca lo que se pierde sin aparecer como gasto.
+            Sus consultas son pesadas, y el `keepMounted={false}` del <Tabs> hace
+            que solo corran al abrir la pestaña. */}
+        <Tabs.Panel value="fugas" pt="lg">
+          <DashboardFugas />
         </Tabs.Panel>
 
         {/* ══ Calendario ══ */}
