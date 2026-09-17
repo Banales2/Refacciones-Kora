@@ -520,6 +520,8 @@ export interface Fugas {
     merma: number; compras: number; inmovil: number
     vales: number; correctivo: number; garantia: number
   }
+  /** Bloques que no se pudieron calcular, con el motivo. Vacío es que todo salió. */
+  errores: string[]
   vida_por_marca:       VidaPorMarca[]
   merma:                MermaMes[]
   lotes_inmoviles:      LoteInmovil[]

@@ -58,6 +58,13 @@ export interface ComparativoGrupo {
 export interface Fugas {
   /** Qué ventana usó cada bloque, para poder decirlo en pantalla. */
   ventanas: typeof DIAS
+  /**
+   * Los bloques que no se pudieron calcular, con el motivo. Vacío es que todo
+   * salió. Se devuelven en vez de reventar la respuesta entera: son siete cruces
+   * independientes, y que uno falle no es razón para dejar la pantalla en blanco
+   * —además así se ve cuál falló, que es lo que hace falta para arreglarlo—.
+   */
+  errores: string[]
   vida_por_marca:        repo.VidaPorMarca[]
   merma:                 repo.MermaMes[]
   lotes_inmoviles:       repo.LoteInmovil[]
@@ -121,19 +128,41 @@ async function calcularPreventivoDiferido(desde: string): Promise<PreventivoDife
   }
 }
 
+const GRUPO_VACIO: ComparativoGrupo = {
+  vehiculos: 0, correctivos: 0, costo: 0, km: 0, costo_por_mil: null,
+}
+
 export async function getFugas(): Promise<Fugas> {
   const hoy = fechaMexico()
+  const errores: string[] = []
+
+  /**
+   * Corre un bloque y, si truena, lo deja vacío y anota el motivo. Sin esto, un
+   * nombre de tabla equivocado en cualquiera de los siete devuelve 500 y la
+   * pestaña no muestra nada, ni siquiera los seis que sí funcionaban.
+   */
+  async function bloque<T>(nombre: string, fn: () => Promise<T>, vacio: T): Promise<T> {
+    try {
+      return await fn()
+    } catch (err) {
+      errores.push(`${nombre}: ${err instanceof Error ? err.message : String(err)}`)
+      return vacio
+    }
+  }
 
   const [
     vidaPorMarca, merma, inmoviles, vales, deriva, garantia, diferido,
   ] = await Promise.all([
-    repo.findVidaPorMarca(),
-    repo.findMermaValorizada(addDias(hoy, -DIAS.merma)),
-    repo.findLotesInmoviles(addDias(hoy, -DIAS.inmovil)),
-    repo.findValesSinRecarga(addDias(hoy, -DIAS.vales)),
-    repo.findDerivaPrecios(addDias(hoy, -DIAS.compras)),
-    repo.findCorrectivosEnGarantia(addDias(hoy, -DIAS.garantia)),
-    calcularPreventivoDiferido(addDias(hoy, -DIAS.correctivo)),
+    bloque('Vida por marca', () => repo.findVidaPorMarca(), []),
+    bloque('Merma', () => repo.findMermaValorizada(addDias(hoy, -DIAS.merma)), []),
+    bloque('Capital parado', () => repo.findLotesInmoviles(addDias(hoy, -DIAS.inmovil)), []),
+    bloque('Vales sin recarga', () => repo.findValesSinRecarga(addDias(hoy, -DIAS.vales)), []),
+    bloque('Deriva de precios', () => repo.findDerivaPrecios(addDias(hoy, -DIAS.compras)), []),
+    bloque('Correctivos en garantía',
+      () => repo.findCorrectivosEnGarantia(addDias(hoy, -DIAS.garantia)), []),
+    bloque('Preventivo diferido',
+      () => calcularPreventivoDiferido(addDias(hoy, -DIAS.correctivo)),
+      { con_atraso: GRUPO_VACIO, al_corriente: GRUPO_VACIO, sobrecosto_por_mil: null }),
   ])
 
   // Los totales suman solo lo que es un monto real y comparable. Quedan fuera a
@@ -157,6 +186,7 @@ export async function getFugas(): Promise<Fugas> {
 
   return {
     ventanas: DIAS,
+    errores,
     vida_por_marca:       vidaPorMarca,
     merma,
     lotes_inmoviles:      inmoviles,

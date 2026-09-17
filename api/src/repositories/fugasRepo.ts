@@ -256,7 +256,7 @@ export async function findValesSinRecarga(desde: string, gracia = 7): Promise<Va
       WHERE vg.fecha >= @desde
         AND vg.fecha <= DATEADD(day, -@gracia, CAST(GETDATE() AS DATE))
         AND NOT EXISTS (
-          SELECT 1 FROM recargas r WHERE r.vale_id = vg.id
+          SELECT 1 FROM recargas_combustible r WHERE r.vale_id = vg.id
         )
       ORDER BY vg.fecha
     `)

@@ -244,6 +244,17 @@ export default function DashboardFugas() {
 
   return (
     <Stack gap="lg">
+      {/* Cada cruce se calcula por su cuenta: si uno falla, el resto sigue
+          sirviendo y aquí se dice cuál se cayó y por qué. */}
+      {f.errores.length > 0 && (
+        <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />}
+          title={`${f.errores.length} bloque(s) no se pudieron calcular`}>
+          <Stack gap={2}>
+            {f.errores.map((e) => <Text key={e} size="xs">{e}</Text>)}
+          </Stack>
+        </Alert>
+      )}
+
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3, xl: 5 }} spacing="md">
         <StatCard
           label="Merma valorizada"
