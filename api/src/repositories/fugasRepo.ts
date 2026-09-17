@@ -12,6 +12,25 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { fechaDelLote, joinFactura } from './facturaSql'
 
+// Lo que costó un mantenimiento: la mano de obra del propio renglón más las
+// refacciones que consumió.
+//
+// Va como OUTER APPLY y no como subconsulta dentro del SELECT porque en cuanto
+// ese costo entra en un SUM() —al agrupar por vehículo— SQL Server lo rechaza:
+// "Cannot perform an aggregate function on an expression containing an aggregate
+// or a subquery". Con APPLY el total de refacciones ya es una columna, y la
+// misma expresión sirve agrupada y sin agrupar.
+//
+// Exige que la tabla `mantenimiento` venga aliasada como `m`.
+const APPLY_REFACCIONES = `
+      OUTER APPLY (
+        SELECT SUM(dp.cantidad * dp.costo_unitario) AS total
+        FROM detalle_mtto_pieza dp
+        WHERE dp.mantenimiento_id = m.id
+      ) refs`
+
+const COSTO_MANTENIMIENTO = `(COALESCE(m.costo, 0) + COALESCE(refs.total, 0))`
+
 // ---------------------------------------------------------------------------
 // 1. Costo por kilómetro de vida, por marca
 // ---------------------------------------------------------------------------
@@ -371,10 +390,7 @@ export async function findCorrectivosEnGarantia(desde: string): Promise<Correcti
       SELECT m.id AS mantenimiento_id, v.id AS vehiculo_id,
              CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
              CONVERT(char(10), m.fecha, 23) AS fecha,
-             COALESCE(m.costo, 0)
-               + COALESCE((SELECT SUM(dp.cantidad * dp.costo_unitario)
-                           FROM detalle_mtto_pieza dp
-                           WHERE dp.mantenimiento_id = m.id), 0) AS costo,
+             ${COSTO_MANTENIMIENTO} AS costo,
              g.nombre AS garantia, g.folio,
              CONCAT(
                CASE WHEN g.duracion_meses IS NOT NULL
@@ -389,6 +405,7 @@ export async function findCorrectivosEnGarantia(desde: string): Promise<Correcti
       JOIN vehiculos v ON v.id = m.vehiculo_id
       JOIN modelos mo  ON mo.id = v.modelo_id
       JOIN garantias_vehiculo g ON g.vehiculo_id = v.id
+      ${APPLY_REFACCIONES}
       WHERE m.tipo = 'Correctivo'
         AND m.fecha >= @desde
         AND g.cancelada_en IS NULL
@@ -440,14 +457,12 @@ export async function findCorrectivosPorVehiculo(desde: string): Promise<Correct
       SELECT v.id AS vehiculo_id,
              CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
              COUNT(DISTINCT m.id) AS correctivos,
-             SUM(COALESCE(m.costo, 0)
-                 + COALESCE((SELECT SUM(dp.cantidad * dp.costo_unitario)
-                             FROM detalle_mtto_pieza dp
-                             WHERE dp.mantenimiento_id = m.id), 0)) AS costo,
+             SUM(${COSTO_MANTENIMIENTO}) AS costo,
              NULLIF(MAX(m.km_actual) - MIN(m.km_actual), 0) AS km
       FROM mantenimiento m
       JOIN vehiculos v ON v.id = m.vehiculo_id
       JOIN modelos mo  ON mo.id = v.modelo_id
+      ${APPLY_REFACCIONES}
       WHERE m.tipo = 'Correctivo' AND m.fecha >= @desde
       GROUP BY v.id, mo.marca, mo.nombre, v.numero_serie
     `)
