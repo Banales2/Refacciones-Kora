@@ -68,6 +68,7 @@ const ENTIDADES: Record<string, { etiqueta: string; campos: string[] }> = {
   mantenimiento_programa:          { etiqueta: 'Servicio del programa', campos: ['etapa', 'fase_id', 'indice'] },
   proveedores:                     { etiqueta: 'Proveedor',               campos: ['nombre', 'contacto'] },
   recargas_combustible:            { etiqueta: 'Recarga de combustible',  campos: ['vehiculo_serie', 'conductor', 'gasolinera', 'fecha', 'litros'] },
+  facturas_gasolina:               { etiqueta: 'Factura de gasolinera',   campos: ['folio', 'gasolinera', 'fecha', 'total'] },
   incidencias:                     { etiqueta: 'Incidencia',              campos: ['nombre', 'severidad', 'vehiculo_serie', 'vehiculo_placas'] },
   chequeos:                        { etiqueta: 'Chequeo diario',          campos: ['fecha', 'vehiculo_serie', 'vehiculo_placas', 'declarado_por'] },
   rutas:                           { etiqueta: 'Ruta',                    campos: ['nombre', 'ubicacion'] },

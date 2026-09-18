@@ -154,6 +154,12 @@ const CONSULTAS: Record<string, string> = {
     LEFT JOIN piezas      p  ON p.id = pp.pieza_id
     WHERE pp.id = @id`,
 
+  facturas_gasolina: `
+    SELECT f.*, g.nombre AS gasolinera
+    FROM facturas_gasolina f
+    LEFT JOIN gasolineras g ON g.id = f.gasolinera_id
+    WHERE f.id = @id`,
+
   recargas_combustible: `
     SELECT rc.*, v.numero_serie AS vehiculo_serie, v.placas AS vehiculo_placas,
            c.nombre AS conductor, g.nombre AS gasolinera

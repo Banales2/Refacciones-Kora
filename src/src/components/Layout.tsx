@@ -24,6 +24,7 @@ import {
   IconClipboardCheck,
   IconHistory,
   IconReceipt,
+  IconReceipt2,
   IconReceiptOff,
 } from '@tabler/icons-react'
 import type { Icon } from '@tabler/icons-react'
@@ -40,6 +41,7 @@ import ValesGasolina from '../pages/ValesGasolina'
 import RegistrosCambios from '../pages/RegistrosCambios'
 import ErroresCaptura from '../pages/ErroresCaptura'
 import Facturas from '../pages/Facturas'
+import FacturasGasolina from '../pages/FacturasGasolina'
 import Mantenimientos from '../pages/Mantenimientos'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 import type { DestinoDocumento } from '../lib/documentosDashboard'
@@ -47,7 +49,7 @@ import type { DestinoDocumento } from '../lib/documentosDashboard'
 type Section =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
   | 'mantenimientos' | 'sitios' | 'vales' | 'registros' | 'chequeos'
-  | 'errores-captura' | 'facturas'
+  | 'errores-captura' | 'facturas' | 'facturas-gasolina'
 
 const SECTION_LABELS: Record<Section, string> = {
   dashboard:      'Dashboard',
@@ -62,6 +64,7 @@ const SECTION_LABELS: Record<Section, string> = {
   registros:      'Registros de cambios',
   'errores-captura': 'Errores de captura',
   facturas:       'Facturas de compra',
+  'facturas-gasolina': 'Facturas de gasolinera',
   chequeos:       'Chequeo de flotilla',
 }
 
@@ -86,6 +89,7 @@ const NAV_GROUPS: {
       { section: 'chequeos',       label: 'Chequeo de flotilla', description: 'El recorrido diario de una sucursal, unidad por unidad', icon: IconClipboardCheck },
       { section: 'mantenimientos', label: 'Mantenimientos', description: 'Historial de servicios de toda la flota', icon: IconTool          },
       { section: 'incidencias',    label: 'Incidencias',    description: 'Incidencias reportadas de la flota',      icon: IconAlertTriangle },
+      { section: 'facturas-gasolina', label: 'Facturas de gas', description: 'Cuadrar la factura de la gasolinera contra las recargas', icon: IconReceipt2 },
       { section: 'vales',          label: 'Vales',          description: 'Vales de gasolina entregados a choferes', icon: IconGasStation    },
     ],
   },
@@ -535,6 +539,7 @@ export default function Layout() {
         {section === 'registros' && esAdmin && <RegistrosCambios />}
         {section === 'errores-captura' && esAdmin && <ErroresCaptura />}
         {section === 'facturas'  && <Facturas />}
+        {section === 'facturas-gasolina' && <FacturasGasolina />}
       </AppShell.Main>
     </AppShell>
   )
