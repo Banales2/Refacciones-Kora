@@ -8,8 +8,14 @@
 // revisar treinta seguidas. La diferencia no es cosmética: con la ficha, cada
 // unidad cuesta ir al tablero, abrir el detalle completo —refacciones,
 // garantías, programa, mantenimientos— y regresar, para usar solo lo de hasta
-// arriba. Aquí la lista se queda fija, el formulario se abre encima y al
-// guardar avanza solo a la siguiente que falte.
+// arriba. Aquí la lista se queda fija y el formulario se abre encima, así que
+// revisar la siguiente unidad es un toque en vez de cuatro pantallas.
+//
+// Lo que NO hace es imponer un orden: no avanza sola a la siguiente ni tiene
+// botón para "empezar el recorrido". Las unidades no se estacionan igual dos
+// días seguidos, así que cualquier orden que proponga la pantalla manda a quien
+// revisa a la otra punta del patio. Quien decide qué sigue es el que las está
+// viendo; la lista solo pone las pendientes arriba.
 //
 // LAS DOS LISTAS SON DOS COSAS DISTINTAS. Las de base viven en esta sucursal y
 // el sistema puede reclamarlas por su nombre. Los tráilers andan hoy aquí y
@@ -121,21 +127,19 @@ export default function ChequeoPatio() {
     [sucursales.data]
   )
 
-  // Al guardar, la siguiente que falte. Es lo que convierte la pantalla en un
-  // recorrido en vez de una lista: quien va caminando no debería tener que
-  // volver a buscar dónde se quedó.
-  const siguiente = (actual: UnidadPatio): UnidadPatio | null => {
-    const faltan = (patio?.base ?? []).filter(
-      (u) => u.chequeo_id == null && u.vehiculo_id !== actual.vehiculo_id
-    )
-    return faltan[0] ?? null
-  }
-
-  const alGuardar = (nuevos: string[], actual: UnidadPatio) => {
+  // Al guardar se vuelve a la lista, y nada más.
+  //
+  // NO se avanza sola a la siguiente unidad. Se intentó y estaba mal pensado:
+  // suponía que el patio se camina en un orden, y las unidades no se estacionan
+  // igual dos días seguidos. Mandar a quien revisa a una unidad que está en la
+  // otra punta del patio le hace perder más tiempo del que le ahorra, y lo
+  // obliga a salirse para buscar la que sí tiene enfrente.
+  //
+  // Quien decide qué unidad sigue es el que está ahí viéndolas: la lista se
+  // queda quieta y él pica la que le toca.
+  const alGuardar = (nuevos: string[]) => {
     setAvisos(nuevos)
-    const sig = siguiente(actual)
-    setAbierta(sig)
-    if (!sig) refetch()
+    setAbierta(null)
   }
 
   return (
@@ -192,11 +196,9 @@ export default function ChequeoPatio() {
                 )}
               </Group>
               <Progress value={avance} color={pendientes.length === 0 ? 'teal' : 'blue'} />
-              {pendientes.length > 0 && (
-                <Button mt="xs" size="md" onClick={() => setAbierta(pendientes[0])}>
-                  Empezar el recorrido
-                </Button>
-              )}
+              {/* Sin botón para "empezar": no hay un orden que empezar. Las
+                  pendientes salen primero en la lista y se pica la que se tenga
+                  enfrente. */}
             </Stack>
           </Card>
 
@@ -276,7 +278,21 @@ export default function ChequeoPatio() {
       <Modal
         opened={abierta != null}
         onClose={() => setAbierta(null)}
-        title={abierta?.nombre ?? 'Chequeo'}
+        // Las placas van en el encabezado, no solo en la lista: al abrir la
+        // unidad es justo cuando hay que confirmar que se está capturando la
+        // que se tiene enfrente, y la serie sola no sirve para eso —en el patio
+        // lo que se lee de lejos es la placa.
+        title={abierta && (
+          <Group gap="xs" wrap="wrap">
+            <Text fw={600} size="sm">{abierta.nombre}</Text>
+            {abierta.placas
+              ? <Badge variant="light" color="gray" size="sm">{abierta.placas}</Badge>
+              : <Badge variant="outline" color="gray" size="sm">Sin placas</Badge>}
+            <Badge size="sm" variant="light" color={TIPO_COLORS[abierta.tipo as keyof typeof TIPO_COLORS]}>
+              {TIPO_LABELS[abierta.tipo as keyof typeof TIPO_LABELS] ?? abierta.tipo}
+            </Badge>
+          </Group>
+        )}
         size="lg"
         fullScreen={typeof window !== 'undefined' && window.innerWidth < 768}
       >
@@ -289,12 +305,12 @@ export default function ChequeoPatio() {
             )}
             <ChequeoDiarioForm
               // `key` obliga a montar un formulario limpio por unidad: sin él,
-              // al avanzar a la siguiente se quedarían las respuestas de la
-              // anterior, que es el peor error posible aquí.
+              // abrir otra unidad sin cerrar la pantalla arrastraría las
+              // respuestas de la anterior, que es el peor error posible aquí.
               key={abierta.vehiculo_id}
               vehiculoId={abierta.vehiculo_id}
               ubicacionFija={patio.ubicacion}
-              onListo={(nuevos) => alGuardar(nuevos, abierta)}
+              onListo={alGuardar}
               onCancel={() => setAbierta(null)}
             />
           </>

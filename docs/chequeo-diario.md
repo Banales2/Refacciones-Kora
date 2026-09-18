@@ -194,7 +194,16 @@ chofer con su unidad—, la ficha del vehículo no puede ser la única entrada: 
 cada unidad cuesta abrir el detalle completo
 —refacciones, garantías, programa, mantenimientos— para usar solo lo de hasta
 arriba. `pages/ChequeoPatio.tsx` es la lista del recorrido: se queda fija, el
-formulario se abre encima y al guardar avanza solo a la siguiente que falte.
+formulario se abre encima, así que pasar a la siguiente unidad es un toque en
+vez de cuatro pantallas.
+
+Lo que la pantalla **no** hace es imponer un orden. Tuvo un botón de "empezar el
+recorrido" y avanzaba sola a la siguiente pendiente al guardar; se quitó porque
+suponía que el patio se camina en una secuencia, y las unidades no se estacionan
+igual dos días seguidos. Cualquier orden que proponga la pantalla acaba mandando
+a quien revisa a la otra punta del patio, y lo obliga a salirse para buscar la
+que sí tiene enfrente. Quien decide qué unidad sigue es el que está ahí
+viéndolas; la lista solo pone las pendientes arriba y lleva la cuenta.
 
 Ahora bien, "las unidades de esta sucursal" no es una sola pregunta:
 
