@@ -11,3 +11,59 @@ body {
 #root {
   min-height: 100svh;
 }
+
+/* ─── Teléfono ────────────────────────────────────────────────────────────────
+   Todo lo de aquí abajo aplica solo en pantallas chicas. Lo que de verdad
+   arregló el "se ve muy pequeño" es el <meta name="viewport"> de index.html;
+   esto es el ajuste fino de después, cuando la página ya se maqueta al ancho
+   real del teléfono.
+   ────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Mantine multiplica todos sus tamaños en rem por esta variable, así que
+     subirla agranda parejo texto, botones, campos y espaciados, sin tener que
+     tocar el `size` de cada componente ni desalinear nada.
+
+     1.08 y no más: la aplicación tiene tablas y barras laterales que a partir
+     de ahí empiezan a pedir scroll horizontal, y el remedio sería peor. Es un
+     empujón, no un modo de accesibilidad —para eso está el zoom del navegador,
+     que quedó habilitado a propósito. */
+  :root {
+    --mantine-scale: 1.08;
+  }
+
+  /* iOS hace zoom solo al enfocar un campo cuya letra mide menos de 16px, y
+     luego deja la página desplazada: el formulario del chequeo, que son once
+     preguntas seguidas, brincaba en cada toque. Con 16px exactos no hay zoom y
+     no hay brinco. Va en px y no en rem a propósito: es el umbral del sistema
+     operativo, no una medida del diseño, así que no debe escalar con nada. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Los teléfonos con muesca y con barra de gestos: sin esto, el contenido
+     queda debajo de la barra inferior. Pareja con `viewport-fit=cover`. */
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Objetivos de toque. Un botón de 28px se falla con el pulgar, y quien usa
+     esto está de pie en el patio con una mano ocupada. 40px es el mínimo que
+     recomiendan iOS y Android, redondeado hacia abajo para no deformar los
+     botones que ya son grandes. */
+  button,
+  [role='button'],
+  .mantine-ActionIcon-root {
+    min-height: 40px;
+  }
+
+  /* Excepción: los botones compactos y los de dentro de un campo (el ojo de una
+     contraseña, la equis de un select) viven dentro de otra cosa y estirarlos
+     rompería la altura de esa cosa. */
+  .mantine-Button-root[data-compact],
+  .mantine-Input-section button,
+  .mantine-ActionIcon-root[data-variant='transparent'] {
+    min-height: unset;
+  }
+}

@@ -3,6 +3,17 @@
      con "en" los campos en español no se revisan (o se subrayan enteros). -->
 <html lang="es-MX">
   <head>
+    <!-- Sin esto, el teléfono maqueta la página a un ancho ficticio de ~980px y
+         luego la encoge entera para que quepa: se ve bien armada pero diminuta,
+         y hay que hacer zoom para leer cualquier cosa. `width=device-width` le
+         dice que use el ancho real, que es lo que activa de verdad los diseños
+         responsivos que ya tienen las pantallas.
+
+         NO lleva `maximum-scale` ni `user-scalable=no`: eso quitaría el zoom con
+         los dedos, y quien revisa el patio a veces necesita acercarse a un
+         número de serie. `viewport-fit=cover` es para los teléfonos con muesca,
+         y va junto al `safe-area-inset` del CSS. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/pwa-192x192.png" />
     <meta name="theme-color" content="#1e293b" />

@@ -136,7 +136,10 @@ export default function ChequeoPatio() {
 
   return (
     <Stack gap="md">
-      <Group justify="space-between" align="flex-end" wrap="wrap">
+      {/* En el teléfono el selector baja y ocupa el ancho completo: a 390px, un
+          campo de 240px junto al título deja los dos apretados contra los
+          bordes. */}
+      <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
         <Stack gap={2}>
           <Group gap="xs">
             <IconClipboardCheck size={22} />
@@ -156,7 +159,7 @@ export default function ChequeoPatio() {
           data={opcionesSucursal}
           value={sucursalId != null ? String(sucursalId) : null}
           onChange={(v) => { setSucursalId(v ? Number(v) : null); setAbierta(null) }}
-          w={240}
+          w={{ base: '100%', sm: 240 }}
         />
       </Group>
 
