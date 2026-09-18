@@ -292,3 +292,10 @@ export async function errores(desde?: string, hasta?: string) {
 export async function correcciones(facturaId: number) {
   return repo.correccionesDeFactura(facturaId)
 }
+
+/** El detalle detrás del acumulado: qué correcciones lo componen. */
+export async function detalleCorrecciones(
+  desde?: string, hasta?: string, capturadoPor?: string,
+) {
+  return repo.correccionesEnRango(desde, hasta, capturadoPor)
+}

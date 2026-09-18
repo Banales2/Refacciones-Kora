@@ -57,6 +57,12 @@ export const ErroresQuerySchema = z.object({
   hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 })
 
+/** El detalle detrás del acumulado, opcionalmente el de una sola persona. */
+export const CorreccionesQuerySchema = ErroresQuerySchema.extend({
+  capturado_por: z.string().trim().max(120).optional(),
+})
+
 export type RenglonRevisar = z.infer<typeof RenglonRevisarSchema>
 export type CabeceraRevisar = z.infer<typeof CabeceraRevisarSchema>
 export type ErroresQuery = z.infer<typeof ErroresQuerySchema>
+export type CorreccionesQuery = z.infer<typeof CorreccionesQuerySchema>

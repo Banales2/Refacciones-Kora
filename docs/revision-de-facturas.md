@@ -155,6 +155,14 @@ es nada: se borra también, salvo que ya tenga correcciones registradas.
 | `POST /lotes/{id}/quitar` | **admin** | Borra el renglón que no está en el papel |
 | `GET /facturas/{id}/correcciones` | admin, editor | Qué se le corrigió a esta factura |
 | `GET /revision/errores` | **admin** | Cuánto lleva equivocado cada quien |
+| `GET /revision/correcciones` | **admin** | El detalle detrás de ese acumulado |
+
+`/api/revision/*` además está cerrado a admin en el borde
+(`staticwebapp.config.json`), igual que la bitácora: las funciones ya lo imponen
+con `requireRole`, pero esa segunda capa sigue en pie aunque mañana alguien
+agregue una ruta descuidada bajo ese prefijo. Las demás acciones de revisión
+viven bajo `/api/lotes` y `/api/facturas` y se quedan solo con `requireRole`,
+como el resto de las acciones de admin.
 
 Revisar es solo admin: es el segundo par de ojos, y que lo haga cualquiera con
 permiso de captura lo vacía de sentido. `/facturas/{id}/correcciones` se abre a
@@ -166,6 +174,20 @@ Los valores que recibe `POST /lotes/{id}/revisar` **no son opcionales**: el
 verificador manda lo que dice el papel, siempre completo, y la API lo compara. Si
 fueran opcionales esto sería otra pantalla de edición, y un renglón mal capturado
 que nadie miró quedaría sellado como bueno.
+
+## La pantalla
+
+`src/src/pages/ErroresCaptura.tsx`, bajo **Administración → Errores de captura**,
+junto a la bitácora y por la misma razón: enseña el desempeño de personas con
+nombre y apellido.
+
+Cuatro tarjetas arriba (dinero mal capturado, desviación neta, correcciones,
+personas), la tabla por persona ordenada por importe absoluto, y debajo el
+detalle. Tocar una persona filtra el detalle a lo suyo — es la pregunta que
+sigue siempre a ver el acumulado.
+
+El signo del importe se explica al pasar el cursor en vez de dejarlo al lector:
+**+** es que se había registrado de menos que el papel, **−** de más.
 
 ## Lo que quedó fuera
 

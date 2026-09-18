@@ -29,7 +29,8 @@ export const CABECERA_REVISADA = 'CABECERA_REVISADA'
 function invalidarTodo(qc: ReturnType<typeof useQueryClient>) {
   for (const key of [
     ['facturas'], ['lotes'], ['lotes-disponibles'], ['inventario-existencias'],
-    ['proveedor-gastos'], ['correcciones-factura'], ['revision-errores'],
+    ['proveedor-gastos'], ['correcciones-factura'],
+    ['revision-errores'], ['revision-correcciones'],
   ]) {
     qc.invalidateQueries({ queryKey: key })
   }
@@ -172,6 +173,32 @@ export function useErroresCaptura(
       const qs = new URLSearchParams()
       for (const [k, v] of Object.entries(filtros)) if (v) qs.set(k, v)
       return api.get<{ data: ErroresDePersona[] }>(`/revision/errores?${qs}`)
+    },
+    enabled,
+  })
+}
+
+export interface CorreccionConFactura extends CorreccionRegistrada {
+  factura_id: number
+  folio:      string
+  proveedor:  string
+}
+
+/**
+ * El detalle detrás del acumulado: qué correcciones lo componen.
+ *
+ * `capturado_por` en blanco trae las de todos. Solo admin.
+ */
+export function useCorreccionesCaptura(
+  filtros: { desde?: string; hasta?: string; capturado_por?: string } = {},
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ['revision-correcciones', filtros],
+    queryFn: () => {
+      const qs = new URLSearchParams()
+      for (const [k, v] of Object.entries(filtros)) if (v) qs.set(k, v)
+      return api.get<{ data: CorreccionConFactura[] }>(`/revision/correcciones?${qs}`)
     },
     enabled,
   })

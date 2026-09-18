@@ -305,6 +305,57 @@ export async function erroresPorPersona(
   return r.recordset as ErroresDePersona[]
 }
 
+/** Una corrección con la factura de la que salió, para el reporte. */
+export interface CorreccionConFactura extends CorreccionRegistrada {
+  factura_id: number
+  folio: string
+  proveedor: string
+}
+
+/**
+ * Las correcciones de un periodo, opcionalmente las de una sola persona.
+ *
+ * Es el detalle detrás de `erroresPorPersona`. Sin él el reporte dice "Ana lleva
+ * 4,300 pesos mal capturados" y no hay forma de ir a ver cuáles: un número que
+ * no se puede auditar no sirve para hablar con nadie.
+ *
+ * `capturado_por` se compara con `=` y no con LIKE a propósito: viene de la
+ * fila, no de que alguien lo teclee, así que buscar parecidos solo mezclaría a
+ * dos personas con nombres similares.
+ */
+export async function correccionesEnRango(
+  desde?: string, hasta?: string, capturadoPor?: string, limite = 500,
+): Promise<CorreccionConFactura[]> {
+  const pool = await getPool()
+  const req = pool.request().input('limite', sql.Int, limite)
+  const where: string[] = []
+
+  if (desde) { req.input('desde', sql.Date, desde); where.push('c.corregida_en >= @desde') }
+  if (hasta) {
+    req.input('hasta', sql.Date, hasta)
+    where.push('c.corregida_en < DATEADD(day, 1, @hasta)')
+  }
+  if (capturadoPor) {
+    req.input('quien', sql.NVarChar(120), capturadoPor)
+    where.push('c.capturado_por = @quien')
+  }
+
+  const r = await req.query(`
+    SELECT TOP (@limite)
+           c.id, c.factura_id, c.lote_id, p.numero_serie, c.campo,
+           c.valor_antes, c.valor_despues, c.capturado_por, c.delta_dinero,
+           c.corregida_por, CONVERT(varchar(19), c.corregida_en, 126) AS corregida_en,
+           f.folio, pr.nombre AS proveedor
+    FROM correcciones_revision c
+    JOIN facturas f          ON f.id = c.factura_id
+    JOIN proveedores pr      ON pr.id = f.proveedor_id
+    LEFT JOIN lotes_pieza l  ON l.id = c.lote_id
+    LEFT JOIN piezas p       ON p.id = l.pieza_id
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    ORDER BY c.corregida_en DESC, c.id DESC`)
+  return r.recordset as CorreccionConFactura[]
+}
+
 /**
  * Por qué NO se puede quitar este renglón, o una lista vacía si sí se puede.
  *

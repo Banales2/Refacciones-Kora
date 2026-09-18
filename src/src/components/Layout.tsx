@@ -23,6 +23,7 @@ import {
   IconAlertTriangle, IconGasStation, IconBox, IconBuildingStore, IconSettings,
   IconClipboardCheck,
   IconHistory,
+  IconReceiptOff,
 } from '@tabler/icons-react'
 import type { Icon } from '@tabler/icons-react'
 import { useAuth } from '../hooks/useAuth'
@@ -36,6 +37,7 @@ import Modelos from '../pages/Modelos'
 import SitiosYRutas from '../pages/SitiosYRutas'
 import ValesGasolina from '../pages/ValesGasolina'
 import RegistrosCambios from '../pages/RegistrosCambios'
+import ErroresCaptura from '../pages/ErroresCaptura'
 import Mantenimientos from '../pages/Mantenimientos'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 import type { DestinoDocumento } from '../lib/documentosDashboard'
@@ -43,6 +45,7 @@ import type { DestinoDocumento } from '../lib/documentosDashboard'
 type Section =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
   | 'mantenimientos' | 'sitios' | 'vales' | 'registros' | 'chequeos'
+  | 'errores-captura'
 
 const SECTION_LABELS: Record<Section, string> = {
   dashboard:      'Dashboard',
@@ -55,6 +58,7 @@ const SECTION_LABELS: Record<Section, string> = {
   sitios:         'Catálogos',
   vales:          'Vales de gasolina',
   registros:      'Registros de cambios',
+  'errores-captura': 'Errores de captura',
   chequeos:       'Chequeo de flotilla',
 }
 
@@ -455,6 +459,17 @@ export default function Layout() {
                   label="Registros" description="Quién creó, modificó o eliminó qué" icon={IconHistory}
                   active={section === 'registros'} onClick={() => navigate('registros')}
                 />
+                {/* Va aquí y no junto a Refacciones porque enseña el desempeño
+                    de personas con nombre y apellido, igual que la bitácora.
+                    La API responde 403 a quien no sea admin; esconderlo solo
+                    evita ofrecer una pantalla que acabaría en error. */}
+                <NavItem
+                  label="Errores de captura"
+                  description="Qué corrigió la revisión de facturas, y a quién"
+                  icon={IconReceiptOff}
+                  active={section === 'errores-captura'}
+                  onClick={() => navigate('errores-captura')}
+                />
               </Stack>
             )}
           </Stack>
@@ -514,6 +529,7 @@ export default function Layout() {
           />
         )}
         {section === 'registros' && esAdmin && <RegistrosCambios />}
+        {section === 'errores-captura' && esAdmin && <ErroresCaptura />}
       </AppShell.Main>
     </AppShell>
   )

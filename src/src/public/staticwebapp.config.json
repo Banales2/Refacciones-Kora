@@ -41,6 +41,11 @@
       "allowedRoles": ["admin"]
     },
     {
+      "_comment": "El acumulado de errores de captura y su detalle. Por lo mismo que la bitacora: dice el desempeno de personas con nombre y apellido. Las funciones ya lo imponen con requireRole(admin); esto es la segunda capa, que sigue en pie aunque manana alguien agregue una ruta descuidada bajo /api/revision. Las demas acciones de revision viven bajo /api/lotes y /api/facturas y se quedan solo con requireRole, como el resto de las acciones de admin.",
+      "route": "/api/revision/*",
+      "allowedRoles": ["admin"]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": ["admin", "editor", "lector"]
     }
