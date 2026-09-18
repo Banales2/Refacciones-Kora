@@ -1,6 +1,10 @@
 import { z } from 'zod'
 
-// La factura de la gasolinera, desglosada por ticket.
+// La factura de la gasolinera, desglosada en renglones.
+//
+// Esto no guarda la factura —el documento se archiva por otro lado—: guarda lo
+// justo para comprobar que el gasto está bien capturado. De ahí que el renglón
+// tenga tres campos y no diez.
 //
 // Ver `db/migrations/041_facturas_de_gasolina.sql`.
 
@@ -25,53 +29,44 @@ const folio = z
   .max(30, 'Máximo 30 caracteres')
   .regex(/^[A-Za-z0-9/\- ]+$/, 'Solo letras, números, espacios, guiones y diagonales')
 
-const importe = z.coerce.number().min(0, 'No puede ser negativo').max(99999999, 'Fuera de rango')
-
 // Igual que en `recargaSchema`: la bomba despacha en milésimas y la columna
-// guarda DECIMAL(10,3), así que un cuarto decimal se redondearía en silencio.
-// Aquí importa el doble, porque los litros son la llave del cuadre.
-const litros = z.coerce
+// guarda DECIMAL(10,3). Aquí importa el doble, porque la cantidad es la llave
+// del cuadre.
+const cantidad = z.coerce
   .number()
   .positive('Debe ser mayor a 0')
   .refine((v) => Math.abs(v * 1000 - Math.round(v * 1000)) < 1e-6, 'Máximo 3 decimales')
 
 export const RenglonFacturaSchema = z.object({
-  /**
-   * El número del ticket de la bomba. En el CFDI viene al final del
-   * "No. Identificación" ("PL/6809/EXP/ES/2015-8367437") y otra vez en la lista
-   * de "Tickets:". Se puede pegar entero: el servidor compara por el último
-   * tramo.
-   */
-  ticket: z.string().trim().max(40).optional().nullable(),
-  /** DIESEL, MAGNA, PREMIUM. Se guarda como viene. */
-  producto: z.string().trim().max(40).optional().nullable(),
-  litros,
-  precio_unitario: z.coerce.number().min(0).max(9999).optional().nullable(),
-  /** SIN IVA, que es como lo emite el CFDI. */
-  importe,
+  /** Lo que dice el papel: "DIESEL", "MAGNA". Copia de lo impreso. */
+  descripcion: z.string().trim().max(100).optional().nullable(),
+  cantidad,
+  importe: z.coerce.number().min(0, 'No puede ser negativo').max(99999999, 'Fuera de rango'),
 })
 
 export const FacturaGasolinaCreateSchema = z.object({
   gasolinera_id: z.coerce.number().int().min(1, 'Gasolinera requerida'),
-  /** La serie del CFDI ("G"). Puede faltar. */
-  serie: z.string().trim().max(10).optional().nullable(),
   folio,
+  /** El corte del cuadre: se ofrecen las recargas de ese día hacia atrás. */
   fecha,
-  /** Suma de los renglones, sin IVA. El servicio comprueba que cuadre. */
-  subtotal: importe,
-  iva: importe.default(0),
-  total: z.coerce.number().positive('Debe ser mayor a 0').max(99999999, 'Fuera de rango'),
-  /** El UUID del CFDI, si se tiene. Es lo que detecta la factura capturada dos veces. */
-  uuid: z.string().trim().max(36).optional().nullable(),
   /**
-   * Un renglón por ticket. El tope no es arbitrario: una factura de gasolinera
-   * con más de 300 cargas es más probable que sea un error de captura o de
-   * pegado que un mes real.
+   * Solo la tasa; el subtotal y el total se calculan. Ausente (o null) significa
+   * que los importes de los renglones YA incluyen IVA, no que la tasa sea cero
+   * — mismo criterio que `lotes_pieza.tasa_iva` (migración 020).
+   */
+  tasa_iva: z.coerce
+    .number()
+    .positive('La tasa debe ser mayor a 0')
+    .max(100, 'La tasa no puede pasar de 100%')
+    .nullish(),
+  /**
+   * El tope no es arbitrario: una factura de gasolinera con más de 300 renglones
+   * es más probable que sea un error de pegado que un mes real.
    */
   renglones: z
     .array(RenglonFacturaSchema)
-    .min(1, 'La factura tiene que traer al menos un ticket')
-    .max(300, 'Máximo 300 tickets por factura'),
+    .min(1, 'La factura tiene que traer al menos un renglón')
+    .max(300, 'Máximo 300 renglones por factura'),
 })
 
 export const FacturaGasolinaQuerySchema = z.object({
@@ -99,13 +94,11 @@ export const ConciliarGasolinaSchema = z.object({
     .array(z.object({
       renglon_id: z.coerce.number().int().positive(),
       recarga_id: z.coerce.number().int().positive().nullable(),
-      /** Cómo se casó. Sirve para saber en cuáles confiar sin volver a mirar. */
-      metodo: z.enum(['ticket', 'litros', 'manual']).optional(),
     }))
     .max(300),
   nota: z.string().trim().max(255, 'Máximo 255 caracteres').optional(),
   /**
-   * Sellar aunque queden tickets sin casar. Sin esto la API responde 409 con
+   * Sellar aunque queden renglones sin casar. Sin esto la API responde 409 con
    * cuántos son y cuánto valen: cerrar con huecos es legítimo —la recarga puede
    * capturarse la semana que viene— pero no puede pasar por descuido.
    */

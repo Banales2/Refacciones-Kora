@@ -1,21 +1,24 @@
-// Facturas de gasolinera: casar cada ticket del papel con su recarga.
+// Facturas de gasolinera: comprobar que el gasto en combustible está capturado.
 //
-// POR QUÉ NO SE PARECE A LA PANTALLA DE FACTURAS DE REFACCIONES. Allá cada
-// renglón del papel apunta a un lote concreto y se verifican uno a uno. Aquí la
-// factura trae un renglón por ticket —litros, precio, importe— pero NO dice a
-// qué vehículo fue, qué chofer la hizo ni contra qué vale: eso solo lo sabe el
-// sistema. Conciliar no es verificar, es EMPAREJAR.
+// ESTO NO GUARDA LA FACTURA. El documento se archiva por otro lado; aquí solo se
+// captura lo necesario para cuadrarlo — descripción, cantidad e importe por
+// renglón, y la tasa de IVA en la cabecera. El subtotal y el total se calculan,
+// igual que en las facturas de refacciones.
 //
-// SE EMPAREJA POR LITROS, NO POR IMPORTE. El importe del renglón viene sin IVA
-// (los renglones suman el subtotal, no el total) y el costo de la recarga es lo
-// que se pagó en la bomba, que sí lo incluye. Compararlos da 16% de diferencia
-// siempre. Los litros son el mismo número de los dos lados, y con tres decimales
-// prácticamente no se repiten.
+// POR QUÉ NO SE PARECE A LA PANTALLA DE REFACCIONES. Allá cada renglón del papel
+// apunta a un lote concreto y se verifican uno a uno. Aquí el renglón trae
+// cantidad e importe pero NO dice a qué vehículo fue, qué chofer la hizo ni
+// contra qué vale: eso solo lo sabe el sistema. Conciliar no es verificar, es
+// EMPAREJAR.
 //
-// LO QUE LA PANTALLA EXISTE PARA ENCONTRAR: el ticket del papel que no casa con
+// SE EMPAREJA POR CANTIDAD, NO POR IMPORTE. El importe del renglón suele venir
+// sin IVA y el costo de la recarga es lo que se pagó en la bomba, que sí lo
+// incluye. Compararlos da 16% de diferencia siempre. Los litros son el mismo
+// número de los dos lados y con tres decimales prácticamente no se repiten.
+//
+// LO QUE LA PANTALLA EXISTE PARA ENCONTRAR: el renglón del papel que no casa con
 // ninguna recarga. Eso es una carga que la gasolinera está cobrando y que nadie
-// capturó — y a diferencia de un descuadre de dinero, se puede ir a preguntar
-// por ella: "el ticket 8368392, de 57.91 litros".
+// capturó.
 //
 // Ver `docs/facturas-de-gasolina.md`.
 import { useState } from 'react'
@@ -32,7 +35,7 @@ import {
   useReabrirFacturaGasolina, RENGLONES_SIN_CASAR,
 } from '../hooks/useFacturasGasolina'
 import type {
-  Candidatas, FacturaGasolina, MetodoCasado, RecargaCandidata,
+  Candidatas, FacturaGasolina, RecargaCandidata, RenglonNuevo,
 } from '../hooks/useFacturasGasolina'
 import { useGasolineras } from '../hooks/useGasolineras'
 import { useAuth } from '../hooks/useAuth'
@@ -40,13 +43,10 @@ import { SelectCatalogo } from '../components/SelectCatalogo'
 import { FechaInput } from '../components/FechaInput'
 import { ApiError } from '../lib/api'
 import { formatMXN, formatFecha } from '../lib/formato'
+import { IVA_DEFAULT, conIva } from '../lib/totales'
 import { leerRenglonesPegados } from '../lib/ticketsFactura'
-import type { RenglonPegado } from '../lib/ticketsFactura'
 
 const PAGE_SIZE = 15
-
-/** Los importes se comparan en centavos; los litros, en milésimas. */
-const EPSILON = 0.01
 
 function EstadoFactura({ f }: { f: FacturaGasolina }) {
   if (f.conciliada_en === null) {
@@ -61,24 +61,10 @@ function EstadoFactura({ f }: { f: FacturaGasolina }) {
     )
   }
   return (
-    <Tooltip label="Tickets que la gasolinera cobra y que nadie capturó">
-      <Badge size="xs" variant="light" color="orange">
-        {faltan} sin capturar
-      </Badge>
+    <Tooltip label="Renglones que la gasolinera cobra y que nadie capturó">
+      <Badge size="xs" variant="light" color="orange">{faltan} sin capturar</Badge>
     </Tooltip>
   )
-}
-
-const COLOR_METODO: Record<MetodoCasado, string> = {
-  ticket: 'green',
-  litros: 'blue',
-  manual: 'grape',
-}
-
-const AYUDA_METODO: Record<MetodoCasado, string> = {
-  ticket: 'Casó por número de ticket: es el mismo papel, no hay nada que inferir',
-  litros: 'Casó por litros exactos, a la milésima',
-  manual: 'Lo emparejó una persona',
 }
 
 // ── Alta de la factura ───────────────────────────────────────────────────────
@@ -86,21 +72,20 @@ const AYUDA_METODO: Record<MetodoCasado, string> = {
 function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: () => void }) {
   const gasolineras = useGasolineras()
   const [gasolineraId, setGasolineraId] = useState<string | null>(null)
-  const [serie, setSerie] = useState('')
   const [folio, setFolio] = useState('')
   const [fecha, setFecha] = useState('')
-  const [iva, setIva] = useState<number | string>('')
-  const [total, setTotal] = useState<number | string>('')
-  const [uuid, setUuid] = useState('')
+  const [conIvaAparte, setConIvaAparte] = useState(true)
+  const [tasa, setTasa] = useState<number | string>(IVA_DEFAULT)
   const [pegado, setPegado] = useState('')
-  const [renglones, setRenglones] = useState<RenglonPegado[]>([])
+  const [renglones, setRenglones] = useState<RenglonNuevo[]>([])
   const [erroresPegado, setErroresPegado] = useState<{ linea: number; texto: string }[]>([])
   const mut = useCrearFacturaGasolina()
 
-  // El subtotal NO se teclea: es la suma de los renglones. Pedirlo aparte solo
-  // crea la oportunidad de que discrepe de lo capturado, y el servidor rechaza
-  // justamente esa discrepancia.
+  // Ni el subtotal ni el total se teclean: salen de los renglones y la tasa.
+  // Pedirlos aparte solo crea la oportunidad de que discrepen de lo capturado.
   const subtotal = renglones.reduce((s, r) => s + r.importe, 0)
+  const tasaNueva = conIvaAparte ? Number(tasa) : null
+  const total = conIva(subtotal, tasaNueva)
 
   function pegar() {
     const { renglones: leidos, errores } = leerRenglonesPegados(pegado)
@@ -110,26 +95,22 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
   }
 
   const invalido = !gasolineraId || folio.trim() === '' || !fecha
-    || renglones.length === 0 || !(Number(total) > 0)
+    || renglones.length === 0
+    || (conIvaAparte && !(Number(tasa) > 0 && Number(tasa) <= 100))
 
   function guardar() {
     mut.mutate(
       {
         gasolinera_id: Number(gasolineraId),
-        serie: serie.trim() || null,
         folio: folio.trim(),
         fecha,
-        subtotal: Math.round(subtotal * 100) / 100,
-        iva: Number(iva) || 0,
-        total: Number(total),
-        uuid: uuid.trim() || null,
+        tasa_iva: tasaNueva,
         renglones,
       },
       {
         onSuccess: () => {
-          setGasolineraId(null); setSerie(''); setFolio(''); setFecha('')
-          setIva(''); setTotal(''); setUuid(''); setPegado('')
-          setRenglones([]); setErroresPegado([])
+          setGasolineraId(null); setFolio(''); setFecha(''); setPegado('')
+          setRenglones([]); setErroresPegado([]); setConIvaAparte(true); setTasa(IVA_DEFAULT)
           onClose()
         },
       },
@@ -137,8 +118,13 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
   }
 
   return (
-    <Modal opened={abierto} onClose={onClose} size="xl" title="Nueva factura de gasolinera">
+    <Modal opened={abierto} onClose={onClose} size="lg" title="Nueva factura de gasolinera">
       <Stack gap="sm">
+        <Text size="xs" c="dimmed">
+          Solo lo necesario para cuadrar el gasto. La factura en sí se archiva
+          por otro lado.
+        </Text>
+
         <Group grow align="flex-start">
           <SelectCatalogo
             label="Gasolinera" nombre="gasolineras" estado={gasolineras}
@@ -148,45 +134,36 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
             value={gasolineraId} onChange={setGasolineraId}
           />
           <TextInput
-            label="Serie" placeholder="G" maxLength={10}
-            value={serie} onChange={(e) => setSerie(e.currentTarget.value)}
-          />
-          <TextInput
-            label="Folio" placeholder="44272" maxLength={30}
+            label="Folio" maxLength={30}
             value={folio} onChange={(e) => setFolio(e.currentTarget.value)}
           />
-        </Group>
-
-        <Group grow align="flex-start">
           {/* La fecha es el corte: solo se ofrecen recargas de ese día hacia
               atrás, así que equivocarse aquí esconde cargas que sí entraban. */}
           <FechaInput
-            label="Fecha de la factura"
-            description="Es el corte del cuadre"
+            label="Fecha" description="Es el corte del cuadre"
             value={fecha} onChange={setFecha}
-          />
-          <NumberInput
-            label="IVA" min={0} decimalScale={2} prefix="$" thousandSeparator=","
-            value={iva} onChange={setIva}
-          />
-          <NumberInput
-            label="Total" min={0} decimalScale={2} prefix="$" thousandSeparator=","
-            value={total} onChange={setTotal}
           />
         </Group>
 
-        <TextInput
-          label="UUID del CFDI (opcional)"
-          description="Es lo que detecta la misma factura capturada dos veces"
-          maxLength={36}
-          value={uuid} onChange={(e) => setUuid(e.currentTarget.value)}
-        />
+        <Group align="flex-end" gap="sm">
+          <Switch
+            size="xs" label="Los importes vienen sin IVA"
+            checked={conIvaAparte}
+            onChange={(e) => setConIvaAparte(e.currentTarget.checked)}
+          />
+          {conIvaAparte && (
+            <NumberInput
+              size="xs" w={110} min={0.01} max={100} decimalScale={2} suffix="%"
+              value={tasa} onChange={setTasa}
+            />
+          )}
+        </Group>
 
         <Textarea
-          label="Pegar los tickets"
-          description="Un renglón por ticket. Se leen los números por posición: litros, precio y importe."
+          label="Pegar los renglones"
+          description="Uno por línea. Se leen los números por posición: cantidad, precio e importe."
           autosize minRows={3} maxRows={8}
-          placeholder={'PL/6809/EXP/ES/2015-8367437  DIESEL  LTR  219.37  23.33  5119.10'}
+          placeholder={'DIESEL  LTR  219.37  23.33  5119.10'}
           value={pegado} onChange={(e) => setPegado(e.currentTarget.value)}
         />
         <Group>
@@ -196,7 +173,7 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
           <Button
             size="xs" variant="subtle"
             onClick={() => setRenglones((p) => [
-              ...p, { ticket: null, producto: null, litros: 0, precio_unitario: null, importe: 0 },
+              ...p, { descripcion: null, cantidad: 0, importe: 0 },
             ])}
           >
             Agregar uno a mano
@@ -207,7 +184,6 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
           <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
             <Text size="sm">
               No se pudieron leer {erroresPegado.length} línea(s); el resto sí entró.
-              Agrégalas a mano:
             </Text>
             {erroresPegado.slice(0, 5).map((e) => (
               <Text key={e.linea} size="xs" c="dimmed">línea {e.linea}: {e.texto}</Text>
@@ -220,10 +196,8 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
             <Table withTableBorder striped>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Ticket</Table.Th>
-                  <Table.Th>Producto</Table.Th>
-                  <Table.Th style={{ textAlign: 'right' }}>Litros</Table.Th>
-                  <Table.Th style={{ textAlign: 'right' }}>P. unit.</Table.Th>
+                  <Table.Th>Descripción</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Cantidad</Table.Th>
                   <Table.Th style={{ textAlign: 'right' }}>Importe</Table.Th>
                   <Table.Th w={36} />
                 </Table.Tr>
@@ -233,23 +207,20 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
                   <Table.Tr key={i}>
                     <Table.Td>
                       <TextInput
-                        size="xs" variant="unstyled" value={r.ticket ?? ''}
+                        size="xs" variant="unstyled" placeholder="DIESEL" maxLength={100}
+                        value={r.descripcion ?? ''}
                         onChange={(e) => setRenglones((p) => p.map((x, j) =>
-                          j === i ? { ...x, ticket: e.currentTarget.value || null } : x))}
+                          j === i ? { ...x, descripcion: e.currentTarget.value || null } : x))}
                       />
                     </Table.Td>
-                    <Table.Td><Text size="xs" c="dimmed">{r.producto ?? '—'}</Text></Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       <NumberInput
                         size="xs" variant="unstyled" decimalScale={3} min={0}
                         styles={{ input: { textAlign: 'right' } }}
-                        value={r.litros}
+                        value={r.cantidad}
                         onChange={(v) => setRenglones((p) => p.map((x, j) =>
-                          j === i ? { ...x, litros: Number(v) || 0 } : x))}
+                          j === i ? { ...x, cantidad: Number(v) || 0 } : x))}
                       />
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="xs" c="dimmed">{r.precio_unitario ?? '—'}</Text>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       <NumberInput
@@ -274,21 +245,12 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
             </Table>
 
             <Group justify="flex-end" gap="lg">
-              <Text size="sm">
-                Subtotal de los {renglones.length} ticket(s):{' '}
-                <Text component="span" fw={700}>{formatMXN(subtotal)}</Text>
+              <Text size="sm" c="dimmed">
+                Subtotal {formatMXN(subtotal)}
               </Text>
-              {Number(total) > 0 && (
-                <Text
-                  size="sm"
-                  c={Math.abs(subtotal + Number(iva || 0) - Number(total)) < EPSILON
-                    ? 'green.7' : 'orange.7'}
-                >
-                  + IVA = {formatMXN(subtotal + Number(iva || 0))}
-                  {Math.abs(subtotal + Number(iva || 0) - Number(total)) >= EPSILON &&
-                    ' (no da el total)'}
-                </Text>
-              )}
+              <Text size="sm">
+                Total <Text component="span" fw={700}>{formatMXN(total)}</Text>
+              </Text>
             </Group>
           </>
         )}
@@ -350,24 +312,11 @@ function CuadreFactura({
 
   const sinCasar = renglones.filter((r) => eleccion[r.id] == null)
   const importeSinCasar = sinCasar.reduce((s, r) => s + r.importe, 0)
-  const litrosSinCasar = sinCasar.reduce((s, r) => s + r.litros, 0)
 
   const pendienteConfirmar =
     conciliar.error instanceof ApiError && conciliar.error.code === RENGLONES_SIN_CASAR
       ? conciliar.error.message
       : null
-
-  function metodoDe(renglonId: number): MetodoCasado | undefined {
-    const r = renglones.find((x) => x.id === renglonId)
-    if (!r) return undefined
-    const elegida = eleccion[renglonId]
-    if (elegida == null) return undefined
-    // Si no se movió de lo que el sistema propuso, se conserva cómo lo dedujo;
-    // en cuanto una persona lo cambia, pasa a ser criterio suyo y así se guarda.
-    if (elegida === r.recarga_id && r.metodo) return r.metodo
-    if (elegida === r.sugerida_recarga_id && r.sugerido_metodo) return r.sugerido_metodo
-    return 'manual'
-  }
 
   function guardar(confirmar = false) {
     conciliar.mutate(
@@ -376,7 +325,6 @@ function CuadreFactura({
         casados: renglones.map((r) => ({
           renglon_id: r.id,
           recarga_id: eleccion[r.id] ?? null,
-          metodo: metodoDe(r.id),
         })),
         nota: nota.trim() || undefined,
         confirmar_sin_casar: confirmar,
@@ -394,7 +342,7 @@ function CuadreFactura({
               <Text size="sm">
                 Conciliada por <b>{factura.conciliada_por}</b> el{' '}
                 {formatFecha(factura.conciliada_en!.slice(0, 10))}:{' '}
-                {factura.casados} de {factura.renglones} ticket(s) casaron.
+                {factura.casados} de {factura.renglones} renglón(es) casaron.
               </Text>
               {factura.casados < factura.renglones && (
                 <Text size="sm" mt={4}>
@@ -420,21 +368,30 @@ function CuadreFactura({
         </Alert>
       ) : (
         <Text size="xs" c="dimmed">
-          Cada renglón del papel es un ticket. El sistema ya emparejó los que pudo
-          —por número de ticket, o por litros exactos— y los demás se eligen a
-          mano. Los importes de la factura son <b>sin IVA</b>; el costo de la
-          recarga es lo que se pagó en la bomba, <b>con IVA</b>: no son
-          comparables, por eso el cuadre va por litros.
+          El sistema ya emparejó los renglones que pudo, por cantidad exacta. Los
+          demás se eligen a mano.
+          {factura.tasa_iva != null && (
+            <> Ojo: los importes del papel son <b>sin IVA</b> y el costo de la
+            recarga es lo que se pagó en la bomba, <b>con IVA</b>; por eso el
+            cuadre va por litros y no por importe.</>
+          )}
         </Text>
       )}
 
       <Group gap="sm" wrap="wrap">
         <Card withBorder padding="xs" style={{ flex: 1, minWidth: 120 }}>
           <Text size="xs" c="dimmed">Total del papel</Text>
-          <Text size="lg" fw={700}>{formatMXN(factura.total)}</Text>
+          <Text size="lg" fw={700}>
+            {formatMXN(conIva(factura.subtotal, factura.tasa_iva))}
+          </Text>
+          {factura.tasa_iva != null && (
+            <Text size="xs" c="dimmed">
+              {formatMXN(factura.subtotal)} + {factura.tasa_iva}%
+            </Text>
+          )}
         </Card>
         <Card withBorder padding="xs" style={{ flex: 1, minWidth: 120 }}>
-          <Text size="xs" c="dimmed">Tickets casados</Text>
+          <Text size="xs" c="dimmed">Renglones casados</Text>
           <Text size="lg" fw={700}>
             {renglones.length - sinCasar.length} / {renglones.length}
           </Text>
@@ -449,38 +406,32 @@ function CuadreFactura({
           <Text size="lg" fw={700}>
             {sinCasar.length === 0 ? '—' : formatMXN(importeSinCasar)}
           </Text>
-          {sinCasar.length > 0 && (
-            <Text size="xs" c="dimmed">{litrosSinCasar.toFixed(3)} L · sin IVA</Text>
-          )}
         </Card>
       </Group>
 
       {!cerrada && sinCasar.length > 0 && (
         <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
           <Text size="sm">
-            {sinCasar.length} ticket(s) del papel no corresponden a ninguna recarga
-            capturada: {sinCasar.map((r) => r.ticket ?? `${r.litros} L`).join(', ')}.
-            Si no es que falta elegirles la recarga, son cargas que ocurrieron y
-            que nadie registró.
+            {sinCasar.length} renglón(es) del papel no corresponden a ninguna
+            recarga capturada. Si no es que falta elegirles la recarga, son cargas
+            que ocurrieron y que nadie registró.
           </Text>
         </Alert>
       )}
 
-      <Table.ScrollContainer minWidth={760} mah={340}>
+      <Table.ScrollContainer minWidth={700} mah={340}>
         <Table withTableBorder striped>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Ticket</Table.Th>
-              <Table.Th style={{ textAlign: 'right' }}>Litros</Table.Th>
-              <Table.Th style={{ textAlign: 'right' }}>Importe s/IVA</Table.Th>
+              <Table.Th>Descripción</Table.Th>
+              <Table.Th style={{ textAlign: 'right' }}>Cantidad</Table.Th>
+              <Table.Th style={{ textAlign: 'right' }}>Importe</Table.Th>
               <Table.Th>Recarga del sistema</Table.Th>
-              <Table.Th>Cómo</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {renglones.map((r) => {
               const elegida = eleccion[r.id] ?? null
-              const metodo = metodoDe(r.id)
               // Se ofrecen las libres más la ya elegida por este renglón: sin
               // eso, la propia elección desaparecería de su desplegable.
               const opciones = recargas
@@ -490,11 +441,10 @@ function CuadreFactura({
               return (
                 <Table.Tr key={r.id}>
                   <Table.Td>
-                    <Text size="sm" fw={500}>{r.ticket ?? '—'}</Text>
-                    {r.producto && <Text size="xs" c="dimmed">{r.producto}</Text>}
+                    <Text size="sm">{r.descripcion ?? '—'}</Text>
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
-                    <Text size="sm">{r.litros}</Text>
+                    <Text size="sm" fw={500}>{r.cantidad}</Text>
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
                     <Text size="sm">{formatMXN(r.importe)}</Text>
@@ -519,17 +469,6 @@ function CuadreFactura({
                       </Text>
                     )}
                   </Table.Td>
-                  <Table.Td>
-                    {metodo ? (
-                      <Tooltip label={AYUDA_METODO[metodo]}>
-                        <Badge size="xs" variant="light" color={COLOR_METODO[metodo]}>
-                          {metodo}
-                        </Badge>
-                      </Tooltip>
-                    ) : (
-                      <Badge size="xs" variant="light" color="orange">sin capturar</Badge>
-                    )}
-                  </Table.Td>
                 </Table.Tr>
               )
             })}
@@ -541,7 +480,7 @@ function CuadreFactura({
         <>
           <Textarea
             label="Nota (opcional)" size="xs" autosize minRows={1} maxLength={255}
-            placeholder="De qué son los tickets que faltan, si ya se sabe…"
+            placeholder="De qué son los renglones que faltan, si ya se sabe…"
             value={nota} onChange={(e) => setNota(e.currentTarget.value)}
           />
 
@@ -549,8 +488,8 @@ function CuadreFactura({
             <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
               <Stack gap="xs">
                 <Text size="sm">
-                  {pendienteConfirmar} Puedes cerrarla así: los tickets sin casar
-                  quedan señalados hasta que alguien capture la recarga y la reabras.
+                  {pendienteConfirmar} Puedes cerrarla así: quedan señalados hasta
+                  que alguien capture la recarga y la reabras.
                 </Text>
                 <Group gap="xs">
                   <Button
@@ -601,11 +540,9 @@ function ConciliarModal({
     <Modal
       opened={facturaId !== null}
       onClose={onClose}
-      size="90%"
+      size="xl"
       title={factura
-        ? <Text fw={700}>
-            {factura.serie ? `${factura.serie}-` : ''}{factura.folio} · {factura.gasolinera}
-          </Text>
+        ? <Text fw={700}>{factura.folio} · {factura.gasolinera}</Text>
         : 'Conciliar factura'}
     >
       {isError ? (
@@ -656,9 +593,9 @@ export default function FacturasGasolina() {
         <div>
           <Text fw={700} size="lg">Facturas de gasolinera</Text>
           <Text size="sm" c="dimmed">
-            La factura trae un renglón por ticket, pero no dice a qué vehículo fue.
-            Aquí se empareja cada ticket con su recarga; el que no casa con
-            ninguna es una carga que se cobró y que nadie capturó.
+            Se captura lo justo para cuadrar el gasto: cada renglón del papel se
+            empareja con su recarga. El que no casa con ninguna es una carga que
+            se cobró y que nadie registró.
           </Text>
         </div>
         <Button leftSection={<IconPlus size={16} />} onClick={() => setNueva(true)}>
@@ -701,7 +638,7 @@ export default function FacturasGasolina() {
                 <Table.Th>Gasolinera</Table.Th>
                 <Table.Th>Fecha</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>Total</Table.Th>
-                <Table.Th style={{ textAlign: 'center' }}>Tickets</Table.Th>
+                <Table.Th style={{ textAlign: 'center' }}>Renglones</Table.Th>
                 <Table.Th style={{ textAlign: 'center' }}>Estado</Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -712,15 +649,13 @@ export default function FacturasGasolina() {
                   style={{ cursor: 'pointer' }}
                   onClick={() => setConciliando(f.id)}
                 >
-                  <Table.Td>
-                    <Text size="sm" fw={600}>
-                      {f.serie ? `${f.serie}-` : ''}{f.folio}
-                    </Text>
-                  </Table.Td>
+                  <Table.Td><Text size="sm" fw={600}>{f.folio}</Text></Table.Td>
                   <Table.Td><Text size="sm">{f.gasolinera}</Text></Table.Td>
                   <Table.Td>{formatFecha(f.fecha)}</Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
-                    <Text size="sm" fw={500}>{formatMXN(f.total)}</Text>
+                    <Text size="sm" fw={500}>
+                      {formatMXN(conIva(f.subtotal, f.tasa_iva))}
+                    </Text>
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'center' }}>
                     <Text size="sm">{f.casados}/{f.renglones}</Text>

@@ -1,67 +1,57 @@
-// Las facturas de la gasolinera, desglosadas por ticket.
+// Las facturas de la gasolinera y a qué recarga corresponde cada renglón.
 //
-// La factura SÍ viene detallada: un renglón por carga, con sus litros, su precio
-// unitario y su importe. Lo que no trae es a qué vehículo fue, qué chofer la hizo
-// ni contra qué vale — eso solo lo sabe el sistema. Conciliar es casar cada
-// renglón del papel con su recarga.
+// Esto NO guarda la factura: el documento se archiva por otro lado. Aquí vive lo
+// justo para comprobar que el gasto está bien capturado — descripción, cantidad
+// e importe por renglón, y la tasa de IVA en la cabecera. Los importes se
+// calculan, igual que en las facturas de refacciones.
 //
-// SE CASA POR LITROS, NO POR IMPORTE. El importe del renglón es sin IVA (los
-// renglones suman el subtotal, no el total) y el costo de la recarga es lo que se
-// pagó en la bomba, que sí lo incluye: compararlos da 16% de diferencia siempre.
-// Los litros son el mismo número de los dos lados.
+// SE CASA POR CANTIDAD, NO POR IMPORTE. El importe del renglón suele venir sin
+// IVA y el costo de la recarga es lo que se pagó en la bomba, que sí lo incluye:
+// compararlos da 16% de diferencia siempre. Los litros son el mismo número de los
+// dos lados.
 //
 // Ver `docs/facturas-de-gasolina.md`.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
-/** Quedaron tickets sin casar y no se confirmó cerrar así. */
+/** Quedaron renglones sin casar y no se confirmó cerrar así. */
 export const RENGLONES_SIN_CASAR = 'RENGLONES_SIN_CASAR'
-
-export type MetodoCasado = 'ticket' | 'litros' | 'manual'
 
 export interface FacturaGasolina {
   id:             number
   gasolinera_id:  number
   gasolinera:     string
-  serie:          string | null
   folio:          string
   fecha:          string
-  /** Suma de los renglones, sin IVA. */
-  subtotal:       number
-  iva:            number
-  total:          number
-  uuid:           string | null
+  /** null = los importes de los renglones ya incluyen IVA. */
+  tasa_iva:       number | null
   capturado_por:  string
   conciliada_en:  string | null
   conciliada_por: string | null
   nota:           string | null
-  /** Cuántos tickets trae el papel. */
+  /** Cuántos renglones trae el papel. */
   renglones:      number
   /** Cuántos de esos ya casaron con una recarga. */
   casados:        number
-  litros_factura: number
+  /** Suma de los importes de los renglones. El total se calcula con la tasa. */
+  subtotal:       number
 }
 
 export interface RenglonFactura {
-  id:              number
-  ticket:          string | null
-  producto:        string | null
-  litros:          number
-  precio_unitario: number | null
-  /** Sin IVA. No es comparable con `recarga_costo`. */
-  importe:         number
-  recarga_id:      number | null
-  metodo:          MetodoCasado | null
-  recarga_fecha:   string | null
-  recarga_litros:  number | null
-  /** Lo que se pagó en la bomba: CON IVA. */
-  recarga_costo:   number | null
-  vehiculo:        string | null
-  conductor:       string | null
-  vale_folio:      string | null
+  id:             number
+  descripcion:    string | null
+  cantidad:       number
+  importe:        number
+  recarga_id:     number | null
+  recarga_fecha:  string | null
+  recarga_litros: number | null
+  /** Lo que se pagó en la bomba. No comparable con `importe` si hay tasa. */
+  recarga_costo:  number | null
+  vehiculo:       string | null
+  conductor:      string | null
+  vale_folio:     string | null
   /** Lo que el sistema propone para un renglón todavía sin casar. */
   sugerida_recarga_id: number | null
-  sugerido_metodo: 'ticket' | 'litros' | null
 }
 
 export interface RecargaCandidata {
@@ -69,7 +59,6 @@ export interface RecargaCandidata {
   fecha:      string
   litros:     number
   costo:      number
-  ticket:     string | null
   vehiculo:   string
   conductor:  string
   vale_folio: string | null
@@ -128,22 +117,17 @@ function invalidar(qc: ReturnType<typeof useQueryClient>) {
 }
 
 export interface RenglonNuevo {
-  ticket?:          string | null
-  producto?:        string | null
-  litros:           number
-  precio_unitario?: number | null
-  importe:          number
+  descripcion?: string | null
+  cantidad:     number
+  importe:      number
 }
 
 export interface FacturaGasolinaCreatePayload {
   gasolinera_id: number
-  serie?:        string | null
   folio:         string
   fecha:         string
-  subtotal:      number
-  iva:           number
-  total:         number
-  uuid?:         string | null
+  /** null = los importes ya incluyen IVA. No es cero. */
+  tasa_iva:      number | null
   renglones:     RenglonNuevo[]
 }
 
@@ -159,9 +143,9 @@ export function useCrearFacturaGasolina() {
 export interface ConciliarPayload {
   factura_id: number
   /** El conjunto COMPLETO, con los renglones sin casar y su recarga en null. */
-  casados: { renglon_id: number; recarga_id: number | null; metodo?: MetodoCasado }[]
+  casados: { renglon_id: number; recarga_id: number | null }[]
   nota?: string
-  /** Sellar aunque queden tickets sin casar. Sin esto la API responde 409. */
+  /** Sellar aunque queden renglones sin casar. Sin esto la API responde 409. */
   confirmar_sin_casar?: boolean
 }
 
@@ -169,11 +153,11 @@ export interface ResultadoConciliacion {
   factura_id:        number
   renglones:         number
   casados:           number
-  /** Tickets del papel que no corresponden a ninguna recarga capturada. */
+  /** Renglones del papel que no corresponden a ninguna recarga capturada. */
   sin_casar:         number
-  /** Lo que esos tickets valen, sin IVA: el gasto que no está registrado. */
+  /** Lo que valen: el gasto que no está registrado. */
   importe_sin_casar: number
-  litros_sin_casar:  number
+  cantidad_sin_casar: number
 }
 
 /** Guarda los casados y sella la factura. Solo admin. */

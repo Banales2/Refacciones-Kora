@@ -1,17 +1,20 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 
-// Las facturas de la gasolinera y a qué recarga corresponde cada ticket.
+// Las facturas de la gasolinera y a qué recarga corresponde cada renglón.
 //
-// La factura SÍ viene desglosada: un renglón por ticket, con sus litros, su
-// precio unitario y su importe. Lo que no trae es a qué vehículo fue, qué chofer
-// la hizo ni contra qué vale — eso solo lo sabe el sistema. Conciliar es casar
-// cada renglón del papel con su recarga.
+// Esto NO guarda la factura: el documento se archiva por otro lado. Aquí solo
+// vive lo necesario para comprobar que el gasto está bien capturado — de ahí que
+// el renglón tenga descripción, cantidad e importe y nada más.
 //
-// SE CASA POR LITROS, NO POR IMPORTE. El importe del renglón es sin IVA (los
-// renglones suman el subtotal, no el total) y `recargas_combustible.costo` es lo
-// que se pagó en la bomba, que sí lo incluye: compararlos da 16% de diferencia
-// siempre. Los litros son el mismo número de los dos lados.
+// Sigue el modelo de las facturas de refacciones (migración 026): cabecera con
+// la tasa de IVA, renglones con lo suyo, y los importes CALCULADOS, no
+// guardados. El subtotal sale de sumar los renglones.
+//
+// SE CASA POR CANTIDAD, NO POR IMPORTE. El importe del renglón suele venir sin
+// IVA y `recargas_combustible.costo` es lo que se pagó en la bomba, que sí lo
+// incluye: compararlos da 16% de diferencia siempre. Los litros son el mismo
+// número de los dos lados.
 //
 // Ver `db/migrations/041_facturas_de_gasolina.sql`.
 
@@ -19,69 +22,60 @@ export interface FacturaGasolina {
   id: number
   gasolinera_id: number
   gasolinera: string
-  serie: string | null
   folio: string
   fecha: string
-  subtotal: number
-  iva: number
-  total: number
-  uuid: string | null
+  /** `null` = los importes de los renglones ya incluyen IVA. Migración 020. */
+  tasa_iva: number | null
   capturado_por: string
   conciliada_en: string | null
   conciliada_por: string | null
   nota: string | null
-  /** Cuántos tickets trae el papel. */
+  /** Cuántos renglones trae el papel. */
   renglones: number
   /** Cuántos de esos ya casaron con una recarga. */
   casados: number
-  /** Litros que la factura dice haber despachado. */
-  litros_factura: number
+  /** Suma de los importes de los renglones. El total se calcula con la tasa. */
+  subtotal: number
 }
 
 export interface RenglonFactura {
   id: number
-  ticket: string | null
-  producto: string | null
-  litros: number
-  precio_unitario: number | null
-  /** Sin IVA, como lo emite el CFDI. */
+  descripcion: string | null
+  cantidad: number
   importe: number
   recarga_id: number | null
-  metodo: 'ticket' | 'litros' | 'manual' | null
   // Lo de la recarga casada, para enseñarlo junto al renglón.
   recarga_fecha: string | null
   recarga_litros: number | null
-  /** Lo que se pagó en la bomba: CON IVA. No es comparable con `importe`. */
+  /** Lo que se pagó en la bomba. No es comparable con `importe` si hay tasa. */
   recarga_costo: number | null
   vehiculo: string | null
   conductor: string | null
   vale_folio: string | null
 }
 
-/** Una recarga que podría corresponder a algún renglón de la factura. */
 export interface RecargaCandidata {
   id: number
   fecha: string
   litros: number
   costo: number
-  ticket: string | null
   vehiculo: string
   conductor: string
   vale_folio: string | null
 }
 
 const SELECT_FACTURA = `
-  SELECT f.id, f.gasolinera_id, g.nombre AS gasolinera, f.serie, f.folio,
+  SELECT f.id, f.gasolinera_id, g.nombre AS gasolinera, f.folio,
          CONVERT(char(10), f.fecha, 23) AS fecha,
-         f.subtotal, f.iva, f.total, f.uuid, f.capturado_por,
+         f.tasa_iva, f.capturado_por,
          CONVERT(varchar(19), f.conciliada_en, 126) AS conciliada_en,
          f.conciliada_por, f.nota,
          (SELECT COUNT(*) FROM facturas_gasolina_renglones r
            WHERE r.factura_id = f.id) AS renglones,
          (SELECT COUNT(*) FROM facturas_gasolina_renglones r
            WHERE r.factura_id = f.id AND r.recarga_id IS NOT NULL) AS casados,
-         COALESCE((SELECT SUM(r.litros) FROM facturas_gasolina_renglones r
-                   WHERE r.factura_id = f.id), 0) AS litros_factura
+         COALESCE((SELECT SUM(r.importe) FROM facturas_gasolina_renglones r
+                   WHERE r.factura_id = f.id), 0) AS subtotal
   FROM facturas_gasolina f
   JOIN gasolineras g ON g.id = f.gasolinera_id
 `
@@ -144,23 +138,28 @@ export async function findById(id: number): Promise<FacturaGasolina | null> {
   return (r.recordset[0] as FacturaGasolina) ?? null
 }
 
+export async function findByFolio(
+  gasolineraId: number, folio: string,
+): Promise<{ id: number } | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('gid',   sql.Int,          gasolineraId)
+    .input('folio', sql.NVarChar(30), folio)
+    .query('SELECT id FROM facturas_gasolina WHERE gasolinera_id = @gid AND folio = @folio')
+  return r.recordset[0] ?? null
+}
+
 export interface RenglonNuevo {
-  ticket?: string | null
-  producto?: string | null
-  litros: number
-  precio_unitario?: number | null
+  descripcion?: string | null
+  cantidad: number
   importe: number
 }
 
 export interface FacturaGasolinaNueva {
   gasolinera_id: number
-  serie?: string | null
   folio: string
   fecha: string
-  subtotal: number
-  iva: number
-  total: number
-  uuid?: string | null
+  tasa_iva?: number | null
   renglones: RenglonNuevo[]
 }
 
@@ -173,34 +172,26 @@ export async function crear(
   await tx.begin()
   try {
     const cab = await tx.request()
-      .input('gid',      sql.Int,            data.gasolinera_id)
-      .input('serie',    sql.NVarChar(10),   data.serie ?? null)
-      .input('folio',    sql.NVarChar(30),   data.folio)
-      .input('fecha',    sql.Date,           data.fecha)
-      .input('subtotal', sql.Decimal(18, 2), data.subtotal)
-      .input('iva',      sql.Decimal(18, 2), data.iva)
-      .input('total',    sql.Decimal(18, 2), data.total)
-      .input('uuid',     sql.NVarChar(36),   data.uuid ?? null)
-      .input('capturo',  sql.NVarChar(120),  capturadoPor)
+      .input('gid',     sql.Int,           data.gasolinera_id)
+      .input('folio',   sql.NVarChar(30),  data.folio)
+      .input('fecha',   sql.Date,          data.fecha)
+      .input('tasa',    sql.Decimal(5, 2), data.tasa_iva ?? null)
+      .input('capturo', sql.NVarChar(120), capturadoPor)
       .query(`
-        INSERT INTO facturas_gasolina
-          (gasolinera_id, serie, folio, fecha, subtotal, iva, total, uuid, capturado_por)
+        INSERT INTO facturas_gasolina (gasolinera_id, folio, fecha, tasa_iva, capturado_por)
         OUTPUT INSERTED.id
-        VALUES (@gid, @serie, @folio, @fecha, @subtotal, @iva, @total, @uuid, @capturo)`)
+        VALUES (@gid, @folio, @fecha, @tasa, @capturo)`)
     const facturaId = cab.recordset[0].id as number
 
     for (const r of data.renglones) {
       await tx.request()
         .input('fid',     sql.Int,            facturaId)
-        .input('ticket',  sql.NVarChar(40),   r.ticket ?? null)
-        .input('prod',    sql.NVarChar(40),   r.producto ?? null)
-        .input('litros',  sql.Decimal(10, 3), r.litros)
-        .input('precio',  sql.Decimal(18, 4), r.precio_unitario ?? null)
+        .input('desc',    sql.NVarChar(100),  r.descripcion ?? null)
+        .input('cant',    sql.Decimal(10, 3), r.cantidad)
         .input('importe', sql.Decimal(18, 2), r.importe)
         .query(`
-          INSERT INTO facturas_gasolina_renglones
-            (factura_id, ticket, producto, litros, precio_unitario, importe)
-          VALUES (@fid, @ticket, @prod, @litros, @precio, @importe)`)
+          INSERT INTO facturas_gasolina_renglones (factura_id, descripcion, cantidad, importe)
+          VALUES (@fid, @desc, @cant, @importe)`)
     }
 
     await tx.commit()
@@ -211,37 +202,13 @@ export async function crear(
   }
 }
 
-export async function findByFolio(
-  gasolineraId: number, serie: string | null, folio: string,
-): Promise<{ id: number } | null> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('gid',   sql.Int,          gasolineraId)
-    .input('serie', sql.NVarChar(10), serie)
-    .input('folio', sql.NVarChar(30), folio)
-    .query(`
-      SELECT id FROM facturas_gasolina
-      WHERE gasolinera_id = @gid AND folio = @folio
-        AND (serie = @serie OR (serie IS NULL AND @serie IS NULL))`)
-  return r.recordset[0] ?? null
-}
-
-export async function findByUuid(uuid: string): Promise<{ id: number; folio: string } | null> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('uuid', sql.NVarChar(36), uuid)
-    .query('SELECT id, folio FROM facturas_gasolina WHERE uuid = @uuid')
-  return r.recordset[0] ?? null
-}
-
 /** Los renglones de la factura con lo que se sepa de su recarga casada. */
 export async function renglones(facturaId: number): Promise<RenglonFactura[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, facturaId)
     .query(`
-      SELECT fr.id, fr.ticket, fr.producto, fr.litros, fr.precio_unitario,
-             fr.importe, fr.recarga_id, fr.metodo,
+      SELECT fr.id, fr.descripcion, fr.cantidad, fr.importe, fr.recarga_id,
              CONVERT(char(10), rc.fecha, 23) AS recarga_fecha,
              rc.litros AS recarga_litros, rc.costo AS recarga_costo,
              CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
@@ -260,14 +227,13 @@ export async function renglones(facturaId: number): Promise<RenglonFactura[]> {
 /**
  * Las recargas que algún renglón de esta factura podría estar cobrando.
  *
- * Son las de su gasolinera, de su fecha hacia atrás, que NINGÚN renglón de
- * NINGUNA factura haya reclamado ya — más las que esta misma tiene casadas, para
- * que al volver sigan apareciendo.
+ * Son las de su gasolinera, de su fecha hacia atrás, que ningún renglón de
+ * ninguna OTRA factura haya reclamado — más las que esta misma tiene casadas,
+ * para que al volver sigan apareciendo.
  *
- * El corte por fecha es hacia atrás y sin límite inferior a propósito: una carga
- * de hace tres meses que nadie facturó sigue siendo candidata legítima, y poner
- * una ventana la escondería justo cuando aparece la factura atrasada que la
- * cobra.
+ * El corte por fecha no tiene límite inferior a propósito: una carga de hace
+ * tres meses que nadie facturó sigue siendo candidata legítima, y poner una
+ * ventana la escondería justo cuando aparece la factura atrasada que la cobra.
  */
 export async function candidatas(
   facturaId: number, limite = 400,
@@ -279,7 +245,7 @@ export async function candidatas(
     .query(`
       SELECT TOP (@limite)
              rc.id, CONVERT(char(10), rc.fecha, 23) AS fecha,
-             rc.litros, rc.costo, rc.ticket,
+             rc.litros, rc.costo,
              CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
              co.nombre AS conductor, vg.folio AS vale_folio
       FROM recargas_combustible rc
@@ -301,13 +267,12 @@ export async function candidatas(
 export interface Casado {
   renglon_id: number
   recarga_id: number | null
-  metodo: 'ticket' | 'litros' | 'manual' | null
 }
 
 /**
  * Guarda a qué recarga corresponde cada renglón.
  *
- * Se sueltan todas primero y luego se asignan: lo que manda la pantalla es la
+ * Se sueltan todos primero y luego se asignan: lo que manda la pantalla es la
  * verdad completa, y calcular la diferencia contra lo que había solo agrega una
  * forma de equivocarse. El UNIQUE de `recarga_id` es quien impide de verdad que
  * dos renglones se lleven la misma carga.
@@ -321,21 +286,17 @@ export async function guardarCasados(
   try {
     await tx.request()
       .input('id', sql.Int, facturaId)
-      .query(`
-        UPDATE facturas_gasolina_renglones
-        SET recarga_id = NULL, metodo = NULL
-        WHERE factura_id = @id`)
+      .query('UPDATE facturas_gasolina_renglones SET recarga_id = NULL WHERE factura_id = @id')
 
     for (const c of casados) {
       if (c.recarga_id === null) continue
       await tx.request()
-        .input('rid',    sql.Int,          c.renglon_id)
-        .input('fid',    sql.Int,          facturaId)
-        .input('rec',    sql.Int,          c.recarga_id)
-        .input('metodo', sql.NVarChar(10), c.metodo ?? 'manual')
+        .input('rid', sql.Int, c.renglon_id)
+        .input('fid', sql.Int, facturaId)
+        .input('rec', sql.Int, c.recarga_id)
         .query(`
           UPDATE facturas_gasolina_renglones
-          SET recarga_id = @rec, metodo = @metodo
+          SET recarga_id = @rec
           WHERE id = @rid AND factura_id = @fid`)
     }
 

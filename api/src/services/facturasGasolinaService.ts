@@ -4,7 +4,7 @@ import { ConciliarGasolina, FacturaGasolinaCreate } from '../schemas/facturaGaso
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../shared/errors'
 import { aCentavos } from '../shared/totales'
 
-// Conciliar la factura de la gasolinera: casar cada ticket del papel con la
+// Conciliar la factura de la gasolinera: casar cada renglón del papel con la
 // recarga que le corresponde.
 //
 // Ver `db/migrations/041_facturas_de_gasolina.sql`.
@@ -21,74 +21,36 @@ export async function getAll(p: repo.FacturaGasolinaQuery) {
 export async function crear(
   data: FacturaGasolinaCreate, capturadoPor: string,
 ): Promise<number> {
-  // El subtotal tiene que ser lo que suman los renglones. Si no cuadra, o falta
-  // un renglón por capturar o hay un importe mal tecleado — y las dos cosas
-  // envenenan el cuadre, porque un renglón que no existe nunca va a aparecer
-  // como "falta en el sistema".
-  const suma = aCentavos(data.renglones.reduce((s, r) => s + r.importe, 0))
-  if (Math.abs(suma - data.subtotal) >= 0.01) {
-    throw new ValidationError(
-      `Los renglones suman ${suma.toFixed(2)} y el subtotal dice ${data.subtotal.toFixed(2)}. ` +
-      'Revisa que estén todos los tickets y sus importes.',
-    )
-  }
-
-  if (data.uuid) {
-    const yaEsta = await repo.findByUuid(data.uuid)
-    if (yaEsta) {
-      throw new ConflictError(`Esa factura ya está capturada con el folio ${yaEsta.folio}.`)
-    }
-  }
-
-  const existente = await repo.findByFolio(data.gasolinera_id, data.serie ?? null, data.folio)
+  const existente = await repo.findByFolio(data.gasolinera_id, data.folio)
   if (existente) {
     throw new ConflictError(`Esa gasolinera ya tiene una factura con el folio ${data.folio}.`)
   }
-
-  return repo.crear({ ...data, renglones: data.renglones }, capturadoPor)
+  return repo.crear(data, capturadoPor)
 }
 
-/** Los litros se comparan en milésimas: es lo que guarda la columna. */
-function mismosLitros(a: number, b: number): boolean {
+/** Las cantidades se comparan en milésimas: es lo que guarda la columna. */
+function mismaCantidad(a: number, b: number): boolean {
   return Math.round(a * 1000) === Math.round(b * 1000)
-}
-
-function normalizarTicket(t: string | null): string | null {
-  if (!t) return null
-  // El CFDI trae el ticket dentro de un identificador largo
-  // ("PL/6809/EXP/ES/2015-8367437") y la recarga lo captura suelto ("8367437").
-  // Se compara por el último tramo y sin ceros a la izquierda, que es lo que
-  // varía entre los dos papeles.
-  const ultimo = t.trim().split(/[-/\s]/).filter(Boolean).pop() ?? ''
-  return ultimo.replace(/^0+/, '').toUpperCase() || null
 }
 
 export interface RenglonSugerido extends RenglonFactura {
   /** Lo que el sistema propone, si el renglón no está casado ya. */
   sugerida_recarga_id: number | null
-  sugerido_metodo: 'ticket' | 'litros' | null
 }
 
 /**
- * Propone qué recarga corresponde a cada renglón.
+ * Propone qué recarga corresponde a cada renglón, por CANTIDAD exacta.
  *
- * DOS PASADAS, y el orden importa:
+ * POR QUÉ NO POR IMPORTE: el importe del renglón suele venir sin IVA y el costo
+ * de la recarga es lo que se pagó en la bomba, que sí lo incluye. "El más
+ * cercano" casaría cosas equivocadas con toda confianza. Los litros son el mismo
+ * número de los dos lados y con tres decimales prácticamente no se repiten.
  *
- *   1. POR TICKET. Si el renglón trae número de ticket y alguna recarga lo tiene
- *      capturado, eso no es una inferencia: es el mismo papel. Se casa y se saca
- *      del bote.
- *   2. POR LITROS, exactos a la milésima. Es lo que queda cuando el ticket no
- *      está —que hoy es siempre, porque la columna acaba de nacer—. Dos cargas
- *      del mismo día por 219.370 litros clavados prácticamente no existen.
+ * Lo que no case por cantidad se queda sin proponer y lo resuelve una persona:
+ * es preferible a inventar un emparejamiento que nadie va a revisar.
  *
- * NO se propone nada por importe, y es deliberado: el importe del renglón es sin
- * IVA y el costo de la recarga es con IVA, así que "el más cercano" casaría
- * cosas equivocadas con toda confianza. Si los litros no alcanzan, el renglón se
- * queda sin proponer y lo resuelve una persona.
- *
- * Cuando hay empate —dos recargas con los mismos litros— gana la más reciente,
- * que es la que cae dentro del periodo que la factura está cobrando. La persona
- * puede cambiarla.
+ * En empate —dos recargas con los mismos litros— gana la más reciente, que es la
+ * que cae dentro del periodo que la factura cobra. Se puede cambiar a mano.
  */
 export async function candidatas(facturaId: number): Promise<{
   factura: repo.FacturaGasolina
@@ -101,40 +63,23 @@ export async function candidatas(facturaId: number): Promise<{
   const rens = await repo.renglones(facturaId)
   const recargas = await repo.candidatas(facturaId)
 
-  const sugeridos: RenglonSugerido[] = rens.map((r) => ({
-    ...r, sugerida_recarga_id: null, sugerido_metodo: null,
-  }))
+  const sugeridos: RenglonSugerido[] = rens.map((r) => ({ ...r, sugerida_recarga_id: null }))
 
   if (factura.conciliada_en !== null) {
     return { factura, renglones: sugeridos, recargas }
   }
 
-  // Las que ya están casadas en este mismo papel no se vuelven a ofrecer.
   const tomadas = new Set(
     sugeridos.map((r) => r.recarga_id).filter((id): id is number => id !== null),
   )
-  const libres = () => recargas.filter((c) => !tomadas.has(c.id))
 
-  // Pasada 1: ticket.
   for (const r of sugeridos) {
     if (r.recarga_id !== null) continue
-    const t = normalizarTicket(r.ticket)
-    if (!t) continue
-    const match = libres().find((c) => normalizarTicket(c.ticket) === t)
+    const match = recargas.find(
+      (c) => !tomadas.has(c.id) && mismaCantidad(c.litros, r.cantidad),
+    )
     if (match) {
       r.sugerida_recarga_id = match.id
-      r.sugerido_metodo = 'ticket'
-      tomadas.add(match.id)
-    }
-  }
-
-  // Pasada 2: litros exactos.
-  for (const r of sugeridos) {
-    if (r.recarga_id !== null || r.sugerida_recarga_id !== null) continue
-    const match = libres().find((c) => mismosLitros(c.litros, r.litros))
-    if (match) {
-      r.sugerida_recarga_id = match.id
-      r.sugerido_metodo = 'litros'
       tomadas.add(match.id)
     }
   }
@@ -146,25 +91,24 @@ export interface ResultadoConciliacion {
   factura_id: number
   renglones: number
   casados: number
-  /** Tickets del papel que no corresponden a ninguna recarga capturada. */
+  /** Renglones del papel que no corresponden a ninguna recarga capturada. */
   sin_casar: number
-  /** Lo que esos tickets valen, sin IVA. Es el gasto que no está registrado. */
+  /** Lo que valen esos renglones: el gasto que no está registrado. */
   importe_sin_casar: number
-  /** Litros de esos tickets. */
-  litros_sin_casar: number
+  /** Litros de esos renglones. */
+  cantidad_sin_casar: number
 }
 
 /**
  * Guarda los casados y sella la factura.
  *
- * LO QUE SALE DE AQUÍ Y VALE LA PENA MIRAR es `sin_casar`: los tickets del papel
- * que no corresponden a ninguna recarga capturada. Eso no es un descuadre de
- * dinero abstracto — es "el ticket 8368392, de 57.91 litros, que la gasolinera
- * está cobrando y que nadie registró". Con eso se puede ir a preguntar.
+ * LO QUE SALE DE AQUÍ Y VALE LA PENA MIRAR es `sin_casar`: los renglones del
+ * papel que no corresponden a ninguna recarga capturada. Eso no es un descuadre
+ * de dinero abstracto — es una carga concreta, con sus litros y su importe, que
+ * la gasolinera está cobrando y que nadie registró.
  *
- * Sellar con renglones sin casar es legítimo —la recarga puede capturarse la
- * semana que viene y entonces se reabre— pero exige confirmarlo, así que no
- * pasa por descuido.
+ * Sellar así es legítimo —la recarga puede capturarse la semana que viene y
+ * entonces se reabre— pero exige confirmarlo, así que no pasa por descuido.
  */
 export async function conciliar(
   facturaId: number, datos: ConciliarGasolina, quien: string,
@@ -185,9 +129,7 @@ export async function conciliar(
   for (const c of datos.casados) {
     if (c.recarga_id === null) continue
     if (vistas.has(c.recarga_id)) {
-      throw new ValidationError(
-        'Dos renglones de la factura están apuntando a la misma recarga.',
-      )
+      throw new ValidationError('Dos renglones están apuntando a la misma recarga.')
     }
     vistas.add(c.recarga_id)
   }
@@ -195,7 +137,6 @@ export async function conciliar(
   const casados: Casado[] = datos.casados.map((c) => ({
     renglon_id: c.renglon_id,
     recarga_id: c.recarga_id ?? null,
-    metodo: c.metodo ?? 'manual',
   }))
   await repo.guardarCasados(facturaId, casados)
 
@@ -207,14 +148,14 @@ export async function conciliar(
     casados: rens.length - sinCasar.length,
     sin_casar: sinCasar.length,
     importe_sin_casar: aCentavos(sinCasar.reduce((s, r) => s + r.importe, 0)),
-    litros_sin_casar: Math.round(sinCasar.reduce((s, r) => s + r.litros, 0) * 1000) / 1000,
+    cantidad_sin_casar: Math.round(sinCasar.reduce((s, r) => s + r.cantidad, 0) * 1000) / 1000,
   }
 
   if (sinCasar.length > 0 && !datos.confirmar_sin_casar) {
     throw new AppError(
-      `${sinCasar.length} ticket(s) de la factura no corresponden a ninguna recarga capturada, ` +
-      `por ${resultado.importe_sin_casar.toFixed(2)} sin IVA. Son cargas que la gasolinera ` +
-      'cobra y que nadie registró.',
+      `${sinCasar.length} renglón(es) de la factura no corresponden a ninguna recarga ` +
+      `capturada, por ${resultado.importe_sin_casar.toFixed(2)}. Son cargas que la ` +
+      'gasolinera cobra y que nadie registró.',
       409, RENGLONES_SIN_CASAR,
     )
   }

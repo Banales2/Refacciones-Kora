@@ -40,14 +40,14 @@ export async function facturaGasolinaConciliar(
       antes,
       despues: await capturar('facturas_gasolina', id),
       descripcion: r.sin_casar === 0
-        ? `Concilió la factura: sus ${r.renglones} ticket(s) casaron con una recarga`
-        : `Concilió la factura con ${r.sin_casar} ticket(s) sin casar, por ${r.importe_sin_casar.toFixed(2)} sin IVA`,
+        ? `Concilió la factura: sus ${r.renglones} renglón(es) casaron con una recarga`
+        : `Concilió la factura con ${r.sin_casar} renglón(es) sin casar, por ${r.importe_sin_casar.toFixed(2)}`,
       detalles: {
         renglones: r.renglones,
         casados: r.casados,
         sin_casar: r.sin_casar,
         importe_sin_casar: r.importe_sin_casar,
-        litros_sin_casar: r.litros_sin_casar,
+        cantidad_sin_casar: r.cantidad_sin_casar,
       },
       ipAddress: getClientIp(req),
     })

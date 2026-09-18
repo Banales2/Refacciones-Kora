@@ -10,15 +10,16 @@ import * as service from '../services/recargasService'
 
 // Los campos que, al cambiar, rompen una conciliación ya cerrada.
 //
-// `costo` es el obvio: es el número que se cuadró contra el total de la factura.
-// `fecha` y `gasolinera_id` lo son igual de verdad aunque no lo parezcan —
-// deciden si esta recarga era siquiera candidata de esa factura, y moverlos deja
-// dentro de una factura una carga que nunca le tocó.
+// `litros` es el que sostiene el emparejamiento: el renglón del papel se casó
+// con esta recarga porque despacharon la misma cantidad. `fecha` y
+// `gasolinera_id` lo son igual de verdad aunque no lo parezcan — deciden si esta
+// recarga era siquiera candidata de esa factura, y moverlos deja dentro de una
+// factura una carga que nunca le tocó.
 //
-// Lo demás —chofer, vale, kilometraje, litros— no toca el cuadre y se sigue
+// Lo demás —chofer, vale, kilometraje, costo— no toca el cuadre y se sigue
 // corrigiendo con la factura cerrada, que es lo correcto: son datos de la
 // operación, no del papel de la gasolinera.
-const CAMPOS_DEL_CUADRE = ['costo', 'fecha', 'gasolinera_id']
+const CAMPOS_DEL_CUADRE = ['litros', 'fecha', 'gasolinera_id']
 
 export async function recargaUpdate(
   request: HttpRequest,
@@ -40,7 +41,7 @@ export async function recargaUpdate(
       if (factura?.conciliada) {
         throw new AppError(
           `Esta recarga ya está conciliada en la factura ${factura.folio}. ` +
-          'Reábrela para poder corregir el importe, la fecha o la gasolinera.',
+          'Reábrela para poder corregir los litros, la fecha o la gasolinera.',
           409, 'RECARGA_CONCILIADA',
         )
       }
