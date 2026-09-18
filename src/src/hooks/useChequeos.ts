@@ -138,6 +138,37 @@ export function useChequeosRango(params: { desde?: string; hasta?: string; filtr
   })
 }
 
+export interface UnidadPatio extends UnidadSinChequeo {
+  /** El chequeo de hoy de esta unidad, si ya se hizo. */
+  chequeo_id:  number | null
+  fallas:      number
+  hay_novedad: boolean
+}
+
+export interface Patio {
+  fecha:      string
+  sucursal:   { id: number; nombre: string }
+  /** Lo que hay que escribir en `ubicacion` de cada chequeo del recorrido. */
+  ubicacion:  string
+  /** Las unidades con base en esta sucursal. */
+  base:       UnidadPatio[]
+  /** Lo revisado aquí hoy sin tener base aquí: tráilers de paso. */
+  visitantes: UnidadPatio[]
+  pendientes: number
+}
+
+// El recorrido del patio. `refetchOnWindowFocus` porque son dos personas
+// caminando la misma flota: si una revisó la unidad que la otra tiene enfrente,
+// conviene que se entere al volver a la pantalla y no al final del recorrido.
+export function usePatio(sucursalId: number | null) {
+  return useQuery({
+    queryKey: ['chequeos-patio', sucursalId],
+    queryFn: () => api.get<{ data: Patio }>(`/chequeos/patio?sucursal_id=${sucursalId}`),
+    enabled: sucursalId != null,
+    refetchOnWindowFocus: true,
+  })
+}
+
 export function useDeclarantes() {
   return useQuery({
     queryKey: ['chequeos-declarantes'],
@@ -151,6 +182,7 @@ function invalidar(qc: ReturnType<typeof useQueryClient>, vehiculoId: number) {
   qc.invalidateQueries({ queryKey: ['chequeos'] })
   qc.invalidateQueries({ queryKey: ['chequeo-formulario', vehiculoId] })
   qc.invalidateQueries({ queryKey: ['chequeos-hoy'] })
+  qc.invalidateQueries({ queryKey: ['chequeos-patio'] })
   qc.invalidateQueries({ queryKey: ['chequeos-declarantes'] })
   qc.invalidateQueries({ queryKey: ['incidencias'] })
   qc.invalidateQueries({ queryKey: ['pendientes', vehiculoId] })

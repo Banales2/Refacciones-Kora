@@ -43,11 +43,21 @@ const VACIA: Respuesta = { resultado: null, valor: null, nota: '', severidad: 'm
 const etiquetaNueva = (v: string) => `+ Usar "${v}"`
 
 export default function ChequeoDiarioForm({
-  vehiculoId, onListo, onCancel,
+  vehiculoId, onListo, onCancel, ubicacionFija, declaradoPorInicial,
 }: {
   vehiculoId: number
   onListo:    (avisos: string[]) => void
   onCancel:   () => void
+  /**
+   * En modo patio la ubicación es la sucursal que se está recorriendo y no se
+   * teclea. No es comodidad: la consulta que encuentra las unidades visitantes
+   * cruza `chequeos.ubicacion` contra el nombre de la sucursal, y basta que
+   * alguien escriba "Patio norte" en vez de "Sucursal Norte" para que esa caja
+   * desaparezca de la lista.
+   */
+  ubicacionFija?: string
+  /** Quien viene declarando el recorrido, para no reescribirlo por unidad. */
+  declaradoPorInicial?: string
 }) {
   const { data, isLoading, isError, refetch } = useFormularioChequeo(vehiculoId, true)
   const crear     = useCreateChequeo(vehiculoId)
@@ -63,8 +73,12 @@ export default function ChequeoDiarioForm({
     existente ? existente.hay_novedad : null
   )
   const [declaracion, setDeclaracion] = useState(existente?.declaracion ?? '')
-  const [declaradoPor, setDeclaradoPor] = useState(existente?.declarado_por ?? '')
-  const [ubicacion, setUbicacion] = useState(existente?.ubicacion ?? '')
+  const [declaradoPor, setDeclaradoPor] = useState(
+    existente?.declarado_por ?? declaradoPorInicial ?? ''
+  )
+  const [ubicacion, setUbicacion] = useState(
+    ubicacionFija ?? existente?.ubicacion ?? ''
+  )
   const [lectura, setLectura] = useState<number | ''>(existente?.lectura ?? '')
   const [respuestas, setRespuestas] = useState<Record<string, Respuesta>>(() => {
     const inicial: Record<string, Respuesta> = {}
@@ -254,6 +268,8 @@ export default function ChequeoDiarioForm({
               placeholder="Patio Norte"
               maxLength={160}
               value={ubicacion}
+              disabled={!!ubicacionFija}
+              description={ubicacionFija ? 'La sucursal del recorrido' : undefined}
               onChange={(e) => setUbicacion(limpiarTextoLibre(e.currentTarget.value, 160))}
             />
           </Group>

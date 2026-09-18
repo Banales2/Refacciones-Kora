@@ -21,6 +21,7 @@ import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import {
   IconRefresh, IconLayoutDashboard, IconTruck, IconCar, IconTool,
   IconAlertTriangle, IconGasStation, IconBox, IconBuildingStore, IconSettings,
+  IconClipboardCheck,
   IconHistory,
 } from '@tabler/icons-react'
 import type { Icon } from '@tabler/icons-react'
@@ -30,6 +31,7 @@ import Piezas from '../pages/Piezas'
 import Inventario from '../pages/Inventario'
 import Vehiculos from '../pages/Vehiculos'
 import Incidencias from '../pages/Incidencias'
+import ChequeoPatio from '../pages/ChequeoPatio'
 import Modelos from '../pages/Modelos'
 import SitiosYRutas from '../pages/SitiosYRutas'
 import ValesGasolina from '../pages/ValesGasolina'
@@ -40,7 +42,7 @@ import type { DestinoDocumento } from '../lib/documentosDashboard'
 
 type Section =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
-  | 'mantenimientos' | 'sitios' | 'vales' | 'registros'
+  | 'mantenimientos' | 'sitios' | 'vales' | 'registros' | 'chequeos'
 
 const SECTION_LABELS: Record<Section, string> = {
   dashboard:      'Dashboard',
@@ -53,6 +55,7 @@ const SECTION_LABELS: Record<Section, string> = {
   sitios:         'Catálogos',
   vales:          'Vales de gasolina',
   registros:      'Registros de cambios',
+  chequeos:       'Chequeo del patio',
 }
 
 // Agrupadas por lo que hace el usuario, no por tabla: primero la flota, luego
@@ -73,6 +76,7 @@ const NAV_GROUPS: {
   {
     titulo: 'Operación',
     items: [
+      { section: 'chequeos',       label: 'Chequeo del patio', description: 'El recorrido diario de una sucursal, unidad por unidad', icon: IconClipboardCheck },
       { section: 'mantenimientos', label: 'Mantenimientos', description: 'Historial de servicios de toda la flota', icon: IconTool          },
       { section: 'incidencias',    label: 'Incidencias',    description: 'Incidencias reportadas de la flota',      icon: IconAlertTriangle },
       { section: 'vales',          label: 'Vales',          description: 'Vales de gasolina entregados a choferes', icon: IconGasStation    },
@@ -486,6 +490,7 @@ export default function Layout() {
           />
         )}
         {section === 'incidencias' && <Incidencias onNavigateVehiculo={navigateToVehiculoId} />}
+        {section === 'chequeos' && <ChequeoPatio />}
         {section === 'sitios'    && (
           <SitiosYRutas
             onNavigateVehiculo={navigateToVehiculo}

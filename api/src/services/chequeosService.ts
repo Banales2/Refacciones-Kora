@@ -8,6 +8,7 @@
 //      alguien la lea. Ver `docs/chequeo-diario.md` para el porqué.
 import * as repo from '../repositories/chequeosRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
+import * as sucursalesRepo from '../repositories/sucursalesRepo'
 import { fechaMexico } from '../shared/fechaMexico'
 import { NotFoundError, ValidationError, ConflictError } from '../shared/errors'
 import {
@@ -196,6 +197,40 @@ export async function getResumenHoy(fecha?: string) {
     revisadas:  total - faltan.length,
     faltan,
     por_revisar: porRevisar,
+  }
+}
+
+/**
+ * El recorrido del patio: qué le falta a esta sucursal hoy.
+ *
+ * Dos listas, porque son dos cosas distintas:
+ *   `base`        las unidades que viven en esta sucursal. El sistema sabe de
+ *                 antemano que deberían estar ahí, así que puede reclamarlas.
+ *   `visitantes`  lo que se revisó aquí sin tener base aquí: un tractocamión
+ *                 que amaneció en este patio. No se predicen —nadie puede saber
+ *                 dónde durmió una caja— y por eso solo aparecen después de
+ *                 revisarlas, cuando su `ubicacion` ya lo dice.
+ *
+ * `ubicacion` viaja en la respuesta para que la pantalla la escriba tal cual en
+ * cada chequeo: de esa igualdad depende que las visitantes se puedan encontrar.
+ */
+export async function getPatio(sucursalId: number, fecha?: string) {
+  const sucursal = await sucursalesRepo.findById(sucursalId)
+  if (!sucursal) throw new NotFoundError('Sucursal')
+
+  const dia = fecha ?? fechaMexico()
+  const [base, visitantes] = await Promise.all([
+    repo.findPatio(sucursalId, dia),
+    repo.findVisitantes(sucursalId, sucursal.nombre, dia),
+  ])
+
+  return {
+    fecha: dia,
+    sucursal: { id: sucursal.id, nombre: sucursal.nombre },
+    ubicacion: sucursal.nombre,
+    base,
+    visitantes,
+    pendientes: base.filter((u) => u.chequeo_id == null).length,
   }
 }
 

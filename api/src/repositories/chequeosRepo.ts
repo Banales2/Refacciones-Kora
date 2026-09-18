@@ -245,6 +245,94 @@ export interface UnidadSinChequeo {
   placas:      string | null
 }
 
+export interface UnidadPatio extends UnidadSinChequeo {
+  /** El chequeo de hoy de esta unidad, si ya se hizo. */
+  chequeo_id: number | null
+  /** Para saber si todavía hay algo que atender sin abrir el chequeo. */
+  fallas: number
+  hay_novedad: boolean
+}
+
+/**
+ * Las unidades con base en una sucursal, con su chequeo del día si lo tienen.
+ *
+ * SOLO LAS DE BASE FIJA, y eso es del negocio, no una limitación: el reparto y
+ * los montacargas viven en un patio y `sucursal_id` lo dice. Un tractocamión o
+ * una caja andan hoy en una sucursal y mañana en otra, así que no hay columna
+ * que pueda predecir dónde amanecieron —guardarla sería inventar un dato que
+ * cambia solo—. Esas se agregan desde la pantalla, buscándolas: quien recorre
+ * el patio las ve porque están enfrente, y su chequeo deja en `ubicacion` dónde
+ * se revisó, que es la constancia que sí es cierta.
+ *
+ * Devuelve también las ya revisadas, no solo las pendientes: quien va a la
+ * mitad del recorrido necesita ver qué lleva hecho, y una lista que borra lo
+ * revisado deja de decir cuánto falta.
+ */
+export async function findPatio(sucursalId: number, fecha: string): Promise<UnidadPatio[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('suc',   sql.Int,  sucursalId)
+    .input('fecha', sql.Date, fecha)
+    .query(`
+      SELECT v.id AS vehiculo_id,
+             CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS nombre,
+             v.tipo, v.placas,
+             ch.id AS chequeo_id,
+             CAST(ISNULL(ch.hay_novedad, 0) AS bit) AS hay_novedad,
+             ISNULL((SELECT COUNT(*) FROM chequeo_items ci
+                      WHERE ci.chequeo_id = ch.id AND ci.resultado = 'falla'), 0) AS fallas
+      FROM vehiculos v
+      JOIN modelos mo ON mo.id = v.modelo_id
+      ${JOINS_HIJAS}
+      LEFT JOIN chequeos ch ON ch.vehiculo_id = v.id AND ch.fecha = @fecha
+      WHERE ${NO_DADO_DE_BAJA}
+        AND COALESCE(c.sucursal_id, mc.sucursal_id) = @suc
+      ORDER BY CASE WHEN ch.id IS NULL THEN 0 ELSE 1 END, nombre
+    `)
+  return r.recordset
+}
+
+/**
+ * Las unidades que hoy se revisaron en esta sucursal sin tener base aquí: las
+ * itinerantes y las prestadas de otro patio. Salen del chequeo y no del padrón,
+ * porque la única forma de saber que una caja amaneció aquí es que alguien la
+ * haya revisado aquí.
+ *
+ * El cruce es por `ubicacion` exacta, que es texto libre y en general no sería
+ * de fiar. Aquí sí lo es porque la pantalla de patio escribe el nombre de la
+ * sucursal tal cual, sin dejar teclearlo: es la condición de la que depende
+ * esta consulta, y por eso el campo va bloqueado en ese modo.
+ */
+export async function findVisitantes(
+  sucursalId: number, sucursalNombre: string, fecha: string
+): Promise<UnidadPatio[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('suc',   sql.Int, sucursalId)
+    .input('ubic',  sql.NVarChar(160), sucursalNombre)
+    .input('fecha', sql.Date, fecha)
+    .query(`
+      SELECT v.id AS vehiculo_id,
+             CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS nombre,
+             v.tipo, v.placas,
+             ch.id AS chequeo_id,
+             CAST(ch.hay_novedad AS bit) AS hay_novedad,
+             (SELECT COUNT(*) FROM chequeo_items ci
+               WHERE ci.chequeo_id = ch.id AND ci.resultado = 'falla') AS fallas
+      FROM chequeos ch
+      JOIN vehiculos v  ON v.id = ch.vehiculo_id
+      JOIN modelos   mo ON mo.id = v.modelo_id
+      ${JOINS_HIJAS}
+      WHERE ch.fecha = @fecha
+        AND ch.ubicacion = @ubic
+        -- Las de base aquí ya salen en la otra lista; esta es para lo demás,
+        -- traiga o no sucursal propia.
+        AND ISNULL(COALESCE(c.sucursal_id, mc.sucursal_id), -1) <> @suc
+      ORDER BY nombre
+    `)
+  return r.recordset
+}
+
 /**
  * Las unidades activas que no tienen chequeo de esa fecha. Es la cifra del
  * tablero, y la razón de ser del índice único: sin él, "faltan" no se podría

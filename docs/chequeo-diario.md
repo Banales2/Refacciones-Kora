@@ -136,6 +136,37 @@ queda viva y se cancela desde Incidencias — deshacerla aquí borraría el trab
 de quien ya la hubiera atendido, y el sistema no borra entidades (ver
 `sin-delete.md`).
 
+## El modo patio, y por qué la sucursal de un tráiler no es una columna
+
+El chequeo no lo hace cada chofer con su unidad: lo hacen una o dos personas
+que recorren el patio de una sucursal. Eso descarta que la única entrada sea la
+ficha del vehículo, donde cada unidad cuesta abrir el detalle completo
+—refacciones, garantías, programa, mantenimientos— para usar solo lo de hasta
+arriba. `pages/ChequeoPatio.tsx` es la lista del recorrido: se queda fija, el
+formulario se abre encima y al guardar avanza solo a la siguiente que falte.
+
+Ahora bien, "las unidades de esta sucursal" no es una sola pregunta:
+
+- **Reparto y montacargas tienen base fija.** `sucursal_id` vive en `camiones` y
+  en `montacargas`, y dice dónde duerme la unidad. El sistema puede reclamarlas
+  por su nombre: si falta una, falta.
+- **Los tráilers andan hoy en una sucursal y mañana en otra.** Su sucursal no es
+  un atributo, es dónde amanecieron. Una columna que lo guardara estaría
+  mintiendo a los dos días, y mantenerla al día sería un movimiento que nadie va
+  a capturar.
+
+Por eso la pantalla tiene dos listas y no un filtro. Las de base se reclaman;
+las itinerantes **no se predicen**: quien recorre las ve porque están enfrente,
+las busca y las agrega. Después de revisarlas aparecen abajo, porque su chequeo
+ya dice dónde se hizo — y esa constancia sí es cierta, a diferencia de una
+columna adivinada.
+
+De ahí sale una dependencia que conviene no romper: en modo patio, `ubicacion`
+se escribe con el nombre de la sucursal **tal cual y bloqueado**. La consulta
+que encuentra a las visitantes (`findVisitantes`) cruza `chequeos.ubicacion`
+contra ese nombre, y basta que alguien teclee "Patio norte" en vez de "Sucursal
+Norte" para que esa caja desaparezca de la lista.
+
 ## Lo que este módulo todavía no resuelve
 
 **Sin señal en el patio.** `api.ts` reintenta, pero no encola: si no hay red, el
@@ -146,3 +177,9 @@ pena.
 
 **Fotos de los golpes.** Obligan a resolver almacenamiento de archivos y hacen
 lento justo el ítem que más se usa. Por ahora la incidencia captura el texto.
+
+**Los utilitarios no entran a la lista de base.** `vehiculos_utilitarios` no
+tiene `sucursal_id` —solo un `ubicacion` de texto libre— así que hoy caen en el
+grupo de buscar y agregar, junto a los tráilers. Si resulta que sí tienen base
+fija como el reparto, la columna es una migración chica y un `COALESCE` más en
+`findPatio`; si de verdad andan rotando, están donde deben.
