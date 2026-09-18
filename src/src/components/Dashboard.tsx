@@ -906,7 +906,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
             {/* El chequeo diario, al final y plegado. Es una línea por unidad
                 del patio: desplegado empuja fuera de la pantalla todo lo demás
                 de esta pestaña, y lo que se necesita de reojo es el número. El
-                recorrido de verdad se hace desde Chequeo del patio, no aquí. */}
+                recorrido de verdad se hace desde Chequeo de flotilla, no aquí. */}
             <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
               <SeccionPlegable
                 titulo="Unidades sin chequeo de hoy"

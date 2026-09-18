@@ -55,7 +55,7 @@ export default function ChequeoDiarioForm({
   onListo:    (avisos: string[]) => void
   onCancel:   () => void
   /**
-   * En modo patio la ubicación es la sucursal que se está recorriendo y no se
+   * En el chequeo de flotilla la ubicación es la sucursal que se recorre y no se
    * teclea. No es comodidad: la consulta que encuentra las unidades visitantes
    * cruza `chequeos.ubicacion` contra el nombre de la sucursal, y basta que
    * alguien escriba "Patio norte" en vez de "Sucursal Norte" para que esa caja

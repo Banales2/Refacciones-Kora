@@ -187,7 +187,7 @@ queda viva y se cancela desde Incidencias — deshacerla aquí borraría el trab
 de quien ya la hubiera atendido, y el sistema no borra entidades (ver
 `sin-delete.md`).
 
-## El modo patio, y por qué la sucursal de un tráiler no es una columna
+## El chequeo de flotilla, y por qué la sucursal de un tráiler no es una columna
 
 Como el chequeo lo hacen una o dos personas recorriendo el patio —y no cada
 chofer con su unidad—, la ficha del vehículo no puede ser la única entrada: ahí
@@ -212,8 +212,8 @@ las busca y las agrega. Después de revisarlas aparecen abajo, porque su chequeo
 ya dice dónde se hizo — y esa constancia sí es cierta, a diferencia de una
 columna adivinada.
 
-De ahí sale una dependencia que conviene no romper: en modo patio, `ubicacion`
-se escribe con el nombre de la sucursal **tal cual y bloqueado**. La consulta
+De ahí sale una dependencia que conviene no romper: en el chequeo de flotilla,
+`ubicacion` se escribe con el nombre de la sucursal **tal cual y bloqueado**. La consulta
 que encuentra a las visitantes (`findVisitantes`) cruza `chequeos.ubicacion`
 contra ese nombre, y basta que alguien teclee "Patio norte" en vez de "Sucursal
 Norte" para que esa caja desaparezca de la lista.

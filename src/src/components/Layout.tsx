@@ -55,7 +55,7 @@ const SECTION_LABELS: Record<Section, string> = {
   sitios:         'Catálogos',
   vales:          'Vales de gasolina',
   registros:      'Registros de cambios',
-  chequeos:       'Chequeo del patio',
+  chequeos:       'Chequeo de flotilla',
 }
 
 // Agrupadas por lo que hace el usuario, no por tabla: primero la flota, luego
@@ -76,7 +76,7 @@ const NAV_GROUPS: {
   {
     titulo: 'Operación',
     items: [
-      { section: 'chequeos',       label: 'Chequeo del patio', description: 'El recorrido diario de una sucursal, unidad por unidad', icon: IconClipboardCheck },
+      { section: 'chequeos',       label: 'Chequeo de flotilla', description: 'El recorrido diario de una sucursal, unidad por unidad', icon: IconClipboardCheck },
       { section: 'mantenimientos', label: 'Mantenimientos', description: 'Historial de servicios de toda la flota', icon: IconTool          },
       { section: 'incidencias',    label: 'Incidencias',    description: 'Incidencias reportadas de la flota',      icon: IconAlertTriangle },
       { section: 'vales',          label: 'Vales',          description: 'Vales de gasolina entregados a choferes', icon: IconGasStation    },

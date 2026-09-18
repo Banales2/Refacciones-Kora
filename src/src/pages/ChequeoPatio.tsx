@@ -1,4 +1,8 @@
-// Modo patio: el recorrido diario de una sucursal.
+// Chequeo de flotilla: el recorrido diario de una sucursal.
+//
+// El archivo y los identificadores siguen diciendo "patio" —`usePatio`,
+// `/chequeos/patio`— porque describen el lugar físico que se camina, que no
+// cambió; lo que cambió es cómo se llama la pantalla.
 //
 // La ficha del vehículo sirve para consultar una unidad; esto sirve para
 // revisar treinta seguidas. La diferencia no es cosmética: con la ficha, cada
@@ -143,7 +147,7 @@ export default function ChequeoPatio() {
         <Stack gap={2}>
           <Group gap="xs">
             <IconClipboardCheck size={22} />
-            <Text fw={700} size="lg">Chequeo del patio</Text>
+            <Text fw={700} size="lg">Chequeo de flotilla</Text>
           </Group>
           {usuario && (
             <Text size="xs" c="dimmed">
@@ -153,7 +157,7 @@ export default function ChequeoPatio() {
         </Stack>
         <SelectCatalogo
           label="Sucursal"
-          placeholder="¿Qué patio se recorre?"
+          placeholder="¿Qué sucursal se recorre?"
           nombre="sucursales"
           estado={sucursales}
           data={opcionesSucursal}
@@ -170,7 +174,7 @@ export default function ChequeoPatio() {
       ) : isLoading ? (
         <Center py="xl"><Loader /></Center>
       ) : isError || !patio ? (
-        <Alert color="red" title="No se pudo cargar el patio">
+        <Alert color="red" title="No se pudo cargar la flotilla">
           <Button size="xs" variant="light" onClick={() => refetch()}>Reintentar</Button>
         </Alert>
       ) : (
@@ -182,7 +186,7 @@ export default function ChequeoPatio() {
                   {patio.base.length - pendientes.length} de {patio.base.length} revisadas
                 </Text>
                 {pendientes.length === 0 ? (
-                  <Badge color="teal" leftSection={<IconCheck size={12} />}>Patio completo</Badge>
+                  <Badge color="teal" leftSection={<IconCheck size={12} />}>Flotilla completa</Badge>
                 ) : (
                   <Badge color="orange">Faltan {pendientes.length}</Badge>
                 )}
@@ -214,11 +218,11 @@ export default function ChequeoPatio() {
           </Stack>
 
           <Divider
-            label="De paso por este patio"
+            label="De paso por esta sucursal"
             labelPosition="center"
           />
           <Text size="xs" c="dimmed" ta="center" mt={-8}>
-            Los tráilers cambian de patio, así que no aparecen solos: búscalos y agrégalos.
+            Los tráilers cambian de sucursal, así que no aparecen solos: búscalos y agrégalos.
           </Text>
 
           <Stack gap="xs">
@@ -280,7 +284,7 @@ export default function ChequeoPatio() {
           <>
             {pendientes.length > 0 && (
               <Text size="xs" c="dimmed" mb="xs">
-                Faltan {pendientes.length} de {patio.base.length} en este patio
+                Faltan {pendientes.length} de {patio.base.length} en esta sucursal
               </Text>
             )}
             <ChequeoDiarioForm
