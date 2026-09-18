@@ -23,6 +23,7 @@ import {
   IconAlertTriangle, IconGasStation, IconBox, IconBuildingStore, IconSettings,
   IconClipboardCheck,
   IconHistory,
+  IconReceipt,
   IconReceiptOff,
 } from '@tabler/icons-react'
 import type { Icon } from '@tabler/icons-react'
@@ -38,6 +39,7 @@ import SitiosYRutas from '../pages/SitiosYRutas'
 import ValesGasolina from '../pages/ValesGasolina'
 import RegistrosCambios from '../pages/RegistrosCambios'
 import ErroresCaptura from '../pages/ErroresCaptura'
+import Facturas from '../pages/Facturas'
 import Mantenimientos from '../pages/Mantenimientos'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 import type { DestinoDocumento } from '../lib/documentosDashboard'
@@ -45,7 +47,7 @@ import type { DestinoDocumento } from '../lib/documentosDashboard'
 type Section =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
   | 'mantenimientos' | 'sitios' | 'vales' | 'registros' | 'chequeos'
-  | 'errores-captura'
+  | 'errores-captura' | 'facturas'
 
 const SECTION_LABELS: Record<Section, string> = {
   dashboard:      'Dashboard',
@@ -59,6 +61,7 @@ const SECTION_LABELS: Record<Section, string> = {
   vales:          'Vales de gasolina',
   registros:      'Registros de cambios',
   'errores-captura': 'Errores de captura',
+  facturas:       'Facturas de compra',
   chequeos:       'Chequeo de flotilla',
 }
 
@@ -90,6 +93,7 @@ const NAV_GROUPS: {
     titulo: 'Inventario',
     items: [
       { section: 'piezas',     label: 'Refacciones', description: 'Catálogo de refacciones y sus compras',      icon: IconBox            },
+      { section: 'facturas',   label: 'Facturas',    description: 'Compras por factura: cuadrarlas contra el papel', icon: IconReceipt },
       { section: 'inventario', label: 'Inventario',  description: 'Qué hay en cada sucursal, mínimos y traspasos', icon: IconBuildingStore },
       { section: 'sitios', label: 'Catálogos',   description: 'Proveedores, sucursales, translados y más', icon: IconSettings },
     ],
@@ -530,6 +534,7 @@ export default function Layout() {
         )}
         {section === 'registros' && esAdmin && <RegistrosCambios />}
         {section === 'errores-captura' && esAdmin && <ErroresCaptura />}
+        {section === 'facturas'  && <Facturas />}
       </AppShell.Main>
     </AppShell>
   )

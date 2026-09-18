@@ -320,12 +320,20 @@ function TotalesDeFactura({ factura }: { factura: Factura }) {
   )
 }
 
-export default function FacturasDrawer({
-  opened, onClose,
-}: {
-  opened:  boolean
-  onClose: () => void
-}) {
+/**
+ * El contenido de la pantalla de facturas, sin envoltorio.
+ *
+ * Vive aparte del `Drawer` porque tiene dos entradas: la sección "Facturas" del
+ * menú —que es donde trabaja quien las verifica contra el papel, y por eso
+ * merece pantalla completa— y el botón de la pantalla de Refacciones, que sigue
+ * siendo el atajo para cuando ya estás viendo una refacción. Son la misma cosa
+ * y no pueden divergir.
+ *
+ * `activo` apaga la consulta cuando el drawer está cerrado: sin eso el listado
+ * se recargaría en cada render de la pantalla que lo contiene. En la página
+ * siempre es `true`, que es su valor por omisión.
+ */
+export function FacturasPanel({ activo = true }: { activo?: boolean }) {
   const [search, setSearch] = useState('')
   const [debounced] = useDebouncedValue(search, 300)
   const [desde, setDesde] = useState('')
@@ -348,7 +356,7 @@ export default function FacturasDrawer({
       hasta: hasta || undefined,
       por_revisar: porRevisar || undefined,
     },
-    opened,
+    activo,
   )
 
   const facturas = data?.data ?? []
@@ -360,15 +368,7 @@ export default function FacturasDrawer({
   function filtrar(fn: () => void) { fn(); setPage(1) }
 
   return (
-    <Drawer
-      opened={opened}
-      onClose={onClose}
-      title={<Text fw={700}>Facturas de compra</Text>}
-      position="right"
-      size="xl"
-      overlayProps={{ backgroundOpacity: 0.3 }}
-    >
-      <Stack gap="md">
+    <Stack gap="md">
         <Text size="sm" c="dimmed">
           Cada factura son los lotes que comparten folio y proveedor. Desde aquí se
           le fijan el descuento y el IVA a toda la compra de una vez — útil para
@@ -536,7 +536,30 @@ export default function FacturasDrawer({
             )}
           </>
         )}
-      </Stack>
+    </Stack>
+  )
+}
+
+/**
+ * Las facturas en un cajón lateral, para abrirlas sin salir de Refacciones.
+ * Todo lo que enseña es `FacturasPanel`: aquí solo va el envoltorio.
+ */
+export default function FacturasDrawer({
+  opened, onClose,
+}: {
+  opened:  boolean
+  onClose: () => void
+}) {
+  return (
+    <Drawer
+      opened={opened}
+      onClose={onClose}
+      title={<Text fw={700}>Facturas de compra</Text>}
+      position="right"
+      size="xl"
+      overlayProps={{ backgroundOpacity: 0.3 }}
+    >
+      <FacturasPanel activo={opened} />
     </Drawer>
   )
 }
