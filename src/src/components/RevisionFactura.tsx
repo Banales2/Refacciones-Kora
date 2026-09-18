@@ -31,7 +31,6 @@ import { FechaInput } from './FechaInput'
 import { formatMXN, formatFecha } from '../lib/formato'
 import { IVA_DEFAULT, DESCUENTO_DEFAULT, totalesFactura } from '../lib/totales'
 import { limpiarFolio, normalizarFolio } from '../lib/validaciones'
-import { TextInput } from '@mantine/core'
 
 /** El estado de la factura de un vistazo, para la cabecera del acordeón. */
 export function EstadoRevision({ factura }: { factura: Factura }) {
