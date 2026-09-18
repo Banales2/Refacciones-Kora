@@ -37,6 +37,37 @@ migración 036: el centinela explícito en vez del vacío ambiguo.
 En el formulario, el checklist no se muestra hasta que la declaración está
 contestada. Eso cuesta un toque más, y es el toque que se está pagando.
 
+## Cuando no había chofer
+
+A las seis de la mañana media flota está sola en el patio. Que no haya chofer no
+impide revisar la unidad —las llantas, las luces y el odómetro se ven sin
+ayuda—; lo único que se pierde es lo que solo él sabe.
+
+Por eso el paso uno tiene **tres** respuestas y no dos:
+
+| respuesta | `sin_chofer` | `hay_novedad` | significa |
+|---|---|---|---|
+| No reporta nada | 0 | 0 | se le preguntó y no había nada |
+| Sí, algo pasó | 0 | 1 | reportó algo; `declaracion` lo dice |
+| No había chofer | 1 | 0 | no hubo a quién preguntarle |
+
+**"No estaba el chofer" no es "el chofer dijo que todo bien."** Es la misma
+distinción que ya hace `'na'` contra no insertar el renglón. Si las dos
+terminaran en `hay_novedad = 0`, la bandera que dice si el chofer habla sería
+indistinguible de la que dice que nadie le preguntó — y sin la tercera opción,
+quien recorre acabaría marcando "sin novedad" por alguien que no estaba, que es
+inventar el único dato que este módulo existe para proteger.
+
+Va como un bit aparte y no como un estado de tres (migración 039) porque
+`hay_novedad` sigue significando lo que dice y de él cuelgan el índice filtrado
+y la bandeja de pendientes. La cuarta combinación —declarar sin estar— la vuelve
+imposible el `CHECK`, así que las dos columnas juntas solo admiten tres estados.
+Un estado inválido que la base no deja escribir no es ambigüedad.
+
+En la interfaz, la tercera opción va aparte y en gris, no junto a las otras dos:
+es una respuesta legítima, pero ponerla al mismo nivel invitaría a usarla para
+salir del paso rápido.
+
 ## Por qué la declaración NO abre una incidencia sola
 
 Porque el chofer declara justamente porque no lo quiere ocultar.
@@ -129,6 +160,12 @@ No son la misma persona y por eso son tres campos:
 | `declarado_por` | el chofer de esa unidad | texto libre con sugerencias, como `incidencias.reportado_por` |
 | `revisado_por` | quien recorrió el patio y capturó | la cuenta de la sesión, la pone la API |
 | `revisada_por` | quien leyó la declaración después | la cuenta de la sesión al revisar |
+
+De ahí sale también a quién se le atribuye cada incidencia. Una falla del
+**checklist** la reporta quien recorre, porque el checklist es lo que se ve y el
+que lo ve es él; ponerla a nombre del chofer sería firmarle un hallazgo que no
+hizo, y dejaría sin reportante las unidades revisadas sin chofer presente. Una
+incidencia nacida de la **declaración** sí va a nombre del chofer: es suya.
 
 Los dos primeros **no son la misma persona y cambian a distinto ritmo**: quien
 recorre es uno solo en todo el patio, el chofer es uno por unidad. Por eso

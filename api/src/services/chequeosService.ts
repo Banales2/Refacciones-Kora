@@ -14,6 +14,7 @@ import { NotFoundError, ValidationError, ConflictError } from '../shared/errors'
 import {
   itemsDe, lecturaDe, itemPorClave, TIPOS_CON_ODOMETRO, type ItemChequeo,
 } from '../shared/chequeoItems'
+import { revisarDeclaracion } from '../schemas/chequeoSchema'
 import type {
   ChequeoCreate, ChequeoUpdate, ChequeoRevisar, ChequeoQuery, ChequeoItemIn,
 } from '../schemas/chequeoSchema'
@@ -260,9 +261,12 @@ export async function create(
     hora:          data.hora ?? null,
     ubicacion:     data.ubicacion,
     conductor_id:  data.conductor_id ?? null,
-    declarado_por: data.declarado_por,
-    hay_novedad:   data.hay_novedad,
-    declaracion:   data.hay_novedad ? (data.declaracion ?? null) : null,
+    // Sin chofer no hay nombre ni reporte: el esquema ya lo exigió, aquí se
+    // normaliza para que no quede un resto de un formulario a medio contestar.
+    declarado_por: data.sin_chofer ? null : (data.declarado_por ?? null),
+    hay_novedad:   data.sin_chofer ? false : data.hay_novedad,
+    sin_chofer:    data.sin_chofer,
+    declaracion:   !data.sin_chofer && data.hay_novedad ? (data.declaracion ?? null) : null,
     lectura:          data.lectura ?? null,
     // La foto del odómetro ANTES de que este chequeo lo mueva. Se toma aquí,
     // que es la única oportunidad: en cuanto se llama a avanzarKilometraje ya
@@ -283,6 +287,9 @@ export async function create(
   }
   if (chequeo.hay_novedad) {
     avisos.push('El reporte del chofer quedó pendiente de revisión.')
+  }
+  if (chequeo.sin_chofer) {
+    avisos.push('Quedó anotado que no había chofer a quien preguntarle.')
   }
 
   return { chequeo, avisos }
@@ -312,19 +319,36 @@ export async function update(
 
   if (data.lectura !== undefined) validarLectura(vehiculo.tipo, data.lectura ?? null)
 
+  // El estado de la declaración se arma mezclando lo guardado con lo que viene,
+  // y se juzga entero: un payload parcial no se puede validar solo (mandar solo
+  // los renglones dejaría `declarado_por` ausente y parecería que falta).
+  const sinChofer  = data.sin_chofer ?? actual.sin_chofer
   // Sin novedad no lleva texto: si alguien corrige "sí pasó algo" a "no pasó
-  // nada", la declaración se va con ella en vez de quedar colgando.
-  const hayNovedad = data.hay_novedad ?? actual.hay_novedad
-  const declaracion = data.declaracion !== undefined
-    ? (hayNovedad ? (data.declaracion ?? null) : null)
-    : (hayNovedad ? actual.declaracion : null)
+  // nada", la declaración se va con ella en vez de quedar colgando. Y sin
+  // chofer no hay ni novedad ni nombre.
+  const hayNovedad = sinChofer ? false : (data.hay_novedad ?? actual.hay_novedad)
+  const declaradoPor = sinChofer
+    ? null
+    : (data.declarado_por !== undefined ? (data.declarado_por ?? null) : actual.declarado_por)
+  const declaracion = sinChofer ? null : (
+    data.declaracion !== undefined
+      ? (hayNovedad ? (data.declaracion ?? null) : null)
+      : (hayNovedad ? actual.declaracion : null)
+  )
+
+  const problema = revisarDeclaracion({
+    hay_novedad: hayNovedad, sin_chofer: sinChofer,
+    declarado_por: declaradoPor, declaracion,
+  })
+  if (problema) throw new ValidationError(problema)
 
   const chequeo = await repo.update(id, {
     hora:          data.hora,
     ubicacion:     data.ubicacion,
     conductor_id:  data.conductor_id,
-    declarado_por: data.declarado_por,
+    declarado_por: declaradoPor,
     hay_novedad:   hayNovedad,
+    sin_chofer:    sinChofer,
     declaracion,
     lectura:       data.lectura,
     nota:          data.nota,

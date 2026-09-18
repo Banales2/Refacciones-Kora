@@ -39,15 +39,21 @@ export const ChequeoBase = {
     .min(1, 'Requerido')
     .max(160, 'Máximo 160 caracteres')
     .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos'),
-  // El chofer que declara. Texto libre con sugerencias, igual que
-  // `incidencias.reportado_por`: no hay catálogo de empleados.
-  declarado_por: z
-    .string().trim()
-    .min(1, 'Requerido')
-    .max(120, 'Máximo 120 caracteres')
-    .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones'),
+  // El chofer de la unidad. Texto libre con sugerencias, igual que
+  // `incidencias.reportado_por`: no hay catálogo de empleados. Nulo solo cuando
+  // no había chofer (`sin_chofer`); lo exige el refine de abajo.
+  declarado_por: z.preprocess(
+    vacioANull,
+    z.string().trim()
+      .max(120, 'Máximo 120 caracteres')
+      .regex(TEXTO_SIMPLE, 'Solo letras, números, espacios y guiones')
+      .nullable().optional()
+  ),
   conductor_id: z.coerce.number().int().positive().nullable().optional(),
   hay_novedad: z.boolean(),
+  // No había chofer a quien preguntarle. No es lo mismo que `hay_novedad:
+  // false`, que es "se le preguntó y no reportó nada". Ver la migración 039.
+  sin_chofer: z.boolean().default(false),
   declaracion: z.preprocess(
     vacioANull,
     z.string().trim().max(500, 'Máximo 500 caracteres')
@@ -73,21 +79,55 @@ export const ChequeoBase = {
   ),
 }
 
-// Decir que hay novedad y no escribir cuál es lo mismo que no decir nada. La
-// base lo impone también (CK_chequeos_declaracion); aquí se atrapa antes para
-// que el mensaje sea del campo y no del motor.
-const declaracionCompleta = (d: { hay_novedad: boolean; declaracion?: string | null }) =>
-  !d.hay_novedad || !!d.declaracion?.trim()
-
-const MSG_DECLARACION = {
-  message: 'Escribe qué pasó',
-  path: ['declaracion'],
+// Las tres reglas de la declaración, que la base también impone
+// (CK_chequeos_declaracion_v2). Se repiten aquí para que el mensaje señale el
+// campo en vez de devolver un error del motor.
+interface Declaracion {
+  hay_novedad?: boolean
+  sin_chofer?:  boolean
+  declarado_por?: string | null
+  declaracion?: string | null
 }
 
-export const ChequeoCreateSchema = z.object({
+const REGLAS: { check: (d: Declaracion) => boolean; message: string; path: string[] }[] = [
+  {
+    // Decir que hay novedad y no escribir cuál es lo mismo que no decir nada.
+    check: (d) => !d.hay_novedad || !!d.declaracion?.trim(),
+    message: 'Escribe qué reportó el chofer',
+    path: ['declaracion'],
+  },
+  {
+    // No puede declarar quien no estaba.
+    //
+    // Deliberadamente NO se revisa aquí `declarado_por`, aunque la base sí lo
+    // exija nulo (CK_chequeos_declaracion_v2): un nombre que quedó escrito
+    // antes de marcar "no había chofer" es basura del formulario, no un error
+    // de quien captura, y el servicio lo descarta. Rechazar el alta por eso
+    // sería regañar por algo que ya se arregló solo.
+    check: (d) => !d.sin_chofer || (!d.hay_novedad && !d.declaracion?.trim()),
+    message: 'Si no había chofer, no puede haber reporte suyo',
+    path: ['sin_chofer'],
+  },
+  {
+    // Y con chofer, el nombre es obligatorio: un reporte sin firma no se le
+    // puede preguntar a nadie después.
+    check: (d) => !!d.sin_chofer || !!d.declarado_por?.trim(),
+    message: 'Falta el nombre del chofer',
+    path: ['declarado_por'],
+  },
+]
+
+function aplicarReglas<T extends z.ZodTypeAny>(schema: T): T {
+  return REGLAS.reduce(
+    (s, r) => s.refine(r.check, { message: r.message, path: r.path }),
+    schema as z.ZodTypeAny
+  ) as unknown as T
+}
+
+export const ChequeoCreateSchema = aplicarReglas(z.object({
   ...ChequeoBase,
   items: z.array(ChequeoItemSchema).max(40),
-}).refine(declaracionCompleta, MSG_DECLARACION)
+}))
 
 // Corregir el chequeo del día. No se borra ni se captura otro (el índice único
 // no lo permitiría): se corrige, y la bitácora guarda cómo estaba antes.
@@ -95,11 +135,19 @@ export const ChequeoCreateSchema = z.object({
 // Los renglones viajan completos, no por diferencia: mandar solo los que
 // cambiaron obligaría a adivinar si una pregunta ausente es "sin cambio" o
 // "quítala", y las dos respuestas son defendibles.
+// Las reglas NO se aplican aquí, a diferencia del alta: en una corrección
+// parcial el payload no es juzgable por sí solo —mandar solo los renglones
+// dejaría `declarado_por` ausente y parecería que falta el nombre—. Lo que hay
+// que juzgar es el estado ya mezclado con lo guardado, y eso solo lo sabe el
+// servicio, que llama a `revisarDeclaracion` con el resultado.
 export const ChequeoUpdateSchema = z.object({
   ...ChequeoBase,
   declarado_por: ChequeoBase.declarado_por.optional(),
   ubicacion:     ChequeoBase.ubicacion.optional(),
   hay_novedad:   z.boolean().optional(),
+  // Sin `.default(false)`: aquí "ausente" significa "no lo toques", y un
+  // default lo convertiría en "había chofer" en cada corrección parcial.
+  sin_chofer:    z.boolean().optional(),
   items:         z.array(ChequeoItemSchema).max(40).optional(),
   // La fecha no se corrige: es la mitad de la llave única, y moverla
   // convertiría una corrección en "este chequeo era de otro día", que choca
@@ -108,10 +156,16 @@ export const ChequeoUpdateSchema = z.object({
   // `.optional()` no sobra: sin él, `z.undefined()` también rechaza que la
   // clave falte, y entonces ninguna corrección pasaría.
   fecha: z.undefined({ message: 'La fecha de un chequeo no se puede cambiar' }).optional(),
-}).refine(
-  (d) => d.hay_novedad === undefined || declaracionCompleta(d as { hay_novedad: boolean; declaracion?: string | null }),
-  MSG_DECLARACION
-)
+})
+
+/**
+ * Las mismas tres reglas, aplicables a un estado ya armado. La usa el servicio
+ * al corregir, donde lo único juzgable es la mezcla de lo guardado con lo que
+ * viene en el payload. Devuelve el primer problema, o null si todo cuadra.
+ */
+export function revisarDeclaracion(d: Declaracion): string | null {
+  return REGLAS.find((r) => !r.check(d))?.message ?? null
+}
 
 // Leer la declaración y decidir qué hacer con ella.
 export const ChequeoRevisarSchema = z.object({

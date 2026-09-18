@@ -126,7 +126,11 @@ function ResumenChequeo({ chequeo, onRevisar }: { chequeo: Chequeo; onRevisar: (
         <Group justify="space-between" wrap="nowrap">
           <Group gap="xs">
             <Text fw={600} size="sm">{fechaLegible(chequeo.fecha)}</Text>
-            <Text size="xs" c="dimmed">{chequeo.declarado_por}</Text>
+            {/* Sin chofer se dice, no se deja el hueco: un nombre vacío se lee
+                como un dato que faltó capturar, y aquí es información. */}
+            <Text size="xs" c="dimmed" fs={chequeo.sin_chofer ? 'italic' : undefined}>
+              {chequeo.sin_chofer ? 'Sin chofer presente' : chequeo.declarado_por}
+            </Text>
           </Group>
           <Group gap={4}>
             {sinRevisar && <Badge color="orange" size="sm">Reporte sin leer</Badge>}
@@ -135,7 +139,7 @@ function ResumenChequeo({ chequeo, onRevisar }: { chequeo: Chequeo; onRevisar: (
                 {fallas.length} {fallas.length === 1 ? 'falla' : 'fallas'}
               </Badge>
             )}
-            {fallas.length === 0 && !chequeo.hay_novedad && (
+            {fallas.length === 0 && !chequeo.hay_novedad && !chequeo.sin_chofer && (
               <Badge color="teal" variant="light" size="sm" leftSection={<IconCheck size={11} />}>
                 Sin novedad
               </Badge>

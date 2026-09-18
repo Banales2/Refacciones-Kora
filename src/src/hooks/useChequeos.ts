@@ -22,11 +22,16 @@ export interface Chequeo {
   ubicacion:     string
   conductor_id:  number | null
   conductor:     string | null
-  /** El chofer que declara. */
-  declarado_por: string
-  /** La cuenta que capturó; la pone la API. */
+  /** El chofer de la unidad. `null` cuando no había ninguno (ver `sin_chofer`). */
+  declarado_por: string | null
+  /** Quien recorrió el patio y capturó; la pone la API. */
   revisado_por:  string
   hay_novedad:   boolean
+  /**
+   * No había chofer a quien preguntarle. Distinto de `hay_novedad: false`, que
+   * es "se le preguntó y no reportó nada".
+   */
+  sin_chofer:    boolean
   declaracion:   string | null
   lectura:          number | null
   /** El odómetro que traía la unidad al momento del chequeo. */
@@ -57,9 +62,10 @@ export interface ItemPayload {
 
 export interface ChequeoPayload {
   ubicacion:     string
-  declarado_por: string
+  declarado_por?: string | null
   conductor_id?: number | null
   hay_novedad:   boolean
+  sin_chofer:    boolean
   declaracion?:  string | null
   lectura?:      number | null
   fecha?:        string

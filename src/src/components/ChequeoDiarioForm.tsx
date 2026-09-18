@@ -22,7 +22,7 @@ import {
   SegmentedControl, Card, Badge, Loader, Center, ThemeIcon,
 } from '@mantine/core'
 import {
-  IconAlertTriangle, IconCheck, IconX, IconQuestionMark, IconGauge,
+  IconAlertTriangle, IconCheck, IconX, IconQuestionMark, IconGauge, IconUserOff,
 } from '@tabler/icons-react'
 import { SelectCatalogo } from './SelectCatalogo'
 import {
@@ -71,11 +71,20 @@ export default function ChequeoDiarioForm({
   const formulario = data?.data
   const existente  = formulario?.hoy ?? null
 
-  // Paso 1. `null` = todavía no contesta, que es distinto de "no hay novedad":
-  // mientras siga en null el checklist no aparece.
-  const [hayNovedad, setHayNovedad] = useState<boolean | null>(
-    existente ? existente.hay_novedad : null
+  // Paso 1, con tres respuestas y no dos. `null` = todavía no contesta, que no
+  // es ninguna de las tres: mientras siga en null el checklist no aparece.
+  //
+  // 'sin_chofer' existe porque quien recorre pasa a las seis de la mañana y la
+  // mitad de las unidades están solas. Sin esa opción, el que revisa acabaría
+  // marcando "sin novedad" por alguien que no estaba, que es inventar el único
+  // dato que este formulario existe para proteger.
+  const [paso1, setPaso1] = useState<'sin_novedad' | 'novedad' | 'sin_chofer' | null>(
+    existente
+      ? (existente.sin_chofer ? 'sin_chofer' : existente.hay_novedad ? 'novedad' : 'sin_novedad')
+      : null
   )
+  const hayNovedad = paso1 === 'novedad'
+  const sinChofer  = paso1 === 'sin_chofer'
   const [declaracion, setDeclaracion] = useState(existente?.declaracion ?? '')
   // El chofer de ESTA unidad. No se arrastra del chequeo anterior ni de quien
   // recorre: el chequeo lo hace una persona aparte que camina el patio, y el
@@ -128,11 +137,12 @@ export default function ChequeoDiarioForm({
   const faltantes = formulario.items.filter((i) => !respuestas[i.clave]?.resultado)
 
   const validar = (): string | null => {
-    if (hayNovedad === null) return 'Contesta primero si hay algo que reportar'
-    if (hayNovedad && !declaracion.trim()) return 'Escribe qué pasó'
+    if (paso1 === null) return 'Contesta primero si el chofer reporta algo'
+    if (hayNovedad && !declaracion.trim()) return 'Escribe qué reportó el chofer'
     if (hayNovedad && !TEXTO_LIBRE.test(declaracion.trim())) return 'El reporte tiene caracteres no permitidos'
-    if (!declaradoPor.trim()) return 'Falta quién declara'
-    if (!TEXTO_SIMPLE.test(declaradoPor.trim())) return 'El nombre solo admite letras, números, espacios y guiones'
+    // Sin chofer no se pide su nombre: es justo lo que se está diciendo que no hubo.
+    if (!sinChofer && !declaradoPor.trim()) return 'Falta el nombre del chofer'
+    if (!sinChofer && !TEXTO_SIMPLE.test(declaradoPor.trim())) return 'El nombre solo admite letras, números, espacios y guiones'
     if (!ubicacion.trim()) return 'Falta dónde se revisó'
     if (!TEXTO_LIBRE.test(ubicacion.trim())) return 'La ubicación tiene caracteres no permitidos'
     if (formulario.lectura && lectura === '') return `Falta la lectura del ${formulario.lectura.label.toLowerCase()}`
@@ -168,8 +178,9 @@ export default function ChequeoDiarioForm({
     })
     return {
       ubicacion:     ubicacion.trim(),
-      declarado_por: declaradoPor.trim(),
-      hay_novedad:   hayNovedad === true,
+      hay_novedad:   hayNovedad,
+      sin_chofer:    sinChofer,
+      declarado_por: sinChofer ? null : declaradoPor.trim(),
       declaracion:   hayNovedad ? declaracion.trim() : null,
       lectura:       lectura === '' ? null : lectura,
       items,
@@ -213,25 +224,37 @@ export default function ChequeoDiarioForm({
           <Group grow>
             <Button
               size="lg"
-              variant={hayNovedad === false ? 'filled' : 'default'}
+              variant={paso1 === 'sin_novedad' ? 'filled' : 'default'}
               color="teal"
               leftSection={<IconCheck size={18} />}
-              onClick={() => { setHayNovedad(false); setError(null) }}
+              onClick={() => { setPaso1('sin_novedad'); setError(null) }}
             >
-              Sin novedad
+              No reporta nada
             </Button>
             <Button
               size="lg"
-              variant={hayNovedad === true ? 'filled' : 'default'}
+              variant={paso1 === 'novedad' ? 'filled' : 'default'}
               color="orange"
               leftSection={<IconAlertTriangle size={18} />}
-              onClick={() => { setHayNovedad(true); setError(null) }}
+              onClick={() => { setPaso1('novedad'); setError(null) }}
             >
               Sí, algo pasó
             </Button>
           </Group>
+          {/* Aparte y en gris: es una respuesta legítima, no una de las dos
+              normales. Ponerla junto a las otras invitaría a usarla para salir
+              del paso rápido, que es justo lo que no debe pasar. */}
+          <Button
+            variant={paso1 === 'sin_chofer' ? 'filled' : 'subtle'}
+            color="gray"
+            size="sm"
+            leftSection={<IconUserOff size={16} />}
+            onClick={() => { setPaso1('sin_chofer'); setError(null) }}
+          >
+            No había chofer a quien preguntarle
+          </Button>
 
-          {hayNovedad === true && (
+          {paso1 === 'novedad' && (
             <Textarea
               label="¿Qué pasó?"
               placeholder="Se oye un rechinido al frenar desde ayer en la tarde…"
@@ -244,32 +267,40 @@ export default function ChequeoDiarioForm({
             />
           )}
 
-          {hayNovedad === true && (
+          {paso1 === 'novedad' && (
             <Text size="xs" c="dimmed">
               Esto no se convierte solo en una orden de trabajo: lo revisa alguien antes.
+            </Text>
+          )}
+
+          {paso1 === 'sin_chofer' && (
+            <Text size="xs" c="dimmed">
+              La unidad se revisa igual; queda anotado que no se le pudo preguntar a nadie.
             </Text>
           )}
         </Stack>
       </Card>
 
       {/* El checklist no existe hasta que la declaración está contestada. */}
-      {hayNovedad !== null && (
+      {paso1 !== null && (
         <>
           <Divider label="Revisión de la unidad" labelPosition="center" />
 
           <Group grow align="flex-start">
-            <SelectCatalogo
-              label="¿Qué chofer trae esta unidad?"
-              placeholder="Nombre del chofer"
-              description="A nombre de quién queda el reporte"
-              nombre="choferes"
-              creable
-              estado={declarantes}
-              data={declaranteOptions}
-              value={declaradoPor}
-              onChange={(v) => setDeclaradoPor(limpiarTextoSimple(v ?? '', 120))}
-              onSearchChange={setDeclaranteSearch}
-            />
+            {!sinChofer && (
+              <SelectCatalogo
+                label="¿Qué chofer trae esta unidad?"
+                placeholder="Nombre del chofer"
+                description="A nombre de quién queda el reporte"
+                nombre="choferes"
+                creable
+                estado={declarantes}
+                data={declaranteOptions}
+                value={declaradoPor}
+                onChange={(v) => setDeclaradoPor(limpiarTextoSimple(v ?? '', 120))}
+                onSearchChange={setDeclaranteSearch}
+              />
+            )}
             <TextInput
               label="¿Dónde se revisó?"
               placeholder="Patio Norte"
@@ -395,7 +426,7 @@ export default function ChequeoDiarioForm({
       <Group justify="space-between">
         <Button variant="subtle" onClick={onCancel} disabled={guardando}>Cancelar</Button>
         <Group gap="xs">
-          {hayNovedad !== null && faltantes.length > 0 && (
+          {paso1 !== null && faltantes.length > 0 && (
             <Text size="xs" c="dimmed">
               Faltan {faltantes.length} de {formulario.items.length}
             </Text>
@@ -403,7 +434,7 @@ export default function ChequeoDiarioForm({
           <Button
             onClick={guardar}
             loading={guardando}
-            disabled={hayNovedad === null}
+            disabled={paso1 === null}
             leftSection={<ThemeIcon variant="transparent" size="sm" c="inherit"><IconCheck size={16} /></ThemeIcon>}
           >
             {existente ? 'Guardar corrección' : 'Guardar chequeo'}

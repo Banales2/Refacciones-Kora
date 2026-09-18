@@ -31,11 +31,16 @@ export interface Chequeo {
   ubicacion:     string
   conductor_id:  number | null
   conductor:     string | null
-  /** El chofer que declara. */
-  declarado_por: string
-  /** La cuenta que capturó, puesta por la API. */
+  /** El chofer de la unidad. `null` cuando no había ninguno (ver `sin_chofer`). */
+  declarado_por: string | null
+  /** Quien recorrió el patio y capturó. Lo pone la API con la cuenta de la sesión. */
   revisado_por:  string
   hay_novedad:   boolean
+  /**
+   * No había chofer a quien preguntarle. Distinto de `hay_novedad = 0`, que es
+   * "se le preguntó y no reportó nada". Ver la migración 039.
+   */
+  sin_chofer:    boolean
   declaracion:   string | null
   lectura:          number | null
   /** El odómetro que traía la unidad al momento del chequeo. Ver la migración. */
@@ -61,8 +66,9 @@ export interface ChequeoCabecera {
   hora:          string | null
   ubicacion:     string
   conductor_id:  number | null
-  declarado_por: string
+  declarado_por: string | null
   hay_novedad:   boolean
+  sin_chofer:    boolean
   declaracion:   string | null
   lectura:          number | null
   lectura_anterior: number | null
@@ -93,7 +99,7 @@ const SELECT_CH = `
   SELECT ch.id, ch.vehiculo_id, ch.fecha, ${HORA_TXT}, ch.ubicacion,
          ch.conductor_id, co.nombre AS conductor,
          ch.declarado_por, ch.revisado_por,
-         ch.hay_novedad, ch.declaracion,
+         ch.hay_novedad, ch.sin_chofer, ch.declaracion,
          ch.lectura, ch.lectura_anterior, ch.nota,
          ch.revisada_en, ch.revisada_por, ch.revision_nota,
          ch.declaracion_pendiente_id,
@@ -188,7 +194,7 @@ export async function findRango(params: {
     SELECT ch.id, ch.vehiculo_id, ch.fecha, ${HORA_TXT}, ch.ubicacion,
            ch.conductor_id, co.nombre AS conductor,
            ch.declarado_por, ch.revisado_por,
-           ch.hay_novedad, ch.declaracion,
+           ch.hay_novedad, ch.sin_chofer, ch.declaracion,
            ch.lectura, ch.lectura_anterior, ch.nota,
            ch.revisada_en, ch.revisada_por, ch.revision_nota,
            ch.declaracion_pendiente_id,
@@ -221,7 +227,7 @@ export async function findPorRevisar(): Promise<ChequeoConVehiculo[]> {
     SELECT ch.id, ch.vehiculo_id, ch.fecha, ${HORA_TXT}, ch.ubicacion,
            ch.conductor_id, co.nombre AS conductor,
            ch.declarado_por, ch.revisado_por,
-           ch.hay_novedad, ch.declaracion,
+           ch.hay_novedad, ch.sin_chofer, ch.declaracion,
            ch.lectura, ch.lectura_anterior, ch.nota,
            ch.revisada_en, ch.revisada_por, ch.revision_nota,
            ch.declaracion_pendiente_id,
@@ -398,7 +404,13 @@ async function insertarItems(
         nombre:        item.incidencia.nombre,
         descripcion:   item.incidencia.descripcion,
         categoria:     item.incidencia.categoria,
-        reportado_por: cabecera.declarado_por,
+        // Quien reporta una falla del checklist es QUIEN RECORRE, no el chofer:
+        // el checklist es lo que se ve, y el que lo ve es el que está dando la
+        // vuelta a la unidad. Atribuírselo al chofer pondría su nombre en un
+        // hallazgo que él no hizo —y dejaría la falla sin reportante en las
+        // unidades que se revisan sin chofer presente, donde `declarado_por` es
+        // NULL e `incidencias.reportado_por` es NOT NULL.
+        reportado_por: revisadoPor,
         severidad:     item.incidencia.severidad,
         fecha:         cabecera.fecha,
         hora:          cabecera.hora,
@@ -437,6 +449,7 @@ export async function create(
       .input('declara',   sql.NVarChar(120), cabecera.declarado_por)
       .input('revisa',    sql.NVarChar(120), revisadoPor)
       .input('novedad',   sql.Bit,           cabecera.hay_novedad)
+      .input('sinchofer', sql.Bit,           cabecera.sin_chofer)
       .input('declarac',  sql.NVarChar(500), cabecera.declaracion)
       .input('lectura',   sql.Int,           cabecera.lectura)
       .input('anterior',  sql.Int,           cabecera.lectura_anterior)
@@ -444,13 +457,13 @@ export async function create(
       .query(`
         INSERT INTO chequeos (
           vehiculo_id, fecha, hora, ubicacion, conductor_id,
-          declarado_por, revisado_por, hay_novedad, declaracion,
+          declarado_por, revisado_por, hay_novedad, sin_chofer, declaracion,
           lectura, lectura_anterior, nota
         )
         OUTPUT INSERTED.id
         VALUES (
           @vid, @fecha, @hora, @ubicacion, @cond,
-          @declara, @revisa, @novedad, @declarac,
+          @declara, @revisa, @novedad, @sinchofer, @declarac,
           @lectura, @anterior, @nota
         )
       `)
@@ -498,6 +511,7 @@ export async function update(
     if (cabecera.conductor_id  !== undefined) { req.input('cond',     sql.Int,           cabecera.conductor_id);  sets.push('conductor_id=@cond')           }
     if (cabecera.declarado_por !== undefined) { req.input('declara',  sql.NVarChar(120), cabecera.declarado_por); sets.push('declarado_por=@declara')       }
     if (cabecera.hay_novedad   !== undefined) { req.input('novedad',  sql.Bit,           cabecera.hay_novedad);   sets.push('hay_novedad=@novedad')         }
+    if (cabecera.sin_chofer    !== undefined) { req.input('sinchof',  sql.Bit,           cabecera.sin_chofer);    sets.push('sin_chofer=@sinchof')          }
     if (cabecera.declaracion   !== undefined) { req.input('declarac', sql.NVarChar(500), cabecera.declaracion);   sets.push('declaracion=@declarac')        }
     if (cabecera.lectura       !== undefined) { req.input('lectura',  sql.Int,           cabecera.lectura);       sets.push('lectura=@lectura')             }
     if (cabecera.nota          !== undefined) { req.input('nota',     sql.NVarChar(255), cabecera.nota);          sets.push('nota=@nota')                   }
@@ -572,7 +586,12 @@ export async function revisar(
         nombre:        'Reporte del chofer',
         descripcion:   chequeo.declaracion,
         categoria:     incidencia.categoria,
-        reportado_por: chequeo.declarado_por,
+        // Aquí `declarado_por` nunca es null, y no por suerte: solo se llega
+        // con `hay_novedad = 1`, y CK_chequeos_declaracion_v2 obliga a que eso
+        // implique `sin_chofer = 0`, que a su vez obliga a que haya nombre.
+        // (`strict` está apagado en este proyecto, así que el compilador no lo
+        // verificaría por su cuenta.)
+        reportado_por: chequeo.declarado_por!,
         severidad:     incidencia.severidad,
         fecha:         chequeo.fecha,
         hora:          chequeo.hora,
