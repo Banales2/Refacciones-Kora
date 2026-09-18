@@ -24,6 +24,7 @@ import {
 import { SelectCatalogo } from '../components/SelectCatalogo'
 import ChequeoDiarioForm from '../components/ChequeoDiarioForm'
 import { useSucursales } from '../hooks/useSucursales'
+import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { useVehiculos } from '../hooks/useVehiculos'
 import { usePatio, type UnidadPatio } from '../hooks/useChequeos'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
@@ -86,10 +87,14 @@ export default function ChequeoPatio() {
   const { data, isLoading, isError, refetch } = usePatio(sucursalId)
   const patio = data?.data
 
-  // Quién viene haciendo el recorrido. Se captura una vez y se arrastra a cada
-  // unidad: reescribir el mismo nombre treinta veces es la clase de fricción
-  // que hace que a la tercera semana el chequeo lo llene uno solo.
-  const [declarante, setDeclarante] = useState('')
+  // Quién recorre NO se captura: es la cuenta de la sesión, y la API la guarda
+  // en `revisado_por` sin preguntar. Aquí solo se muestra para que quede claro
+  // a nombre de quién va a quedar el recorrido.
+  //
+  // Y no tiene nada que ver con `declarado_por`, que es el chofer de cada
+  // unidad. Son dos personas distintas y cambian a distinto ritmo: quien
+  // recorre es una sola en todo el patio, el chofer es uno por unidad.
+  const { data: usuario } = useUsuarioActual()
 
   const [abierta, setAbierta] = useState<UnidadPatio | null>(null)
   const [avisos, setAvisos] = useState<string[]>([])
@@ -132,29 +137,27 @@ export default function ChequeoPatio() {
   return (
     <Stack gap="md">
       <Group justify="space-between" align="flex-end" wrap="wrap">
-        <Group gap="xs">
-          <IconClipboardCheck size={22} />
-          <Text fw={700} size="lg">Chequeo del patio</Text>
-        </Group>
-        <Group gap="sm" align="flex-end">
-          <SelectCatalogo
-            label="Sucursal"
-            placeholder="¿Qué patio se recorre?"
-            nombre="sucursales"
-            estado={sucursales}
-            data={opcionesSucursal}
-            value={sucursalId != null ? String(sucursalId) : null}
-            onChange={(v) => { setSucursalId(v ? Number(v) : null); setAbierta(null) }}
-            w={220}
-          />
-          <TextInput
-            label="¿Quién recorre?"
-            placeholder="Nombre"
-            value={declarante}
-            onChange={(e) => setDeclarante(e.currentTarget.value)}
-            w={200}
-          />
-        </Group>
+        <Stack gap={2}>
+          <Group gap="xs">
+            <IconClipboardCheck size={22} />
+            <Text fw={700} size="lg">Chequeo del patio</Text>
+          </Group>
+          {usuario && (
+            <Text size="xs" c="dimmed">
+              Recorre {usuario.data.nombre}
+            </Text>
+          )}
+        </Stack>
+        <SelectCatalogo
+          label="Sucursal"
+          placeholder="¿Qué patio se recorre?"
+          nombre="sucursales"
+          estado={sucursales}
+          data={opcionesSucursal}
+          value={sucursalId != null ? String(sucursalId) : null}
+          onChange={(v) => { setSucursalId(v ? Number(v) : null); setAbierta(null) }}
+          w={240}
+        />
       </Group>
 
       {sucursalId == null ? (
@@ -183,13 +186,8 @@ export default function ChequeoPatio() {
               </Group>
               <Progress value={avance} color={pendientes.length === 0 ? 'teal' : 'blue'} />
               {pendientes.length > 0 && (
-                <Button
-                  mt="xs"
-                  size="md"
-                  disabled={!declarante.trim()}
-                  onClick={() => setAbierta(pendientes[0])}
-                >
-                  {declarante.trim() ? 'Empezar el recorrido' : 'Escribe quién recorre para empezar'}
+                <Button mt="xs" size="md" onClick={() => setAbierta(pendientes[0])}>
+                  Empezar el recorrido
                 </Button>
               )}
             </Stack>
@@ -289,7 +287,6 @@ export default function ChequeoPatio() {
               key={abierta.vehiculo_id}
               vehiculoId={abierta.vehiculo_id}
               ubicacionFija={patio.ubicacion}
-              declaradoPorInicial={declarante}
               onListo={(nuevos) => alGuardar(nuevos, abierta)}
               onCancel={() => setAbierta(null)}
             />

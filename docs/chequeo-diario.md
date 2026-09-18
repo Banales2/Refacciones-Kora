@@ -1,11 +1,22 @@
 # El chequeo diario de la unidad
 
-Cada día, antes de salir, alguien revisa la unidad y deja constancia. Son dos
-cosas distintas en un mismo registro:
+## Quién lo hace
 
-- **La declaración** es lo que el chofer *sabe*: un ruido raro, un jalón, un
-  golpe que sintió y no sabe dónde quedó.
-- **El checklist** es lo que se *ve*: llantas, golpes, luces, odómetro.
+Una persona aparte —una o dos— que recorre el patio de una sucursal unidad por
+unidad. **No lo llena cada chofer con su camión.** De ahí salen casi todas las
+decisiones de este documento: la pantalla principal es un recorrido y no una
+ficha, el formulario está hecho para repetirse treinta veces seguidas, y cada
+chequeo lleva dos nombres en vez de uno.
+
+## Qué registra
+
+Dos cosas distintas en un mismo registro:
+
+- **La declaración** es lo que el *chofer* de esa unidad sabe: un ruido raro, un
+  jalón, un golpe que sintió y no sabe dónde quedó. Quien recorre se lo pregunta
+  antes de revisar y lo anota **a nombre del chofer**, no del suyo.
+- **El checklist** es lo que se *ve*: llantas, golpes, luces, odómetro. Eso sí
+  lo contesta quien recorre, con sus propios ojos.
 
 La distinción no es cosmética. Una vuelta alrededor del camión no agarra un
 rechinido al frenar, y eso es justo lo que más caro sale cuando no se dice.
@@ -115,12 +126,15 @@ No son la misma persona y por eso son tres campos:
 
 | campo | quién | de dónde sale |
 |---|---|---|
-| `declarado_por` | el chofer que declara | texto libre con sugerencias, como `incidencias.reportado_por` |
-| `revisado_por` | quien capturó el chequeo | la cuenta de la sesión, la pone la API |
+| `declarado_por` | el chofer de esa unidad | texto libre con sugerencias, como `incidencias.reportado_por` |
+| `revisado_por` | quien recorrió el patio y capturó | la cuenta de la sesión, la pone la API |
 | `revisada_por` | quien leyó la declaración después | la cuenta de la sesión al revisar |
 
-La declaración no vale nada si no está firmada, y quien la captura puede no ser
-quien la declara: el chofer dicta, el de patio teclea.
+Los dos primeros **no son la misma persona y cambian a distinto ritmo**: quien
+recorre es uno solo en todo el patio, el chofer es uno por unidad. Por eso
+`declarado_por` se captura en cada chequeo y no se arrastra del anterior:
+arrastrarlo dejaría el reporte firmado por quien no lo hizo, que es exactamente
+lo que la declaración existe para evitar. El chofer dicta, el de patio teclea.
 
 ## Uno por unidad por día
 
@@ -138,9 +152,9 @@ de quien ya la hubiera atendido, y el sistema no borra entidades (ver
 
 ## El modo patio, y por qué la sucursal de un tráiler no es una columna
 
-El chequeo no lo hace cada chofer con su unidad: lo hacen una o dos personas
-que recorren el patio de una sucursal. Eso descarta que la única entrada sea la
-ficha del vehículo, donde cada unidad cuesta abrir el detalle completo
+Como el chequeo lo hacen una o dos personas recorriendo el patio —y no cada
+chofer con su unidad—, la ficha del vehículo no puede ser la única entrada: ahí
+cada unidad cuesta abrir el detalle completo
 —refacciones, garantías, programa, mantenimientos— para usar solo lo de hasta
 arriba. `pages/ChequeoPatio.tsx` es la lista del recorrido: se queda fija, el
 formulario se abre encima y al guardar avanza solo a la siguiente que falte.

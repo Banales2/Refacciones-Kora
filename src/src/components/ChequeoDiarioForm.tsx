@@ -1,15 +1,21 @@
 // El formulario del chequeo diario.
 //
-// Se llena en el patio, con el teléfono, antes de salir. Todo lo de aquí está
-// puesto para que tarde menos de un minuto: botones grandes en vez de selects,
-// teclado numérico para la lectura, y la nota solo cuando algo salió mal. Lo
-// que mata un chequeo diario es que tarde.
+// QUIÉN LO LLENA: una persona aparte, que recorre el patio unidad por unidad.
+// No lo llena cada chofer con su camión. De ahí sale casi todo lo demás: está
+// hecho para repetirse treinta veces seguidas con el teléfono en la mano, con
+// botones grandes en vez de selects, teclado numérico para la lectura y la nota
+// solo cuando algo salió mal. Lo que mata un chequeo diario es que tarde.
 //
-// LOS DOS PASOS NO SON DECORACIÓN. Primero la declaración del chofer —lo que él
-// SABE: un ruido, un jalón, un golpe que sintió—, y el checklist no aparece
-// hasta que la contesta. Si la declaración fuera un cuadro de comentarios al
-// final, nadie lo llenaría, y es justo lo que una vuelta alrededor del camión
-// no alcanza a ver.
+// LOS DOS PASOS NO SON DECORACIÓN. Primero lo que el CHOFER de esa unidad sabe
+// y no se ve —un ruido, un jalón, un golpe que sintió—, que quien recorre le
+// pregunta y anota a su nombre; después el checklist de lo que sí se ve. Si la
+// declaración fuera un cuadro de comentarios al final, nadie lo llenaría.
+//
+// Por eso hay dos nombres en cada chequeo y no uno: `declarado_por` es el
+// chofer de la unidad, `revisado_por` es quien recorre, y lo pone la API con la
+// cuenta de la sesión. Cambian a distinto ritmo —uno por unidad, uno por
+// recorrido— y confundirlos haría que el reporte quedara a nombre de quien no
+// lo hizo.
 import { useState } from 'react'
 import {
   Stack, Group, Button, Text, Textarea, TextInput, NumberInput, Alert, Divider,
@@ -43,7 +49,7 @@ const VACIA: Respuesta = { resultado: null, valor: null, nota: '', severidad: 'm
 const etiquetaNueva = (v: string) => `+ Usar "${v}"`
 
 export default function ChequeoDiarioForm({
-  vehiculoId, onListo, onCancel, ubicacionFija, declaradoPorInicial,
+  vehiculoId, onListo, onCancel, ubicacionFija,
 }: {
   vehiculoId: number
   onListo:    (avisos: string[]) => void
@@ -56,8 +62,6 @@ export default function ChequeoDiarioForm({
    * desaparezca de la lista.
    */
   ubicacionFija?: string
-  /** Quien viene declarando el recorrido, para no reescribirlo por unidad. */
-  declaradoPorInicial?: string
 }) {
   const { data, isLoading, isError, refetch } = useFormularioChequeo(vehiculoId, true)
   const crear     = useCreateChequeo(vehiculoId)
@@ -73,9 +77,10 @@ export default function ChequeoDiarioForm({
     existente ? existente.hay_novedad : null
   )
   const [declaracion, setDeclaracion] = useState(existente?.declaracion ?? '')
-  const [declaradoPor, setDeclaradoPor] = useState(
-    existente?.declarado_por ?? declaradoPorInicial ?? ''
-  )
+  // El chofer de ESTA unidad. No se arrastra del chequeo anterior ni de quien
+  // recorre: el chequeo lo hace una persona aparte que camina el patio, y el
+  // chofer cambia con cada unidad que revisa.
+  const [declaradoPor, setDeclaradoPor] = useState(existente?.declarado_por ?? '')
   const [ubicacion, setUbicacion] = useState(
     ubicacionFija ?? existente?.ubicacion ?? ''
   )
@@ -200,9 +205,10 @@ export default function ChequeoDiarioForm({
       {/* ---- Paso 1: la declaración ---- */}
       <Card withBorder radius="md" padding="md">
         <Stack gap="sm">
-          <Text fw={600}>¿Algo que reportar de la unidad?</Text>
+          <Text fw={600}>¿El chofer reporta algo de la unidad?</Text>
           <Text size="sm" c="dimmed">
-            Un ruido raro, un jalón, un golpe: lo que sepas aunque no se vea.
+            Pregúntale antes de revisarla: un ruido raro, un jalón, un golpe.
+            Lo que él sabe y no se ve dando la vuelta.
           </Text>
           <Group grow>
             <Button
@@ -253,8 +259,9 @@ export default function ChequeoDiarioForm({
 
           <Group grow align="flex-start">
             <SelectCatalogo
-              label="¿Quién declara?"
+              label="¿Qué chofer trae esta unidad?"
               placeholder="Nombre del chofer"
+              description="A nombre de quién queda el reporte"
               nombre="choferes"
               creable
               estado={declarantes}
