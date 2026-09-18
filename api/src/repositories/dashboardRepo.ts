@@ -286,6 +286,38 @@ export async function findLotesEnRango(start: string, end: string): Promise<Lote
   return r.recordset
 }
 
+export interface CombustibleEnRango {
+  /** Cuántas recargas se cargaron en el periodo. */
+  count: number
+  /** Lo que costaron, ya con lo que el ticket diga. */
+  costo_total: number
+}
+
+/**
+ * El gasto de combustible del periodo.
+ *
+ * Se devuelve agregado y no renglón por renglón, al revés que los lotes y los
+ * mantenimientos: de esto el resumen solo necesita el total, y una flota con
+ * recargas diarias son cientos de filas al mes que nadie va a mirar en el
+ * tablero. Quien quiera el detalle tiene la pantalla de consumos.
+ *
+ * El rango es `>= start AND < end`, igual que el resto del resumen: `end` es el
+ * día siguiente al último del periodo, así que un `<=` contaría un día de más.
+ */
+export async function findCombustibleEnRango(
+  start: string, end: string,
+): Promise<CombustibleEnRango> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('start', sql.Date, start)
+    .input('end',   sql.Date, end)
+    .query(`
+      SELECT COUNT(*) AS count, COALESCE(SUM(rc.costo), 0) AS costo_total
+      FROM recargas_combustible rc
+      WHERE rc.fecha >= @start AND rc.fecha < @end`)
+  return r.recordset[0] as CombustibleEnRango
+}
+
 export interface IncidenciaAbiertaFleet {
   id:              number
   nombre:          string

@@ -522,7 +522,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
                 value={loadingResumen ? '—' : formatMXN(resumen?.data.costo_total_periodo ?? 0)}
                 sub="Últimos 30 días"
                 color="blue" icon={IconCashBanknote}
-                ayuda="Lo que salió de caja: mano de obra más refacciones compradas. Las refacciones consumidas por los servicios no se suman aparte porque ya se pagaron al comprarlas."
+                ayuda="Lo que salió de caja: mano de obra, refacciones compradas y combustible. Las refacciones consumidas por los servicios no se suman aparte porque ya se pagaron al comprarlas."
               />
               <StatCard
                 label="Traspasos por aceptar"

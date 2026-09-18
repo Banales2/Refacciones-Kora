@@ -31,14 +31,17 @@ function conceptos(resumen: ResumenMes): [string, string][] {
     ['    Subtotal mantenimientos', formatMXN(resumen.mantenimientos.costo_total)],
     ['Lotes de refacción comprados', String(resumen.piezas.count)],
     ['    Costo de refacciones compradas', formatMXN(resumen.piezas.costo_total)],
-    ['Costo total del periodo (mano de obra + refacciones compradas)', formatMXN(resumen.costo_total_periodo)],
+    ['Recargas de combustible', String(resumen.combustible.count)],
+    ['    Costo de combustible', formatMXN(resumen.combustible.costo_total)],
+    ['Costo total del periodo (mano de obra + refacciones compradas + combustible)', formatMXN(resumen.costo_total_periodo)],
   ]
 }
 
 const NOTA_TOTAL =
   'El costo total no suma las refacciones consumidas por los mantenimientos: ya se pagaron ' +
   'al comprarlas, y contarlas otra vez duplicaría el gasto. Por eso el total es mano de obra ' +
-  'más refacciones compradas.'
+  'más refacciones compradas más combustible. El combustible sí entra completo: la recarga se ' +
+  'paga cuando se carga y no se vuelve a cobrar al consumirse.'
 
 export async function exportResumenPdf(resumen: ResumenMes) {
   const pdf = await crearReportePdf({
@@ -103,10 +106,14 @@ export async function exportResumenExcel(resumen: ResumenMes) {
     ['    Subtotal mantenimientos', resumen.mantenimientos.costo_total],
     ['Lotes de refacción comprados', resumen.piezas.count],
     ['    Costo de refacciones compradas', resumen.piezas.costo_total],
-    ['Costo total del periodo (mano de obra + refacciones compradas)', resumen.costo_total_periodo],
+    ['Recargas de combustible', resumen.combustible.count],
+    ['    Costo de combustible', resumen.combustible.costo_total],
+    ['Costo total del periodo (mano de obra + refacciones compradas + combustible)', resumen.costo_total_periodo],
     ['', ''],
     ['Nota', NOTA_TOTAL],
-  ], { moneda: [2, 3, 4, 6, 7] })
+    // `moneda` son posiciones dentro del arreglo de arriba, base 0: las dos
+    // filas de combustible corrieron el total del 7 al 9.
+  ], { moneda: [2, 3, 4, 6, 8, 9] })
 
   wb.hoja('Mantenimientos', [
     { header: 'Vehículo',       width: 34, valor: (v) => v.vehiculo_nombre },

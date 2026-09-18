@@ -141,9 +141,10 @@ function rangoUltimos30Dias(): { start: string; end: string } {
 // imprima el periodo que realmente se sumó, no el que alguien creyó pedir.
 export async function getResumenMes(rango?: Rango | null) {
   const { start, end } = rango ?? rangoUltimos30Dias()
-  const [mantenimientos, lotes] = await Promise.all([
+  const [mantenimientos, lotes, combustible] = await Promise.all([
     repo.findMantenimientosEnRango(start, end),
     repo.findLotesEnRango(start, end),
+    repo.findCombustibleEnRango(start, end),
   ])
 
   const porVehiculo = new Map<number, { vehiculo_id: number; vehiculo_nombre: string; vehiculo_tipo: string; cantidad: number; costo_total: number }>()
@@ -178,10 +179,17 @@ export async function getResumenMes(rango?: Rango | null) {
       costo_total: piezasCostoTotal,
       lotes,
     },
+    combustible: {
+      count: combustible.count,
+      costo_total: combustible.costo_total,
+    },
     // Lo que realmente salió de caja en el periodo. Las piezas se pagan al
     // comprarlas, así que sumar además las que consumieron los mantenimientos
-    // las cobraría dos veces: solo entra la mano de obra.
-    costo_total_periodo: manoObra + piezasCostoTotal,
+    // las cobraría dos veces: de los servicios solo entra la mano de obra.
+    //
+    // El combustible no tiene ese problema —la recarga se paga cuando se carga y
+    // no se consume después— así que entra completo y sin descontar nada.
+    costo_total_periodo: manoObra + piezasCostoTotal + combustible.costo_total,
   }
 }
 

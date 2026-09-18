@@ -39,9 +39,15 @@ export interface ResumenMes {
     costo_total: number
     lotes:       LoteMes[]
   }
+  combustible: {
+    count:       number
+    costo_total: number
+  }
   /**
-   * Gasto real del periodo: mano de obra + refacciones compradas. Las piezas
-   * consumidas en mantenimientos no se suman porque ya se pagaron al comprarlas.
+   * Gasto real del periodo: mano de obra + refacciones compradas + combustible.
+   * Las piezas consumidas en mantenimientos no se suman porque ya se pagaron al
+   * comprarlas; el combustible sí entra completo, porque la recarga se paga
+   * cuando se carga y no se vuelve a cobrar después.
    */
   costo_total_periodo: number
 }
