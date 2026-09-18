@@ -19,10 +19,10 @@
 import { useState } from 'react'
 import {
   Stack, Group, Button, Text, Textarea, TextInput, NumberInput, Alert, Divider,
-  SegmentedControl, Card, Badge, Loader, Center, ThemeIcon,
+  SegmentedControl, Card, Badge, Loader, Center, SimpleGrid,
 } from '@mantine/core'
 import {
-  IconAlertTriangle, IconCheck, IconX, IconQuestionMark, IconGauge, IconUserOff,
+  IconAlertTriangle, IconCheck, IconGauge, IconUserOff,
 } from '@tabler/icons-react'
 import { SelectCatalogo } from './SelectCatalogo'
 import {
@@ -221,7 +221,11 @@ export default function ChequeoDiarioForm({
             Pregúntale antes de revisarla: un ruido raro, un jalón, un golpe.
             Lo que él sabe y no se ve dando la vuelta.
           </Text>
-          <Group grow>
+          {/* Apilados en el teléfono, en fila desde tablet. Lado a lado a
+              390px cada uno queda en ~170px y "No reporta nada" se corta; y de
+              paso el botón de ancho completo es más fácil de picar con una mano
+              ocupada. */}
+          <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
             <Button
               size="lg"
               variant={paso1 === 'sin_novedad' ? 'filled' : 'default'}
@@ -240,7 +244,7 @@ export default function ChequeoDiarioForm({
             >
               Sí, algo pasó
             </Button>
-          </Group>
+          </SimpleGrid>
           {/* Aparte y en gris: es una respuesta legítima, no una de las dos
               normales. Ponerla junto a las otras invitaría a usarla para salir
               del paso rápido, que es justo lo que no debe pasar. */}
@@ -286,7 +290,10 @@ export default function ChequeoDiarioForm({
         <>
           <Divider label="Revisión de la unidad" labelPosition="center" />
 
-          <Group grow align="flex-start">
+          {/* Los dos campos, uno por renglón en el teléfono: a media pantalla
+              se les corta la etiqueta, que es justo lo que dice qué se captura
+              en cada uno. */}
+          <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs" verticalSpacing="xs">
             {!sinChofer && (
               <SelectCatalogo
                 label="¿Qué chofer trae esta unidad?"
@@ -310,7 +317,7 @@ export default function ChequeoDiarioForm({
               description={ubicacionFija ? 'La sucursal del recorrido' : undefined}
               onChange={(e) => setUbicacion(limpiarTextoLibre(e.currentTarget.value, 160))}
             />
-          </Group>
+          </SimpleGrid>
 
           {formulario.lectura && (
             <NumberInput
@@ -346,43 +353,57 @@ export default function ChequeoDiarioForm({
                     </Group>
 
                     {item.captura === 'fraccion' ? (
-                      <SegmentedControl
-                        fullWidth
-                        size="sm"
-                        data={NIVELES_TANQUE}
-                        value={r.valor ?? ''}
-                        onChange={(v) => responder(item.clave, { resultado: 'ok', valor: v })}
-                      />
+                      // Rejilla y no SegmentedControl: son nueve niveles, y en
+                      // un teléfono nueve segmentos dan ~38px cada uno, donde
+                      // "3/8" se corta y se falla el toque. En dos filas de
+                      // cinco cada nivel queda en ~65px.
+                      <SimpleGrid cols={{ base: 5, xs: 9 }} spacing={4}>
+                        {NIVELES_TANQUE.map((nivel) => (
+                          <Button
+                            key={nivel}
+                            size="sm"
+                            px={4}
+                            variant={r.valor === nivel ? 'filled' : 'default'}
+                            onClick={() => responder(item.clave, { resultado: 'ok', valor: nivel })}
+                          >
+                            {nivel}
+                          </Button>
+                        ))}
+                      </SimpleGrid>
                     ) : (
-                      <Group grow gap="xs">
+                      // Sin iconos: el icono más el texto no caben en un
+                      // tercio de 390px y lo que se recortaba era la palabra,
+                      // que es lo único que de verdad se lee. El color ya
+                      // distingue los tres (verde, rojo, gris).
+                      <SimpleGrid cols={3} spacing="xs">
                         <Button
                           size="md"
+                          px={4}
                           variant={r.resultado === 'ok' ? 'filled' : 'default'}
                           color="teal"
-                          leftSection={<IconCheck size={16} />}
                           onClick={() => responder(item.clave, { resultado: 'ok', nota: '' })}
                         >
                           Bien
                         </Button>
                         <Button
                           size="md"
+                          px={4}
                           variant={r.resultado === 'falla' ? 'filled' : 'default'}
                           color="red"
-                          leftSection={<IconX size={16} />}
                           onClick={() => responder(item.clave, { resultado: 'falla' })}
                         >
                           Mal
                         </Button>
                         <Button
                           size="md"
+                          px={4}
                           variant={r.resultado === 'na' ? 'filled' : 'default'}
                           color="gray"
-                          leftSection={<IconQuestionMark size={16} />}
                           onClick={() => responder(item.clave, { resultado: 'na' })}
                         >
                           No se pudo
                         </Button>
-                      </Group>
+                      </SimpleGrid>
                     )}
 
                     {/* La nota aparece solo cuando hace falta: pedirla siempre
@@ -423,23 +444,37 @@ export default function ChequeoDiarioForm({
 
       {error && <Alert color="red" icon={<IconAlertTriangle size={16} />}>{error}</Alert>}
 
-      <Group justify="space-between">
+      {/* El pie, en orden inverso en el teléfono: Guardar arriba y de ancho
+          completo —es la acción del 99% de las veces y queda al alcance del
+          pulgar—, y Cancelar debajo, donde no se pica por error. En pantalla
+          ancha vuelve a la fila de siempre. */}
+      {paso1 !== null && faltantes.length > 0 && (
+        <Text size="sm" c="dimmed" ta="center">
+          Faltan {faltantes.length} de {formulario.items.length} preguntas
+        </Text>
+      )}
+      <Stack gap="xs" hiddenFrom="xs">
+        <Button
+          size="lg"
+          onClick={guardar}
+          loading={guardando}
+          disabled={paso1 === null}
+          leftSection={<IconCheck size={18} />}
+        >
+          {existente ? 'Guardar corrección' : 'Guardar chequeo'}
+        </Button>
         <Button variant="subtle" onClick={onCancel} disabled={guardando}>Cancelar</Button>
-        <Group gap="xs">
-          {paso1 !== null && faltantes.length > 0 && (
-            <Text size="xs" c="dimmed">
-              Faltan {faltantes.length} de {formulario.items.length}
-            </Text>
-          )}
-          <Button
-            onClick={guardar}
-            loading={guardando}
-            disabled={paso1 === null}
-            leftSection={<ThemeIcon variant="transparent" size="sm" c="inherit"><IconCheck size={16} /></ThemeIcon>}
-          >
-            {existente ? 'Guardar corrección' : 'Guardar chequeo'}
-          </Button>
-        </Group>
+      </Stack>
+      <Group justify="space-between" visibleFrom="xs">
+        <Button variant="subtle" onClick={onCancel} disabled={guardando}>Cancelar</Button>
+        <Button
+          onClick={guardar}
+          loading={guardando}
+          disabled={paso1 === null}
+          leftSection={<IconCheck size={16} />}
+        >
+          {existente ? 'Guardar corrección' : 'Guardar chequeo'}
+        </Button>
       </Group>
     </Stack>
   )

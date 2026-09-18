@@ -31,6 +31,28 @@ body {
     --mantine-scale: 1.08;
   }
 
+  /* El chequeo diario se usa en el teléfono casi el 100% de las veces —quien
+     recorre la flotilla no carga una laptop—, así que aguanta un empujón mayor
+     que el resto de la aplicación. Se marca con esta clase en vez de subir el
+     global porque las demás pantallas viven en el escritorio y ahí 1.15
+     empezaría a pedir scroll horizontal en las tablas.
+
+     Va sobre el contenido del modal y no sobre un contenedor de la página
+     porque el modal se dibuja en un portal, fuera del árbol de la pantalla: una
+     variable puesta más arriba no lo alcanzaría. */
+  .chequeo-movil {
+    --mantine-scale: 1.15;
+  }
+
+  /* Y que la etiqueta de un botón pueda partirse en dos renglones en lugar de
+     recortarse. Mantine la deja en `nowrap`, así que "No se pudo" en un tercio
+     de pantalla salía como "No se pu…". Con el alto mínimo de abajo, el botón
+     que crece sigue alineado con los de al lado. */
+  .chequeo-movil .mantine-Button-label {
+    white-space: normal;
+    line-height: 1.2;
+  }
+
   /* iOS hace zoom solo al enfocar un campo cuya letra mide menos de 16px, y
      luego deja la página desplazada: el formulario del chequeo, que son once
      preguntas seguidas, brincaba en cada toque. Con 16px exactos no hay zoom y

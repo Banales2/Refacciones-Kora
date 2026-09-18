@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import {
   Stack, Group, Button, Text, Card, Badge, Alert, Loader, Center, Modal,
-  Timeline, Textarea, SegmentedControl, Divider, Paper, ScrollArea,
+  Timeline, Textarea, SegmentedControl, Divider, Paper, ScrollArea, SimpleGrid,
 } from '@mantine/core'
 import {
   IconClipboardCheck, IconAlertTriangle, IconCheck, IconGauge, IconEye,
@@ -88,7 +88,10 @@ function RevisarReporte({
 
       {error && <Alert color="red">{error}</Alert>}
 
-      <Group grow>
+      {/* Uno por renglón en el teléfono: "Solo marcar revisado" no cabe en
+          media pantalla y salía recortado, justo en el botón donde importa
+          entender qué se va a hacer. */}
+      <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
         <Button
           variant="default"
           onClick={() => enviar(false)}
@@ -103,7 +106,7 @@ function RevisarReporte({
         >
           Abrir incidencia
         </Button>
-      </Group>
+      </SimpleGrid>
     </Stack>
   )
 }
@@ -294,6 +297,7 @@ export default function ChequeosVehiculoSection({ vehiculoId }: { vehiculoId: nu
         title="Chequeo diario"
         size="lg"
         fullScreen={typeof window !== 'undefined' && window.innerWidth < 768}
+        classNames={{ content: 'chequeo-movil' }}
       >
         {abierto && (
           <ChequeoDiarioForm
@@ -309,6 +313,7 @@ export default function ChequeosVehiculoSection({ vehiculoId }: { vehiculoId: nu
         onClose={() => setRevisando(null)}
         title="Reporte del chofer"
         size="md"
+        classNames={{ content: 'chequeo-movil' }}
       >
         {revisando && (
           <RevisarReporte

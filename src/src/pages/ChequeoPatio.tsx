@@ -143,7 +143,9 @@ export default function ChequeoPatio() {
   }
 
   return (
-    <Stack gap="md">
+    // `chequeo-movil` sube la escala de Mantine en el teléfono (ver index.css):
+    // esta pantalla se usa ahí casi siempre.
+    <Stack gap="md" className="chequeo-movil">
       {/* En el teléfono el selector baja y ocupa el ancho completo: a 390px, un
           campo de 240px junto al título deja los dos apretados contra los
           bordes. */}
@@ -295,6 +297,9 @@ export default function ChequeoPatio() {
         )}
         size="lg"
         fullScreen={typeof window !== 'undefined' && window.innerWidth < 768}
+        // El modal se dibuja en un portal, así que la clase del contenedor de
+        // arriba no lo alcanza: va también aquí.
+        classNames={{ content: 'chequeo-movil' }}
       >
         {abierta && patio && (
           <>
