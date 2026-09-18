@@ -52,6 +52,58 @@ function Seccion({ titulo, descripcion, children }: {
   )
 }
 
+/**
+ * Una sección que arranca cerrada y se abre a propósito.
+ *
+ * Para las listas que son largas por naturaleza: las unidades sin chequeo son
+ * una por vehículo del patio, así que desplegadas empujan fuera de la pantalla
+ * todo lo que va debajo. Lo que se necesita de reojo es el número —cuántas
+ * faltan—, y el detalle solo cuando alguien va a actuar sobre él.
+ */
+function SeccionPlegable({ titulo, descripcion, contador, color, children }: {
+  titulo: string
+  descripcion?: string
+  /** El número que se lee sin abrir. */
+  contador: number
+  color: string
+  children: React.ReactNode
+}) {
+  const [abierta, setAbierta] = useState(false)
+  const vacia = contador === 0
+
+  return (
+    <Card withBorder padding="lg" radius="md">
+      <Group
+        justify="space-between"
+        wrap="nowrap"
+        // Una sección vacía no se abre: no hay nada que ver y el clic que no
+        // hace nada se siente roto.
+        style={{ cursor: vacia ? 'default' : 'pointer' }}
+        onClick={() => !vacia && setAbierta((v) => !v)}
+      >
+        <Group gap="xs" wrap="nowrap">
+          <Text fw={600}>{titulo}</Text>
+          <Badge color={vacia ? 'teal' : color} variant="light">{contador}</Badge>
+        </Group>
+        {!vacia && (
+          <IconChevronRight
+            size={18}
+            style={{
+              transform: abierta ? 'rotate(90deg)' : undefined,
+              transition: 'transform 150ms ease',
+              color: 'var(--mantine-color-dimmed)',
+            }}
+          />
+        )}
+      </Group>
+      {descripcion && <Text size="xs" c="dimmed" mt={2}>{descripcion}</Text>}
+      <Collapse expanded={abierta}>
+        <div style={{ paddingTop: 'var(--mantine-spacing-md)' }}>{children}</div>
+      </Collapse>
+    </Card>
+  )
+}
+
 function LinkVehiculo({ nombre, onClick }: { nombre: string; onClick?: () => void }) {
   if (!onClick) return <Text size="sm" fw={500}>{nombre}</Text>
   return (
@@ -418,11 +470,11 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
               <StatCard
                 label="Reportes sin leer"
                 value={loadingChequeos ? '—' : String(reportesSinLeer)}
-                sub={reportesSinLeer > 0 ? 'Declaró el chofer' : 'Todo revisado'}
+                sub={reportesSinLeer > 0 ? 'Anotado en el chequeo' : 'Todo revisado'}
                 color={reportesSinLeer > 0 ? 'red' : 'teal'}
                 icon={IconMessageReport}
                 onClick={() => setTab('pendientes')}
-                ayuda="Lo que los choferes reportaron al entregar la unidad y nadie ha revisado todavía, de cualquier día: la bandeja se vacía, no rota. No se convierte en incidencia solo, alguien decide si hay que atenderlo."
+                ayuda="Lo que se anotó en el chequeo diario y nadie ha revisado todavía, de cualquier día: la bandeja se vacía, no rota. No se convierte en incidencia solo, alguien decide si hay que atenderlo."
               />
               <StatCard
                 label="Mantenimientos"
@@ -723,70 +775,6 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
         {/* ══ Pendientes ══ */}
         <Tabs.Panel value="pendientes" pt="lg">
           <Stack gap="lg">
-            {/* El chequeo diario va arriba: es lo de hoy, y a diferencia de un
-                preventivo atrasado deja de poderse hacer cuando la unidad sale
-                del patio. */}
-            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
-              <Seccion
-                titulo="Unidades sin chequeo de hoy"
-                descripcion="Haz clic en una unidad para abrir su ficha y capturarlo."
-              >
-                {loadingChequeos ? (
-                  <Center py="xl"><Loader size="sm" /></Center>
-                ) : faltanChequeo === 0 ? (
-                  <Text size="sm" c="dimmed">Toda la flota activa lleva su chequeo de hoy.</Text>
-                ) : (
-                  <Stack gap={4}>
-                    {chequeos!.data.faltan.map((u) => (
-                      <Group
-                        key={u.vehiculo_id}
-                        gap="xs"
-                        wrap="nowrap"
-                        style={{ cursor: onNavigateVehiculo ? 'pointer' : undefined }}
-                        onClick={() => onNavigateVehiculo?.(u.vehiculo_id)}
-                      >
-                        <Badge size="xs" variant="light" color={TIPO_COLORS[u.tipo as keyof typeof TIPO_COLORS]}>
-                          {TIPO_LABELS[u.tipo as keyof typeof TIPO_LABELS] ?? u.tipo}
-                        </Badge>
-                        <Text size="sm" lineClamp={1}>{u.nombre}</Text>
-                        {u.placas && <Text size="xs" c="dimmed">{u.placas}</Text>}
-                      </Group>
-                    ))}
-                  </Stack>
-                )}
-              </Seccion>
-
-              <Seccion
-                titulo="Reportes del chofer sin leer"
-                descripcion="Lo que declararon al entregar la unidad. Se revisa desde la ficha del vehículo."
-              >
-                {loadingChequeos ? (
-                  <Center py="xl"><Loader size="sm" /></Center>
-                ) : reportesSinLeer === 0 ? (
-                  <Text size="sm" c="dimmed">No hay reportes pendientes de revisar.</Text>
-                ) : (
-                  <Stack gap="xs">
-                    {chequeos!.data.por_revisar.map((c) => (
-                      <Card
-                        key={c.id}
-                        withBorder
-                        radius="sm"
-                        padding="xs"
-                        style={{ cursor: onNavigateVehiculo ? 'pointer' : undefined }}
-                        onClick={() => onNavigateVehiculo?.(c.vehiculo_id)}
-                      >
-                        <Group justify="space-between" wrap="nowrap" gap="xs">
-                          <Text size="sm" fw={500} lineClamp={1}>{c.vehiculo_nombre}</Text>
-                          <Text size="xs" c="dimmed">{c.declarado_por}</Text>
-                        </Group>
-                        <Text size="sm" c="dimmed" lineClamp={2}>{c.declaracion}</Text>
-                      </Card>
-                    ))}
-                  </Stack>
-                )}
-              </Seccion>
-            </SimpleGrid>
-
             <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
               <Seccion
                 titulo="Vehículos con preventivos atrasados"
@@ -915,6 +903,74 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
                 compara cosas que pueden no ser iguales.
               </Alert>
             )}
+            {/* El chequeo diario, al final y plegado. Es una línea por unidad
+                del patio: desplegado empuja fuera de la pantalla todo lo demás
+                de esta pestaña, y lo que se necesita de reojo es el número. El
+                recorrido de verdad se hace desde Chequeo del patio, no aquí. */}
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+              <SeccionPlegable
+                titulo="Unidades sin chequeo de hoy"
+                descripcion={faltanChequeo === 0
+                  ? 'Toda la flota activa lleva su chequeo de hoy.'
+                  : 'Ábrelo para ver cuáles. Haz clic en una unidad para ir a su ficha.'}
+                contador={faltanChequeo}
+                color="orange"
+              >
+                {loadingChequeos ? (
+                  <Center py="xl"><Loader size="sm" /></Center>
+                ) : (
+                  <Stack gap={4}>
+                    {(chequeos?.data.faltan ?? []).map((u) => (
+                      <Group
+                        key={u.vehiculo_id}
+                        gap="xs"
+                        wrap="nowrap"
+                        style={{ cursor: onNavigateVehiculo ? 'pointer' : undefined }}
+                        onClick={() => onNavigateVehiculo?.(u.vehiculo_id)}
+                      >
+                        <Badge size="xs" variant="light" color={TIPO_COLORS[u.tipo as keyof typeof TIPO_COLORS]}>
+                          {TIPO_LABELS[u.tipo as keyof typeof TIPO_LABELS] ?? u.tipo}
+                        </Badge>
+                        <Text size="sm" lineClamp={1}>{u.nombre}</Text>
+                        {u.placas && <Text size="xs" c="dimmed">{u.placas}</Text>}
+                      </Group>
+                    ))}
+                  </Stack>
+                )}
+              </SeccionPlegable>
+
+              <SeccionPlegable
+                titulo="Reportes sin revisar"
+                descripcion={reportesSinLeer === 0
+                  ? 'No hay reportes pendientes de revisar.'
+                  : 'Lo que se anotó en el chequeo y nadie ha leído. Se revisa desde la ficha del vehículo.'}
+                contador={reportesSinLeer}
+                color="red"
+              >
+                {loadingChequeos ? (
+                  <Center py="xl"><Loader size="sm" /></Center>
+                ) : (
+                  <Stack gap="xs">
+                    {(chequeos?.data.por_revisar ?? []).map((c) => (
+                      <Card
+                        key={c.id}
+                        withBorder
+                        radius="sm"
+                        padding="xs"
+                        style={{ cursor: onNavigateVehiculo ? 'pointer' : undefined }}
+                        onClick={() => onNavigateVehiculo?.(c.vehiculo_id)}
+                      >
+                        <Group justify="space-between" wrap="nowrap" gap="xs">
+                          <Text size="sm" fw={500} lineClamp={1}>{c.vehiculo_nombre}</Text>
+                          <Text size="xs" c="dimmed">{c.revisado_por}</Text>
+                        </Group>
+                        <Text size="sm" c="dimmed" lineClamp={2}>{c.declaracion}</Text>
+                      </Card>
+                    ))}
+                  </Stack>
+                )}
+              </SeccionPlegable>
+            </SimpleGrid>
           </Stack>
         </Tabs.Panel>
 
