@@ -4,6 +4,7 @@ import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { FacturaTotalesSchema } from '../schemas/facturaSchema'
+import { assertCabeceraEditable } from '../shared/revision'
 import * as service from '../services/facturasService'
 
 /**
@@ -22,6 +23,11 @@ export async function facturaTotalesUpdate(
     const body = FacturaTotalesSchema.parse(await request.json())
 
     const facturaId = await service.getId(body.num_factura, body.proveedor_id)
+    // El IVA y el descuento ya verificados no se cambian por esta vía: mueven el
+    // total de la compra entera, que es justo lo que alguien dio por bueno
+    // contra el papel. Para corregirlos hay que reabrir la revisión.
+    await assertCabeceraEditable(facturaId)
+
     const antes = await capturar('facturas', facturaId)
 
     await service.setTotales(facturaId, body.tasa_iva ?? null, body.descuento_pct ?? null)

@@ -20,6 +20,8 @@ import {
   useFacturas, useSetTotalesFactura, useSetFolioFactura, useSetFolioLote, FOLIO_EXISTENTE,
 } from '../hooks/useFacturas'
 import type { Factura, FacturaRenglon } from '../hooks/useFacturas'
+import { useAuth } from '../hooks/useAuth'
+import { EstadoRevision, RevisionCabecera, RevisionRenglon } from './RevisionFactura'
 import { ApiError } from '../lib/api'
 import { FechaInput } from './FechaInput'
 import { formatMXN, formatFecha } from '../lib/formato'
@@ -328,10 +330,24 @@ export default function FacturasDrawer({
   const [debounced] = useDebouncedValue(search, 300)
   const [desde, setDesde] = useState('')
   const [hasta, setHasta] = useState('')
+  const [porRevisar, setPorRevisar] = useState(false)
   const [page, setPage] = useState(1)
 
+  // Revisar es cosa de admin: es el segundo par de ojos, y que lo haga
+  // cualquiera con permiso de captura lo vacía de sentido. La API lo impone
+  // igual con `requireRole(request, 'admin')`; esto solo evita enseñar botones
+  // que van a contestar 403.
+  const { user } = useAuth()
+  const esAdmin = user?.userRoles.includes('admin') ?? false
+
   const { data, isLoading, isError } = useFacturas(
-    { page, pageSize: PAGE_SIZE, search: debounced || undefined, desde: desde || undefined, hasta: hasta || undefined },
+    {
+      page, pageSize: PAGE_SIZE,
+      search: debounced || undefined,
+      desde: desde || undefined,
+      hasta: hasta || undefined,
+      por_revisar: porRevisar || undefined,
+    },
     opened,
   )
 
@@ -378,6 +394,16 @@ export default function FacturasDrawer({
           />
         </Group>
 
+        {/* La bandeja del verificador. Una factura cuenta como pendiente si le
+            falta la cabecera o cualquier renglón: dar por buena una con la
+            cabecera revisada y tres renglones sin mirar es justo lo que no. */}
+        <Switch
+          size="xs"
+          label="Solo las que faltan por revisar"
+          checked={porRevisar}
+          onChange={(e) => filtrar(() => setPorRevisar(e.currentTarget.checked))}
+        />
+
         {isError ? (
           <Alert color="red" title="Error">No se pudieron cargar las facturas.</Alert>
         ) : isLoading ? (
@@ -406,6 +432,7 @@ export default function FacturasDrawer({
                       <div>
                         <Group gap={6}>
                           <Text fw={600} size="sm">{f.num_factura}</Text>
+                          <EstadoRevision factura={f} />
                           {/* El descuento solo se anuncia cuando lo hay: la
                               mayoría de las facturas no trae ninguno y una
                               insignia de más en cada renglón no dice nada. */}
@@ -445,6 +472,7 @@ export default function FacturasDrawer({
                               <Table.Th style={{ textAlign: 'center' }}>Cant.</Table.Th>
                               <Table.Th style={{ textAlign: 'right' }}>Costo unit.</Table.Th>
                               <Table.Th style={{ textAlign: 'right' }}>Subtotal</Table.Th>
+                              <Table.Th style={{ textAlign: 'center' }}>Revisión</Table.Th>
                               <Table.Th w={40} />
                             </Table.Tr>
                           </Table.Thead>
@@ -461,6 +489,9 @@ export default function FacturasDrawer({
                                 <Table.Td style={{ textAlign: 'right' }}>
                                   {formatMXN(d.costo_unitario * d.cantidad_inicial)}
                                 </Table.Td>
+                                <Table.Td style={{ textAlign: 'center' }}>
+                                  <RevisionRenglon renglon={d} factura={f} esAdmin={esAdmin} />
+                                </Table.Td>
                                 <Table.Td>
                                   <FolioDeLote renglon={d} folioActual={f.num_factura} />
                                 </Table.Td>
@@ -470,13 +501,28 @@ export default function FacturasDrawer({
                         </Table>
                       </Table.ScrollContainer>
 
-                      {/* Ambos bloques se remontan por factura (`key`): lo
+                      {/* Todos los bloques se remontan por factura (`key`): lo
                           tecleado en una no debe arrastrarse a la siguiente. */}
-                      <FolioDeFactura key={`${f.id}:${f.num_factura}`} factura={f} />
-                      <TotalesDeFactura
-                        key={`${f.id}:${f.tasa_iva}:${f.descuento_pct}`}
+                      <RevisionCabecera
+                        key={`rev:${f.id}:${f.cabecera_revisada_en}`}
                         factura={f}
+                        esAdmin={esAdmin}
                       />
+
+                      {/* Con la cabecera sellada estos dos controles solo pueden
+                          contestar 409: lo revisado no se edita por otra vía.
+                          Se esconden en vez de dejarlos fallando — para
+                          corregir hay que reabrir, que es lo que ofrece el
+                          bloque de arriba. */}
+                      {f.cabecera_revisada_en === null && (
+                        <>
+                          <FolioDeFactura key={`${f.id}:${f.num_factura}`} factura={f} />
+                          <TotalesDeFactura
+                            key={`${f.id}:${f.tasa_iva}:${f.descuento_pct}`}
+                            factura={f}
+                          />
+                        </>
+                      )}
                     </Stack>
                   </Accordion.Panel>
                 </Accordion.Item>

@@ -120,13 +120,19 @@ export async function crearCompra(
         .input('sucursal_id', sql.Int, data.sucursal_id)
         .input('costo_unitario', sql.Decimal(18, 2), renglon.costo_unitario)
         .input('cantidad_inicial', sql.Int, renglon.cantidad_inicial)
+        // Quién tecleó ESTE renglón. La factura ya guarda quién la registró,
+        // pero `findOrCreate` reusa la que exista sin pisarla: el mismo papel
+        // capturado en dos tandas por dos personas quedaría entero a nombre de
+        // la primera, y entonces un error no se le podría cargar a quien lo
+        // cometió. Ver `db/migrations/040_revision_de_facturas.sql`.
+        .input('capturado_por', sql.NVarChar(120), autorizadoPor)
         .query(`
           INSERT INTO lotes_pieza
             (pieza_id, factura_id, sucursal_id, costo_unitario,
-             cantidad_inicial, cantidad_disponible)
+             cantidad_inicial, cantidad_disponible, capturado_por)
           OUTPUT INSERTED.id
           VALUES (@pieza_id, @factura_id, @sucursal_id, @costo_unitario,
-                  @cantidad_inicial, @cantidad_inicial)`)
+                  @cantidad_inicial, @cantidad_inicial, @capturado_por)`)
       const loteId = insLote.recordset[0].id as number
 
       await tx.request()

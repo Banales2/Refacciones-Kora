@@ -8,6 +8,15 @@ export const FacturaQuerySchema = z.object({
   search: z.string().max(100).optional(),
   desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /**
+   * Solo lo que falta por cuadrar contra el papel: la bandeja del verificador.
+   * Cuenta como pendiente tanto la cabecera sin sellar como cualquier renglón
+   * sin sellar. Ver `db/migrations/040_revision_de_facturas.sql`.
+   */
+  por_revisar: z
+    .union([z.boolean(), z.string()])
+    .transform((v) => v === true || v === 'true' || v === '1')
+    .optional(),
 })
 
 // La factura no tiene id: se identifica por su folio y el proveedor que la

@@ -9,6 +9,14 @@ export async function createLote(
   return repo.create(piezaId, data, autorizadoPor)
 }
 
+/**
+ * Aplica los cambios del lote.
+ *
+ * NO comprueba el candado de la revisión: lo hace `lote-update.ts`, que es el
+ * endpoint por el que llega una edición normal. Aquí no puede estar porque la
+ * revisión misma pasa por esta función para aplicar sus correcciones, y con el
+ * candado aquí el verificador no podría corregir nada. Ver `shared/revision`.
+ */
 export async function updateLote(id: number, data: LoteUpdate): Promise<LoteConProveedor> {
   let delta: number | undefined
 

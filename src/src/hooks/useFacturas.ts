@@ -21,6 +21,11 @@ export interface FacturaRenglon {
   cantidad_disponible: number
   costo_unitario:      number
   sucursal:            string | null
+  /** Quién tecleó este renglón. Es a quien se le carga un error de captura. */
+  capturado_por:       string | null
+  /** null = todavía no se ha cuadrado contra la factura original. */
+  revisado_en:         string | null
+  revisado_por:        string | null
 }
 
 export interface Factura {
@@ -42,6 +47,20 @@ export interface Factura {
   descuento_pct: number | null
   comprado_por:  string
   autorizado_por: string
+  /**
+   * Se cargó de un histórico: la compra es real y su gasto cuenta, pero las
+   * piezas ya se habían usado cuando se capturó y nacieron con existencia cero.
+   */
+  historica:     boolean
+  /** null = la cabecera no se ha cuadrado contra el papel. */
+  cabecera_revisada_en:  string | null
+  cabecera_revisada_por: string | null
+  /** Lo que el verificador dejó dicho del documento. */
+  revision_nota:         string | null
+  /** Cuántos de sus renglones ya están sellados. */
+  renglones_revisados:   number
+  /** Cabecera sellada y ningún renglón pendiente. Lo calcula la API. */
+  cerrada:               boolean
   detalle:      FacturaRenglon[]
 }
 
@@ -51,6 +70,12 @@ export interface FacturasFiltros {
   search?:   string
   desde?:    string
   hasta?:    string
+  /**
+   * Solo lo que falta por cuadrar contra el papel. Cuenta como pendiente tanto
+   * la cabecera sin sellar como cualquier renglón sin sellar: son las dos
+   * mitades del mismo trabajo.
+   */
+  por_revisar?: boolean
 }
 
 interface FacturasResponse {

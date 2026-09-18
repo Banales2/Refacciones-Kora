@@ -26,6 +26,16 @@ export async function getId(folio: string, proveedorId: number): Promise<number>
   return factura.id
 }
 
+/**
+ * La factura de ese proveedor con ese folio, o `null`. A diferencia de `getId`
+ * no lanza: quien pregunta está comprobando si existe, no contando con ella.
+ */
+export async function buscarPorFolio(
+  folio: string, proveedorId: number,
+): Promise<{ id: number } | null> {
+  return repo.findByFolio(folio, proveedorId)
+}
+
 /** Los lotes de la factura. El endpoint los necesita para la bitácora. */
 export async function getIdsDeLotes(facturaId: number): Promise<number[]> {
   return repo.idsDeLotes(facturaId)

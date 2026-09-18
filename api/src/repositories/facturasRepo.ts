@@ -24,6 +24,11 @@ export interface FacturaRenglon {
   cantidad_disponible: number
   costo_unitario: number
   sucursal: string | null
+  /** Quién tecleó este renglón. Es a quien se le carga un error de captura. */
+  capturado_por: string | null
+  /** `null` = todavía no se ha verificado contra el papel. Migración 040. */
+  revisado_en: string | null
+  revisado_por: string | null
 }
 
 export interface Factura {
@@ -47,6 +52,20 @@ export interface Factura {
    * existencia cero. Ver `db/migrations/028_facturas_historicas.sql`.
    */
   historica: boolean
+  /** `null` = la cabecera todavía no se verificó contra el papel. Migración 040. */
+  cabecera_revisada_en: string | null
+  cabecera_revisada_por: string | null
+  /** Lo que el verificador dejó dicho del documento. */
+  revision_nota: string | null
+  /** Cuántos de sus renglones ya están sellados. */
+  renglones_revisados: number
+  /**
+   * La factura entera está verificada: cabecera sellada y ningún renglón
+   * pendiente. Es DERIVADO y por eso se calcula aquí en vez de guardarse — una
+   * columna con este dato quedaría mintiendo en cuanto alguien agregara un
+   * renglón. Ver la cabecera de la migración 040.
+   */
+  cerrada: boolean
   detalle: FacturaRenglon[]
 }
 
@@ -104,6 +123,16 @@ function filtros(req: sql.Request, p: FacturaQuery): string {
   }
   if (p.desde) { req.input('desde', sql.Date, p.desde); where.push('f.fecha_compra >= @desde') }
   if (p.hasta) { req.input('hasta', sql.Date, p.hasta); where.push('f.fecha_compra <= @hasta') }
+  // La bandeja del verificador: lo que le falta por cuadrar contra el papel.
+  // Una factura está pendiente si su cabecera no está sellada O si le queda
+  // algún renglón sin sellar — las dos mitades son el mismo trabajo, y dar por
+  // buena una factura con la cabecera revisada y tres renglones sin mirar es
+  // exactamente lo que este filtro evita.
+  if (p.por_revisar) {
+    where.push(`(f.cabecera_revisada_en IS NULL
+                 OR EXISTS (SELECT 1 FROM lotes_pieza l
+                            WHERE l.factura_id = f.id AND l.revisado_en IS NULL))`)
+  }
   return where.length ? `WHERE ${where.join(' AND ')}` : ''
 }
 
@@ -123,7 +152,11 @@ export async function findAll(
            CONVERT(char(10), f.fecha_compra, 23) AS fecha_compra,
            f.tasa_iva, f.descuento_pct, f.comprado_por, f.autorizado_por,
            f.historica,
+           CONVERT(varchar(19), f.cabecera_revisada_en, 126) AS cabecera_revisada_en,
+           f.cabecera_revisada_por, f.revision_nota,
            (SELECT COUNT(*) FROM lotes_pieza l WHERE l.factura_id = f.id) AS renglones,
+           (SELECT COUNT(*) FROM lotes_pieza l
+             WHERE l.factura_id = f.id AND l.revisado_en IS NOT NULL) AS renglones_revisados,
            COALESCE((SELECT SUM(l.costo_unitario * l.cantidad_inicial)
                      FROM lotes_pieza l WHERE l.factura_id = f.id), 0) AS subtotal
     FROM facturas f
@@ -138,8 +171,13 @@ export async function findAll(
     ${where};
   `)
 
+  // `cerrada` se calcula aquí y no en SQL para que la regla —cabecera sellada y
+  // ningún renglón pendiente— se lea de un vistazo en un solo lugar.
   const facturas: Factura[] = result.recordsets[0].map((f: Record<string, unknown>) => ({
-    ...f, detalle: [],
+    ...f,
+    cerrada: f.cabecera_revisada_en !== null
+      && (f.renglones as number) === (f.renglones_revisados as number),
+    detalle: [],
   })) as Factura[]
   const total = (result.recordsets[1] as unknown as { total: number }[])[0].total
 
@@ -156,6 +194,8 @@ export async function findAll(
     SELECT l.id AS lote_id, l.factura_id,
            p.id AS pieza_id, p.numero_serie, p.descripcion,
            l.cantidad_inicial, l.costo_unitario,
+           l.capturado_por,
+           CONVERT(varchar(19), l.revisado_en, 126) AS revisado_en, l.revisado_por,
            COALESCE((SELECT SUM(ex.cantidad) FROM existencias_lote ex
                      WHERE ex.lote_id = l.id), 0) AS cantidad_disponible,
            s.nombre AS sucursal
@@ -177,6 +217,9 @@ export async function findAll(
       cantidad_disponible: r.cantidad_disponible,
       costo_unitario: r.costo_unitario,
       sucursal: r.sucursal,
+      capturado_por: r.capturado_por,
+      revisado_en: r.revisado_en,
+      revisado_por: r.revisado_por,
     })
   }
   for (const f of facturas) f.detalle = porFactura.get(f.id) ?? []
@@ -223,6 +266,15 @@ export async function setTotales(
     .query('UPDATE facturas SET tasa_iva = @tasa, descuento_pct = @descuento WHERE id = @id')
 }
 
+/** Corrige la fecha mal capturada. La usa la revisión contra el papel. */
+export async function setFecha(facturaId: number, fecha: string): Promise<void> {
+  const pool = await getPool()
+  await pool.request()
+    .input('id',    sql.Int,  facturaId)
+    .input('fecha', sql.Date, fecha)
+    .query('UPDATE facturas SET fecha_compra = @fecha WHERE id = @id')
+}
+
 /** Corrige el folio mal tecleado. Una fila, no N. */
 export async function setFolio(facturaId: number, nuevo: string): Promise<void> {
   const pool = await getPool()
@@ -267,6 +319,13 @@ export async function fusionar(origenId: number, destinoId: number): Promise<num
  *
  * Devuelve `null` si el lote no existe o no tiene factura —el de recuperación no
  * la tiene y no se puede mover a ninguna—.
+ *
+ * Mover un renglón a una factura YA REVISADA sí se permite, al revés que
+ * fusionar. La diferencia no es caprichosa: el renglón llega sin sellar, así que
+ * la factura destino deja de estar cerrada y vuelve sola a la bandeja — el
+ * cambio se ve y alguien lo revisa. Fusionar, en cambio, borra la factura de
+ * origen y con ella su identidad, y de eso no se vuelve igual de fácil. Ver
+ * `shared/revision.assertFusionPermitida`.
  */
 export async function moverLoteAFolio(
   loteId: number, folio: string,

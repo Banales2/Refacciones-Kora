@@ -66,13 +66,16 @@ export async function create(
       .input('sucursal_id', sql.Int, data.sucursal_id)
       .input('costo_unitario', sql.Decimal(18, 2), data.costo_unitario)
       .input('cantidad_inicial', sql.Int, data.cantidad_inicial)
+      // Quién tecleó este renglón, para poder cargarle el error si la revisión
+      // lo encuentra. Ver `db/migrations/040_revision_de_facturas.sql`.
+      .input('capturado_por', sql.NVarChar(120), autorizadoPor)
       .query(`
         INSERT INTO lotes_pieza
           (pieza_id, factura_id, sucursal_id, costo_unitario,
-           cantidad_inicial, cantidad_disponible)
+           cantidad_inicial, cantidad_disponible, capturado_por)
         OUTPUT INSERTED.id
         VALUES (@pieza_id, @factura_id, @sucursal_id, @costo_unitario,
-                @cantidad_inicial, @cantidad_inicial)
+                @cantidad_inicial, @cantidad_inicial, @capturado_por)
       `)
     const loteId = result.recordset[0].id as number
 

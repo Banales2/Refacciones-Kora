@@ -202,12 +202,15 @@ export async function importar(
           .input('sucursal_id', sql.Int,            data.sucursal_id)
           .input('costo',       sql.Decimal(18, 2), renglon.costo_unitario)
           .input('cantidad',    sql.Int,            renglon.cantidad_inicial)
+          // Quién tecleó este renglón, para poder cargarle el error si la
+          // revisión lo encuentra. Ver `040_revision_de_facturas.sql`.
+          .input('capturado',   sql.NVarChar(120),  autorizadoPor)
           .query(`
             INSERT INTO lotes_pieza
               (pieza_id, factura_id, sucursal_id, costo_unitario,
-               cantidad_inicial, cantidad_disponible)
+               cantidad_inicial, cantidad_disponible, capturado_por)
             OUTPUT INSERTED.id
-            VALUES (@pieza_id, @factura_id, @sucursal_id, @costo, @cantidad, 0)`)
+            VALUES (@pieza_id, @factura_id, @sucursal_id, @costo, @cantidad, 0, @capturado)`)
         const loteId = insLote.recordset[0].id as number
 
         // La fila de existencia se escribe aunque sea cero. Podría no existir

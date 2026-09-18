@@ -4,6 +4,7 @@ import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { FacturaFolioSchema } from '../schemas/facturaSchema'
+import { assertCabeceraEditable } from '../shared/revision'
 import * as service from '../services/facturasService'
 
 /**
@@ -26,6 +27,13 @@ export async function facturaFolioUpdate(
     const body = FacturaFolioSchema.parse(await request.json())
 
     const facturaId = await service.getId(body.num_factura, body.proveedor_id)
+    // El folio ya verificado no se cambia por esta vía. Y si el destino existe,
+    // tampoco puede estar sellado: fusionar le mete renglones ajenos y le mueve
+    // el total a una factura que alguien ya dio por buena contra su papel.
+    await assertCabeceraEditable(facturaId)
+    const destino = await service.buscarPorFolio(body.nuevo_num_factura, body.proveedor_id)
+    if (destino && destino.id !== facturaId) await assertCabeceraEditable(destino.id)
+
     const antes = await capturar('facturas', facturaId)
 
     const resultado = await service.setFolio(
