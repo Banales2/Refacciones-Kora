@@ -161,6 +161,9 @@ export interface ConsumoGasolinera {
   litros:       number
   costo:        number
   kilometraje:  number | null
+  /** La factura de la gasolinera que la cobra. `null` = sin facturar todavía. */
+  factura_id:   number | null
+  factura_folio: string | null
 }
 
 export async function findConsumosDeGasolinera(
@@ -174,12 +177,18 @@ export async function findConsumosDeGasolinera(
              r.vehiculo_id,
              CONCAT(m.marca, ' ', m.nombre, ' — ', v.numero_serie) AS vehiculo,
              c.nombre AS conductor, vg.folio AS vale_folio,
-             r.litros, r.costo, r.kilometraje
+             r.litros, r.costo, r.kilometraje,
+             -- Qué factura cobra esta recarga, si alguna ya la reclamó. NULL =
+             -- sigue sin facturar, y por eso es candidata de la próxima factura
+             -- de esta gasolinera. Ver la migración 041.
+             fg.id AS factura_id, fg.folio AS factura_folio
       FROM recargas_combustible r
       JOIN vehiculos   v  ON v.id = r.vehiculo_id
       JOIN modelos     m  ON m.id = v.modelo_id
       JOIN conductores c  ON c.id = r.conductor_id
       LEFT JOIN vales_gasolina vg ON vg.id = r.vale_id
+      LEFT JOIN facturas_gasolina_renglones fgr ON fgr.recarga_id = r.id
+      LEFT JOIN facturas_gasolina fg ON fg.id = fgr.factura_id
       WHERE r.gasolinera_id = @gid
       ORDER BY r.fecha DESC, r.id DESC`)
   // mssql devuelve DECIMAL como string cuando no cabe en un number seguro.

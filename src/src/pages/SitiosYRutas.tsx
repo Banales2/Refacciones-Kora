@@ -59,6 +59,8 @@ import { estadoVigencia, parseVigencia } from '../lib/vigenciaLicencia'
 import type { Sucursal, SucursalPayload } from '../hooks/useSucursales'
 import type { Ruta, RutaPayload } from '../hooks/useRutas'
 import { useConsumosGasolinera } from '../hooks/useGasolineras'
+import { useFacturasGasolina } from '../hooks/useFacturasGasolina'
+import { conIva } from '../lib/totales'
 import type { Gasolinera, GasolineraPayload, ConsumoGasolinera } from '../hooks/useGasolineras'
 import type { Conductor, ConductorPayload } from '../hooks/useConductores'
 import type { Tecnico, TecnicoPayload } from '../hooks/useTecnicos'
@@ -390,6 +392,7 @@ function ConsumosTabla({ recargas }: { recargas: ConsumoGasolinera[] }) {
             <Table.Th style={{ width: 100, textAlign: 'right' }}>Litros</Table.Th>
             <Table.Th style={{ width: 110, textAlign: 'right' }}>Costo</Table.Th>
             <Table.Th style={{ width: 110 }}>Vale</Table.Th>
+            <Table.Th style={{ width: 120 }}>Factura</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -412,8 +415,101 @@ function ConsumosTabla({ recargas }: { recargas: ConsumoGasolinera[] }) {
                   {r.vale_folio ?? 'Sin vale'}
                 </Text>
               </Table.Td>
+              <Table.Td>
+                {/* Sin factura no significa que falte nada: significa que
+                    todavía no llega la de la gasolinera, y que esta carga es
+                    candidata de la próxima. Ver `docs/facturas-de-gasolina.md`. */}
+                {r.factura_folio ? (
+                  <Badge size="xs" variant="light" color="green">{r.factura_folio}</Badge>
+                ) : (
+                  <Text size="xs" c="dimmed">Sin facturar</Text>
+                )}
+              </Table.Td>
             </Table.Tr>
           ))}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
+  )
+}
+
+/**
+ * Las facturas que esta gasolinera ha emitido, de solo lectura.
+ *
+ * Es la otra mitad de lo que se ve en el catálogo: la pestaña de Recargas dice
+ * lo que la flota cargó aquí, y esta dice lo que la gasolinera cobró por ello.
+ * Juntas contestan la pregunta que de verdad se hace: qué está facturado y qué
+ * no.
+ *
+ * No se concilia desde aquí — eso vive en Operación → Facturas de gas, que es
+ * donde está el cuadre completo. Esta pestaña solo enseña en qué va.
+ */
+function FacturasDeGasolinera({ gasolineraId }: { gasolineraId: number | null }) {
+  const { data, isLoading, isError } = useFacturasGasolina(
+    { gasolinera_id: gasolineraId ?? undefined, pageSize: 100 },
+    gasolineraId != null,
+  )
+
+  const facturas = data?.data ?? []
+
+  if (isLoading) return <Center py="xl"><Loader /></Center>
+  if (isError) {
+    return <Alert color="red" title="Error">No se pudieron obtener las facturas.</Alert>
+  }
+  if (facturas.length === 0) {
+    return (
+      <Center py="xl">
+        <Stack align="center" gap="xs">
+          <Text c="dimmed">Esta gasolinera no tiene facturas registradas.</Text>
+          <Text size="sm" c="dimmed">
+            Se capturan en Operación → Facturas de gas.
+          </Text>
+        </Stack>
+      </Center>
+    )
+  }
+
+  return (
+    <Table.ScrollContainer minWidth={560}>
+      <Table striped withTableBorder verticalSpacing={4}>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th style={{ width: 120 }}>Folio</Table.Th>
+            <Table.Th style={{ width: 110 }}>Fecha</Table.Th>
+            <Table.Th style={{ width: 120, textAlign: 'right' }}>Total</Table.Th>
+            <Table.Th style={{ width: 100, textAlign: 'center' }}>Recargas</Table.Th>
+            <Table.Th>Estado</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {facturas.map((f) => {
+            const faltan = f.renglones - f.casados
+            return (
+              <Table.Tr key={f.id}>
+                <Table.Td><Text size="sm" fw={600}>{f.folio}</Text></Table.Td>
+                <Table.Td><Text size="sm">{f.fecha}</Text></Table.Td>
+                <Table.Td style={{ textAlign: 'right' }}>
+                  <Text size="sm" fw={600}>{formatMXN(conIva(f.subtotal, f.tasa_iva))}</Text>
+                </Table.Td>
+                <Table.Td style={{ textAlign: 'center' }}>
+                  <Text size="sm">{f.casados}/{f.renglones}</Text>
+                </Table.Td>
+                <Table.Td>
+                  {f.conciliada_en === null ? (
+                    <Badge size="xs" variant="light" color="gray">Por conciliar</Badge>
+                  ) : faltan === 0 ? (
+                    <Badge size="xs" variant="light" color="green">Cuadrada</Badge>
+                  ) : (
+                    <Tooltip label="Renglones que la gasolinera cobra y que nadie capturó">
+                      <Badge size="xs" variant="light" color="orange">
+                        {faltan} sin capturar
+                      </Badge>
+                    </Tooltip>
+                  )}
+                </Table.Td>
+              </Table.Tr>
+            )
+          })}
         </Table.Tbody>
       </Table>
     </Table.ScrollContainer>
@@ -471,6 +567,13 @@ function ConsumosGasolineraDrawer({
         </div>
       }
     >
+      <Tabs defaultValue="recargas">
+        <Tabs.List>
+          <Tabs.Tab value="recargas">Recargas</Tabs.Tab>
+          <Tabs.Tab value="facturas">Facturas</Tabs.Tab>
+        </Tabs.List>
+
+        <Tabs.Panel value="recargas" pt="md">
       {isLoading ? (
         <Center py="xl"><Loader /></Center>
       ) : isError ? (
@@ -578,6 +681,12 @@ function ConsumosGasolineraDrawer({
           )}
         </Stack>
       )}
+        </Tabs.Panel>
+
+        <Tabs.Panel value="facturas" pt="md">
+          <FacturasDeGasolinera gasolineraId={gasolinera?.id ?? null} />
+        </Tabs.Panel>
+      </Tabs>
     </Drawer>
   )
 }

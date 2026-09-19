@@ -141,6 +141,13 @@ Lista con estado (`Por conciliar`, `Cuadrada`, `N sin capturar`), y al abrir una
 factura: tres tarjetas —total, renglones casados, importe sin capturar— y la
 tabla de renglones con un desplegable de recargas por cada uno.
 
+**También se ven desde el catálogo**: en Catálogos → Gasolineras, al abrir una
+estación el cajón tiene dos pestañas. *Recargas* dice lo que la flota cargó ahí,
+con el folio de la factura que cobra cada una o "Sin facturar"; *Facturas* dice
+lo que la gasolinera cobró, con su estado. Juntas contestan la pregunta que de
+verdad se hace: qué está facturado y qué no. Desde ahí no se concilia — eso vive
+en la pantalla de arriba, que es donde está el cuadre completo.
+
 ## Lo que quedó fuera, a propósito
 
 - **La factura completa.** Serie, UUID, régimen, sello, precio unitario: nada de

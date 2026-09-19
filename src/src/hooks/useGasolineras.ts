@@ -61,6 +61,9 @@ export interface ConsumoGasolinera {
   litros:      number
   costo:       number
   kilometraje: number | null
+  /** La factura de la gasolinera que la cobra. null = sin facturar todavía. */
+  factura_id:    number | null
+  factura_folio: string | null
 }
 
 export function useConsumosGasolinera(gasolineraId: number | null) {
