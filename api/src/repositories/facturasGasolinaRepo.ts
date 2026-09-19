@@ -150,7 +150,8 @@ export async function findByFolio(
 }
 
 export interface RenglonNuevo {
-  descripcion?: string | null
+  /** Diesel, Magna o Premium. Lista cerrada, ver `facturaGasolinaSchema`. */
+  descripcion: string
   cantidad: number
   importe: number
 }
@@ -186,7 +187,7 @@ export async function crear(
     for (const r of data.renglones) {
       await tx.request()
         .input('fid',     sql.Int,            facturaId)
-        .input('desc',    sql.NVarChar(100),  r.descripcion ?? null)
+        .input('desc',    sql.NVarChar(100),  r.descripcion)
         .input('cant',    sql.Decimal(10, 3), r.cantidad)
         .input('importe', sql.Decimal(18, 2), r.importe)
         .query(`

@@ -100,10 +100,16 @@ ajustar lo que faltaba.
 Ni el subtotal ni el total se teclean: salen de los renglones y la tasa. Pedirlos
 aparte solo crea la oportunidad de que discrepen de lo capturado.
 
-Los renglones se capturan **campo por campo**: descripción, cantidad e importe,
-cada uno con su nombre, y Enter agrega el renglón sin soltar el teclado. La
-descripción se conserva entre renglones porque en una factura de gasolinera casi
-todos dicen lo mismo.
+El botón **Agregar recarga** pone una fila en la tabla y ahí se llena, campo por
+campo: producto, cantidad e importe, cada uno con su nombre. El producto hereda
+el del renglón anterior porque en una factura de gasolinera casi todos dicen lo
+mismo.
+
+El **producto es una lista cerrada** —Diesel, Magna, Premium— en la pantalla y en
+el schema. Texto libre solo produciría "DIESEL", "diesel" y "Diésel" como si
+fueran cosas distintas, y entonces cualquier corte por producto miente. Los
+renglones convertidos por la 042 pueden traer otra cosa; la columna lo sigue
+admitiendo, la validación aplica a lo que entra de aquí en adelante.
 
 Hubo una versión que leía la línea entera pegada del PDF y repartía los números
 por posición. Se quitó: los formatos no se parecen entre emisores y un lector que

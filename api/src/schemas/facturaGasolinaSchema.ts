@@ -37,9 +37,21 @@ const cantidad = z.coerce
   .positive('Debe ser mayor a 0')
   .refine((v) => Math.abs(v * 1000 - Math.round(v * 1000)) < 1e-6, 'Máximo 3 decimales')
 
+/**
+ * Lo que una gasolinera despacha, y lo único que puede decir un renglón.
+ *
+ * Es una lista cerrada y no texto libre porque son tres y no cambian: dejarlo
+ * abierto solo produce "DIESEL", "diesel" y "Diésel" como si fueran cosas
+ * distintas, y entonces cualquier corte por producto miente.
+ *
+ * Los renglones que vengan de la 042 —convertidos de la columna `producto`—
+ * pueden traer otra cosa; la columna sigue admitiéndolo. Esto valida lo que
+ * entra de aquí en adelante.
+ */
+export const PRODUCTOS = ['Diesel', 'Magna', 'Premium'] as const
+
 export const RenglonFacturaSchema = z.object({
-  /** Lo que dice el papel: "DIESEL", "MAGNA". Copia de lo impreso. */
-  descripcion: z.string().trim().max(100).optional().nullable(),
+  descripcion: z.enum(PRODUCTOS, { message: 'Elige Diesel, Magna o Premium' }),
   cantidad,
   importe: z.coerce.number().min(0, 'No puede ser negativo').max(99999999, 'Fuera de rango'),
 })

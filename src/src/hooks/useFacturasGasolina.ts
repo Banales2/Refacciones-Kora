@@ -116,10 +116,20 @@ function invalidar(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['gasolinera-consumos'] })
 }
 
+/**
+ * Lo que una gasolinera despacha, y lo único que puede decir un renglón.
+ *
+ * Lista cerrada y no texto libre porque son tres y no cambian: dejarlo abierto
+ * solo produce "DIESEL", "diesel" y "Diésel" como si fueran cosas distintas.
+ * La API valida contra esta misma lista.
+ */
+export const PRODUCTOS = ['Diesel', 'Magna', 'Premium'] as const
+export type Producto = typeof PRODUCTOS[number]
+
 export interface RenglonNuevo {
-  descripcion?: string | null
-  cantidad:     number
-  importe:      number
+  descripcion: Producto
+  cantidad:    number
+  importe:     number
 }
 
 export interface FacturaGasolinaCreatePayload {

@@ -32,10 +32,10 @@ import {
 } from '@tabler/icons-react'
 import {
   useCandidatas, useConciliar, useCrearFacturaGasolina, useFacturasGasolina,
-  useReabrirFacturaGasolina, RENGLONES_SIN_CASAR,
+  useReabrirFacturaGasolina, PRODUCTOS, RENGLONES_SIN_CASAR,
 } from '../hooks/useFacturasGasolina'
 import type {
-  Candidatas, FacturaGasolina, RecargaCandidata, RenglonNuevo,
+  Candidatas, FacturaGasolina, Producto, RecargaCandidata, RenglonNuevo,
 } from '../hooks/useFacturasGasolina'
 import { useGasolineras } from '../hooks/useGasolineras'
 import { useAuth } from '../hooks/useAuth'
@@ -75,15 +75,11 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
   const [fecha, setFecha] = useState('')
   const [conIvaAparte, setConIvaAparte] = useState(true)
   const [tasa, setTasa] = useState<number | string>(IVA_DEFAULT)
+  // Los renglones se capturan EN la tabla, no en un formulario aparte que luego
+  // los agrega. Cada valor tiene su campo con su nombre — antes esto era un
+  // cuadro de texto que leía la línea entera adivinando cuál número era cuál por
+  // su posición, y adivinar con dinero se equivoca en silencio.
   const [renglones, setRenglones] = useState<RenglonNuevo[]>([])
-  // El renglón que se está capturando. Cada valor tiene su campo con su nombre:
-  // antes esto era un cuadro de texto que leía la línea entera adivinando cuál
-  // número era cuál por su posición, y adivinar con dinero se equivoca en
-  // silencio. Pegar sigue funcionando — campo por campo, que es donde se ve lo
-  // que se pegó.
-  const [desc, setDesc] = useState('')
-  const [cantidad, setCantidad] = useState<number | string>('')
-  const [importe, setImporte] = useState<number | string>('')
   const mut = useCrearFacturaGasolina()
 
   // Ni el subtotal ni el total se teclean: salen de los renglones y la tasa.
@@ -92,22 +88,23 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
   const tasaNueva = conIvaAparte ? Number(tasa) : null
   const total = conIva(subtotal, tasaNueva)
 
-  const nuevoValido = Number(cantidad) > 0 && Number(importe) >= 0 && importe !== ''
-
-  function agregarRenglon() {
-    if (!nuevoValido) return
+  function agregarRecarga() {
+    // Hereda el producto del renglón anterior: en una factura de gasolinera casi
+    // todos dicen lo mismo, y volver a elegir "Diesel" quince veces es justo el
+    // tipo de trabajo que hace que la gente capture mal.
+    const anterior = renglones[renglones.length - 1]
     setRenglones((p) => [
       ...p,
-      { descripcion: desc.trim() || null, cantidad: Number(cantidad), importe: Number(importe) },
+      { descripcion: anterior?.descripcion ?? PRODUCTOS[0], cantidad: 0, importe: 0 },
     ])
-    // La descripción se queda: en una factura de gasolinera casi todos los
-    // renglones dicen lo mismo, y volver a teclear "DIESEL" quince veces es
-    // justo el tipo de trabajo que hace que la gente capture mal.
-    setCantidad(''); setImporte('')
   }
 
+  // Una fila a medias no se puede guardar. Se comprueba aquí y no al agregarla
+  // porque la fila nace vacía a propósito: se llena en la tabla.
+  const renglonIncompleto = renglones.some((r) => !(r.cantidad > 0) || !(r.importe >= 0))
+
   const invalido = !gasolineraId || folio.trim() === '' || !fecha
-    || renglones.length === 0
+    || renglones.length === 0 || renglonIncompleto
     || (conIvaAparte && !(Number(tasa) > 0 && Number(tasa) <= 100))
 
   function guardar() {
@@ -122,7 +119,6 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
       {
         onSuccess: () => {
           setGasolineraId(null); setFolio(''); setFecha('')
-          setDesc(''); setCantidad(''); setImporte('')
           setRenglones([]); setConIvaAparte(true); setTasa(IVA_DEFAULT)
           onClose()
         },
@@ -172,30 +168,18 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
           )}
         </Group>
 
-        {/* Un campo por valor, con su nombre. Enter agrega el renglón sin tener
-            que soltar el teclado, que es como se captura una factura de quince
-            partidas sin perder la cuenta. */}
-        <Group align="flex-end" gap="xs">
-          <TextInput
-            label="Descripción" placeholder="DIESEL" maxLength={100}
-            style={{ flex: 2 }}
-            value={desc} onChange={(e) => setDesc(e.currentTarget.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') agregarRenglon() }}
-          />
-          <NumberInput
-            label="Cantidad" placeholder="0.000" decimalScale={3} min={0}
-            style={{ flex: 1 }}
-            value={cantidad} onChange={setCantidad}
-            onKeyDown={(e) => { if (e.key === 'Enter') agregarRenglon() }}
-          />
-          <NumberInput
-            label="Importe" placeholder="0.00" decimalScale={2} min={0}
-            prefix="$" thousandSeparator="," style={{ flex: 1 }}
-            value={importe} onChange={setImporte}
-            onKeyDown={(e) => { if (e.key === 'Enter') agregarRenglon() }}
-          />
-          <Button variant="light" disabled={!nuevoValido} onClick={agregarRenglon}>
-            Agregar
+        <Group justify="space-between" align="center">
+          <Text size="sm" fw={500}>
+            Recargas de la factura
+            {renglones.length > 0 && (
+              <Text component="span" size="xs" c="dimmed"> · {renglones.length}</Text>
+            )}
+          </Text>
+          <Button
+            size="xs" variant="light" leftSection={<IconPlus size={14} />}
+            onClick={agregarRecarga}
+          >
+            Agregar recarga
           </Button>
         </Group>
 
@@ -214,11 +198,15 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
                 {renglones.map((r, i) => (
                   <Table.Tr key={i}>
                     <Table.Td>
-                      <TextInput
-                        size="xs" variant="unstyled" placeholder="DIESEL" maxLength={100}
-                        value={r.descripcion ?? ''}
-                        onChange={(e) => setRenglones((p) => p.map((x, j) =>
-                          j === i ? { ...x, descripcion: e.currentTarget.value || null } : x))}
+                      {/* Lista cerrada: son tres y no cambian. Texto libre solo
+                          produciría "DIESEL", "diesel" y "Diésel" como si
+                          fueran cosas distintas. */}
+                      <Select
+                        size="xs" variant="unstyled" allowDeselect={false}
+                        data={PRODUCTOS as unknown as string[]}
+                        value={r.descripcion}
+                        onChange={(v) => setRenglones((p) => p.map((x, j) =>
+                          j === i ? { ...x, descripcion: (v as Producto) ?? x.descripcion } : x))}
                       />
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
