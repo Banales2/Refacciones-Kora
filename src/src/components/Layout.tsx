@@ -49,7 +49,7 @@ import type { DestinoDocumento } from '../lib/documentosDashboard'
 type Section =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
   | 'mantenimientos' | 'sitios' | 'vales' | 'registros' | 'chequeos'
-  | 'errores-captura' | 'facturas' | 'facturas-gasolina'
+  | 'errores-captura' | 'facturas' | 'facturas-gasolina' | 'facturas-mantenimientos'
 
 const SECTION_LABELS: Record<Section, string> = {
   dashboard:      'Dashboard',
@@ -65,6 +65,7 @@ const SECTION_LABELS: Record<Section, string> = {
   'errores-captura': 'Errores de captura',
   facturas:       'Facturas de compra',
   'facturas-gasolina': 'Facturas de gasolinera',
+  'facturas-mantenimientos': 'Facturas de mantenimientos',
   chequeos:       'Chequeo de flotilla',
 }
 
@@ -74,7 +75,14 @@ const SECTION_LABELS: Record<Section, string> = {
 // entrada y obligaba a bajar la vista para llegar a Catálogos.
 const NAV_GROUPS: {
   titulo: string
-  items: { section: Section; label: string; description: string; icon: Icon }[]
+  items: {
+    section: Section
+    label: string
+    description: string
+    icon: Icon
+    /** Se enseña apagado: el apartado está previsto pero no tiene pantalla. */
+    pendiente?: boolean
+  }[]
 }[] = [
   {
     titulo: 'Flota',
@@ -89,7 +97,6 @@ const NAV_GROUPS: {
       { section: 'chequeos',       label: 'Chequeo de flotilla', description: 'El recorrido diario de una sucursal, unidad por unidad', icon: IconClipboardCheck },
       { section: 'mantenimientos', label: 'Mantenimientos', description: 'Historial de servicios de toda la flota', icon: IconTool          },
       { section: 'incidencias',    label: 'Incidencias',    description: 'Incidencias reportadas de la flota',      icon: IconAlertTriangle },
-      { section: 'facturas-gasolina', label: 'Facturas de gas', description: 'Cuadrar la factura de la gasolinera contra las recargas', icon: IconReceipt2 },
       { section: 'vales',          label: 'Vales',          description: 'Vales de gasolina entregados a choferes', icon: IconGasStation    },
     ],
   },
@@ -97,9 +104,20 @@ const NAV_GROUPS: {
     titulo: 'Inventario',
     items: [
       { section: 'piezas',     label: 'Refacciones', description: 'Catálogo de refacciones y sus compras',      icon: IconBox            },
-      { section: 'facturas',   label: 'Facturas',    description: 'Compras por factura: cuadrarlas contra el papel', icon: IconReceipt },
       { section: 'inventario', label: 'Inventario',  description: 'Qué hay en cada sucursal, mínimos y traspasos', icon: IconBuildingStore },
       { section: 'sitios', label: 'Catálogos',   description: 'Proveedores, sucursales, translados y más', icon: IconSettings },
+    ],
+  },
+  // Todo lo que es cuadrar un papel contra lo capturado vive junto, aunque cada
+  // tipo de factura se cuadre distinto: las de refacciones renglón por renglón
+  // contra su lote, las de gasolinera emparejando cada renglón con su recarga.
+  // Lo que comparten es la pregunta, y es la pregunta la que manda en el menú.
+  {
+    titulo: 'Facturas',
+    items: [
+      { section: 'facturas',           label: 'Refacciones', description: 'Compras por factura: cuadrarlas contra el papel', icon: IconReceipt },
+      { section: 'facturas-gasolina',  label: 'Gas',         description: 'Cuadrar la factura de la gasolinera contra las recargas', icon: IconReceipt2 },
+      { section: 'facturas-mantenimientos', label: 'Mantenimientos', description: 'Todavía no existe: aquí van a caer las facturas de taller', icon: IconTool, pendiente: true },
     ],
   },
 ]
@@ -130,13 +148,19 @@ function GrupoTitulo({ children }: { children: string }) {
 // Una sola línea por entrada: icono, etiqueta y nada más. Lo que antes era la
 // descripción vive en el tooltip, que sólo estorba a quien lo pide.
 function NavItem({
-  label, description, icon: IconComponent, active, onClick,
+  label, description, icon: IconComponent, active, onClick, disabled = false,
 }: {
   label:       string
   description: string
   icon:        Icon
   active:      boolean
   onClick:     () => void
+  /**
+   * El apartado existe en el menú pero todavía no tiene pantalla. Se enseña
+   * apagado en vez de esconderlo para que se vea dónde va a caer lo que falta;
+   * el tooltip lo dice, así que nadie lo clica esperando algo.
+   */
+  disabled?:   boolean
 }) {
   return (
     <Tooltip label={description} position="right" openDelay={500} withArrow>
@@ -144,7 +168,8 @@ function NavItem({
         label={label}
         leftSection={<IconComponent size={17} stroke={1.6} />}
         active={active}
-        onClick={onClick}
+        disabled={disabled}
+        onClick={disabled ? undefined : onClick}
         py={6}
         style={{ borderRadius: 6 }}
         styles={{ label: { fontSize: 13.5 } }}
@@ -449,6 +474,7 @@ export default function Layout() {
                       key={item.section}
                       label={item.label} description={item.description} icon={item.icon}
                       active={section === item.section}
+                      disabled={item.pendiente}
                       onClick={() => navigate(item.section)}
                     />
                   )
