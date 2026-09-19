@@ -51,6 +51,14 @@ const PAGE_SIZE = 15
 // abre renglón por renglón.
 const SIN_FACTURAR_PAGE_SIZE = 50
 
+/**
+ * A partir de cuántos días una recarga sin facturar deja de ser normal.
+ *
+ * No es una regla del negocio, es una señal: por debajo de esto la factura
+ * simplemente viene en camino, y por encima es algo que preguntar.
+ */
+const DIAS_PARA_PREOCUPARSE = 30
+
 function EstadoFactura({ f }: { f: FacturaGasolina }) {
   if (f.conciliada_en === null) {
     return <Badge size="xs" variant="light" color="gray">Por conciliar</Badge>
@@ -667,10 +675,11 @@ function SinFacturarPanel() {
                     </Text>
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
-                    {/* El umbral no es una regla del negocio, es una señal: a
-                        partir de un par de meses deja de ser "la factura viene
-                        en camino" y empieza a ser algo que preguntar. */}
-                    <Text size="xs" c={r.dias > 60 ? 'orange.7' : 'dimmed'} fw={r.dias > 60 ? 600 : undefined}>
+                    <Text
+                      size="xs"
+                      c={r.dias > DIAS_PARA_PREOCUPARSE ? 'orange.7' : 'dimmed'}
+                      fw={r.dias > DIAS_PARA_PREOCUPARSE ? 600 : undefined}
+                    >
                       {r.dias} día{r.dias === 1 ? '' : 's'}
                     </Text>
                   </Table.Td>

@@ -78,7 +78,8 @@ renglones se lleven la misma carga.
 La primera es el hallazgo: alguien no registró una carga. La segunda casi nunca
 es un problema —la factura llega después— pero una recarga de hace tres meses sin
 facturar sí lo es, y por eso el listado trae los **días de espera** y resalta lo
-que pasa de sesenta. El umbral no es una regla del negocio, es una señal.
+que pasa de **30 días** (`DIAS_PARA_PREOCUPARSE`). El umbral no es una regla del
+negocio, es una señal: por debajo la factura simplemente viene en camino.
 
 Esas mismas recargas son las candidatas de la próxima factura de su gasolinera,
 así que la lista se vacía sola conforme se concilia.
