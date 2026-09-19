@@ -142,6 +142,34 @@ export function useRegistrarRenglon() {
   })
 }
 
+export interface FacturaHalladaPayload {
+  proveedor_id:   number
+  num_factura:    string
+  fecha_compra:   string
+  tasa_iva:       number | null
+  descuento_pct:  number | null
+  comprado_por:   string
+}
+
+/**
+ * Da de alta la factura que nadie había capturado.
+ *
+ * No hay forma de detectarla sola: no existe ningún dato en el sistema que pueda
+ * notar la ausencia de algo que nunca se capturó. El único detector es la
+ * persona con el fajo de papeles.
+ *
+ * Nace sin renglones — al abrir su cuadre, todo lo que se transcriba del papel
+ * sale como "falta capturar", que es la verdad.
+ */
+export function useCrearFacturaHallada() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: FacturaHalladaPayload) =>
+      api.post<{ data: { id: number } }>('/facturas/halladas', body),
+    onSuccess: () => invalidar(qc),
+  })
+}
+
 export interface ResultadoCuadre {
   factura_id:   number
   correcciones: number

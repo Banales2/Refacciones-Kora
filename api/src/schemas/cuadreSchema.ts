@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { cantidadInicial, costoUnitario } from './loteSchema'
+import {
+  cantidadInicial, compradoPor, costoUnitario, descuentoPct, fechaCompra,
+  numFactura, tasaIva,
+} from './loteSchema'
 import { RefaccionCreateSchema } from './refaccionSchema'
 
 // Lo que dice el papel de una factura de refacciones.
@@ -52,6 +55,23 @@ export const RegistrarRenglonSchema = z.object({
   sucursal_id: z.coerce.number().int().min(1, 'Sucursal requerida'),
 })
 
+/**
+ * La factura que nadie capturó, encontrada al revisar el fajo de papeles.
+ *
+ * Solo la cabecera: nace sin renglones, y los lotes se registran uno por uno
+ * desde el cuadre. Ver `db/migrations/045_factura_hallada_en_revision.sql`.
+ */
+export const FacturaHalladaSchema = z.object({
+  proveedor_id: z.coerce.number().int().min(1, 'Proveedor requerido'),
+  num_factura: numFactura,
+  fecha_compra: fechaCompra,
+  tasa_iva: tasaIva,
+  descuento_pct: descuentoPct,
+  /** Quién hizo la compra, según el papel. */
+  comprado_por: compradoPor,
+})
+
+export type FacturaHallada = z.infer<typeof FacturaHalladaSchema>
 export type RenglonesPapel = z.infer<typeof RenglonesPapelSchema>
 export type Cuadrar = z.infer<typeof CuadrarSchema>
 export type RegistrarRenglon = z.infer<typeof RegistrarRenglonSchema>

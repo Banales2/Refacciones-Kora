@@ -52,6 +52,12 @@ export interface Factura {
    * existencia cero. Ver `db/migrations/028_facturas_historicas.sql`.
    */
   historica: boolean
+  /**
+   * Nadie la había capturado: apareció al revisar el fajo de papeles. Es el
+   * error más caro de todos —un gasto completo fuera de los libros— y por eso
+   * se cuenta aparte. Ver `db/migrations/045_factura_hallada_en_revision.sql`.
+   */
+  hallada_en_revision: boolean
   /** `null` = la cabecera todavía no se verificó contra el papel. Migración 040. */
   cabecera_revisada_en: string | null
   cabecera_revisada_por: string | null
@@ -151,7 +157,7 @@ export async function findAll(
     SELECT f.id, f.folio AS num_factura, f.proveedor_id, pr.nombre AS proveedor,
            CONVERT(char(10), f.fecha_compra, 23) AS fecha_compra,
            f.tasa_iva, f.descuento_pct, f.comprado_por, f.autorizado_por,
-           f.historica,
+           f.historica, f.hallada_en_revision,
            CONVERT(varchar(19), f.cabecera_revisada_en, 126) AS cabecera_revisada_en,
            f.cabecera_revisada_por, f.revision_nota,
            (SELECT COUNT(*) FROM lotes_pieza l WHERE l.factura_id = f.id) AS renglones,
@@ -264,6 +270,45 @@ export async function setTotales(
     .input('tasa',      sql.Decimal(5, 2), tasa)
     .input('descuento', sql.Decimal(5, 2), descuento)
     .query('UPDATE facturas SET tasa_iva = @tasa, descuento_pct = @descuento WHERE id = @id')
+}
+
+export interface FacturaHallada {
+  proveedor_id: number
+  folio: string
+  fecha_compra: string
+  tasa_iva?: number | null
+  descuento_pct?: number | null
+  comprado_por: string
+}
+
+/**
+ * Da de alta la cabecera de una factura que nadie había capturado.
+ *
+ * Nace SIN RENGLONES: los lotes se registran uno por uno desde el cuadre, con
+ * `capturado_por` en NULL porque nadie los tecleó. Ver la migración 045.
+ *
+ * `autorizado_por` sí lleva a quien la registra — esa columna dice quién metió
+ * la factura al sistema, y eso es exactamente lo que hizo.
+ */
+export async function crearHallada(
+  c: FacturaHallada, registradaPor: string,
+): Promise<number> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('pv',        sql.Int,           c.proveedor_id)
+    .input('folio',     sql.NVarChar(30),  c.folio)
+    .input('fecha',     sql.Date,          c.fecha_compra)
+    .input('tasa',      sql.Decimal(5, 2), c.tasa_iva ?? null)
+    .input('descuento', sql.Decimal(5, 2), c.descuento_pct ?? null)
+    .input('comprado',  sql.NVarChar(120), c.comprado_por)
+    .input('autoriza',  sql.NVarChar(120), registradaPor)
+    .query(`
+      INSERT INTO facturas
+        (proveedor_id, folio, fecha_compra, tasa_iva, descuento_pct,
+         comprado_por, autorizado_por, hallada_en_revision)
+      OUTPUT INSERTED.id
+      VALUES (@pv, @folio, @fecha, @tasa, @descuento, @comprado, @autoriza, 1)`)
+  return r.recordset[0].id as number
 }
 
 /** Corrige la fecha mal capturada. La usa la revisión contra el papel. */

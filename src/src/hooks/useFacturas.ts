@@ -52,6 +52,11 @@ export interface Factura {
    * piezas ya se habían usado cuando se capturó y nacieron con existencia cero.
    */
   historica:     boolean
+  /**
+   * Nadie la había capturado: apareció al revisar el fajo de papeles. Es el
+   * error más caro de todos —un gasto completo fuera de los libros—.
+   */
+  hallada_en_revision: boolean
   /** null = la cabecera no se ha cuadrado contra el papel. */
   cabecera_revisada_en:  string | null
   cabecera_revisada_por: string | null

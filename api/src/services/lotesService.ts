@@ -4,9 +4,10 @@ import { LoteCreate, LoteUpdate } from '../schemas/loteSchema'
 import { NotFoundError, ValidationError } from '../shared/errors'
 
 export async function createLote(
-  piezaId: number, data: LoteCreate, autorizadoPor: string
+  piezaId: number, data: LoteCreate, autorizadoPor: string,
+  capturadoPor: string | null = autorizadoPor,
 ): Promise<LoteConProveedor> {
-  return repo.create(piezaId, data, autorizadoPor)
+  return repo.create(piezaId, data, autorizadoPor, capturadoPor)
 }
 
 /**

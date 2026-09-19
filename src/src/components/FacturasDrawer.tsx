@@ -15,7 +15,9 @@ import {
   Accordion, Pagination, Switch, NumberInput, Button, Tooltip, Popover, ActionIcon,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconSearch, IconAlertTriangle, IconPencil, IconScale } from '@tabler/icons-react'
+import {
+  IconSearch, IconAlertTriangle, IconPencil, IconScale, IconFilePlus,
+} from '@tabler/icons-react'
 import {
   useFacturas, useSetTotalesFactura, useSetFolioFactura, useSetFolioLote, FOLIO_EXISTENTE,
 } from '../hooks/useFacturas'
@@ -23,6 +25,7 @@ import type { Factura, FacturaRenglon } from '../hooks/useFacturas'
 import { useAuth } from '../hooks/useAuth'
 import { EstadoRevision, RevisionCabecera } from './RevisionFactura'
 import CuadreFacturaModal from './CuadreFactura'
+import FacturaHalladaModal from './FacturaHalladaModal'
 import { ApiError } from '../lib/api'
 import { FechaInput } from './FechaInput'
 import { formatMXN, formatFecha } from '../lib/formato'
@@ -341,6 +344,7 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
   const [hasta, setHasta] = useState('')
   const [porRevisar, setPorRevisar] = useState(false)
   const [cuadrando, setCuadrando] = useState<{ id: number; folio: string } | null>(null)
+  const [hallada, setHallada] = useState(false)
   const [page, setPage] = useState(1)
 
   // Revisar es cosa de admin: es el segundo par de ojos, y que lo haga
@@ -399,12 +403,26 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
         {/* La bandeja del verificador. Una factura cuenta como pendiente si le
             falta la cabecera o cualquier renglón: dar por buena una con la
             cabecera revisada y tres renglones sin mirar es justo lo que no. */}
-        <Switch
-          size="xs"
-          label="Solo las que faltan por revisar"
-          checked={porRevisar}
-          onChange={(e) => filtrar(() => setPorRevisar(e.currentTarget.checked))}
-        />
+        <Group justify="space-between" align="center">
+          <Switch
+            size="xs"
+            label="Solo las que faltan por revisar"
+            checked={porRevisar}
+            onChange={(e) => filtrar(() => setPorRevisar(e.currentTarget.checked))}
+          />
+          {/* Para el papel que nadie capturó: no aparece en esta lista porque no
+              existe como fila, así que el único que puede meterlo es quien lo
+              tiene en la mano. Ver `FacturaHalladaModal`. */}
+          {esAdmin && (
+            <Button
+              size="compact-xs" variant="subtle" color="orange"
+              leftSection={<IconFilePlus size={14} />}
+              onClick={() => setHallada(true)}
+            >
+              Factura que no está en el sistema
+            </Button>
+          )}
+        </Group>
 
         {isError ? (
           <Alert color="red" title="Error">No se pudieron cargar las facturas.</Alert>
@@ -435,6 +453,16 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
                         <Group gap={6}>
                           <Text fw={600} size="sm">{f.num_factura}</Text>
                           <EstadoRevision factura={f} />
+                          {/* Nadie la capturó: apareció al revisar el fajo de
+                              papeles. Se marca porque es el error más caro y
+                              hay que poder contarlas aparte. */}
+                          {f.hallada_en_revision && (
+                            <Tooltip label="Nadie la había capturado: apareció al revisar">
+                              <Badge size="xs" variant="light" color="orange">
+                                Hallada al revisar
+                              </Badge>
+                            </Tooltip>
+                          )}
                           {/* El descuento solo se anuncia cuando lo hay: la
                               mayoría de las facturas no trae ninguno y una
                               insignia de más en cada renglón no dice nada. */}
@@ -544,6 +572,12 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
             )}
           </>
         )}
+
+      <FacturaHalladaModal
+        abierto={hallada}
+        onClose={() => setHallada(false)}
+        onCreada={(id, folio) => setCuadrando({ id, folio })}
+      />
 
       <CuadreFacturaModal
         facturaId={cuadrando?.id ?? null}

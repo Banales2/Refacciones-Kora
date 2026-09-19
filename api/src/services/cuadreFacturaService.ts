@@ -3,7 +3,8 @@ import type { LoteDeFactura, RenglonPapel } from '../repositories/cuadreFacturaR
 import * as revisionRepo from '../repositories/revisionRepo'
 import * as lotesService from '../services/lotesService'
 import * as refaccionesRepo from '../repositories/refaccionesRepo'
-import type { RenglonesPapel } from '../schemas/cuadreSchema'
+import * as facturasRepo from '../repositories/facturasRepo'
+import type { FacturaHallada, RenglonesPapel } from '../schemas/cuadreSchema'
 import { AppError, NotFoundError } from '../shared/errors'
 import { aCentavos, contribucionRenglon } from '../shared/totales'
 
@@ -253,6 +254,39 @@ export async function guardarRenglones(
 }
 
 /**
+ * Da de alta la factura que nadie había capturado.
+ *
+ * No hay forma de detectarla sola: no existe ningún dato en el sistema que pueda
+ * notar la ausencia de algo que nunca se capturó. El único detector es la
+ * persona con el fajo de papeles; esto es donde lo registra cuando lo encuentra.
+ *
+ * Nace SIN RENGLONES a propósito. Al abrir su cuadre, todo lo que se transcriba
+ * del papel sale como `falta_capturar` —que es la verdad— y cada renglón se
+ * registra con el botón que ya existe.
+ */
+export async function crearHallada(
+  datos: FacturaHallada, registradaPor: string,
+): Promise<number> {
+  const existente = await facturasRepo.findByFolio(datos.num_factura, datos.proveedor_id)
+  if (existente) {
+    throw new AppError(
+      `Ese proveedor ya tiene la factura ${datos.num_factura} en el sistema. ` +
+      'Ábrela y cuádrala contra el papel en vez de darla de alta otra vez.',
+      409, 'CONFLICT',
+    )
+  }
+
+  return facturasRepo.crearHallada({
+    proveedor_id: datos.proveedor_id,
+    folio: datos.num_factura,
+    fecha_compra: datos.fecha_compra,
+    tasa_iva: datos.tasa_iva ?? null,
+    descuento_pct: datos.descuento_pct ?? null,
+    comprado_por: datos.comprado_por,
+  }, registradaPor)
+}
+
+/**
  * Registra la compra que el papel cobra y nadie había capturado.
  *
  * Es el otro lado de `POST /lotes/{id}/quitar`: aquel borra lo que sobra, este
@@ -289,7 +323,10 @@ export async function registrarRenglon(
     num_factura: r.folio,
     tasa_iva: null,
     comprado_por: r.comprado_por,
-  }, quien)
+    // `capturado_por` en NULL: esta compra no la tecleó nadie, y por eso la
+    // revisión la encontró. Ponerle el nombre de quien la registra ahora
+    // convertiría al verificador en el culpable de un error que arregló.
+  }, quien, null)
 
   await repo.ligarLote(renglonId, lote.id)
   return { lote_id: lote.id, factura_id: r.factura_id }

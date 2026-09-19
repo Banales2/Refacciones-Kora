@@ -41,7 +41,12 @@ export async function findById(id: number): Promise<LoteConProveedor | null> {
 // `cantidad_disponible` se sigue escribiendo mientras la columna exista, para
 // que quien mire la tabla a mano no vea un cero engañoso; nadie la lee.
 export async function create(
-  piezaId: number, data: LoteCreate, autorizadoPor: string
+  piezaId: number, data: LoteCreate, autorizadoPor: string,
+  // Quién tecleó este renglón. Por omisión, quien lo está dando de alta — pero
+  // la revisión pasa NULL cuando registra una compra que NADIE había capturado:
+  // no hay una persona que tecleó mal, hay una que nunca tecleó, y cargársela a
+  // quien lo arregló sería culpar al que lo encontró.
+  capturadoPor: string | null = autorizadoPor,
 ): Promise<LoteConProveedor> {
   const pool = await getPool()
   const tx = pool.transaction()
@@ -68,7 +73,7 @@ export async function create(
       .input('cantidad_inicial', sql.Int, data.cantidad_inicial)
       // Quién tecleó este renglón, para poder cargarle el error si la revisión
       // lo encuentra. Ver `db/migrations/040_revision_de_facturas.sql`.
-      .input('capturado_por', sql.NVarChar(120), autorizadoPor)
+      .input('capturado_por', sql.NVarChar(120), capturadoPor)
       .query(`
         INSERT INTO lotes_pieza
           (pieza_id, factura_id, sucursal_id, costo_unitario,

@@ -50,6 +50,36 @@ y costo (esos no son inferencia, son el mismo renglón), después por pieza a
 secas. Sin la primera pasada, una factura con la misma refacción en dos renglones
 a distinto precio cruzaría los dos y reportaría dos errores donde no hay ninguno.
 
+## La factura entera que nadie capturó
+
+El cuadre caza lo que falta **dentro** de una factura conocida. No caza la
+factura entera, y por construcción no puede: `facturas` solo tiene filas que
+alguien creó al registrar una compra, así que si nadie capturó nada **no hay
+fila**. Esa factura no sale en el listado, no entra a la bandeja y no tiene
+cuadre que abrir.
+
+**No hay forma de detectarla sola.** No existe ningún dato en el sistema que
+pueda notar la ausencia de algo que nunca se capturó; el único detector es la
+persona con el fajo de papeles. (En gasolina no pasa: una recarga sin facturar sí
+se detecta sola, porque las recargas existen independientemente de la factura.
+Aquí no hay equivalente.)
+
+El botón **"Factura que no está en el sistema"** da de alta la cabecera con
+`hallada_en_revision = 1` y abre su cuadre. Como no hay ningún lote, todo lo que
+se transcriba sale como `falta_capturar` y cada renglón se registra con el botón
+de siempre.
+
+**Los lotes que salen de ahí llevan `capturado_por` en NULL**, no el nombre de
+quien la encontró: no hay una persona que tecleó mal, hay una que nunca tecleó, y
+cargársela al verificador sería culpar a quien lo arregló. En el reporte de
+errores esas correcciones salen como "Sin identificar", que es la verdad.
+`autorizado_por` sí lleva al verificador — esa columna dice quién metió la
+factura al sistema, y eso es exactamente lo que hizo.
+
+La marca existe para poder contarlas aparte: sin ella se confunden con las
+capturadas a tiempo, y entonces no se puede contestar cuántas facturas se estaban
+perdiendo. Ver `db/migrations/045_factura_hallada_en_revision.sql`.
+
 ## Resolver, no solo señalar
 
 Cada diferencia trae su acción al lado:
@@ -200,6 +230,7 @@ es nada: se borra también, salvo que ya tenga correcciones registradas.
 | `PUT /facturas/{id}/renglones` | **admin** | Guarda la transcripción del papel |
 | `POST /facturas/renglones/{id}/registrar` | **admin** | Da de alta la compra que falta |
 | `POST /facturas/{id}/cuadrar` | **admin** | Aplica el papel y sella la factura |
+| `POST /facturas/halladas` | **admin** | Da de alta la factura que nadie capturó |
 | `POST /facturas/{id}/revisar` | **admin** | Cuadra la cabecera (folio, fecha, IVA, descuento) |
 | `POST /facturas/{id}/reabrir` | **admin** | Quita los sellos |
 | `POST /lotes/{id}/quitar` | **admin** | Borra el renglón que no está en el papel |
