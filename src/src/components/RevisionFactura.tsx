@@ -5,12 +5,11 @@
 // con lo guardado. Lo que coincide se sella sin más; lo que no, se corrige, se
 // le pone precio y se le carga a quien lo tecleó.
 //
-// POR QUÉ LOS CAMPOS VIENEN PRELLENADOS CON LO GUARDADO. Es una concesión
-// deliberada y conviene saberla: prellenarlos hace que "todo cuadra" —el caso
-// común— sea un solo clic, pero también permite sellar sin leer el papel. La
-// alternativa, campos en blanco que hay que teclear a ciegas, convierte cada
-// factura correcta en quince tecleos y acaba en que nadie revisa. Se eligió que
-// revisar sea barato; que se haga de verdad es cosa de quien lo hace.
+// POR QUÉ NO HAY BOTÓN CUANDO NADA CAMBIA. Los campos vienen prellenados con lo
+// guardado para no obligar a teclear a ciegas, pero con el prellenado un solo
+// clic sellaba la cabecera sin haber leído el papel. Por eso el botón de sellar
+// sólo aparece cuando el verificador modificó algún dato: la verificación se
+// hace a mano, nunca de corrido.
 //
 // Ver `db/migrations/040_revision_de_facturas.sql`.
 import { useState } from 'react'
@@ -232,15 +231,22 @@ export function RevisionCabecera({
             </Text>
           )}
         </Text>
-        <Button
-          size="xs"
-          color={cambia ? 'yellow' : 'green'}
-          disabled={invalido}
-          loading={revisar.isPending}
-          onClick={() => sellar()}
-        >
-          {cambia ? 'Corregir y sellar' : 'Cuadra, sellar'}
-        </Button>
+        {cambia ? (
+          <Button
+            size="xs"
+            color="yellow"
+            disabled={invalido}
+            loading={revisar.isPending}
+            onClick={() => sellar()}
+          >
+            Corregir y sellar
+          </Button>
+        ) : (
+          <Text size="xs" c="dimmed" maw={280} ta="right">
+            Lo tecleado es igual a lo capturado. Sella hasta que hayas corregido
+            contra el papel lo que no coincida.
+          </Text>
+        )}
       </Group>
 
       {fusionPendiente ? (
