@@ -108,6 +108,58 @@ export function useCandidatas(facturaId: number | null) {
   })
 }
 
+export interface RecargaSinFacturar {
+  id:            number
+  fecha:         string
+  gasolinera_id: number
+  gasolinera:    string
+  litros:        number
+  costo:         number
+  vehiculo:      string
+  conductor:     string
+  vale_folio:    string | null
+  /** Días desde la carga. Es lo que dice si ya se tardó la factura. */
+  dias:          number
+}
+
+export interface SinFacturarFiltros {
+  page?:          number
+  pageSize?:      number
+  gasolinera_id?: number
+  search?:        string
+  desde?:         string
+  hasta?:         string
+}
+
+interface SinFacturarResponse {
+  data: RecargaSinFacturar[]
+  costo_total: number
+  pagination: { page: number; pageSize: number; total: number }
+}
+
+/**
+ * Las recargas que ninguna factura ha reclamado.
+ *
+ * Es el reverso de lo que enseña la conciliación: allá se ve lo que la
+ * gasolinera cobra y no está capturado; aquí, lo que está capturado y la
+ * gasolinera no ha cobrado. Casi nunca es un problema —la factura llega después
+ * de la carga— pero una de hace tres meses sí lo es, y por eso cada renglón trae
+ * los días que lleva esperando.
+ */
+export function useRecargasSinFacturar(filtros: SinFacturarFiltros, enabled = true) {
+  return useQuery({
+    queryKey: ['facturas-gasolina', 'sin-facturar', filtros],
+    queryFn: () => {
+      const qs = new URLSearchParams()
+      for (const [k, v] of Object.entries(filtros)) {
+        if (v !== undefined && v !== '') qs.set(k, String(v))
+      }
+      return api.get<SinFacturarResponse>(`/facturas-gasolina/sin-facturar?${qs}`)
+    },
+    enabled,
+  })
+}
+
 function invalidar(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['facturas-gasolina'] })
   // Las recargas cambian de "sin facturar" a "facturada", y eso se ve en las

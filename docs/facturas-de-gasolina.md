@@ -68,6 +68,21 @@ en la recarga. Así "qué falta por facturar" y "qué renglón no tiene recarga"
 la misma consulta vista desde dos lados, y un índice único impide que dos
 renglones se lleven la misma carga.
 
+## Las dos mitades de la pregunta
+
+| | qué dice |
+|---|---|
+| **renglón sin recarga** | la gasolinera cobra algo que **no está capturado** |
+| **recarga sin factura** | está capturado algo que la gasolinera **no ha cobrado** |
+
+La primera es el hallazgo: alguien no registró una carga. La segunda casi nunca
+es un problema —la factura llega después— pero una recarga de hace tres meses sin
+facturar sí lo es, y por eso el listado trae los **días de espera** y resalta lo
+que pasa de sesenta. El umbral no es una regla del negocio, es una señal.
+
+Esas mismas recargas son las candidatas de la próxima factura de su gasolinera,
+así que la lista se vacía sola conforme se concilia.
+
 ## El renglón sin recarga es el producto
 
 No es un descuadre de dinero abstracto: es una carga concreta, con sus litros y
@@ -126,6 +141,7 @@ pegó.
 | `GET /facturas-gasolina/{id}/candidatas` | admin, editor, viewer | Renglones con su propuesta, y las recargas elegibles |
 | `POST /facturas-gasolina/{id}/conciliar` | **admin** | Guarda los emparejamientos y sella |
 | `POST /facturas-gasolina/{id}/reabrir` | **admin** | Suelta el sello |
+| `GET /facturas-gasolina/sin-facturar` | admin, editor, viewer | Las recargas que ninguna factura ha reclamado |
 
 Conciliar es solo admin, igual que revisar una factura de refacciones: es el
 segundo par de ojos sobre lo capturado.
@@ -137,8 +153,10 @@ segundo par de ojos sobre lo capturado.
 
 `src/src/pages/FacturasGasolina.tsx`, en **Operación → Facturas de gas**.
 
-Lista con estado (`Por conciliar`, `Cuadrada`, `N sin capturar`), y al abrir una
-factura: tres tarjetas —total, renglones casados, importe sin capturar— y la
+Dos pestañas: **Facturas** y **Recargas sin factura**.
+
+La primera lista con estado (`Por conciliar`, `Cuadrada`, `N sin capturar`), y al
+abrir una factura: tres tarjetas —total, renglones casados, importe sin capturar— y la
 tabla de renglones con un desplegable de recargas por cada uno.
 
 **También se ven desde el catálogo**: en Catálogos → Gasolineras, al abrir una

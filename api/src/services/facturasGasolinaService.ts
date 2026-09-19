@@ -1,6 +1,8 @@
 import * as repo from '../repositories/facturasGasolinaRepo'
 import type { Casado, RecargaCandidata, RenglonFactura } from '../repositories/facturasGasolinaRepo'
-import { ConciliarGasolina, FacturaGasolinaCreate } from '../schemas/facturaGasolinaSchema'
+import {
+  ConciliarGasolina, FacturaGasolinaCreate, SinFacturarQuery,
+} from '../schemas/facturaGasolinaSchema'
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../shared/errors'
 import { aCentavos } from '../shared/totales'
 
@@ -26,6 +28,17 @@ export async function crear(
     throw new ConflictError(`Esa gasolinera ya tiene una factura con el folio ${data.folio}.`)
   }
   return repo.crear(data, capturadoPor)
+}
+
+/**
+ * Las recargas que ninguna factura ha reclamado.
+ *
+ * Es el reverso de "el renglón sin recarga": allá la gasolinera cobra algo que
+ * no está capturado; aquí está capturado algo que la gasolinera no ha cobrado.
+ */
+export async function sinFacturar(p: SinFacturarQuery) {
+  const r = await repo.recargasSinFacturar(p)
+  return { ...r, page: p.page, pageSize: p.pageSize }
 }
 
 /** Las cantidades se comparan en milésimas: es lo que guarda la columna. */

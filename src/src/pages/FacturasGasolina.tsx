@@ -24,7 +24,8 @@
 import { useState } from 'react'
 import {
   Alert, Badge, Button, Card, Center, Group, Loader, Modal, NumberInput,
-  Pagination, Select, Stack, Switch, Table, Text, Textarea, TextInput, Tooltip,
+  Pagination, Select, Stack, Switch, Table, Tabs, Text, Textarea, TextInput,
+  Tooltip,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
@@ -32,7 +33,7 @@ import {
 } from '@tabler/icons-react'
 import {
   useCandidatas, useConciliar, useCrearFacturaGasolina, useFacturasGasolina,
-  useReabrirFacturaGasolina, PRODUCTOS, RENGLONES_SIN_CASAR,
+  useReabrirFacturaGasolina, useRecargasSinFacturar, PRODUCTOS, RENGLONES_SIN_CASAR,
 } from '../hooks/useFacturasGasolina'
 import type {
   Candidatas, FacturaGasolina, Producto, RecargaCandidata, RenglonNuevo,
@@ -46,6 +47,9 @@ import { formatMXN, formatFecha } from '../lib/formato'
 import { IVA_DEFAULT, conIva } from '../lib/totales'
 
 const PAGE_SIZE = 15
+// Más alto que el de facturas: esta lista se recorre buscando lo viejo, no se
+// abre renglón por renglón.
+const SIN_FACTURAR_PAGE_SIZE = 50
 
 function EstadoFactura({ f }: { f: FacturaGasolina }) {
   if (f.conciliada_en === null) {
@@ -561,6 +565,131 @@ function ConciliarModal({
 
 // ── Pantalla ─────────────────────────────────────────────────────────────────
 
+// ── Recargas que nadie ha facturado ──────────────────────────────────────────
+
+/**
+ * El reverso de la conciliación.
+ *
+ * La pestaña de facturas enseña lo que la gasolinera cobra y no está capturado.
+ * Esta enseña lo contrario: lo que está capturado y la gasolinera todavía no ha
+ * cobrado. Casi nunca es un problema —la factura llega después de la carga— pero
+ * una recarga de hace tres meses sin facturar sí lo es, y de ahí la columna de
+ * días: es lo único que distingue "normal" de "a alguien se le perdió un papel".
+ *
+ * Estas mismas recargas son las candidatas de la próxima factura de su
+ * gasolinera, así que esta lista se vacía sola conforme se concilia.
+ */
+function SinFacturarPanel() {
+  const [search, setSearch] = useState('')
+  const [debounced] = useDebouncedValue(search, 300)
+  const [page, setPage] = useState(1)
+
+  const { data, isLoading, isError } = useRecargasSinFacturar({
+    page, pageSize: SIN_FACTURAR_PAGE_SIZE,
+    search: debounced || undefined,
+  })
+
+  const recargas = data?.data ?? []
+  const total = data?.pagination.total ?? 0
+  const costoTotal = data?.costo_total ?? 0
+  const paginas = Math.ceil(total / SIN_FACTURAR_PAGE_SIZE)
+
+  return (
+    <Stack gap="md">
+      <Text size="sm" c="dimmed">
+        Cargas registradas que ninguna factura ha cobrado todavía. Son las
+        candidatas de la próxima factura de su gasolinera, así que la lista se
+        vacía sola conforme se concilia.
+      </Text>
+
+      <TextInput
+        placeholder="Buscar por gasolinera, unidad, chofer o vale…"
+        leftSection={<IconSearch size={16} />}
+        value={search}
+        onChange={(e) => { setSearch(e.currentTarget.value); setPage(1) }}
+      />
+
+      {isError ? (
+        <Alert color="red" title="Error">No se pudieron cargar las recargas.</Alert>
+      ) : isLoading ? (
+        <Center py="xl"><Loader /></Center>
+      ) : !recargas.length ? (
+        <Center py="xl">
+          <Text c="dimmed">
+            {debounced
+              ? 'Ninguna recarga coincide con el filtro.'
+              : 'Todas las recargas están facturadas.'}
+          </Text>
+        </Center>
+      ) : (
+        <>
+          <Group gap="sm">
+            <Card withBorder padding="xs" style={{ flex: 1, minWidth: 130 }}>
+              <Text size="xs" c="dimmed">Recargas sin facturar</Text>
+              <Text size="lg" fw={700}>{total}</Text>
+            </Card>
+            <Card withBorder padding="xs" style={{ flex: 1, minWidth: 130 }}>
+              <Text size="xs" c="dimmed">Lo que suman</Text>
+              <Text size="lg" fw={700}>{formatMXN(costoTotal)}</Text>
+            </Card>
+          </Group>
+
+          <Table withTableBorder striped>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th style={{ width: 110 }}>Fecha</Table.Th>
+                <Table.Th>Gasolinera</Table.Th>
+                <Table.Th>Unidad</Table.Th>
+                <Table.Th style={{ width: 100, textAlign: 'right' }}>Litros</Table.Th>
+                <Table.Th style={{ width: 110, textAlign: 'right' }}>Costo</Table.Th>
+                <Table.Th style={{ width: 100 }}>Vale</Table.Th>
+                <Table.Th style={{ width: 90, textAlign: 'right' }}>Espera</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {recargas.map((r) => (
+                <Table.Tr key={r.id}>
+                  <Table.Td><Text size="sm">{formatFecha(r.fecha)}</Text></Table.Td>
+                  <Table.Td><Text size="sm">{r.gasolinera}</Text></Table.Td>
+                  <Table.Td>
+                    <Text size="sm">{r.vehiculo}</Text>
+                    <Text size="xs" c="dimmed">{r.conductor}</Text>
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
+                    <Text size="sm">{r.litros}</Text>
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
+                    <Text size="sm" fw={600}>{formatMXN(r.costo)}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs" c={r.vale_folio ? undefined : 'dimmed'}>
+                      {r.vale_folio ?? 'Sin vale'}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
+                    {/* El umbral no es una regla del negocio, es una señal: a
+                        partir de un par de meses deja de ser "la factura viene
+                        en camino" y empieza a ser algo que preguntar. */}
+                    <Text size="xs" c={r.dias > 60 ? 'orange.7' : 'dimmed'} fw={r.dias > 60 ? 600 : undefined}>
+                      {r.dias} día{r.dias === 1 ? '' : 's'}
+                    </Text>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+
+          {paginas > 1 && (
+            <Group justify="center">
+              <Pagination value={page} onChange={setPage} total={paginas} />
+            </Group>
+          )}
+        </>
+      )}
+    </Stack>
+  )
+}
+
 export default function FacturasGasolina() {
   const [search, setSearch] = useState('')
   const [debounced] = useDebouncedValue(search, 300)
@@ -600,6 +729,14 @@ export default function FacturasGasolina() {
         </Button>
       </Group>
 
+      <Tabs defaultValue="facturas">
+        <Tabs.List>
+          <Tabs.Tab value="facturas">Facturas</Tabs.Tab>
+          <Tabs.Tab value="sin-facturar">Recargas sin factura</Tabs.Tab>
+        </Tabs.List>
+
+        <Tabs.Panel value="facturas" pt="md">
+          <Stack gap="md">
       <TextInput
         placeholder="Buscar por folio o gasolinera…"
         leftSection={<IconSearch size={16} />}
@@ -671,6 +808,14 @@ export default function FacturasGasolina() {
           )}
         </>
       )}
+
+          </Stack>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="sin-facturar" pt="md">
+          <SinFacturarPanel />
+        </Tabs.Panel>
+      </Tabs>
 
       <NuevaFacturaModal abierto={nueva} onClose={() => setNueva(false)} />
       <ConciliarModal

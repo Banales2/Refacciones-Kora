@@ -95,6 +95,17 @@ export const FacturaGasolinaQuerySchema = z.object({
     .optional(),
 })
 
+/** Las recargas que ninguna factura ha reclamado. Reusa los filtros del listado. */
+export const SinFacturarQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+  gasolinera_id: z.coerce.number().int().min(1).optional(),
+  /** Busca en gasolinera, número de serie de la unidad, chofer y folio del vale. */
+  search: z.string().max(100).optional(),
+  desde: fecha.optional(),
+  hasta: fecha.optional(),
+})
+
 export const ConciliarGasolinaSchema = z.object({
   /**
    * A qué recarga corresponde cada renglón. Va el conjunto COMPLETO, con los
@@ -120,3 +131,4 @@ export const ConciliarGasolinaSchema = z.object({
 export type FacturaGasolinaCreate = z.infer<typeof FacturaGasolinaCreateSchema>
 export type FacturaGasolinaQueryIn = z.infer<typeof FacturaGasolinaQuerySchema>
 export type ConciliarGasolina = z.infer<typeof ConciliarGasolinaSchema>
+export type SinFacturarQuery = z.infer<typeof SinFacturarQuerySchema>

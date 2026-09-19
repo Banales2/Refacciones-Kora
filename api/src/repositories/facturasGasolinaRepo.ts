@@ -333,6 +333,91 @@ export async function reabrir(facturaId: number): Promise<void> {
       WHERE id = @id`)
 }
 
+export interface RecargaSinFacturar {
+  id: number
+  fecha: string
+  gasolinera_id: number
+  gasolinera: string
+  litros: number
+  costo: number
+  vehiculo: string
+  conductor: string
+  vale_folio: string | null
+  /** Días desde la carga. Es lo que dice si ya se tardó la factura. */
+  dias: number
+}
+
+/**
+ * Las recargas que ninguna factura ha reclamado todavía.
+ *
+ * Es el reverso de "el renglón sin recarga": allá la gasolinera cobra algo que
+ * no está capturado; aquí está capturado algo que la gasolinera no ha cobrado.
+ * Lo segundo casi nunca es un problema —la factura llega después— pero una carga
+ * de hace tres meses sin facturar sí lo es, y por eso se devuelve `dias`.
+ *
+ * NO se filtra por antigüedad: esconder lo viejo sería esconder justo lo que
+ * hay que mirar.
+ */
+export async function recargasSinFacturar(p: {
+  page: number
+  pageSize: number
+  gasolinera_id?: number
+  search?: string
+  desde?: string
+  hasta?: string
+}): Promise<{ data: RecargaSinFacturar[]; total: number; costo_total: number }> {
+  const pool = await getPool()
+  const req = pool.request()
+    .input('offset', sql.Int, (p.page - 1) * p.pageSize)
+    .input('pageSize', sql.Int, p.pageSize)
+
+  const where = [
+    `NOT EXISTS (SELECT 1 FROM facturas_gasolina_renglones fgr WHERE fgr.recarga_id = rc.id)`,
+  ]
+  if (p.gasolinera_id) {
+    req.input('gid', sql.Int, p.gasolinera_id)
+    where.push('rc.gasolinera_id = @gid')
+  }
+  if (p.search) {
+    req.input('search', `%${p.search}%`)
+    where.push(`(g.nombre LIKE @search OR v.numero_serie LIKE @search
+                 OR co.nombre LIKE @search OR vg.folio LIKE @search)`)
+  }
+  if (p.desde) { req.input('desde', sql.Date, p.desde); where.push('rc.fecha >= @desde') }
+  if (p.hasta) { req.input('hasta', sql.Date, p.hasta); where.push('rc.fecha <= @hasta') }
+
+  const joins = `
+    FROM recargas_combustible rc
+    JOIN gasolineras g  ON g.id  = rc.gasolinera_id
+    JOIN vehiculos   v  ON v.id  = rc.vehiculo_id
+    JOIN modelos     mo ON mo.id = v.modelo_id
+    JOIN conductores co ON co.id = rc.conductor_id
+    LEFT JOIN vales_gasolina vg ON vg.id = rc.vale_id
+    WHERE ${where.join(' AND ')}`
+
+  const r = await req.query(`
+    SELECT rc.id, CONVERT(char(10), rc.fecha, 23) AS fecha,
+           rc.gasolinera_id, g.nombre AS gasolinera,
+           rc.litros, rc.costo,
+           CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
+           co.nombre AS conductor, vg.folio AS vale_folio,
+           DATEDIFF(day, rc.fecha, CAST(SYSDATETIME() AS date)) AS dias
+    ${joins}
+    ORDER BY rc.fecha DESC, rc.id DESC
+    OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
+
+    SELECT COUNT(*) AS total, COALESCE(SUM(rc.costo), 0) AS costo_total
+    ${joins};
+  `)
+
+  const resumen = (r.recordsets[1] as unknown as { total: number; costo_total: number }[])[0]
+  return {
+    data: r.recordsets[0] as unknown as RecargaSinFacturar[],
+    total: resumen.total,
+    costo_total: Number(resumen.costo_total),
+  }
+}
+
 /** La factura que ya cobra esa recarga, si alguna la reclamó. */
 export async function facturaDeRecarga(
   recargaId: number,
