@@ -189,7 +189,7 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Descripción</Table.Th>
-                  <Table.Th style={{ textAlign: 'right' }}>Cantidad</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Litros</Table.Th>
                   <Table.Th style={{ textAlign: 'right' }}>Importe</Table.Th>
                   <Table.Th w={36} />
                 </Table.Tr>
@@ -202,7 +202,7 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
                           produciría "DIESEL", "diesel" y "Diésel" como si
                           fueran cosas distintas. */}
                       <Select
-                        size="xs" variant="unstyled" allowDeselect={false}
+                        size="xs" allowDeselect={false}
                         data={PRODUCTOS as unknown as string[]}
                         value={r.descripcion}
                         onChange={(v) => setRenglones((p) => p.map((x, j) =>
@@ -211,18 +211,19 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       <NumberInput
-                        size="xs" variant="unstyled" decimalScale={3} min={0}
+                        size="xs" decimalScale={3} min={0} placeholder="0.000"
                         styles={{ input: { textAlign: 'right' } }}
-                        value={r.cantidad}
+                        value={r.cantidad || ''}
                         onChange={(v) => setRenglones((p) => p.map((x, j) =>
                           j === i ? { ...x, cantidad: Number(v) || 0 } : x))}
                       />
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       <NumberInput
-                        size="xs" variant="unstyled" decimalScale={2} min={0}
+                        size="xs" decimalScale={2} min={0} placeholder="0.00"
+                        prefix="$" thousandSeparator=","
                         styles={{ input: { textAlign: 'right' } }}
-                        value={r.importe}
+                        value={r.importe || ''}
                         onChange={(v) => setRenglones((p) => p.map((x, j) =>
                           j === i ? { ...x, importe: Number(v) || 0 } : x))}
                       />
@@ -420,7 +421,7 @@ function CuadreFactura({
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Descripción</Table.Th>
-              <Table.Th style={{ textAlign: 'right' }}>Cantidad</Table.Th>
+              <Table.Th style={{ textAlign: 'right' }}>Litros</Table.Th>
               <Table.Th style={{ textAlign: 'right' }}>Importe</Table.Th>
               <Table.Th>Recarga del sistema</Table.Th>
             </Table.Tr>
