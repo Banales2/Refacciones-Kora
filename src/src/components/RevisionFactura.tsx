@@ -24,6 +24,7 @@ import {
 import type { Factura, FacturaRenglon } from '../hooks/useFacturas'
 import {
   useQuitarRenglon, useReabrirFactura, useRevisarCabecera, useRevisarRenglon,
+  TOTAL_NO_CUADRA,
 } from '../hooks/useRevision'
 import { FOLIO_EXISTENTE } from '../hooks/useFacturas'
 import { ApiError } from '../lib/api'
@@ -217,6 +218,7 @@ export function RevisionCabecera({
   const [conDesc, setConDesc] = useState(factura.descuento_pct != null)
   const [desc, setDesc] = useState<number | string>(factura.descuento_pct ?? DESCUENTO_DEFAULT)
   const [nota, setNota] = useState(factura.revision_nota ?? '')
+  const [totalPapel, setTotalPapel] = useState<number | string>(factura.total_papel ?? '')
 
   const revisar = useRevisarCabecera()
   const reabrir = useReabrirFactura()
@@ -233,6 +235,26 @@ export function RevisionCabecera({
                 <> Faltan {factura.renglones - factura.renglones_revisados} renglón(es).</>
               )}
             </Text>
+            {factura.total_papel != null && (() => {
+              // La diferencia se recalcula al leer, no se guarda: así sigue
+              // siendo cierta aunque después se corrija el costo de un renglón.
+              const dif = factura.total_papel
+                - totalesFactura(factura.subtotal, factura.descuento_pct, factura.tasa_iva).total
+              if (Math.abs(dif) < 0.01) {
+                return (
+                  <Text size="xs" c="dimmed" mt={4}>
+                    El papel dice {formatMXN(factura.total_papel)} y cuadra.
+                  </Text>
+                )
+              }
+              return (
+                <Text size="xs" c="orange.7" fw={600} mt={4}>
+                  El papel dice {formatMXN(factura.total_papel)}:{' '}
+                  {dif > 0 ? 'faltan' : 'sobran'} {formatMXN(Math.abs(dif))} contra lo
+                  capturado{dif > 0 ? ' — falta alguna refacción por registrar' : ''}.
+                </Text>
+              )
+            })()}
             {factura.revision_nota && (
               <Text size="xs" c="dimmed" mt={4}>Nota: {factura.revision_nota}</Text>
             )}
@@ -273,6 +295,7 @@ export function RevisionCabecera({
   const descNueva = conDesc ? Number(desc) : null
 
   const invalido = folioNuevo === ''
+    || !(Number(totalPapel) > 0)
     || (conIva && !(Number(tasa) > 0 && Number(tasa) <= 100))
     || (conDesc && !(Number(desc) > 0 && Number(desc) < 100))
 
@@ -285,6 +308,16 @@ export function RevisionCabecera({
   const totalDespues = totalesFactura(factura.subtotal, descNueva, tasaNueva).total
   const delta = totalDespues - totalAntes
 
+  // Lo único que puede cazar el renglón que NADIE capturó: si falta una pieza no
+  // hay renglón donde poner una marca, pero el total del papel no cuadra.
+  const difPapel = Number(totalPapel) > 0 ? Number(totalPapel) - totalDespues : 0
+  const cuadraPapel = Math.abs(difPapel) < 0.01
+
+  const totalPendiente =
+    revisar.error instanceof ApiError && revisar.error.code === TOTAL_NO_CUADRA
+      ? revisar.error.message
+      : null
+
   // El 409 del folio que ya existe se lee del error del intento anterior, igual
   // que en `FolioDeFactura`: así la pregunta se cae sola al volver a teclear.
   const fusionPendiente =
@@ -292,15 +325,17 @@ export function RevisionCabecera({
       ? revisar.error.message
       : null
 
-  function sellar(confirmarFusion = false) {
+  function sellar({ fusion = false, diferencia = false } = {}) {
     revisar.mutate({
-      factura_id:       factura.id,
-      num_factura:      folioNuevo,
-      fecha_compra:     fecha,
-      tasa_iva:         tasaNueva,
-      descuento_pct:    descNueva,
-      nota:             nota.trim() || undefined,
-      confirmar_fusion: confirmarFusion,
+      factura_id:           factura.id,
+      num_factura:          folioNuevo,
+      fecha_compra:         fecha,
+      tasa_iva:             tasaNueva,
+      descuento_pct:        descNueva,
+      total_papel:          Number(totalPapel),
+      nota:                 nota.trim() || undefined,
+      confirmar_fusion:     fusion,
+      confirmar_diferencia: diferencia,
     })
   }
 
@@ -351,6 +386,19 @@ export function RevisionCabecera({
         </Stack>
       </Group>
 
+      {/* El total del papel es lo único que caza la pieza que nadie capturó: si
+          falta un renglón no hay dónde marcarlo, pero el total no da. */}
+      <NumberInput
+        label="Total que dice el papel"
+        description="Con eso se comprueba que no falte ninguna refacción por capturar"
+        size="xs" min={0} decimalScale={2} prefix="$" thousandSeparator=","
+        value={totalPapel}
+        onChange={(v) => {
+          setTotalPapel(v)
+          if (revisar.error) revisar.reset()
+        }}
+      />
+
       <Textarea
         label="Nota (opcional)" size="xs" autosize minRows={1} maxLength={255}
         placeholder="El papel viene roto, el proveedor la reexpidió…"
@@ -358,17 +406,31 @@ export function RevisionCabecera({
       />
 
       <Group justify="space-between" align="flex-end">
-        <Text size="sm">
-          Total según lo tecleado <Text component="span" fw={700}>{formatMXN(totalDespues)}</Text>
-          {Math.abs(delta) >= 0.01 && (
-            <Text component="span" size="xs" c="yellow.7">
-              {' '}({delta > 0 ? '+' : '−'}{formatMXN(Math.abs(delta))} contra lo capturado)
-            </Text>
+        <Stack gap={2}>
+          <Text size="sm">
+            Total según lo capturado{' '}
+            <Text component="span" fw={700}>{formatMXN(totalDespues)}</Text>
+            {Math.abs(delta) >= 0.01 && (
+              <Text component="span" size="xs" c="yellow.7">
+                {' '}({delta > 0 ? '+' : '−'}{formatMXN(Math.abs(delta))} contra lo que había)
+              </Text>
+            )}
+          </Text>
+          {Number(totalPapel) > 0 && (
+            cuadraPapel ? (
+              <Text size="xs" c="green.7" fw={600}>Cuadra con el papel</Text>
+            ) : (
+              <Text size="xs" c="orange.7" fw={600}>
+                {difPapel > 0 ? 'Faltan' : 'Sobran'} {formatMXN(Math.abs(difPapel))}{' '}
+                contra el papel
+                {difPapel > 0 && ' — parece que falta una refacción por capturar'}
+              </Text>
+            )
           )}
-        </Text>
+        </Stack>
         <Button
           size="xs"
-          color={cambia ? 'yellow' : 'green'}
+          color={cambia || !cuadraPapel ? 'yellow' : 'green'}
           disabled={invalido}
           loading={revisar.isPending}
           onClick={() => sellar()}
@@ -376,6 +438,28 @@ export function RevisionCabecera({
           {cambia ? 'Corregir y sellar' : 'Cuadra, sellar'}
         </Button>
       </Group>
+
+      {totalPendiente && (
+        <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
+          <Stack gap="xs">
+            <Text size="sm">
+              {totalPendiente} Puedes sellarla así: la diferencia queda guardada y
+              se sigue viendo hasta que alguien capture lo que falta y la reabras.
+            </Text>
+            <Group gap="xs">
+              <Button
+                size="xs" color="orange" loading={revisar.isPending}
+                onClick={() => sellar({ diferencia: true })}
+              >
+                Sellar con la diferencia anotada
+              </Button>
+              <Button size="xs" variant="default" onClick={() => revisar.reset()}>
+                Seguir cuadrando
+              </Button>
+            </Group>
+          </Stack>
+        </Alert>
+      )}
 
       {fusionPendiente ? (
         <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
@@ -385,7 +469,7 @@ export function RevisionCabecera({
               La revisión sigue en la factura que quede.
             </Text>
             <Group gap="xs">
-              <Button size="xs" color="yellow" loading={revisar.isPending} onClick={() => sellar(true)}>
+              <Button size="xs" color="yellow" loading={revisar.isPending} onClick={() => sellar({ fusion: true })}>
                 Sí, juntarlas en una factura
               </Button>
               <Button size="xs" variant="default" onClick={() => revisar.reset()}>
@@ -394,7 +478,7 @@ export function RevisionCabecera({
             </Group>
           </Stack>
         </Alert>
-      ) : revisar.error ? (
+      ) : revisar.error && !totalPendiente ? (
         <Alert color="red" title="No se pudo revisar">
           {(revisar.error as Error).message}
         </Alert>

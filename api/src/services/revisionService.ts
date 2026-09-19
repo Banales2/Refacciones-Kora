@@ -7,6 +7,15 @@ import { AppError, ConflictError, NotFoundError, ValidationError } from '../shar
 import { RENGLON_REVISADO, CABECERA_REVISADA } from '../shared/revision'
 import { aCentavos, contribucionRenglon, totalesFactura } from '../shared/totales'
 
+/**
+ * El total del papel no cuadra con lo capturado y no se confirmó sellar así.
+ *
+ * Es el único camino por el que aparece el renglón que NADIE capturó: si falta
+ * una pieza no hay renglón en el sistema donde poner una marca, pero el total
+ * no da. Ver `db/migrations/043_total_del_papel.sql`.
+ */
+export const TOTAL_NO_CUADRA = 'TOTAL_NO_CUADRA'
+
 // Revisar una factura contra su papel.
 //
 // CÓMO SE LE PONE PRECIO A UN ERROR. Es lo único no evidente de este archivo.
@@ -120,6 +129,8 @@ export async function revisarRenglon(
 }
 
 export interface ResultadoCabecera extends ResultadoRevision {
+  /** El total del papel menos lo que suman los renglones. Positivo = falta. */
+  diferencia_papel: number
   /**
    * El folio corregido resultó ser de otra factura del mismo proveedor y las
    * dos se fusionaron. La cabecera NO queda sellada: la factura de origen dejó
@@ -156,7 +167,10 @@ export async function revisarCabecera(
       facturaId, c.proveedor_id, datos.num_factura, datos.confirmar_fusion,
     )
     if (res.fusionada) {
-      return { factura_id: facturaId, correcciones: 0, delta_total: 0, fusionada: true }
+      return {
+        factura_id: facturaId, correcciones: 0, delta_total: 0,
+        diferencia_papel: 0, fusionada: true,
+      }
     }
   }
 
@@ -223,8 +237,31 @@ export async function revisarCabecera(
     await facturasRepo.setTotales(facturaId, ivaNuevo, descNuevo)
   }
 
+  // El total del papel contra lo que suman los renglones, ya con el descuento y
+  // el IVA recién corregidos. Una diferencia significa una de tres: falta un
+  // renglón, sobra, o hay un importe mal tecleado — y las tres son exactamente
+  // lo que la revisión existe para encontrar.
+  //
+  // Se comprueba al final, con los valores ya aplicados: hacerlo antes lo
+  // compararía contra el IVA viejo y saltaría por un error que el verificador
+  // acaba de corregir.
+  const totalCapturado = totalesFactura(c.subtotal, descNuevo, ivaNuevo).total
+  const diferencia = aCentavos(datos.total_papel - totalCapturado)
+
+  if (Math.abs(diferencia) >= 0.01 && !datos.confirmar_diferencia) {
+    throw new AppError(
+      diferencia > 0
+        ? `El papel dice ${datos.total_papel.toFixed(2)} y lo capturado suma ` +
+          `${totalCapturado.toFixed(2)}: faltan ${diferencia.toFixed(2)}. ` +
+          'Lo más probable es que haya una refacción de la factura que nadie capturó.'
+        : `El papel dice ${datos.total_papel.toFixed(2)} y lo capturado suma ` +
+          `${totalCapturado.toFixed(2)}: sobran ${Math.abs(diferencia).toFixed(2)}.`,
+      409, TOTAL_NO_CUADRA,
+    )
+  }
+
   const sellado = await repo.sellarCabecera(
-    facturaId, correcciones, quien, datos.nota?.trim() || null,
+    facturaId, correcciones, quien, datos.nota?.trim() || null, datos.total_papel,
   )
   if (!sellado) {
     throw new AppError('Alguien más acaba de revisar esta factura', 409, CABECERA_REVISADA)
@@ -234,6 +271,7 @@ export async function revisarCabecera(
     factura_id: facturaId,
     correcciones: correcciones.length,
     delta_total: aCentavos(totalCorriente - totalInicial),
+    diferencia_papel: diferencia,
     fusionada: false,
   }
 }

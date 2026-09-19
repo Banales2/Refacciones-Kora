@@ -158,6 +158,7 @@ export async function sellarRenglon(
  */
 export async function sellarCabecera(
   facturaId: number, correcciones: Correccion[], quien: string, nota: string | null,
+  totalPapel: number,
 ): Promise<boolean> {
   const pool = await getPool()
   const tx = pool.transaction()
@@ -167,11 +168,13 @@ export async function sellarCabecera(
       .input('id',    sql.Int,           facturaId)
       .input('quien', sql.NVarChar(120),  quien)
       .input('nota',  sql.NVarChar(255),  nota)
+      .input('total', sql.Decimal(18, 2),  totalPapel)
       .query(`
         UPDATE facturas
         SET cabecera_revisada_en = SYSUTCDATETIME(),
             cabecera_revisada_por = @quien,
-            revision_nota = @nota
+            revision_nota = @nota,
+            total_papel = @total
         WHERE id = @id AND cabecera_revisada_en IS NULL`)
 
     if ((sellado.rowsAffected[0] ?? 0) === 0) {

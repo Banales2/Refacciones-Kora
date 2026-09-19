@@ -34,10 +34,31 @@ export const CabeceraRevisarSchema = z.object({
   // null = la factura no trae descuento. Tampoco es cero.
   descuento_pct: descuentoPct,
   /**
+   * El total impreso en el papel.
+   *
+   * Es lo único que puede cazar el renglón que NADIE capturó: si falta una
+   * pieza no hay renglón en el sistema donde poner una marca, pero el total no
+   * cuadra. Ver `db/migrations/043_total_del_papel.sql`.
+   *
+   * Obligatorio a propósito. Dejarlo opcional lo convertiría en un campo que se
+   * salta, y entonces la comprobación solo existiría para quien ya iba a darse
+   * cuenta — que es justo quien no la necesita.
+   */
+  total_papel: z.coerce
+    .number()
+    .positive('Escribe el total que dice la factura')
+    .max(99999999, 'Fuera de rango'),
+  /**
    * Lo que el verificador quiera dejar dicho del documento: "el papel viene
    * roto", "el proveedor la reexpidió". Es de la factura, no de un renglón.
    */
   nota: z.string().trim().max(255, 'Máximo 255 caracteres').optional(),
+  /**
+   * Sellar aunque el total del papel no cuadre con lo capturado. Sin esto la API
+   * responde 409 con la diferencia: cerrar así es legítimo —el renglón que falta
+   * puede capturarse después— pero no puede pasar por descuido.
+   */
+  confirmar_diferencia: z.boolean().optional().default(false),
   /**
    * Corregir el folio hacia uno que ese proveedor ya tiene fusiona las dos
    * facturas. Es legítimo —el mismo papel capturado en dos tandas— pero no

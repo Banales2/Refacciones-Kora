@@ -119,6 +119,30 @@ ni un admin, y un error descubierto después quedaría congelado para siempre.
 pasó, y si reabrir las borrara sería la forma de hacer desaparecer el rastro de
 un error.
 
+## El renglón que falta: el total del papel
+
+Los dos casos anteriores se ven porque hay un renglón donde mirar. El tercero
+no: **si nadie capturó una pieza, no existe ningún renglón donde ponerle una
+marca**. El verificador podía sellar la factura entera sin enterarse.
+
+Por eso la revisión de la cabecera pide el **total impreso**
+(`facturas.total_papel`, migración 043) y lo compara contra lo que suman los
+renglones ya con descuento e IVA. Si no cuadra, o falta un renglón, o sobra, o
+hay un importe mal tecleado — y las tres son lo que la revisión busca. La API
+responde 409 `TOTAL_NO_CUADRA` con la diferencia y hay que confirmarla.
+
+Es obligatorio a propósito: opcional sería un campo que se salta, y entonces la
+comprobación solo existiría para quien ya iba a darse cuenta.
+
+**Esto no contradice a las migraciones 020 y 021**, donde se decidió no guardar
+importes y calcularlos. Aquel criterio evita guardar un derivado junto a su
+origen, porque los dos se desalinean. Este total **no sale de los renglones,
+sale del papel**: su único trabajo es no coincidir. Es un dígito verificador, y
+uno que se calculara de lo mismo que verifica no serviría de nada.
+
+La **diferencia no se guarda**, se calcula al leer — así sigue siendo cierta
+aunque después se corrija el costo de un renglón.
+
 ## El renglón que sobra
 
 Cuando el papel no trae una pieza que sí está capturada,
@@ -198,6 +222,9 @@ El signo del importe se explica al pasar el cursor en vez de dejarlo al lector:
   un clic, pero también permite sellar sin leer el papel. La alternativa —campos
   en blanco— convierte cada factura correcta en quince tecleos y acaba en que
   nadie revisa. Se eligió que revisar sea barato.
+- **Las facturas selladas antes de la 043** tienen `total_papel` en NULL: ninguna
+  revisión hecha se invalida, pero tampoco tienen la comprobación. Para
+  aplicársela hay que reabrirlas.
 - **Nada se marcó como revisado al migrar.** Nadie ha verificado ninguna factura
   existente contra su papel; marcarlas sería escribir algo que no pasó. La
   bandeja nace llena, y eso no es un efecto secundario: es el trabajo que existía
