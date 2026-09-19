@@ -78,8 +78,8 @@ export default function ErroresCaptura() {
   })
 
   const personas: ErroresDePersona[] = data?.data ?? []
-  const totalAbsoluto = personas.reduce((s, p) => s + p.absoluto, 0)
-  const totalNeto = personas.reduce((s, p) => s + p.neto, 0)
+  const totalSubregistrado = personas.reduce((s, p) => s + p.subregistrado, 0)
+  const totalDeMas = personas.reduce((s, p) => s + p.de_mas, 0)
   const totalCorrecciones = personas.reduce((s, p) => s + p.correcciones, 0)
 
   return (
@@ -111,15 +111,17 @@ export default function ErroresCaptura() {
       ) : (
         <>
           <Group gap="sm" wrap="wrap">
+            {/* Las dos NO se suman: miden cosas distintas. Ponerlas juntas en
+                un solo número daría una cantidad que no significa nada. */}
             <Tarjeta
-              label="Dinero mal capturado"
-              valor={formatMXN(totalAbsoluto)}
-              ayuda="La suma de todos los errores en valor absoluto. Un error de +500 y otro de −500 son 1,000 pesos que pasaron por manos equivocadas, aunque se cancelen entre sí."
+              label="Gasto que no estaba registrado"
+              valor={formatMXN(totalSubregistrado)}
+              ayuda="El papel cobraba más de lo capturado: refacciones que nadie registró, costos tecleados por debajo. Corregirlo SUBE el gasto — no se ahorra dinero, se deja de mentir sobre cuánto se gastó."
             />
             <Tarjeta
-              label="Desviación neta"
-              valor={formatMXN(totalNeto)}
-              ayuda="La suma con signo. Aquí ese mismo +500 y −500 dan cero, que es lo correcto para saber cuánto se desvió el gasto del periodo."
+              label="Dinero que se evitó pagar de más"
+              valor={formatMXN(totalDeMas)}
+              ayuda="El sistema tenía más de lo que cobra el papel: un lote que no se compró, un costo inflado, una cantidad de más. Esto sí es dinero que se iba a pagar o a contar sin deberse, y es lo que la revisión evita que se fugue."
             />
             <Tarjeta
               label="Correcciones"
@@ -136,7 +138,7 @@ export default function ErroresCaptura() {
           <div>
             <Text fw={600} size="sm" mb={4}>Por persona</Text>
             <Text size="xs" c="dimmed" mb="xs">
-              Ordenado por dinero mal capturado. Toca un renglón para ver sus
+              Ordenado por lo que más pesa. Toca un renglón para ver sus
               correcciones abajo.
             </Text>
             <Table withTableBorder striped highlightOnHover>
@@ -145,8 +147,8 @@ export default function ErroresCaptura() {
                   <Table.Th>Capturó</Table.Th>
                   <Table.Th style={{ textAlign: 'center' }}>Correcciones</Table.Th>
                   <Table.Th style={{ textAlign: 'center' }}>Renglones</Table.Th>
-                  <Table.Th style={{ textAlign: 'right' }}>Mal capturado</Table.Th>
-                  <Table.Th style={{ textAlign: 'right' }}>Desviación neta</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Sin registrar</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Evitado de más</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -171,10 +173,14 @@ export default function ErroresCaptura() {
                       <Table.Td style={{ textAlign: 'center' }}>{p.correcciones}</Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>{p.renglones}</Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Text size="sm" fw={600}>{formatMXN(p.absoluto)}</Text>
+                        <Text size="sm" fw={600} c={p.subregistrado > 0 ? 'orange.7' : 'dimmed'}>
+                          {p.subregistrado > 0 ? formatMXN(p.subregistrado) : '—'}
+                        </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Group justify="flex-end" gap={0}><Delta valor={p.neto} /></Group>
+                        <Text size="sm" fw={600} c={p.de_mas > 0 ? 'blue.7' : 'dimmed'}>
+                          {p.de_mas > 0 ? formatMXN(p.de_mas) : '—'}
+                        </Text>
                       </Table.Td>
                     </Table.Tr>
                   )

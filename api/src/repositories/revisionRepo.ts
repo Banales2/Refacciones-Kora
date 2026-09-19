@@ -265,23 +265,32 @@ export async function correccionesDeFactura(
 }
 
 /**
- * Cuánto lleva equivocado cada quien.
+ * Cuánto lleva equivocado cada quien, en las DOS cosas que pueden pasar.
  *
- * Son dos números y no uno, porque miden cosas distintas y confundirlos da una
- * lectura falsa:
+ * Son dos números y no uno porque no significan lo mismo, y sumarlos da una
+ * cantidad que no quiere decir nada:
  *
- *   `neto`      la suma con signo. Un error de +500 y otro de -500 se cancelan,
- *               y eso es correcto para saber cuánto se desvió el gasto del año.
- *   `absoluto`  la suma de los valores absolutos. Esos mismos dos errores son
- *               1,000 pesos que pasaron por manos equivocadas, y eso es lo que
- *               mide qué tan bien captura una persona.
+ *   `subregistrado`  el papel cobra más de lo que había capturado. Es gasto que
+ *                    ocurrió y no estaba en los libros: una refacción que nadie
+ *                    registró, un costo tecleado por debajo. Corregirlo SUBE el
+ *                    gasto — no se ahorra dinero, se deja de mentir.
+ *
+ *   `de_mas`         el sistema tenía más de lo que cobra el papel: un lote que
+ *                    no se compró, un costo inflado, una cantidad de más. Esto
+ *                    SÍ es dinero que se iba a pagar o a contar sin deberse, y
+ *                    es lo que la revisión evita que se fugue.
+ *
+ * El signo de `delta_dinero` es lo que los separa, y por eso no hace falta
+ * guardar nada nuevo: positivo = se registraba de menos, negativo = de más.
  */
 export interface ErroresDePersona {
   capturado_por: string | null
   correcciones: number
   renglones: number
-  neto: number
-  absoluto: number
+  /** Gasto que ocurrió y no estaba registrado. */
+  subregistrado: number
+  /** Dinero que el sistema tenía de más y la revisión quitó. */
+  de_mas: number
 }
 
 export async function erroresPorPersona(
@@ -302,8 +311,8 @@ export async function erroresPorPersona(
     SELECT c.capturado_por,
            COUNT(*)                         AS correcciones,
            COUNT(DISTINCT c.lote_id)        AS renglones,
-           SUM(c.delta_dinero)              AS neto,
-           SUM(ABS(c.delta_dinero))         AS absoluto
+           SUM(CASE WHEN c.delta_dinero > 0 THEN  c.delta_dinero ELSE 0 END) AS subregistrado,
+           SUM(CASE WHEN c.delta_dinero < 0 THEN -c.delta_dinero ELSE 0 END) AS de_mas
     FROM correcciones_revision c
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     GROUP BY c.capturado_por

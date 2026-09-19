@@ -94,10 +94,19 @@ El signo dice de qué lado estuvo el error:
 - **positivo** → se había registrado de menos de lo que dice el papel.
 - **negativo** → se había registrado de más.
 
-Por eso el reporte devuelve dos sumas y no una. El **neto** cancela un +500 con
-un −500, y eso es correcto para saber cuánto se desvió el gasto del año. El
-**absoluto** dice que esos mismos dos errores son 1,000 pesos que pasaron por
-manos equivocadas, que es lo que mide qué tan bien captura una persona.
+Por eso el reporte separa las dos cosas que pueden pasar, y **no las suma**:
+juntarlas daría una cantidad que no significa nada.
+
+| | qué es | qué hace corregirlo |
+|---|---|---|
+| **gasto sin registrar** (delta > 0) | el papel cobraba más de lo capturado: una refacción que nadie registró, un costo tecleado por debajo | **sube** el gasto — no se ahorra dinero, se deja de mentir sobre cuánto se gastó |
+| **evitado de más** (delta < 0) | el sistema tenía más de lo que cobra el papel: un lote que no se compró, un costo inflado, una cantidad de más | **baja** el gasto — esto sí es dinero que se iba a pagar o a contar sin deberse |
+
+El segundo es el que contesta "cuánto estamos evitando que se fugue". El primero
+no es un ahorro y presentarlo como tal sería inventarse un número.
+
+Los dos salen del signo de `delta_dinero`, así que no hace falta guardar nada
+más.
 
 ## Quién se equivocó
 

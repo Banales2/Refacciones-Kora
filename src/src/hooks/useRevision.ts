@@ -129,14 +129,25 @@ export function useCorreccionesFactura(facturaId: number | null, enabled = true)
   })
 }
 
+/**
+ * Las dos cosas que pueden pasar, separadas porque no significan lo mismo y
+ * sumarlas da una cantidad que no quiere decir nada.
+ */
 export interface ErroresDePersona {
   capturado_por: string | null
   correcciones:  number
   renglones:     number
-  /** Suma con signo: un +500 y un −500 se cancelan. Mide la desviación del gasto. */
-  neto:          number
-  /** Suma de valores absolutos: esos mismos son 1,000. Mide qué tan bien captura. */
-  absoluto:      number
+  /**
+   * Gasto que ocurrió y no estaba registrado: una refacción que nadie capturó,
+   * un costo tecleado por debajo. Corregirlo SUBE el gasto — no se ahorra
+   * dinero, se deja de mentir.
+   */
+  subregistrado: number
+  /**
+   * Dinero que el sistema tenía de más: un lote que no se compró, un costo
+   * inflado. Esto sí es lo que la revisión evita que se fugue.
+   */
+  de_mas:        number
 }
 
 /** Cuánto lleva equivocado cada quien. Solo admin: la API responde 403 al resto. */
