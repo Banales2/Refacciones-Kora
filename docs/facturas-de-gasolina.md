@@ -100,16 +100,16 @@ ajustar lo que faltaba.
 Ni el subtotal ni el total se teclean: salen de los renglones y la tasa. Pedirlos
 aparte solo crea la oportunidad de que discrepen de lo capturado.
 
-Los renglones se pegan como texto (`src/src/lib/ticketsFactura.ts`). Ese lector
-**no pretende entender el PDF** — los formatos no se parecen entre emisores y un
-parser que adivina se equivoca en silencio, que es la peor forma de equivocarse
-con dinero. Toma una línea, saca los números y los interpreta por posición con una
-regla fija: con dos números son cantidad e importe; con tres o más, los tres
-últimos son cantidad, precio e importe (el precio se descarta, no se guarda). Lo
-que no encaje se reporta y se teclea a mano.
+Los renglones se capturan **campo por campo**: descripción, cantidad e importe,
+cada uno con su nombre, y Enter agrega el renglón sin soltar el teclado. La
+descripción se conserva entre renglones porque en una factura de gasolinera casi
+todos dicen lo mismo.
 
-Probado contra un CFDI real de seis renglones: los seis salieron y la suma dio el
-subtotal exacto.
+Hubo una versión que leía la línea entera pegada del PDF y repartía los números
+por posición. Se quitó: los formatos no se parecen entre emisores y un lector que
+adivina **se equivoca en silencio**, que es la peor forma de equivocarse con
+dinero. Pegar sigue funcionando — campo por campo, que es donde se ve lo que se
+pegó.
 
 ## Endpoints
 
@@ -142,7 +142,7 @@ tabla de renglones con un desplegable de recargas por cada uno.
   documento ya se archiva por otro lado.
 - **El número de ticket.** Sería la llave exacta si la recarga lo capturara, pero
   hoy no lo hace, y agregarlo a `recargas_combustible` es una decisión aparte.
-- **Importar el XML del CFDI.** Se pega el desglose como texto.
+- **Importar el XML del CFDI.** Los renglones se capturan a mano.
 - **Un renglón se casa con una recarga y solo una.** Si una carga apareciera
   partida entre dos facturas, esto se queda corto — pero inventar hoy la tabla
   intermedia para un caso que nadie ha visto cuesta complejidad en el 100% de los

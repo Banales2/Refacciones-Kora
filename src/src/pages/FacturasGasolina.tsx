@@ -44,7 +44,6 @@ import { FechaInput } from '../components/FechaInput'
 import { ApiError } from '../lib/api'
 import { formatMXN, formatFecha } from '../lib/formato'
 import { IVA_DEFAULT, conIva } from '../lib/totales'
-import { leerRenglonesPegados } from '../lib/ticketsFactura'
 
 const PAGE_SIZE = 15
 
@@ -76,9 +75,15 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
   const [fecha, setFecha] = useState('')
   const [conIvaAparte, setConIvaAparte] = useState(true)
   const [tasa, setTasa] = useState<number | string>(IVA_DEFAULT)
-  const [pegado, setPegado] = useState('')
   const [renglones, setRenglones] = useState<RenglonNuevo[]>([])
-  const [erroresPegado, setErroresPegado] = useState<{ linea: number; texto: string }[]>([])
+  // El renglón que se está capturando. Cada valor tiene su campo con su nombre:
+  // antes esto era un cuadro de texto que leía la línea entera adivinando cuál
+  // número era cuál por su posición, y adivinar con dinero se equivoca en
+  // silencio. Pegar sigue funcionando — campo por campo, que es donde se ve lo
+  // que se pegó.
+  const [desc, setDesc] = useState('')
+  const [cantidad, setCantidad] = useState<number | string>('')
+  const [importe, setImporte] = useState<number | string>('')
   const mut = useCrearFacturaGasolina()
 
   // Ni el subtotal ni el total se teclean: salen de los renglones y la tasa.
@@ -87,11 +92,18 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
   const tasaNueva = conIvaAparte ? Number(tasa) : null
   const total = conIva(subtotal, tasaNueva)
 
-  function pegar() {
-    const { renglones: leidos, errores } = leerRenglonesPegados(pegado)
-    setRenglones((prev) => [...prev, ...leidos])
-    setErroresPegado(errores)
-    if (errores.length === 0) setPegado('')
+  const nuevoValido = Number(cantidad) > 0 && Number(importe) >= 0 && importe !== ''
+
+  function agregarRenglon() {
+    if (!nuevoValido) return
+    setRenglones((p) => [
+      ...p,
+      { descripcion: desc.trim() || null, cantidad: Number(cantidad), importe: Number(importe) },
+    ])
+    // La descripción se queda: en una factura de gasolinera casi todos los
+    // renglones dicen lo mismo, y volver a teclear "DIESEL" quince veces es
+    // justo el tipo de trabajo que hace que la gente capture mal.
+    setCantidad(''); setImporte('')
   }
 
   const invalido = !gasolineraId || folio.trim() === '' || !fecha
@@ -109,8 +121,9 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
       },
       {
         onSuccess: () => {
-          setGasolineraId(null); setFolio(''); setFecha(''); setPegado('')
-          setRenglones([]); setErroresPegado([]); setConIvaAparte(true); setTasa(IVA_DEFAULT)
+          setGasolineraId(null); setFolio(''); setFecha('')
+          setDesc(''); setCantidad(''); setImporte('')
+          setRenglones([]); setConIvaAparte(true); setTasa(IVA_DEFAULT)
           onClose()
         },
       },
@@ -159,37 +172,32 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
           )}
         </Group>
 
-        <Textarea
-          label="Pegar los renglones"
-          description="Uno por línea. Se leen los números por posición: cantidad, precio e importe."
-          autosize minRows={3} maxRows={8}
-          placeholder={'DIESEL  LTR  219.37  23.33  5119.10'}
-          value={pegado} onChange={(e) => setPegado(e.currentTarget.value)}
-        />
-        <Group>
-          <Button size="xs" variant="light" disabled={!pegado.trim()} onClick={pegar}>
-            Leer renglones
-          </Button>
-          <Button
-            size="xs" variant="subtle"
-            onClick={() => setRenglones((p) => [
-              ...p, { descripcion: null, cantidad: 0, importe: 0 },
-            ])}
-          >
-            Agregar uno a mano
+        {/* Un campo por valor, con su nombre. Enter agrega el renglón sin tener
+            que soltar el teclado, que es como se captura una factura de quince
+            partidas sin perder la cuenta. */}
+        <Group align="flex-end" gap="xs">
+          <TextInput
+            label="Descripción" placeholder="DIESEL" maxLength={100}
+            style={{ flex: 2 }}
+            value={desc} onChange={(e) => setDesc(e.currentTarget.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') agregarRenglon() }}
+          />
+          <NumberInput
+            label="Cantidad" placeholder="0.000" decimalScale={3} min={0}
+            style={{ flex: 1 }}
+            value={cantidad} onChange={setCantidad}
+            onKeyDown={(e) => { if (e.key === 'Enter') agregarRenglon() }}
+          />
+          <NumberInput
+            label="Importe" placeholder="0.00" decimalScale={2} min={0}
+            prefix="$" thousandSeparator="," style={{ flex: 1 }}
+            value={importe} onChange={setImporte}
+            onKeyDown={(e) => { if (e.key === 'Enter') agregarRenglon() }}
+          />
+          <Button variant="light" disabled={!nuevoValido} onClick={agregarRenglon}>
+            Agregar
           </Button>
         </Group>
-
-        {erroresPegado.length > 0 && (
-          <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
-            <Text size="sm">
-              No se pudieron leer {erroresPegado.length} línea(s); el resto sí entró.
-            </Text>
-            {erroresPegado.slice(0, 5).map((e) => (
-              <Text key={e.linea} size="xs" c="dimmed">línea {e.linea}: {e.texto}</Text>
-            ))}
-          </Alert>
-        )}
 
         {renglones.length > 0 && (
           <>
