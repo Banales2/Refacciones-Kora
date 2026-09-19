@@ -57,15 +57,6 @@ export interface Factura {
   cabecera_revisada_por: string | null
   /** Lo que el verificador dejó dicho del documento. */
   revision_nota: string | null
-  /**
-   * El total impreso en el papel, tecleado al revisar la cabecera. `null` = se
-   * revisó antes de que existiera la comprobación, o todavía no se revisa.
-   *
-   * La diferencia contra lo capturado NO se guarda: se calcula al leer, así
-   * sigue siendo cierta aunque después se corrija el costo de un renglón.
-   * Ver `db/migrations/043_total_del_papel.sql`.
-   */
-  total_papel: number | null
   /** Cuántos de sus renglones ya están sellados. */
   renglones_revisados: number
   /**
@@ -162,7 +153,7 @@ export async function findAll(
            f.tasa_iva, f.descuento_pct, f.comprado_por, f.autorizado_por,
            f.historica,
            CONVERT(varchar(19), f.cabecera_revisada_en, 126) AS cabecera_revisada_en,
-           f.cabecera_revisada_por, f.revision_nota, f.total_papel,
+           f.cabecera_revisada_por, f.revision_nota,
            (SELECT COUNT(*) FROM lotes_pieza l WHERE l.factura_id = f.id) AS renglones,
            (SELECT COUNT(*) FROM lotes_pieza l
              WHERE l.factura_id = f.id AND l.revisado_en IS NOT NULL) AS renglones_revisados,

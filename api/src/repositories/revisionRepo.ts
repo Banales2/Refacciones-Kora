@@ -104,36 +104,29 @@ async function insertarCorrecciones(
 }
 
 /**
- * Sella el renglón y guarda lo que hubo que corregirle.
+ * Sella la cabecera y guarda sus correcciones.
  *
- * Las correcciones de VALORES ya se aplicaron antes de llamar aquí, pasando por
- * `lotesService.updateLote`: es quien sabe ajustar la existencia cuando cambia
- * la cantidad y quien impide reducirla por debajo de lo ya consumido. Duplicar
- * esa aritmética aquí para ganar una sola transacción sería volver a tener dos
- * lugares donde vive la misma regla, que es justo lo que no se quiere.
- *
- * Si el proceso se cayera entre aplicar y sellar, el renglón se queda corregido
- * pero sin sello: sigue en la bandeja y el verificador lo vuelve a pasar. Es el
- * lado bueno en el que quedarse.
- *
- * El UPDATE solo sella lo que sigue sin sellar, así que dos revisiones
- * simultáneas del mismo renglón no se pisan: la segunda no afecta ninguna fila
- * y se entera de que llegó tarde.
+ * Igual que en el renglón, los valores ya se aplicaron antes: el folio pasa por
+ * `facturasService.setFolio` —que es quien sabe de fusiones— y el IVA y el
+ * descuento por `facturasRepo.setTotales`.
  */
-export async function sellarRenglon(
-  loteId: number, facturaId: number, correcciones: Correccion[], quien: string,
+export async function sellarCabecera(
+  facturaId: number, correcciones: Correccion[], quien: string, nota: string | null,
 ): Promise<boolean> {
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
   try {
     const sellado = await tx.request()
-      .input('id',    sql.Int,          loteId)
-      .input('quien', sql.NVarChar(120), quien)
+      .input('id',    sql.Int,           facturaId)
+      .input('quien', sql.NVarChar(120),  quien)
+      .input('nota',  sql.NVarChar(255),  nota)
       .query(`
-        UPDATE lotes_pieza
-        SET revisado_en = SYSUTCDATETIME(), revisado_por = @quien
-        WHERE id = @id AND revisado_en IS NULL`)
+        UPDATE facturas
+        SET cabecera_revisada_en = SYSUTCDATETIME(),
+            cabecera_revisada_por = @quien,
+            revision_nota = @nota
+        WHERE id = @id AND cabecera_revisada_en IS NULL`)
 
     if ((sellado.rowsAffected[0] ?? 0) === 0) {
       await tx.rollback()
@@ -150,37 +143,47 @@ export async function sellarRenglon(
 }
 
 /**
- * Sella la cabecera y guarda sus correcciones.
+ * Sella la factura entera —cabecera y todos sus renglones— y guarda lo que el
+ * cuadre corrigió.
  *
- * Igual que en el renglón, los valores ya se aplicaron antes: el folio pasa por
- * `facturasService.setFolio` —que es quien sabe de fusiones— y el IVA y el
- * descuento por `facturasRepo.setTotales`.
+ * Es el sello del cuadre contra el papel: allí se compara la factura completa,
+ * no un renglón suelto, así que todo se sella de una vez y en una sola
+ * transacción. Ver `cuadreFacturaService`.
+ *
+ * El UPDATE de la cabecera solo sella lo que sigue sin sellar, así que dos
+ * cuadres simultáneos no se pisan: el segundo no afecta ninguna fila y se entera
+ * de que llegó tarde.
  */
-export async function sellarCabecera(
+export async function sellarCuadre(
   facturaId: number, correcciones: Correccion[], quien: string, nota: string | null,
-  totalPapel: number,
 ): Promise<boolean> {
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
   try {
-    const sellado = await tx.request()
+    const sellada = await tx.request()
       .input('id',    sql.Int,           facturaId)
-      .input('quien', sql.NVarChar(120),  quien)
-      .input('nota',  sql.NVarChar(255),  nota)
-      .input('total', sql.Decimal(18, 2),  totalPapel)
+      .input('quien', sql.NVarChar(120), quien)
+      .input('nota',  sql.NVarChar(255), nota)
       .query(`
         UPDATE facturas
         SET cabecera_revisada_en = SYSUTCDATETIME(),
             cabecera_revisada_por = @quien,
-            revision_nota = @nota,
-            total_papel = @total
+            revision_nota = @nota
         WHERE id = @id AND cabecera_revisada_en IS NULL`)
 
-    if ((sellado.rowsAffected[0] ?? 0) === 0) {
+    if ((sellada.rowsAffected[0] ?? 0) === 0) {
       await tx.rollback()
       return false
     }
+
+    await tx.request()
+      .input('id',    sql.Int,           facturaId)
+      .input('quien', sql.NVarChar(120), quien)
+      .query(`
+        UPDATE lotes_pieza
+        SET revisado_en = SYSUTCDATETIME(), revisado_por = @quien
+        WHERE factura_id = @id AND revisado_en IS NULL`)
 
     await insertarCorrecciones(tx, facturaId, correcciones, quien)
     await tx.commit()

@@ -57,12 +57,6 @@ export interface Factura {
   cabecera_revisada_por: string | null
   /** Lo que el verificador dejó dicho del documento. */
   revision_nota:         string | null
-  /**
-   * El total impreso en el papel, tecleado al revisar. null = se revisó antes de
-   * que existiera la comprobación, o todavía no se revisa. La diferencia contra
-   * lo capturado se calcula, no se guarda.
-   */
-  total_papel:           number | null
   /** Cuántos de sus renglones ya están sellados. */
   renglones_revisados:   number
   /** Cabecera sellada y ningún renglón pendiente. Lo calcula la API. */

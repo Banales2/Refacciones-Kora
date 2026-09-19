@@ -2,19 +2,10 @@ import * as repo from '../repositories/revisionRepo'
 import * as facturasRepo from '../repositories/facturasRepo'
 import * as facturasService from '../services/facturasService'
 import * as lotesService from '../services/lotesService'
-import { CabeceraRevisar, RenglonRevisar } from '../schemas/revisionSchema'
+import { CabeceraRevisar } from '../schemas/revisionSchema'
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../shared/errors'
 import { RENGLON_REVISADO, CABECERA_REVISADA } from '../shared/revision'
 import { aCentavos, contribucionRenglon, totalesFactura } from '../shared/totales'
-
-/**
- * El total del papel no cuadra con lo capturado y no se confirmó sellar así.
- *
- * Es el único camino por el que aparece el renglón que NADIE capturó: si falta
- * una pieza no hay renglón en el sistema donde poner una marca, pero el total
- * no da. Ver `db/migrations/043_total_del_papel.sql`.
- */
-export const TOTAL_NO_CUADRA = 'TOTAL_NO_CUADRA'
 
 // Revisar una factura contra su papel.
 //
@@ -48,89 +39,7 @@ export interface ResultadoRevision {
   delta_total: number
 }
 
-/**
- * Verifica un renglón contra el papel y lo sella.
- *
- * El cuerpo trae lo que dice la factura, siempre completo. Lo que no coincida
- * con lo guardado se corrige, se cobra y se registra a nombre de quien lo
- * capturó; lo que coincida no deja rastro, porque no pasó nada.
- */
-export async function revisarRenglon(
-  loteId: number, datos: RenglonRevisar, quien: string,
-): Promise<ResultadoRevision> {
-  const r = await repo.leerRenglon(loteId)
-  if (!r) throw new NotFoundError('Renglón')
-
-  if (r.revisado_en !== null) {
-    throw new AppError('Este renglón ya fue revisado', 409, RENGLON_REVISADO)
-  }
-  if (r.factura_id === null) {
-    // El lote de recuperación (migración 024) no salió de ninguna compra: no
-    // hay papel contra el cual cuadrarlo y no es trabajo pendiente de nadie.
-    throw new ValidationError('Este lote no pertenece a ninguna factura, así que no hay nada que revisar')
-  }
-
-  const { descuento_pct: desc, tasa_iva: iva } = r
-  const correcciones: repo.Correccion[] = []
-
-  // Paso 1: la cantidad, sobre el costo todavía sin corregir.
-  const contribInicial = contribucionRenglon(r.costo_unitario, r.cantidad_inicial, desc, iva)
-  let contribCorriente = contribInicial
-
-  if (datos.cantidad_inicial !== r.cantidad_inicial) {
-    const tras = contribucionRenglon(r.costo_unitario, datos.cantidad_inicial, desc, iva)
-    correcciones.push({
-      lote_id: loteId,
-      campo: 'cantidad_inicial',
-      valor_antes: texto(r.cantidad_inicial),
-      valor_despues: texto(datos.cantidad_inicial),
-      capturado_por: r.capturado_por,
-      delta_dinero: aCentavos(tras - contribCorriente),
-    })
-    contribCorriente = tras
-  }
-
-  // Paso 2: el costo, ya sobre la cantidad corregida.
-  if (!mismoImporte(datos.costo_unitario, r.costo_unitario)) {
-    const tras = contribucionRenglon(datos.costo_unitario, datos.cantidad_inicial, desc, iva)
-    correcciones.push({
-      lote_id: loteId,
-      campo: 'costo_unitario',
-      valor_antes: texto(aCentavos(r.costo_unitario)),
-      valor_despues: texto(aCentavos(datos.costo_unitario)),
-      capturado_por: r.capturado_por,
-      delta_dinero: aCentavos(tras - contribCorriente),
-    })
-    contribCorriente = tras
-  }
-
-  // Se aplica pasando por el service del lote, que es quien sabe ajustar la
-  // existencia cuando cambia la cantidad y quien impide reducirla por debajo de
-  // lo que ya se consumió. Ese error sale tal cual: el verificador tiene que
-  // saber que el papel dice menos piezas de las que ya se usaron, porque eso ya
-  // no es un error de captura sino un descuadre.
-  if (correcciones.length > 0) {
-    await lotesService.updateLote(loteId, {
-      costo_unitario: datos.costo_unitario,
-      cantidad_inicial: datos.cantidad_inicial,
-    })
-  }
-
-  const sellado = await repo.sellarRenglon(loteId, r.factura_id, correcciones, quien)
-  if (!sellado) {
-    throw new AppError('Alguien más acaba de revisar este renglón', 409, RENGLON_REVISADO)
-  }
-
-  return {
-    factura_id: r.factura_id,
-    correcciones: correcciones.length,
-    delta_total: aCentavos(contribCorriente - contribInicial),
-  }
-}
-
 export interface ResultadoCabecera extends ResultadoRevision {
-  /** El total del papel menos lo que suman los renglones. Positivo = falta. */
-  diferencia_papel: number
   /**
    * El folio corregido resultó ser de otra factura del mismo proveedor y las
    * dos se fusionaron. La cabecera NO queda sellada: la factura de origen dejó
@@ -167,10 +76,7 @@ export async function revisarCabecera(
       facturaId, c.proveedor_id, datos.num_factura, datos.confirmar_fusion,
     )
     if (res.fusionada) {
-      return {
-        factura_id: facturaId, correcciones: 0, delta_total: 0,
-        diferencia_papel: 0, fusionada: true,
-      }
+      return { factura_id: facturaId, correcciones: 0, delta_total: 0, fusionada: true }
     }
   }
 
@@ -237,31 +143,8 @@ export async function revisarCabecera(
     await facturasRepo.setTotales(facturaId, ivaNuevo, descNuevo)
   }
 
-  // El total del papel contra lo que suman los renglones, ya con el descuento y
-  // el IVA recién corregidos. Una diferencia significa una de tres: falta un
-  // renglón, sobra, o hay un importe mal tecleado — y las tres son exactamente
-  // lo que la revisión existe para encontrar.
-  //
-  // Se comprueba al final, con los valores ya aplicados: hacerlo antes lo
-  // compararía contra el IVA viejo y saltaría por un error que el verificador
-  // acaba de corregir.
-  const totalCapturado = totalesFactura(c.subtotal, descNuevo, ivaNuevo).total
-  const diferencia = aCentavos(datos.total_papel - totalCapturado)
-
-  if (Math.abs(diferencia) >= 0.01 && !datos.confirmar_diferencia) {
-    throw new AppError(
-      diferencia > 0
-        ? `El papel dice ${datos.total_papel.toFixed(2)} y lo capturado suma ` +
-          `${totalCapturado.toFixed(2)}: faltan ${diferencia.toFixed(2)}. ` +
-          'Lo más probable es que haya una refacción de la factura que nadie capturó.'
-        : `El papel dice ${datos.total_papel.toFixed(2)} y lo capturado suma ` +
-          `${totalCapturado.toFixed(2)}: sobran ${Math.abs(diferencia).toFixed(2)}.`,
-      409, TOTAL_NO_CUADRA,
-    )
-  }
-
   const sellado = await repo.sellarCabecera(
-    facturaId, correcciones, quien, datos.nota?.trim() || null, datos.total_papel,
+    facturaId, correcciones, quien, datos.nota?.trim() || null,
   )
   if (!sellado) {
     throw new AppError('Alguien más acaba de revisar esta factura', 409, CABECERA_REVISADA)
@@ -271,7 +154,6 @@ export async function revisarCabecera(
     factura_id: facturaId,
     correcciones: correcciones.length,
     delta_total: aCentavos(totalCorriente - totalInicial),
-    diferencia_papel: diferencia,
     fusionada: false,
   }
 }

@@ -17,14 +17,6 @@ import { api } from '../lib/api'
 export const RENGLON_REVISADO = 'RENGLON_REVISADO'
 /** La cabecera ya estaba sellada. */
 export const CABECERA_REVISADA = 'CABECERA_REVISADA'
-/**
- * El total del papel no cuadra con lo capturado.
- *
- * Es el único camino por el que aparece el renglón que NADIE capturó: si falta
- * una pieza no hay renglón en el sistema donde poner una marca, pero el total
- * no da.
- */
-export const TOTAL_NO_CUADRA = 'TOTAL_NO_CUADRA'
 
 /**
  * Todo lo que la revisión invalida.
@@ -51,48 +43,18 @@ export interface RevisionResultado {
   delta_total:  number
 }
 
-export interface RenglonRevisarPayload {
-  lote_id:          number
-  /** Lo que el papel dice que costó cada pieza. */
-  costo_unitario:   number
-  /** Cuántas piezas dice el papel que entraron. */
-  cantidad_inicial: number
-}
-
-/**
- * Cuadra un renglón contra el papel y lo sella.
- *
- * Los dos valores van siempre, aunque no cambien: el verificador manda LO QUE
- * DICE LA FACTURA y la API lo compara. Si mandara solo lo que cambia, un renglón
- * que nadie miró quedaría sellado como bueno.
- */
-export function useRevisarRenglon() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ lote_id, ...body }: RenglonRevisarPayload) =>
-      api.post<{ data: RevisionResultado }>(`/lotes/${lote_id}/revisar`, body),
-    onSuccess: () => invalidarTodo(qc),
-  })
-}
-
 export interface CabeceraRevisarPayload {
   factura_id:       number
   num_factura:      string
   fecha_compra:     string
   tasa_iva:         number | null
   descuento_pct:    number | null
-  /** El total impreso en el papel. Es lo que caza el renglón que nadie capturó. */
-  total_papel:      number
   nota?:            string
-  /** Sellar aunque el total no cuadre. Sin esto la API responde 409. */
-  confirmar_diferencia?: boolean
   /** Corregir el folio hacia uno que ya existe fusiona las dos facturas. */
   confirmar_fusion?: boolean
 }
 
 export interface CabeceraResultado extends RevisionResultado {
-  /** El total del papel menos lo capturado. Positivo = falta un renglón. */
-  diferencia_papel: number
   /** Se fusionó con otra factura: esta dejó de existir y no quedó sellada. */
   fusionada: boolean
 }

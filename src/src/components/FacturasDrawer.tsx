@@ -15,13 +15,14 @@ import {
   Accordion, Pagination, Switch, NumberInput, Button, Tooltip, Popover, ActionIcon,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconSearch, IconAlertTriangle, IconPencil } from '@tabler/icons-react'
+import { IconSearch, IconAlertTriangle, IconPencil, IconScale } from '@tabler/icons-react'
 import {
   useFacturas, useSetTotalesFactura, useSetFolioFactura, useSetFolioLote, FOLIO_EXISTENTE,
 } from '../hooks/useFacturas'
 import type { Factura, FacturaRenglon } from '../hooks/useFacturas'
 import { useAuth } from '../hooks/useAuth'
-import { EstadoRevision, RevisionCabecera, RevisionRenglon } from './RevisionFactura'
+import { EstadoRevision, RevisionCabecera } from './RevisionFactura'
+import CuadreFacturaModal from './CuadreFactura'
 import { ApiError } from '../lib/api'
 import { FechaInput } from './FechaInput'
 import { formatMXN, formatFecha } from '../lib/formato'
@@ -339,6 +340,7 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
   const [desde, setDesde] = useState('')
   const [hasta, setHasta] = useState('')
   const [porRevisar, setPorRevisar] = useState(false)
+  const [cuadrando, setCuadrando] = useState<{ id: number; folio: string } | null>(null)
   const [page, setPage] = useState(1)
 
   // Revisar es cosa de admin: es el segundo par de ojos, y que lo haga
@@ -472,7 +474,6 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
                               <Table.Th style={{ textAlign: 'center' }}>Cant.</Table.Th>
                               <Table.Th style={{ textAlign: 'right' }}>Costo unit.</Table.Th>
                               <Table.Th style={{ textAlign: 'right' }}>Subtotal</Table.Th>
-                              <Table.Th style={{ textAlign: 'center' }}>Revisión</Table.Th>
                               <Table.Th w={40} />
                             </Table.Tr>
                           </Table.Thead>
@@ -489,9 +490,6 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
                                 <Table.Td style={{ textAlign: 'right' }}>
                                   {formatMXN(d.costo_unitario * d.cantidad_inicial)}
                                 </Table.Td>
-                                <Table.Td style={{ textAlign: 'center' }}>
-                                  <RevisionRenglon renglon={d} factura={f} esAdmin={esAdmin} />
-                                </Table.Td>
                                 <Table.Td>
                                   <FolioDeLote renglon={d} folioActual={f.num_factura} />
                                 </Table.Td>
@@ -503,6 +501,16 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
 
                       {/* Todos los bloques se remontan por factura (`key`): lo
                           tecleado en una no debe arrastrarse a la siguiente. */}
+                      {esAdmin && f.cabecera_revisada_en === null && (
+                        <Button
+                          size="xs" variant="light"
+                          leftSection={<IconScale size={14} />}
+                          onClick={() => setCuadrando({ id: f.id, folio: f.num_factura })}
+                        >
+                          Cuadrar contra el papel
+                        </Button>
+                      )}
+
                       <RevisionCabecera
                         key={`rev:${f.id}:${f.cabecera_revisada_en}`}
                         factura={f}
@@ -536,6 +544,12 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
             )}
           </>
         )}
+
+      <CuadreFacturaModal
+        facturaId={cuadrando?.id ?? null}
+        folio={cuadrando?.folio ?? ''}
+        onClose={() => setCuadrando(null)}
+      />
     </Stack>
   )
 }

@@ -15,22 +15,60 @@ poder contestar tres preguntas:
 
 Ver `db/migrations/040_revision_de_facturas.sql`.
 
-## El sello va en el renglón
+## El cuadre: dos listas, no una
 
-Una factura de quince partidas no se verifica de una sentada, y un solo botón de
-"revisada" obligaría a empezar de cero cada vez que alguien se levanta. Cada lote
-se sella solo (`lotes_pieza.revisado_en`), y la cabecera —folio, fecha,
-proveedor, IVA, descuento— tiene el suyo aparte
-(`facturas.cabecera_revisada_en`), porque esos cuatro datos no viven en ningún
-renglón.
+Se transcribe lo que dice el papel —renglón por renglón, eligiendo la refacción
+del catálogo— y el sistema lo compara contra los lotes capturados:
 
-**Una factura está cerrada cuando su cabecera y todos sus renglones lo están.**
+```
+facturas              folio, proveedor, fecha, IVA, descuento
+  facturas_renglones  lo que dice el PAPEL      →  lote_id
+  lotes_pieza         lo que está CAPTURADO
+```
 
-Ese estado **no se guarda en ninguna columna**: es derivado, y una columna con él
-quedaría mintiendo en cuanto alguien agregara un renglón. `facturasRepo.findAll`
-lo calcula (`cerrada`). Es la misma razón por la que la migración 026 sacó la
-cabecera de los lotes — dos lugares donde vive el mismo hecho son dos lugares que
-se desincronizan.
+Con las dos listas, las tres preguntas se contestan solas:
+
+| | qué significa |
+|---|---|
+| **renglón del papel sin lote** | nadie capturó esa compra |
+| **lote sin renglón del papel** | se capturó algo que el papel no trae |
+| **los dos, con valores distintos** | error de captura, y se sabe de cuánto |
+
+La tercera ya se detectaba antes; las dos primeras no. Hubo un intento
+intermedio —guardar el total impreso y comprobar que cuadrara, migración 043—
+pero eso decía que faltaba dinero sin decir **qué** faltaba. Era un parche, y la
+044 lo retira.
+
+**La refacción se elige del catálogo, no se teclea.** En las facturas de
+gasolina los renglones se casan por litros porque ese número identifica la
+carga; aquí no hay uno así, y casar por parecido entre descripciones se equivoca
+en silencio. Si el papel trae una pieza que no existe, se da de alta ahí mismo —
+igual que en el alta de compra.
+
+**El emparejado va en dos pasadas**: primero los que coinciden en pieza, cantidad
+y costo (esos no son inferencia, son el mismo renglón), después por pieza a
+secas. Sin la primera pasada, una factura con la misma refacción en dos renglones
+a distinto precio cruzaría los dos y reportaría dos errores donde no hay ninguno.
+
+## Resolver, no solo señalar
+
+Cada diferencia trae su acción al lado:
+
+- **falta capturar** → *Registrar la compra*. El renglón ya sabe qué refacción,
+  cuántas y a qué costo; lo único que el papel no dice es dónde entró la
+  mercancía, así que solo pide la sucursal.
+- **sobra capturado** → *Quitar lo capturado*, con las mismas comprobaciones de
+  siempre. Si sí se compró pero es de otra factura, se le cambia el folio.
+- **valores** → se corrigen al cerrar, aplicando lo que dice el papel.
+
+Cerrar con cosas sin resolver es legítimo —el papel puede tardar en aclararse—
+pero exige confirmarlo (409 `CUADRE_INCOMPLETO`), y **lo que queda pendiente se
+registra igual** en `correcciones_revision` con `campo` = `renglon_faltante` o
+`renglon_sobrante`. Perderlo porque alguien cerró la factura sería quedarse sin
+la respuesta.
+
+Al cerrar se sella todo de una vez: cabecera y todos los renglones. El cuadre es
+de la factura completa, no de un renglón suelto.
 
 ## Cómo se le pone precio a un error
 
@@ -119,30 +157,6 @@ ni un admin, y un error descubierto después quedaría congelado para siempre.
 pasó, y si reabrir las borrara sería la forma de hacer desaparecer el rastro de
 un error.
 
-## El renglón que falta: el total del papel
-
-Los dos casos anteriores se ven porque hay un renglón donde mirar. El tercero
-no: **si nadie capturó una pieza, no existe ningún renglón donde ponerle una
-marca**. El verificador podía sellar la factura entera sin enterarse.
-
-Por eso la revisión de la cabecera pide el **total impreso**
-(`facturas.total_papel`, migración 043) y lo compara contra lo que suman los
-renglones ya con descuento e IVA. Si no cuadra, o falta un renglón, o sobra, o
-hay un importe mal tecleado — y las tres son lo que la revisión busca. La API
-responde 409 `TOTAL_NO_CUADRA` con la diferencia y hay que confirmarla.
-
-Es obligatorio a propósito: opcional sería un campo que se salta, y entonces la
-comprobación solo existiría para quien ya iba a darse cuenta.
-
-**Esto no contradice a las migraciones 020 y 021**, donde se decidió no guardar
-importes y calcularlos. Aquel criterio evita guardar un derivado junto a su
-origen, porque los dos se desalinean. Este total **no sale de los renglones,
-sale del papel**: su único trabajo es no coincidir. Es un dígito verificador, y
-uno que se calculara de lo mismo que verifica no serviría de nada.
-
-La **diferencia no se guarda**, se calcula al leer — así sigue siendo cierta
-aunque después se corrija el costo de un renglón.
-
 ## El renglón que sobra
 
 Cuando el papel no trae una pieza que sí está capturada,
@@ -173,8 +187,11 @@ es nada: se borra también, salvo que ya tenga correcciones registradas.
 | Ruta | Rol | Qué hace |
 |---|---|---|
 | `GET /facturas?por_revisar=1` | admin, editor, viewer | La bandeja de lo pendiente |
-| `POST /lotes/{id}/revisar` | **admin** | Cuadra un renglón y lo sella |
-| `POST /facturas/{id}/revisar` | **admin** | Cuadra la cabecera y la sella |
+| `GET /facturas/{id}/cuadre` | admin, editor, viewer | Las dos listas y sus diferencias |
+| `PUT /facturas/{id}/renglones` | **admin** | Guarda la transcripción del papel |
+| `POST /facturas/renglones/{id}/registrar` | **admin** | Da de alta la compra que falta |
+| `POST /facturas/{id}/cuadrar` | **admin** | Aplica el papel y sella la factura |
+| `POST /facturas/{id}/revisar` | **admin** | Cuadra la cabecera (folio, fecha, IVA, descuento) |
 | `POST /facturas/{id}/reabrir` | **admin** | Quita los sellos |
 | `POST /lotes/{id}/quitar` | **admin** | Borra el renglón que no está en el papel |
 | `GET /facturas/{id}/correcciones` | admin, editor | Qué se le corrigió a esta factura |
@@ -194,10 +211,8 @@ editor a propósito — quien capturó tiene que poder ver en qué se equivocó,
 el único punto de registrarlo. Lo que queda reservado es el acumulado por
 persona.
 
-Los valores que recibe `POST /lotes/{id}/revisar` **no son opcionales**: el
-verificador manda lo que dice el papel, siempre completo, y la API lo compara. Si
-fueran opcionales esto sería otra pantalla de edición, y un renglón mal capturado
-que nadie miró quedaría sellado como bueno.
+`PUT /facturas/{id}/renglones` recibe el papel **completo**, no lo que se
+agrega: la pantalla manda la transcripción entera y el servidor reemplaza.
 
 ## La pantalla
 
@@ -218,13 +233,13 @@ El signo del importe se explica al pasar el cursor en vez de dejarlo al lector:
 - **El proveedor no se corrige en la revisión.** Cambiarlo mueve la factura a
   otro proveedor entero y la llave `(proveedor, folio)` haría que dejara de ser
   la misma compra. Es una operación aparte.
-- **Los campos vienen prellenados con lo guardado.** Hace que "todo cuadra" sea
-  un clic, pero también permite sellar sin leer el papel. La alternativa —campos
-  en blanco— convierte cada factura correcta en quince tecleos y acaba en que
-  nadie revisa. Se eligió que revisar sea barato.
-- **Las facturas selladas antes de la 043** tienen `total_papel` en NULL: ninguna
-  revisión hecha se invalida, pero tampoco tienen la comprobación. Para
-  aplicársela hay que reabrirlas.
+- **La transcripción puede arrancar copiando lo capturado** (*Copiar lo
+  capturado*). Permite dar por bueno sin leer el papel, pero teclear quince
+  renglones desde cero acaba en que nadie revisa. Es un acto explícito, no un
+  prellenado: la tabla nace vacía.
+- **Las facturas selladas antes de la 044** no tienen transcripción del papel:
+  su revisión sigue valiendo, pero no se comparó contra dos listas. Para
+  aplicarles el cuadre hay que reabrirlas.
 - **Nada se marcó como revisado al migrar.** Nadie ha verificado ninguna factura
   existente contra su papel; marcarlas sería escribir algo que no pasó. La
   bandeja nace llena, y eso no es un efecto secundario: es el trabajo que existía
