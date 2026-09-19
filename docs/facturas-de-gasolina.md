@@ -12,7 +12,11 @@ facturas_gasolina          folio, gasolinera, fecha, tasa de IVA
   ..._renglones            descripción, cantidad, importe  →  recarga
 ```
 
-Ver `db/migrations/041_facturas_de_gasolina.sql`.
+Ver `db/migrations/041_facturas_de_gasolina.sql`, y la **042** si se llegó a
+correr una versión anterior de la 041: las migraciones de este repo crean la
+tabla solo `IF OBJECT_ID(...) IS NULL`, así que volver a correr una 041 corregida
+no cambia una tabla que ya existe — se salta el `CREATE` y la deja como estaba.
+Un cambio de forma siempre necesita su propio número.
 
 ## Sigue el modelo de las facturas de refacciones
 
