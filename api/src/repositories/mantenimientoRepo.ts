@@ -168,6 +168,79 @@ export async function findAll(): Promise<MantenimientoDeFlota[]> {
   return completos.map(m => ({ ...m, ...extra.get(m.id)! }))
 }
 
+/**
+ * Los mantenimientos que hizo un taller.
+ *
+ * Es la ficha del taller vista desde el trabajo, no desde el papel: qué unidades
+ * le han pasado por las manos, cuánto cobró por cada una, y —lo que no se puede
+ * saber desde ninguna otra pantalla— cuál de esos trabajos está facturado y cuál
+ * ya se cuadró contra su papel.
+ *
+ * Va aparte de `findAll` y no como un filtro suyo porque contesta otra cosa:
+ * aquella es el historial de la flota, con su vehículo y su fase del programa;
+ * esta es el estado de cuentas con un taller. Y porque `findAll` trae la flota
+ * entera sin paginar, que aquí sería traer años de trabajo para enseñar diez
+ * renglones.
+ *
+ * Ver `db/migrations/046_facturas_de_mantenimiento.sql`.
+ */
+export interface MantenimientoDeTaller {
+  id:            number
+  vehiculo_id:   number
+  fecha:         string | null
+  tipo:          string | null
+  km_actual:     number | null
+  /** La mano de obra: lo que el taller cobró por el trabajo. */
+  costo:         number
+  observaciones: string | null
+  vehiculo:      string
+  /** Lo que el servicio consumió en refacciones del almacén. */
+  piezas_total:  number
+  /** El folio que cobra este trabajo. `null` = ninguna factura lo reclama. */
+  factura_folio: string | null
+  /** `null` = su mano de obra todavía no se ha cuadrado contra ningún papel. */
+  revisado_en:   string | null
+  revisado_por:  string | null
+}
+
+export async function findByTecnico(
+  tecnicoId: number, page: number, pageSize: number,
+): Promise<{ data: MantenimientoDeTaller[]; total: number; costo_total: number }> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('tec',      sql.Int, tecnicoId)
+    .input('offset',   sql.Int, (page - 1) * pageSize)
+    .input('pageSize', sql.Int, pageSize)
+    .query(`
+      SELECT m.id, m.vehiculo_id, CONVERT(char(10), m.fecha, 23) AS fecha,
+             m.tipo, m.km_actual, m.costo, m.observaciones,
+             CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
+             COALESCE((SELECT SUM(dp.cantidad * dp.costo_unitario)
+                       FROM detalle_mtto_pieza dp
+                       WHERE dp.mantenimiento_id = m.id), 0) AS piezas_total,
+             fac.folio AS factura_folio,
+             CONVERT(varchar(19), m.revisado_en, 126) AS revisado_en, m.revisado_por
+      FROM mantenimiento m
+      JOIN vehiculos v  ON v.id  = m.vehiculo_id
+      JOIN modelos   mo ON mo.id = v.modelo_id
+      LEFT JOIN facturas_mano_obra fmo ON fmo.mantenimiento_id = m.id
+      LEFT JOIN facturas           fac ON fac.id = fmo.factura_id
+      WHERE m.tecnico_id = @tec
+      ORDER BY m.fecha DESC, m.id DESC
+      OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
+
+      SELECT COUNT(*) AS total, COALESCE(SUM(m.costo), 0) AS costo_total
+      FROM mantenimiento m WHERE m.tecnico_id = @tec;
+    `)
+
+  const resumen = (r.recordsets[1] as unknown as { total: number; costo_total: number }[])[0]
+  return {
+    data: r.recordsets[0] as unknown as MantenimientoDeTaller[],
+    total: resumen.total,
+    costo_total: resumen.costo_total,
+  }
+}
+
 export async function findById(id: number): Promise<Mantenimiento | null> {
   const pool = await getPool()
   const r = await pool.request()

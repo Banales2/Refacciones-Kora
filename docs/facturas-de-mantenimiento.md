@@ -245,6 +245,7 @@ el expediente del camión.** Ninguna de esas otras cosas sale de ninguna factura
 | `PUT /facturas/{id}/mano-obra` | **admin** | Guarda la transcripción de la mano de obra |
 | `GET /mantenimientos/sin-facturar` | admin, editor, viewer | Los servicios que ninguna factura reclama |
 | `GET /tecnicos/{id}/facturas` | admin, editor, viewer | Las facturas de un taller |
+| `GET /tecnicos/{id}/mantenimientos` | admin, editor, viewer | Los servicios que hizo un taller |
 
 `GET /tecnicos/{id}/facturas` recibe un **taller** y resuelve el proveedor por
 dentro, para que el catálogo de técnicos no tenga que saber que un taller factura
@@ -288,11 +289,26 @@ trabajo se hizo y nadie lo capturó, y hay gasto fuera de los libros, o el talle
 cobra algo que no hizo—. El sistema no puede saber cuál es; la persona con el
 papel sí, y por eso se le dice con todas sus letras.
 
-Desde **Catálogos → Técnicos**, cada taller tiene un botón que abre sus facturas
-en un cajón (`FacturasTallerDrawer.tsx`): cuántas, cuánto se le ha facturado,
-cuántas están sin cuadrar, y qué cobra cada una —trabajo, refacciones o las dos—.
-Contesta la pregunta que se hace estando en su ficha y que antes obligaba a salir
-a Facturas y buscar por nombre. La palabra "proveedor" no aparece en ningún lado.
+Desde **Catálogos → Técnicos**, cada taller tiene un botón que abre su ficha en un
+cajón (`TallerDrawer.tsx`), con dos pestañas porque son dos preguntas:
+
+- **Facturas** — lo que ha **cobrado**: cuántas, cuánto, cuántas sin cuadrar, y
+  qué cobra cada una (trabajo, refacciones o las dos).
+- **Mantenimientos** — lo que ha **hecho**: unidad, fecha, mano de obra, lo que
+  consumió en refacciones, y qué folio cobra cada trabajo.
+
+Lo interesante está en el cruce, y por eso viven juntas: un servicio **sin
+folio que lo reclame** es mano de obra que el taller no ha cobrado todavía, y
+verlo aquí junto al resto de su trabajo es distinto de verlo en la bandeja
+general, que es de toda la flota.
+
+La palabra "proveedor" no aparece en ningún lado.
+
+`GET /tecnicos/{id}/mantenimientos` va aparte de `GET /mantenimientos` y no como
+un filtro suyo porque contesta otra cosa: aquel es el historial de la flota, con
+su vehículo y su fase del programa; este es el estado de cuentas con un taller.
+Y porque aquel trae la flota entera sin paginar, que aquí sería leer años de
+trabajo para enseñar diez renglones.
 
 ## Lo que quedó fuera
 

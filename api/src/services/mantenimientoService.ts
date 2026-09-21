@@ -10,6 +10,12 @@ export async function getAll() {
   return repo.findAll()
 }
 
+/** Los mantenimientos de un taller: su estado de cuentas, no el historial de la flota. */
+export async function getByTecnico(tecnicoId: number, page: number, pageSize: number) {
+  const r = await repo.findByTecnico(tecnicoId, page, pageSize)
+  return { ...r, page, pageSize }
+}
+
 // Registrar un mantenimiento es la ocasión en que se lee el odómetro, así que
 // el km reportado pasa a ser el kilometraje del vehículo (avanzarKilometraje
 // ignora los tipos sin odómetro y no permite retrocesos).

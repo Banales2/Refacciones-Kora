@@ -52,6 +52,44 @@ export function useFacturasDeTaller(tecnicoId: number | null, page = 1, pageSize
   })
 }
 
+export interface MantenimientoDeTaller {
+  id:            number
+  vehiculo_id:   number
+  fecha:         string | null
+  tipo:          string | null
+  km_actual:     number | null
+  /** La mano de obra: lo que el taller cobró por el trabajo. */
+  costo:         number
+  observaciones: string | null
+  vehiculo:      string
+  /** Lo que el servicio consumió en refacciones del almacén. */
+  piezas_total:  number
+  /** El folio que cobra este trabajo. null = ninguna factura lo reclama. */
+  factura_folio: string | null
+  /** null = su mano de obra todavía no se ha cuadrado contra ningún papel. */
+  revisado_en:   string | null
+  revisado_por:  string | null
+}
+
+/**
+ * Los mantenimientos que hizo un taller.
+ *
+ * El gemelo de `useFacturasDeTaller`: aquel enseña lo que el taller ha cobrado,
+ * este lo que ha hecho. La pregunta interesante está en el cruce — un trabajo
+ * sin folio que lo reclame es mano de obra que todavía no se ha facturado.
+ */
+export function useMantenimientosDeTaller(tecnicoId: number | null, page = 1, pageSize = 10) {
+  return useQuery({
+    queryKey: ['tecnico-mantenimientos', tecnicoId, page, pageSize],
+    queryFn: () => api.get<{
+      data: MantenimientoDeTaller[]
+      costo_total: number
+      pagination: { page: number; pageSize: number; total: number }
+    }>(`/tecnicos/${tecnicoId}/mantenimientos?page=${page}&pageSize=${pageSize}`),
+    enabled: tecnicoId !== null,
+  })
+}
+
 export function useCreateTecnico() {
   const qc = useQueryClient()
   return useMutation({

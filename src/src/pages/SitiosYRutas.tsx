@@ -19,7 +19,7 @@ import {
 } from '../lib/reportes/consumoGasolinera'
 import ConductorForm from '../components/ConductorForm'
 import ArchivarCatalogoModal from '../components/ArchivarCatalogoModal'
-import FacturasTallerDrawer from '../components/FacturasTallerDrawer'
+import TallerDrawer from '../components/TallerDrawer'
 import { TIPOS_CON_PERMISO, TIPOS_CON_SEGURO } from '../lib/tipoVehiculo'
 import { useForm } from '@mantine/form'
 import {
@@ -1043,10 +1043,11 @@ function TecnicosPanel() {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Tecnico | null>(null)
   const [archivando, setArchivando] = useState<Tecnico | null>(null)
-  // Las facturas del taller, en un cajón. La pregunta "cuánto llevamos
-  // pagándole a este taller y qué está sin cuadrar" se hace estando en su
-  // ficha, y antes obligaba a salir a Facturas y buscar por nombre.
-  const [viendoFacturas, setViendoFacturas] = useState<Tecnico | null>(null)
+  // La ficha del taller en un cajón: lo que ha cobrado y lo que ha hecho. Las
+  // dos preguntas se hacen estando aquí —cuánto llevamos pagándole, qué está
+  // sin cuadrar, qué trabajo suyo no ha facturado— y antes obligaban a salir a
+  // otra pantalla y buscar por nombre.
+  const [viendoTaller, setViendoTaller] = useState<Tecnico | null>(null)
   // Los archivados se ocultan por defecto: el catálogo es sobre todo la lista
   // de lo que se puede elegir. El switch los trae para poder restaurarlos.
   const [verArchivados, setVerArchivados] = useState(false)
@@ -1119,11 +1120,11 @@ function TecnicosPanel() {
                     <Table.Td c="dimmed">{t.contacto ?? '—'}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <Tooltip label="Ver sus facturas">
+                        <Tooltip label="Ver sus facturas y mantenimientos">
                           <ActionIcon
                             variant="subtle" color="grape" size="sm"
-                            aria-label="Ver sus facturas"
-                            onClick={() => setViendoFacturas(t)}
+                            aria-label="Ver sus facturas y mantenimientos"
+                            onClick={() => setViendoTaller(t)}
                           >
                             <IconReceipt size={14} />
                           </ActionIcon>
@@ -1158,9 +1159,9 @@ function TecnicosPanel() {
         />
       </Modal>
 
-      <FacturasTallerDrawer
-        taller={viendoFacturas}
-        onClose={() => setViendoFacturas(null)}
+      <TallerDrawer
+        taller={viendoTaller}
+        onClose={() => setViendoTaller(null)}
       />
 
       <ArchivarCatalogoModal
