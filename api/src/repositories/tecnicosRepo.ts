@@ -139,6 +139,24 @@ export async function proveedorDeTaller(tecnicoId: number): Promise<number | nul
   }
 }
 
+/**
+ * El proveedor con el que este taller factura, o `null` si todavía no ha
+ * facturado nada.
+ *
+ * Es la versión de solo lectura de `proveedorDeTaller`, y existe separada a
+ * propósito: aquella CREA el proveedor si hace falta, y consultarlo —enseñar las
+ * facturas de un taller, por ejemplo— no puede tener el efecto de dar de alta
+ * un proveedor que nadie pidió. Un taller sin facturas no tiene proveedor, y esa
+ * es la respuesta correcta.
+ */
+export async function proveedorVinculado(tecnicoId: number): Promise<number | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, tecnicoId)
+    .query('SELECT proveedor_id FROM tecnicos WHERE id = @id')
+  return r.recordset[0]?.proveedor_id ?? null
+}
+
 /** El taller que factura con ese proveedor, si es el reflejo de alguno. */
 export async function tallerDeProveedor(
   proveedorId: number,

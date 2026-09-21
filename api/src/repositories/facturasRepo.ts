@@ -142,6 +142,10 @@ function filtros(req: sql.Request, p: FacturaQuery): string {
     req.input('search', `%${p.search}%`)
     where.push('(f.folio LIKE @search OR pr.nombre LIKE @search)')
   }
+  if (p.proveedor_id) {
+    req.input('pv', sql.Int, p.proveedor_id)
+    where.push('f.proveedor_id = @pv')
+  }
   if (p.desde) { req.input('desde', sql.Date, p.desde); where.push('f.fecha_compra >= @desde') }
   if (p.hasta) { req.input('hasta', sql.Date, p.hasta); where.push('f.fecha_compra <= @hasta') }
   // La bandeja del verificador: lo que le falta por cuadrar contra el papel.

@@ -220,6 +220,18 @@ el expediente del camión.** Ninguna de esas otras cosas sale de ninguna factura
 | `GET /facturas/{id}/mano-obra/candidatos` | admin, editor, viewer | Los servicios que podría estar cobrando, y de qué taller es |
 | `PUT /facturas/{id}/mano-obra` | **admin** | Guarda la transcripción de la mano de obra |
 | `GET /mantenimientos/sin-facturar` | admin, editor, viewer | Los servicios que ninguna factura reclama |
+| `GET /tecnicos/{id}/facturas` | admin, editor, viewer | Las facturas de un taller |
+
+`GET /tecnicos/{id}/facturas` recibe un **taller** y resuelve el proveedor por
+dentro, para que el catálogo de técnicos no tenga que saber que un taller factura
+como proveedor. Usa `proveedorVinculado` y no `proveedorDeTaller`: aquella crea el
+proveedor si falta, y abrir una lista para mirarla no puede dar de alta nada. Un
+taller sin vínculo devuelve una lista vacía, no un 404 — existe, simplemente no ha
+facturado.
+
+Devuelve **todas** sus facturas, no solo las de mano de obra: si a ese taller se
+le compraron refacciones, esas facturas son suyas igual, y separarlas escondería
+justo el papel mixto.
 
 El cuadre, el sello y la reapertura son los de siempre —`GET /facturas/{id}/cuadre`,
 `POST /facturas/{id}/cuadrar`, `POST /facturas/{id}/reabrir`— porque la factura es
@@ -244,6 +256,19 @@ con dos pestañas:
 
 El cuadre es `CuadreFacturaModal`, el mismo de refacciones, con la mitad de mano
 de obra (`CuadreManoObra.tsx`) apareciendo solo cuando la factura es de un taller.
+
+**El cobro sin servicio registrado se anuncia aparte**, con una alerta encima de
+las tarjetas y no solo como una etiqueta entre ellas. Las demás diferencias son
+un número mal tecleado; esta son dos cosas distintas y las dos caras —o el
+trabajo se hizo y nadie lo capturó, y hay gasto fuera de los libros, o el taller
+cobra algo que no hizo—. El sistema no puede saber cuál es; la persona con el
+papel sí, y por eso se le dice con todas sus letras.
+
+Desde **Catálogos → Técnicos**, cada taller tiene un botón que abre sus facturas
+en un cajón (`FacturasTallerDrawer.tsx`): cuántas, cuánto se le ha facturado,
+cuántas están sin cuadrar, y qué cobra cada una —trabajo, refacciones o las dos—.
+Contesta la pregunta que se hace estando en su ficha y que antes obligaba a salir
+a Facturas y buscar por nombre. La palabra "proveedor" no aparece en ningún lado.
 
 ## Lo que quedó fuera
 

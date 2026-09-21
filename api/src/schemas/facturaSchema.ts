@@ -30,6 +30,15 @@ export const FacturaQuerySchema = z.object({
     .union([z.boolean(), z.string()])
     .transform((v) => v === true || v === 'true' || v === '1')
     .optional(),
+  /**
+   * Las de un proveedor concreto.
+   *
+   * Lo pone el servidor, no el cliente: quien lo usa es el listado de facturas
+   * de un taller, que recibe un `tecnico_id` y resuelve el proveedor por dentro
+   * para que la pantalla no tenga que saber que un taller factura como
+   * proveedor. Por eso `facturas-list` no lo lee del query string.
+   */
+  proveedor_id: z.coerce.number().int().positive().optional(),
 })
 
 // La factura no tiene id: se identifica por su folio y el proveedor que la

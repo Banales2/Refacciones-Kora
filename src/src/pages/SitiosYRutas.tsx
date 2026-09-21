@@ -19,10 +19,11 @@ import {
 } from '../lib/reportes/consumoGasolinera'
 import ConductorForm from '../components/ConductorForm'
 import ArchivarCatalogoModal from '../components/ArchivarCatalogoModal'
+import FacturasTallerDrawer from '../components/FacturasTallerDrawer'
 import { TIPOS_CON_PERMISO, TIPOS_CON_SEGURO } from '../lib/tipoVehiculo'
 import { useForm } from '@mantine/form'
 import {
-  IconPencil, IconPlus, IconAlertTriangle, IconRefresh,
+  IconPencil, IconPlus, IconAlertTriangle, IconRefresh, IconReceipt,
   IconSearch, IconFileTypePdf, IconFileSpreadsheet, IconArchive, IconArchiveOff,
 } from '@tabler/icons-react'
 import {
@@ -1042,6 +1043,10 @@ function TecnicosPanel() {
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Tecnico | null>(null)
   const [archivando, setArchivando] = useState<Tecnico | null>(null)
+  // Las facturas del taller, en un cajón. La pregunta "cuánto llevamos
+  // pagándole a este taller y qué está sin cuadrar" se hace estando en su
+  // ficha, y antes obligaba a salir a Facturas y buscar por nombre.
+  const [viendoFacturas, setViendoFacturas] = useState<Tecnico | null>(null)
   // Los archivados se ocultan por defecto: el catálogo es sobre todo la lista
   // de lo que se puede elegir. El switch los trae para poder restaurarlos.
   const [verArchivados, setVerArchivados] = useState(false)
@@ -1114,6 +1119,15 @@ function TecnicosPanel() {
                     <Table.Td c="dimmed">{t.contacto ?? '—'}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
+                        <Tooltip label="Ver sus facturas">
+                          <ActionIcon
+                            variant="subtle" color="grape" size="sm"
+                            aria-label="Ver sus facturas"
+                            onClick={() => setViendoFacturas(t)}
+                          >
+                            <IconReceipt size={14} />
+                          </ActionIcon>
+                        </Tooltip>
                         <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(t)}><IconPencil size={14} /></ActionIcon></Tooltip>
                         <Tooltip label={t.archivado_en ? 'Restaurar' : 'Archivar'}>
                           <ActionIcon
@@ -1143,6 +1157,11 @@ function TecnicosPanel() {
           onSubmit={handleSubmit} onCancel={() => setFormOpen(false)}
         />
       </Modal>
+
+      <FacturasTallerDrawer
+        taller={viendoFacturas}
+        onClose={() => setViendoFacturas(null)}
+      />
 
       <ArchivarCatalogoModal
         recurso="tecnicos" item={archivando} etiqueta="el técnico"
