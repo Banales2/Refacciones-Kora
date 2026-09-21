@@ -80,6 +80,25 @@ La marca existe para poder contarlas aparte: sin ella se confunden con las
 capturadas a tiempo, y entonces no se puede contestar cuántas facturas se estaban
 perdiendo. Ver `db/migrations/045_factura_hallada_en_revision.sql`.
 
+## La otra mitad del papel
+
+Desde la migración 046 una factura puede cobrar también **mano de obra**: el
+taller factura las piezas y el trabajo en el mismo documento, y ese documento
+sigue siendo una sola fila de `facturas` con un folio, un IVA y un descuento.
+
+Lo que cambia para lo de aquí:
+
+- El cuadre trae **dos transcripciones y dos listas de diferencias**, y un solo
+  total. El sello es de la factura completa: cabecera, lotes y mantenimientos.
+- `facturas.subtotal` y el subtotal contra el que se miden las correcciones de
+  cabecera incluyen la mano de obra. En una factura mixta, corregir la tasa mueve
+  el total de todo lo que cobra.
+- `correcciones_revision` tiene `mantenimiento_id` además de `lote_id`: una
+  corrección de mano de obra no es de un renglón ni de la cabecera.
+
+Ver `docs/facturas-de-mantenimiento.md`, que es donde está el razonamiento
+completo de por qué no hay una cuarta tabla de facturas.
+
 ## Resolver, no solo señalar
 
 Cada diferencia trae su acción al lado:

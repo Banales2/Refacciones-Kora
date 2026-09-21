@@ -41,21 +41,25 @@ export function EstadoRevision({ factura }: { factura: Factura }) {
     )
   }
 
-  const faltan = factura.renglones - factura.renglones_revisados
-  const empezada = factura.cabecera_revisada_en !== null || factura.renglones_revisados > 0
+  // Las dos mitades del papel cuentan igual: los renglones de refacción y los
+  // servicios de taller que cobra. Una factura de puro taller tiene cero
+  // renglones, y medir el avance solo con esos diría "0/0 revisados" de algo que
+  // sí tiene trabajo pendiente. Ver `docs/facturas-de-mantenimiento.md`.
+  const total = factura.renglones + factura.mano_obra
+  const revisados = factura.renglones_revisados + factura.mano_obra_revisada
+  const faltan = total - revisados
+  const empezada = factura.cabecera_revisada_en !== null || revisados > 0
 
   return (
     <Tooltip
       label={
-        factura.cabecera_revisada_en === null && faltan === factura.renglones
+        factura.cabecera_revisada_en === null && faltan === total
           ? 'Nadie la ha cuadrado todavía contra el papel'
           : `Faltan ${faltan} renglón(es)${factura.cabecera_revisada_en === null ? ' y los datos de la factura' : ''}`
       }
     >
       <Badge size="xs" variant="light" color={empezada ? 'yellow' : 'gray'}>
-        {empezada
-          ? `${factura.renglones_revisados}/${factura.renglones} revisados`
-          : 'Por revisar'}
+        {empezada ? `${revisados}/${total} revisados` : 'Por revisar'}
       </Badge>
     </Tooltip>
   )

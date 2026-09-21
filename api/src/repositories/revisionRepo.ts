@@ -15,8 +15,17 @@ import { getPool } from '../shared/db'
 
 /** Un campo que el verificador corrigió, listo para guardarse. */
 export interface Correccion {
-  /** NULL = la corrección fue de la cabecera, que no pertenece a ningún renglón. */
+  /** NULL = la corrección no fue de un renglón de refacción. */
   lote_id: number | null
+  /**
+   * El mantenimiento cuya mano de obra se corrigió. NULL en todo lo demás.
+   *
+   * Hacen falta las dos columnas y no basta con `lote_id` en NULL: ese NULL ya
+   * significa "corrección de cabecera" —folio, fecha, IVA, descuento— y meter
+   * ahí la mano de obra las volvería indistinguibles.
+   * Ver `db/migrations/046_facturas_de_mantenimiento.sql`.
+   */
+  mantenimiento_id?: number | null
   campo: string
   valor_antes: string | null
   valor_despues: string | null
@@ -62,8 +71,19 @@ export interface CabeceraParaRevision {
   descuento_pct: number | null
   autorizado_por: string
   cabecera_revisada_en: Date | null
-  /** Suma de costo × cantidad de todos sus renglones, a precio de lista. */
+  /**
+   * Lo que la factura cobra según lo CAPTURADO, a precio de lista: sus
+   * refacciones más la mano de obra de los mantenimientos que reclama.
+   *
+   * La mano de obra entra aquí porque el IVA y el descuento son del papel
+   * entero, no de su mitad de refacciones: en una factura de taller que cobra
+   * las dos cosas, corregir la tasa mueve el total de todo lo que cobra. Medirlo
+   * solo sobre los lotes le pondría al error un precio más bajo del que tuvo.
+   * Ver `db/migrations/046_facturas_de_mantenimiento.sql`.
+   */
   subtotal: number
+  /** La parte del subtotal que es mano de obra. */
+  subtotal_mano_obra: number
 }
 
 export async function leerCabecera(facturaId: number): Promise<CabeceraParaRevision | null> {
@@ -75,7 +95,15 @@ export async function leerCabecera(facturaId: number): Promise<CabeceraParaRevis
              CONVERT(char(10), f.fecha_compra, 23) AS fecha_compra,
              f.tasa_iva, f.descuento_pct, f.autorizado_por, f.cabecera_revisada_en,
              COALESCE((SELECT SUM(l.costo_unitario * l.cantidad_inicial)
-                       FROM lotes_pieza l WHERE l.factura_id = f.id), 0) AS subtotal
+                       FROM lotes_pieza l WHERE l.factura_id = f.id), 0)
+             + COALESCE((SELECT SUM(m.costo)
+                         FROM facturas_mano_obra fmo
+                         JOIN mantenimiento m ON m.id = fmo.mantenimiento_id
+                         WHERE fmo.factura_id = f.id), 0) AS subtotal,
+             COALESCE((SELECT SUM(m.costo)
+                       FROM facturas_mano_obra fmo
+                       JOIN mantenimiento m ON m.id = fmo.mantenimiento_id
+                       WHERE fmo.factura_id = f.id), 0) AS subtotal_mano_obra
       FROM facturas f
       WHERE f.id = @id`)
   return (r.recordset[0] as CabeceraParaRevision) ?? null
@@ -89,6 +117,7 @@ async function insertarCorrecciones(
     await tx.request()
       .input('factura', sql.Int,            facturaId)
       .input('lote',    sql.Int,            c.lote_id)
+      .input('mant',    sql.Int,            c.mantenimiento_id ?? null)
       .input('campo',   sql.NVarChar(40),   c.campo)
       .input('antes',   sql.NVarChar(100),  c.valor_antes)
       .input('despues', sql.NVarChar(100),  c.valor_despues)
@@ -97,9 +126,9 @@ async function insertarCorrecciones(
       .input('quien',   sql.NVarChar(120),  quien)
       .query(`
         INSERT INTO correcciones_revision
-          (factura_id, lote_id, campo, valor_antes, valor_despues,
+          (factura_id, lote_id, mantenimiento_id, campo, valor_antes, valor_despues,
            capturado_por, delta_dinero, corregida_por)
-        VALUES (@factura, @lote, @campo, @antes, @despues, @capturo, @delta, @quien)`)
+        VALUES (@factura, @lote, @mant, @campo, @antes, @despues, @capturo, @delta, @quien)`)
   }
 }
 
@@ -185,6 +214,20 @@ export async function sellarCuadre(
         SET revisado_en = SYSUTCDATETIME(), revisado_por = @quien
         WHERE factura_id = @id AND revisado_en IS NULL`)
 
+    // La mano de obra que la factura reclama se sella con ella. El sello va en
+    // el mantenimiento y no en el renglón del papel por lo mismo que allá va en
+    // el lote: lo que se da por bueno es lo capturado, y el renglón del papel se
+    // reemplaza entero en cada guardado, así que un sello ahí se borraría solo.
+    await tx.request()
+      .input('id',    sql.Int,           facturaId)
+      .input('quien', sql.NVarChar(120), quien)
+      .query(`
+        UPDATE m
+        SET m.revisado_en = SYSUTCDATETIME(), m.revisado_por = @quien
+        FROM mantenimiento m
+        JOIN facturas_mano_obra fmo ON fmo.mantenimiento_id = m.id
+        WHERE fmo.factura_id = @id AND m.revisado_en IS NULL`)
+
     await insertarCorrecciones(tx, facturaId, correcciones, quien)
     await tx.commit()
     return true
@@ -217,6 +260,18 @@ export async function reabrir(facturaId: number): Promise<number> {
         SET revisado_en = NULL, revisado_por = NULL
         WHERE factura_id = @id AND revisado_en IS NOT NULL`)
 
+    // La mano de obra vuelve con ella: si los sellos del papel se quitan a
+    // medias, la factura queda reabierta con la mitad congelada y el cuadre no
+    // puede volver a aplicarse entero.
+    await tx.request()
+      .input('id', sql.Int, facturaId)
+      .query(`
+        UPDATE m
+        SET m.revisado_en = NULL, m.revisado_por = NULL
+        FROM mantenimiento m
+        JOIN facturas_mano_obra fmo ON fmo.mantenimiento_id = m.id
+        WHERE fmo.factura_id = @id AND m.revisado_en IS NOT NULL`)
+
     await tx.request()
       .input('id', sql.Int, facturaId)
       .query(`
@@ -237,6 +292,10 @@ export interface CorreccionRegistrada {
   id: number
   lote_id: number | null
   numero_serie: string | null
+  /** La corrección fue de la mano de obra de este servicio. */
+  mantenimiento_id: number | null
+  /** La unidad que estuvo en el taller, para nombrar esa corrección. */
+  vehiculo: string | null
   campo: string
   valor_antes: string | null
   valor_despues: string | null
@@ -253,12 +312,18 @@ export async function correccionesDeFactura(
   const r = await pool.request()
     .input('id', sql.Int, facturaId)
     .query(`
-      SELECT c.id, c.lote_id, p.numero_serie, c.campo,
+      SELECT c.id, c.lote_id, p.numero_serie, c.mantenimiento_id,
+             CASE WHEN m.id IS NULL THEN NULL
+                  ELSE CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) END AS vehiculo,
+             c.campo,
              c.valor_antes, c.valor_despues, c.capturado_por, c.delta_dinero,
              c.corregida_por, CONVERT(varchar(19), c.corregida_en, 126) AS corregida_en
       FROM correcciones_revision c
-      LEFT JOIN lotes_pieza l ON l.id = c.lote_id
-      LEFT JOIN piezas      p ON p.id = l.pieza_id
+      LEFT JOIN lotes_pieza   l  ON l.id  = c.lote_id
+      LEFT JOIN piezas        p  ON p.id  = l.pieza_id
+      LEFT JOIN mantenimiento m  ON m.id  = c.mantenimiento_id
+      LEFT JOIN vehiculos     v  ON v.id  = m.vehiculo_id
+      LEFT JOIN modelos       mo ON mo.id = v.modelo_id
       WHERE c.factura_id = @id
       ORDER BY c.corregida_en, c.id`)
   return r.recordset as CorreccionRegistrada[]
@@ -310,7 +375,11 @@ export async function erroresPorPersona(
   const r = await req.query(`
     SELECT c.capturado_por,
            COUNT(*)                         AS correcciones,
-           COUNT(DISTINCT c.lote_id)        AS renglones,
+           -- Los dos COUNT DISTINCT ignoran NULL, así que cada corrección suma
+           -- por el lado que le toca y ninguna cuenta dos veces: un renglón de
+           -- refacción o un servicio de taller, nunca los dos.
+           COUNT(DISTINCT c.lote_id)
+             + COUNT(DISTINCT c.mantenimiento_id) AS renglones,
            SUM(CASE WHEN c.delta_dinero > 0 THEN  c.delta_dinero ELSE 0 END) AS subregistrado,
            SUM(CASE WHEN c.delta_dinero < 0 THEN -c.delta_dinero ELSE 0 END) AS de_mas
     FROM correcciones_revision c
@@ -357,7 +426,10 @@ export async function correccionesEnRango(
 
   const r = await req.query(`
     SELECT TOP (@limite)
-           c.id, c.factura_id, c.lote_id, p.numero_serie, c.campo,
+           c.id, c.factura_id, c.lote_id, p.numero_serie, c.mantenimiento_id,
+           CASE WHEN m.id IS NULL THEN NULL
+                ELSE CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) END AS vehiculo,
+           c.campo,
            c.valor_antes, c.valor_despues, c.capturado_por, c.delta_dinero,
            c.corregida_por, CONVERT(varchar(19), c.corregida_en, 126) AS corregida_en,
            f.folio, pr.nombre AS proveedor
@@ -366,6 +438,9 @@ export async function correccionesEnRango(
     JOIN proveedores pr      ON pr.id = f.proveedor_id
     LEFT JOIN lotes_pieza l  ON l.id = c.lote_id
     LEFT JOIN piezas p       ON p.id = l.pieza_id
+    LEFT JOIN mantenimiento m ON m.id = c.mantenimiento_id
+    LEFT JOIN vehiculos v    ON v.id = m.vehiculo_id
+    LEFT JOIN modelos mo     ON mo.id = v.modelo_id
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY c.corregida_en DESC, c.id DESC`)
   return r.recordset as CorreccionConFactura[]

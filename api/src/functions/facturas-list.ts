@@ -17,6 +17,11 @@ export async function facturasList(
       search: request.query.get('search') ?? undefined,
       desde: request.query.get('desde') ?? undefined,
       hasta: request.query.get('hasta') ?? undefined,
+      // Las dos banderas del listado: la bandeja del verificador y la vista de
+      // facturas de taller. El schema las acepta desde siempre, pero hasta ahora
+      // no se leían del query y la bandeja devolvía la lista completa.
+      por_revisar: request.query.get('por_revisar') ?? undefined,
+      con_mano_obra: request.query.get('con_mano_obra') ?? undefined,
     })
 
     const result = await service.getAll(params)

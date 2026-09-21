@@ -34,9 +34,11 @@ import {
   CUADRE_INCOMPLETO,
 } from '../hooks/useCuadreFactura'
 import type { Cuadre, Diferencia, RenglonPapelPayload } from '../hooks/useCuadreFactura'
+import { useCandidatosManoObra } from '../hooks/useFacturasMantenimiento'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
 import { useSucursales } from '../hooks/useSucursales'
 import { useQuitarRenglon } from '../hooks/useRevision'
+import { DiferenciasManoObra, TranscripcionManoObra } from './CuadreManoObra'
 import { SelectCatalogo } from './SelectCatalogo'
 import { ApiError } from '../lib/api'
 import { formatMXN } from '../lib/formato'
@@ -366,10 +368,22 @@ export default function CuadreFacturaModal({
   const cuadrar = useCuadrar()
   const [nota, setNota] = useState('')
 
+  // Solo para saber si este papel es de un taller. Si lo es, hay una mitad más
+  // que cuadrar; si no, enseñar una tabla de mano de obra que nunca se va a
+  // llenar es ruido en la pantalla donde menos conviene tenerlo.
+  const taller = useCandidatosManoObra(facturaId)
+
   const cuadre = data?.data
   const cerrada = cuadre?.factura.cabecera_revisada_en != null
   const diferencias = cuadre?.diferencias ?? []
-  const pendientes = diferencias.filter((d) => d.tipo !== 'valores')
+  const diferenciasManoObra = cuadre?.diferencias_mano_obra ?? []
+  const pendientes = [
+    ...diferencias.filter((d) => d.tipo !== 'valores'),
+    ...diferenciasManoObra.filter((d) => d.tipo !== 'valores'),
+  ]
+  const esDeTaller =
+    taller.data?.taller != null || (cuadre?.renglones_mano_obra.length ?? 0) > 0
+  const totalDiferencias = diferencias.length + diferenciasManoObra.length
 
   const incompletoPendiente =
     cuadrar.error instanceof ApiError && cuadrar.error.code === CUADRE_INCOMPLETO
@@ -407,20 +421,38 @@ export default function CuadreFacturaModal({
               para volver a compararla.
             </Alert>
           ) : (
-            <Transcripcion
-              // Se remonta cuando cambian los renglones guardados: así la tabla
-              // refleja lo que la base tiene después de registrar una compra que
-              // faltaba, en vez de quedarse con lo que había al abrir.
-              key={`${cuadre.factura.id}:${cuadre.renglones.map((r) => r.id).join(',')}`}
-              cuadre={cuadre}
-            />
+            <>
+              <Transcripcion
+                // Se remonta cuando cambian los renglones guardados: así la tabla
+                // refleja lo que la base tiene después de registrar una compra que
+                // faltaba, en vez de quedarse con lo que había al abrir.
+                key={`${cuadre.factura.id}:${cuadre.renglones.map((r) => r.id).join(',')}`}
+                cuadre={cuadre}
+              />
+
+              {/* La otra mitad del mismo papel. Aparece solo si la factura es de
+                  un taller —o si ya tiene mano de obra capturada—, porque una
+                  compra de refacciones normal no tiene ninguna que cuadrar. */}
+              {esDeTaller && (
+                <>
+                  <Divider
+                    label={`Mano de obra${taller.data?.taller ? ` · ${taller.data.taller.nombre}` : ''}`}
+                    labelPosition="center"
+                  />
+                  <TranscripcionManoObra
+                    key={`mo:${cuadre.factura.id}:${cuadre.renglones_mano_obra.map((r) => r.id).join(',')}`}
+                    cuadre={cuadre}
+                  />
+                </>
+              )}
+            </>
           )}
 
           {!cuadre.sin_capturar_papel && (
             <>
               <Divider label="Diferencias" labelPosition="center" />
 
-              {diferencias.length === 0 ? (
+              {totalDiferencias === 0 ? (
                 <Alert color="green" variant="light" icon={<IconCheck size={16} />}>
                   El papel y lo capturado coinciden renglón por renglón.
                 </Alert>
@@ -429,7 +461,7 @@ export default function CuadreFacturaModal({
                   <Group gap="sm">
                     <Card withBorder padding="xs" style={{ flex: 1, minWidth: 130 }}>
                       <Text size="xs" c="dimmed">Diferencias</Text>
-                      <Text size="lg" fw={700}>{diferencias.length}</Text>
+                      <Text size="lg" fw={700}>{totalDiferencias}</Text>
                     </Card>
                     <Card
                       withBorder padding="xs" style={{ flex: 1, minWidth: 150 }}
@@ -452,6 +484,15 @@ export default function CuadreFacturaModal({
                       <TarjetaDiferencia key={`${d.tipo}:${d.renglon_id}:${d.lote_id}`} d={d} />
                     ))}
                   </Stack>
+
+                  {diferenciasManoObra.length > 0 && (
+                    <>
+                      {diferencias.length > 0 && (
+                        <Divider label="En la mano de obra" labelPosition="center" />
+                      )}
+                      <DiferenciasManoObra diferencias={diferenciasManoObra} />
+                    </>
+                  )}
                 </>
               )}
 
@@ -494,11 +535,11 @@ export default function CuadreFacturaModal({
                   <Group justify="flex-end">
                     <Button variant="default" onClick={onClose}>Cerrar</Button>
                     <Button
-                      color={diferencias.length === 0 ? 'green' : 'yellow'}
+                      color={totalDiferencias === 0 ? 'green' : 'yellow'}
                       loading={cuadrar.isPending}
                       onClick={() => sellar()}
                     >
-                      {diferencias.length === 0
+                      {totalDiferencias === 0
                         ? 'Todo coincide, cerrar la factura'
                         : 'Aplicar el papel y cerrar'}
                     </Button>

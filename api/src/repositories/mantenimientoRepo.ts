@@ -179,7 +179,9 @@ export async function findById(id: number): Promise<Mantenimiento | null> {
   return row
 }
 
-export async function create(data: MantenimientoCreate): Promise<Mantenimiento> {
+export async function create(
+  data: MantenimientoCreate, capturadoPor: string | null = null,
+): Promise<Mantenimiento> {
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
@@ -192,10 +194,11 @@ export async function create(data: MantenimientoCreate): Promise<Mantenimiento> 
       .input('costo',         sql.Decimal(18, 2),    data.costo         ?? 0)
       .input('kmActual',      sql.Int,               data.km_actual     ?? 0)
       .input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null)
+      .input('capturadoPor',  sql.NVarChar(120),     capturadoPor)
       .query(`
-        INSERT INTO mantenimiento (vehiculo_id, fecha, tipo, tecnico_id, costo, km_actual, observaciones)
+        INSERT INTO mantenimiento (vehiculo_id, fecha, tipo, tecnico_id, costo, km_actual, observaciones, capturado_por)
         OUTPUT INSERTED.*
-        VALUES (@vid, @fecha, @tipo, @tecnicoId, @costo, @kmActual, @observaciones)
+        VALUES (@vid, @fecha, @tipo, @tecnicoId, @costo, @kmActual, @observaciones, @capturadoPor)
       `)
     const mant = r.recordset[0]
     await linkPendientes(tx, mant.id, data.pendiente_ids ?? [], data.fecha, data.km_actual ?? null)

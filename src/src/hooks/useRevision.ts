@@ -110,6 +110,10 @@ export interface CorreccionRegistrada {
   id:            number
   lote_id:       number | null
   numero_serie:  string | null
+  /** La corrección fue de la mano de obra de este servicio. */
+  mantenimiento_id: number | null
+  /** La unidad que estuvo en el taller, para nombrar esa corrección. */
+  vehiculo:      string | null
   campo:         string
   valor_antes:   string | null
   valor_despues: string | null
@@ -199,4 +203,12 @@ export const NOMBRE_DE_CAMPO: Record<string, string> = {
   fecha_compra:     'Fecha',
   tasa_iva:         'IVA',
   descuento_pct:    'Descuento',
+  // Lo que se cerró sin resolver. No es un campo que se corrigiera: es un
+  // desajuste que quedó señalado, y guardarlo es lo único que impide perder el
+  // hallazgo porque alguien cerró la factura.
+  renglon_faltante: 'Refacción sin capturar',
+  renglon_sobrante: 'Capturada y no facturada',
+  // Mano de obra (migración 046).
+  costo_mano_obra:  'Mano de obra',
+  mano_obra_sin_registrar: 'Servicio sin registrar',
 }

@@ -65,6 +65,44 @@ export interface LoteDeFactura {
   renglon_id:       number | null
 }
 
+/**
+ * Qué le pasa a un renglón de mano de obra del papel.
+ *
+ * No hay "sobra capturado" aquí, y no es un olvido: un mantenimiento no
+ * pertenece a ninguna factura hasta que un renglón lo reclama, así que uno que
+ * esta factura no cobre no sobra — todavía no está facturado, o lo cobra otro
+ * papel. Esa pregunta la contesta la bandeja de mantenimientos sin facturar.
+ */
+export type TipoDiferenciaManoObra = 'sin_registrar' | 'valores'
+
+export interface DiferenciaManoObra {
+  tipo:             TipoDiferenciaManoObra
+  renglon_id:       number
+  /** null = el papel cobra un trabajo que ningún mantenimiento capturado explica. */
+  mantenimiento_id: number | null
+  vehiculo:         string | null
+  fecha:            string | null
+  tipo_servicio:    string | null
+  /** Lo que el papel cobra por el trabajo. */
+  papel:            number
+  /** La mano de obra capturada. null si el renglón no casó con ningún servicio. */
+  sistema:          number | null
+  delta_dinero:     number
+  capturado_por:    string | null
+}
+
+export interface RenglonManoObra {
+  id:                  number
+  mantenimiento_id:    number | null
+  importe:             number
+  mantenimiento_costo: number | null
+  mantenimiento_fecha: string | null
+  mantenimiento_tipo:  string | null
+  capturado_por:       string | null
+  vehiculo:            string | null
+  taller:              string | null
+}
+
 export interface Cuadre {
   factura: {
     id:                   number
@@ -72,12 +110,22 @@ export interface Cuadre {
     fecha_compra:         string
     tasa_iva:             number | null
     descuento_pct:        number | null
+    /** Todo lo capturado: los lotes más la mano de obra que la factura reclama. */
     subtotal:             number
+    subtotal_mano_obra:   number
     cabecera_revisada_en: string | null
   }
   renglones:          RenglonPapel[]
   lotes:              LoteDeFactura[]
   diferencias:        Diferencia[]
+  /**
+   * La mano de obra que cobra el papel. Vacío en una factura de puras
+   * refacciones. El taller cobra las dos cosas en el mismo documento, así que
+   * las dos mitades viven en la misma factura y se cuadran en la misma pantalla.
+   */
+  renglones_mano_obra:   RenglonManoObra[]
+  diferencias_mano_obra: DiferenciaManoObra[]
+  /** Todo lo que cobra el papel: refacciones y mano de obra. */
   subtotal_papel:     number
   subtotal_sistema:   number
   /** Total del papel menos total capturado, ya con descuento e IVA. */

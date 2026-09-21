@@ -35,8 +35,18 @@ export interface Factura {
   proveedor:    string
   fecha_compra: string
   renglones:    number
-  /** Suma de costo × cantidad de todos sus renglones, sin IVA. */
+  /**
+   * Todo lo que cobra el papel según lo capturado, sin IVA ni descuento: sus
+   * refacciones más la mano de obra de los mantenimientos que reclama. Las dos
+   * mitades van juntas porque el IVA y el descuento son del documento entero.
+   */
   subtotal:     number
+  /** La parte del subtotal que es mano de obra. 0 en una factura de refacciones. */
+  subtotal_mano_obra: number
+  /** Cuántos servicios de taller cobra este papel. */
+  mano_obra:    number
+  /** Cuántos de esos servicios ya están sellados. */
+  mano_obra_revisada: number
   /** null = los precios ya incluyen IVA (o la compra es exenta). */
   tasa_iva:     number | null
   /**
@@ -64,7 +74,10 @@ export interface Factura {
   revision_nota:         string | null
   /** Cuántos de sus renglones ya están sellados. */
   renglones_revisados:   number
-  /** Cabecera sellada y ningún renglón pendiente. Lo calcula la API. */
+  /**
+   * Cabecera sellada y nada pendiente, ni refacciones ni mano de obra. Lo
+   * calcula la API.
+   */
   cerrada:               boolean
   detalle:      FacturaRenglon[]
 }
@@ -81,6 +94,12 @@ export interface FacturasFiltros {
    * mitades del mismo trabajo.
    */
   por_revisar?: boolean
+  /**
+   * Solo las que cobran mano de obra: la vista de facturas de mantenimientos.
+   * No hay una tabla aparte para ellas — el taller cobra las refacciones y el
+   * trabajo en el mismo papel, y ese papel es una sola factura.
+   */
+  con_mano_obra?: boolean
 }
 
 interface FacturasResponse {

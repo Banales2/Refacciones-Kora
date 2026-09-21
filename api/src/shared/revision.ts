@@ -25,6 +25,7 @@ import { AppError } from './errors'
 /** El cliente usa estos códigos para explicar el bloqueo sin adivinar por el texto. */
 export const RENGLON_REVISADO = 'RENGLON_REVISADO'
 export const CABECERA_REVISADA = 'CABECERA_REVISADA'
+export const MANO_OBRA_REVISADA = 'MANO_OBRA_REVISADA'
 
 export interface EstadoRevision {
   factura_id: number | null
@@ -128,6 +129,34 @@ export async function assertCabeceraEditable(facturaId: number): Promise<void> {
     `La factura ${estado.folio} ya fue revisada${estado.por ? ` por ${estado.por}` : ''} ` +
     'y no se puede editar. Reábrela para corregirla.',
     CABECERA_REVISADA,
+  )
+}
+
+/**
+ * Rechaza el cambio si la mano de obra de ese mantenimiento ya se cuadró.
+ *
+ * ES EL CANDADO MÁS ESTRECHO DE LOS TRES, y tiene que serlo. Lo único que la
+ * factura del taller da por bueno es `mantenimiento.costo`; la fecha, el
+ * kilometraje, las observaciones, las piezas consumidas y las incidencias que
+ * cerró no salen de ningún papel y se siguen corrigiendo igual sobre un
+ * mantenimiento sellado. Es el mismo principio que allá: se congela lo que dice
+ * el papel, no el expediente del camión.
+ *
+ * Ver `db/migrations/046_facturas_de_mantenimiento.sql`.
+ */
+export async function assertManoObraEditable(mantenimientoId: number): Promise<void> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, mantenimientoId)
+    .query('SELECT revisado_en, revisado_por FROM mantenimiento WHERE id = @id')
+  const fila = r.recordset[0]
+  if (!fila || fila.revisado_en === null) return
+
+  throw bloqueo(
+    `La mano de obra de este servicio ya se cuadró contra su factura` +
+    `${fila.revisado_por ? ` por ${fila.revisado_por}` : ''} y no se puede cambiar. ` +
+    'Reabre la revisión de esa factura para corregirla.',
+    MANO_OBRA_REVISADA,
   )
 }
 

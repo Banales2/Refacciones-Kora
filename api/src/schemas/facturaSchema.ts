@@ -17,6 +17,19 @@ export const FacturaQuerySchema = z.object({
     .union([z.boolean(), z.string()])
     .transform((v) => v === true || v === 'true' || v === '1')
     .optional(),
+  /**
+   * Solo las que cobran mano de obra: la pantalla de facturas de mantenimientos.
+   *
+   * No hay una tabla aparte para esas facturas —el taller cobra las refacciones y
+   * el trabajo en el mismo papel, y ese papel es una sola fila— así que las dos
+   * pantallas son dos vistas del mismo listado. Una factura mixta sale en las
+   * dos, que es lo correcto: es un solo documento que cobra las dos cosas.
+   * Ver `db/migrations/046_facturas_de_mantenimiento.sql`.
+   */
+  con_mano_obra: z
+    .union([z.boolean(), z.string()])
+    .transform((v) => v === true || v === 'true' || v === '1')
+    .optional(),
 })
 
 // La factura no tiene id: se identifica por su folio y el proveedor que la

@@ -13,8 +13,16 @@ export async function getAll() {
 // Registrar un mantenimiento es la ocasión en que se lee el odómetro, así que
 // el km reportado pasa a ser el kilometraje del vehículo (avanzarKilometraje
 // ignora los tipos sin odómetro y no permite retrocesos).
-export async function create(vehiculoId: number, data: Omit<repo.MantenimientoCreate, 'vehiculo_id'>) {
-  const mantenimiento = await repo.create({ ...data, vehiculo_id: vehiculoId })
+//
+// `capturadoPor` es quien teclea, y se guarda por lo mismo que en el lote: si la
+// factura del taller descubre que la mano de obra estaba mal capturada, hay que
+// poder contestar a quién hay que enseñarle. Ver la migración 046.
+export async function create(
+  vehiculoId: number,
+  data: Omit<repo.MantenimientoCreate, 'vehiculo_id'>,
+  capturadoPor: string | null = null,
+) {
+  const mantenimiento = await repo.create({ ...data, vehiculo_id: vehiculoId }, capturadoPor)
   if (data.km_actual && data.km_actual > 0) {
     await vehiculosRepo.avanzarKilometraje(vehiculoId, data.km_actual)
   }

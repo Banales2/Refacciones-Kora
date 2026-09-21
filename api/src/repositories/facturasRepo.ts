@@ -38,8 +38,23 @@ export interface Factura {
   proveedor: string
   fecha_compra: string
   renglones: number
-  /** Suma de costo_unitario * cantidad_inicial, sin IVA ni descuento. */
+  /**
+   * Todo lo que cobra el papel según lo capturado, sin IVA ni descuento: sus
+   * refacciones (costo × cantidad de cada lote) más la mano de obra de los
+   * mantenimientos que reclama.
+   *
+   * Las dos mitades van juntas porque el IVA y el descuento son del documento
+   * entero: en una factura de taller que cobra las dos cosas, un total sacado
+   * solo de los lotes no es el total de nada.
+   * Ver `db/migrations/046_facturas_de_mantenimiento.sql`.
+   */
   subtotal: number
+  /** La parte del subtotal que es mano de obra. 0 en una factura de refacciones. */
+  subtotal_mano_obra: number
+  /** Cuántos servicios de taller cobra este papel. */
+  mano_obra: number
+  /** Cuántos de esos servicios ya están sellados. */
+  mano_obra_revisada: number
   /** `null` = los precios ya incluyen IVA (o es exenta). Migración 020. */
   tasa_iva: number | null
   /** `null` = sin descuento. Se resta al subtotal ANTES del IVA. Migración 021. */
@@ -66,10 +81,10 @@ export interface Factura {
   /** Cuántos de sus renglones ya están sellados. */
   renglones_revisados: number
   /**
-   * La factura entera está verificada: cabecera sellada y ningún renglón
-   * pendiente. Es DERIVADO y por eso se calcula aquí en vez de guardarse — una
-   * columna con este dato quedaría mintiendo en cuanto alguien agregara un
-   * renglón. Ver la cabecera de la migración 040.
+   * La factura entera está verificada: cabecera sellada, ningún renglón de
+   * refacción pendiente y ningún servicio de taller pendiente. Es DERIVADO y por
+   * eso se calcula aquí en vez de guardarse — una columna con este dato quedaría
+   * mintiendo en cuanto alguien agregara un renglón. Ver la cabecera de la 040.
    */
   cerrada: boolean
   detalle: FacturaRenglon[]
@@ -137,7 +152,17 @@ function filtros(req: sql.Request, p: FacturaQuery): string {
   if (p.por_revisar) {
     where.push(`(f.cabecera_revisada_en IS NULL
                  OR EXISTS (SELECT 1 FROM lotes_pieza l
-                            WHERE l.factura_id = f.id AND l.revisado_en IS NULL))`)
+                            WHERE l.factura_id = f.id AND l.revisado_en IS NULL)
+                 OR EXISTS (SELECT 1 FROM facturas_mano_obra fmo
+                            JOIN mantenimiento m ON m.id = fmo.mantenimiento_id
+                            WHERE fmo.factura_id = f.id AND m.revisado_en IS NULL))`)
+  }
+  // La vista de facturas de taller. Cuenta cualquier renglón de mano de obra,
+  // casado o no: una factura donde el papel cobra un trabajo que nadie registró
+  // es justo la que hay que poder encontrar desde esa pantalla.
+  if (p.con_mano_obra) {
+    where.push(`EXISTS (SELECT 1 FROM facturas_mano_obra fmo
+                        WHERE fmo.factura_id = f.id)`)
   }
   return where.length ? `WHERE ${where.join(' AND ')}` : ''
 }
@@ -163,9 +188,29 @@ export async function findAll(
            (SELECT COUNT(*) FROM lotes_pieza l WHERE l.factura_id = f.id) AS renglones,
            (SELECT COUNT(*) FROM lotes_pieza l
              WHERE l.factura_id = f.id AND l.revisado_en IS NOT NULL) AS renglones_revisados,
+           -- Solo los renglones que SÍ casaron con un servicio, igual que
+           -- renglones cuenta lotes y no líneas del papel: lo que se sella es lo
+           -- capturado. Un cobro de mano de obra que ningún mantenimiento
+           -- explica no tiene dónde llevar sello, y contarlo aquí dejaría la
+           -- factura eternamente abierta aunque ya se hubiera cerrado a
+           -- sabiendas. El hallazgo queda en correcciones_revision, que es donde
+           -- no se pierde.
+           (SELECT COUNT(*) FROM facturas_mano_obra fmo
+             WHERE fmo.factura_id = f.id AND fmo.mantenimiento_id IS NOT NULL) AS mano_obra,
+           (SELECT COUNT(*) FROM facturas_mano_obra fmo
+             JOIN mantenimiento m ON m.id = fmo.mantenimiento_id
+             WHERE fmo.factura_id = f.id AND m.revisado_en IS NOT NULL) AS mano_obra_revisada,
+           COALESCE(mob.total, 0) AS subtotal_mano_obra,
            COALESCE((SELECT SUM(l.costo_unitario * l.cantidad_inicial)
-                     FROM lotes_pieza l WHERE l.factura_id = f.id), 0) AS subtotal
+                     FROM lotes_pieza l WHERE l.factura_id = f.id), 0)
+           + COALESCE(mob.total, 0) AS subtotal
     FROM facturas f
+    OUTER APPLY (
+      SELECT SUM(m.costo) AS total
+      FROM facturas_mano_obra fmo
+      JOIN mantenimiento m ON m.id = fmo.mantenimiento_id
+      WHERE fmo.factura_id = f.id
+    ) mob
     JOIN proveedores pr ON pr.id = f.proveedor_id
     ${where}
     ORDER BY f.fecha_compra DESC, f.id DESC
@@ -178,11 +223,13 @@ export async function findAll(
   `)
 
   // `cerrada` se calcula aquí y no en SQL para que la regla —cabecera sellada y
-  // ningún renglón pendiente— se lea de un vistazo en un solo lugar.
+  // nada pendiente, ni refacciones ni mano de obra— se lea de un vistazo en un
+  // solo lugar.
   const facturas: Factura[] = result.recordsets[0].map((f: Record<string, unknown>) => ({
     ...f,
     cerrada: f.cabecera_revisada_en !== null
-      && (f.renglones as number) === (f.renglones_revisados as number),
+      && (f.renglones as number) === (f.renglones_revisados as number)
+      && (f.mano_obra as number) === (f.mano_obra_revisada as number),
     detalle: [],
   })) as Factura[]
   const total = (result.recordsets[1] as unknown as { total: number }[])[0].total
@@ -293,6 +340,29 @@ export interface FacturaHallada {
 export async function crearHallada(
   c: FacturaHallada, registradaPor: string,
 ): Promise<number> {
+  return crearCabecera(c, registradaPor, true)
+}
+
+/**
+ * Da de alta la cabecera de una factura de taller.
+ *
+ * Nace SIN RENGLONES, igual que la hallada: los servicios que cobra se le
+ * cuelgan desde el cuadre, y las refacciones —si el papel también las trae—
+ * entran por el alta de compra de siempre, que reconoce esta factura por
+ * (proveedor, folio) y mete sus lotes aquí en vez de crear una segunda.
+ *
+ * No lleva `hallada_en_revision`: no apareció al revisar un fajo, alguien la
+ * está capturando con el papel en la mano. Ver la migración 046.
+ */
+export async function crearDeTaller(
+  c: FacturaHallada, registradaPor: string,
+): Promise<number> {
+  return crearCabecera(c, registradaPor, false)
+}
+
+async function crearCabecera(
+  c: FacturaHallada, registradaPor: string, hallada: boolean,
+): Promise<number> {
   const pool = await getPool()
   const r = await pool.request()
     .input('pv',        sql.Int,           c.proveedor_id)
@@ -302,12 +372,13 @@ export async function crearHallada(
     .input('descuento', sql.Decimal(5, 2), c.descuento_pct ?? null)
     .input('comprado',  sql.NVarChar(120), c.comprado_por)
     .input('autoriza',  sql.NVarChar(120), registradaPor)
+    .input('hallada',   sql.Bit,           hallada)
     .query(`
       INSERT INTO facturas
         (proveedor_id, folio, fecha_compra, tasa_iva, descuento_pct,
          comprado_por, autorizado_por, hallada_en_revision)
       OUTPUT INSERTED.id
-      VALUES (@pv, @folio, @fecha, @tasa, @descuento, @comprado, @autoriza, 1)`)
+      VALUES (@pv, @folio, @fecha, @tasa, @descuento, @comprado, @autoriza, @hallada)`)
   return r.recordset[0].id as number
 }
 

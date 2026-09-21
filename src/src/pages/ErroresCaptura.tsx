@@ -233,12 +233,20 @@ export default function ErroresCaptura() {
                           <Text size="xs" c="dimmed">{c.proveedor}</Text>
                         </Table.Td>
                         <Table.Td>
-                          {/* Sin refacción = la corrección fue de la cabecera:
-                              el folio, la fecha, el IVA o el descuento, que no
-                              pertenecen a ningún renglón. */}
-                          {c.numero_serie
-                            ? <Text size="sm">{c.numero_serie}</Text>
-                            : <Text size="xs" c="dimmed">Datos de la factura</Text>}
+                          {/* Tres casos, y el tercero se distingue del segundo
+                              porque si no se confundirían: una refacción, un
+                              servicio de taller, o la cabecera —folio, fecha,
+                              IVA, descuento— que no pertenece a ningún renglón. */}
+                          {c.numero_serie ? (
+                            <Text size="sm">{c.numero_serie}</Text>
+                          ) : c.vehiculo ? (
+                            <>
+                              <Text size="sm">{c.vehiculo}</Text>
+                              <Text size="xs" c="dimmed">mano de obra</Text>
+                            </>
+                          ) : (
+                            <Text size="xs" c="dimmed">Datos de la factura</Text>
+                          )}
                         </Table.Td>
                         <Table.Td>
                           <Badge size="xs" variant="light">

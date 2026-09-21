@@ -4,6 +4,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
+import { nombreOCorreo } from '../shared/usuario'
 import { TEXTO_LIBRE, KM_MAX } from '../schemas/common'
 import * as service from '../services/mantenimientoService'
 
@@ -33,7 +34,7 @@ export async function mantenimientoCreate(req: HttpRequest, ctx: InvocationConte
     const vehiculoId = parseInt(req.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     const body = Schema.parse(await req.json())
-    const created = await service.create(vehiculoId, body)
+    const created = await service.create(vehiculoId, body, await nombreOCorreo(user))
     await audit({
       user,
       accion: 'CREAR',

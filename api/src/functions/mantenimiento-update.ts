@@ -4,6 +4,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
+import { assertManoObraEditable } from '../shared/revision'
 import { TEXTO_LIBRE, KM_MAX } from '../schemas/common'
 import * as service from '../services/mantenimientoService'
 
@@ -27,6 +28,13 @@ export async function mantenimientoUpdate(req: HttpRequest, ctx: InvocationConte
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const body = Schema.parse(await req.json())
+
+    // Solo el costo choca con el sello: es lo único de este registro que sale de
+    // la factura del taller. La fecha, el kilometraje y las observaciones no las
+    // da por buenas ningún papel y se siguen corrigiendo aunque la mano de obra
+    // ya esté cuadrada. Ver `shared/revision.assertManoObraEditable`.
+    if (body.costo !== undefined) await assertManoObraEditable(id)
+
     const antes = await capturar('mantenimiento', id)
     const updated = await service.update(id, body)
     await audit({

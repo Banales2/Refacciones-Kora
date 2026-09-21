@@ -42,6 +42,7 @@ import RegistrosCambios from '../pages/RegistrosCambios'
 import ErroresCaptura from '../pages/ErroresCaptura'
 import Facturas from '../pages/Facturas'
 import FacturasGasolina from '../pages/FacturasGasolina'
+import FacturasMantenimientos from '../pages/FacturasMantenimientos'
 import Mantenimientos from '../pages/Mantenimientos'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 import type { DestinoDocumento } from '../lib/documentosDashboard'
@@ -110,14 +111,19 @@ const NAV_GROUPS: {
   },
   // Todo lo que es cuadrar un papel contra lo capturado vive junto, aunque cada
   // tipo de factura se cuadre distinto: las de refacciones renglón por renglón
-  // contra su lote, las de gasolinera emparejando cada renglón con su recarga.
+  // contra su lote, las de gasolinera emparejando cada renglón con su recarga,
+  // las de taller comparando el importe de cada servicio contra su mano de obra.
   // Lo que comparten es la pregunta, y es la pregunta la que manda en el menú.
+  //
+  // Refacciones y Mantenimientos son DOS VISTAS DEL MISMO LISTADO, no dos tablas:
+  // el taller cobra las piezas y el trabajo en un solo papel, y una factura mixta
+  // sale en las dos entradas porque es un solo documento que cobra las dos cosas.
   {
     titulo: 'Facturas',
     items: [
       { section: 'facturas',           label: 'Refacciones', description: 'Compras por factura: cuadrarlas contra el papel', icon: IconReceipt },
       { section: 'facturas-gasolina',  label: 'Gas',         description: 'Cuadrar la factura de la gasolinera contra las recargas', icon: IconReceipt2 },
-      { section: 'facturas-mantenimientos', label: 'Mantenimientos', description: 'Todavía no existe: aquí van a caer las facturas de taller', icon: IconTool, pendiente: true },
+      { section: 'facturas-mantenimientos', label: 'Mantenimientos', description: 'Cuadrar la mano de obra del taller contra los servicios registrados', icon: IconTool },
     ],
   },
 ]
@@ -566,6 +572,7 @@ export default function Layout() {
         {section === 'errores-captura' && esAdmin && <ErroresCaptura />}
         {section === 'facturas'  && <Facturas />}
         {section === 'facturas-gasolina' && <FacturasGasolina />}
+        {section === 'facturas-mantenimientos' && <FacturasMantenimientos />}
       </AppShell.Main>
     </AppShell>
   )
