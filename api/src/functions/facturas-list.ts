@@ -22,6 +22,7 @@ export async function facturasList(
       // no se leían del query y la bandeja devolvía la lista completa.
       por_revisar: request.query.get('por_revisar') ?? undefined,
       con_mano_obra: request.query.get('con_mano_obra') ?? undefined,
+      con_refacciones: request.query.get('con_refacciones') ?? undefined,
     })
 
     const result = await service.getAll(params)

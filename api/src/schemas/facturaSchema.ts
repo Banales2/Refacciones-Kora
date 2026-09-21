@@ -31,6 +31,20 @@ export const FacturaQuerySchema = z.object({
     .transform((v) => v === true || v === 'true' || v === '1')
     .optional(),
   /**
+   * Solo las que son de refacciones: la pantalla de Facturas → Refacciones.
+   *
+   * Es el complemento de `con_mano_obra`, pero NO su negación, y por eso no se
+   * puede resolver con la misma consulta al revés. Una factura sin ningún
+   * renglón todavía puede ser de refacciones —la hallada al revisar nace vacía y
+   * tiene que salir ahí, que es donde se le capturan— y también puede ser la
+   * cabecera de un taller que aún no tiene su mano de obra transcrita, que no.
+   * La regla está en `facturasRepo.filtros`.
+   */
+  con_refacciones: z
+    .union([z.boolean(), z.string()])
+    .transform((v) => v === true || v === 'true' || v === '1')
+    .optional(),
+  /**
    * Las de un proveedor concreto.
    *
    * Lo pone el servidor, no el cliente: quien lo usa es el listado de facturas

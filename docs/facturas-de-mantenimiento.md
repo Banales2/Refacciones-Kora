@@ -38,6 +38,30 @@ un solo documento que cobra las dos cosas. Las entradas "Refacciones" y
 "Mantenimientos" del menú son dos vistas del mismo listado, filtradas por lo que
 cada factura cobra.
 
+### Qué sale en cada pantalla
+
+`con_refacciones` **no es la negación de** `con_mano_obra`, y escribirlo así
+saldría mal por los dos lados. El problema es la factura vacía, porque hay dos
+clases y significan lo contrario: la **hallada al revisar** nace sin renglones y
+tiene que salir en Refacciones —ahí es donde se le capturan las compras—, y la
+**cabecera de un taller** recién dada de alta también nace sin renglones y no
+tiene nada que hacer ahí.
+
+| lotes | mano de obra | | Refacciones | Mantenimientos |
+|---|---|---|---|---|
+| sí | sí | el papel mixto | sí | sí |
+| sí | no | compra normal | sí | no |
+| no | sí | puro taller | no | sí |
+| no | no | cabecera de taller sin transcribir | no | **sí** |
+| no | no | hallada al revisar | sí | no |
+| no | no | ninguna de las dos | sí | no |
+
+La cuarta fila es la que obliga a que `con_mano_obra` tampoco sea una condición
+simple: sin ella, quien diera de alta una factura de taller y no la terminara no
+volvería a encontrarla en **ninguna** de las dos pantallas. **Ninguna factura
+puede quedarse sin pantalla**, y esa es la regla que las dos condiciones existen
+para cumplir.
+
 De ahí también que el cuadre sea uno: mismo modal, dos transcripciones y dos
 listas de diferencias, un solo total y un solo sello.
 

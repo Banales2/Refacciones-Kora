@@ -100,6 +100,12 @@ export interface FacturasFiltros {
    * trabajo en el mismo papel, y ese papel es una sola factura.
    */
   con_mano_obra?: boolean
+  /**
+   * Solo las de refacciones. No es la negación de `con_mano_obra`: una factura
+   * vacía puede ser una hallada al revisar —que sí va aquí, porque es donde se
+   * le capturan las compras— o la cabecera de un taller sin transcribir, que no.
+   */
+  con_refacciones?: boolean
 }
 
 interface FacturasResponse {

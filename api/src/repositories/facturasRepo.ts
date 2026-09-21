@@ -164,9 +164,45 @@ function filtros(req: sql.Request, p: FacturaQuery): string {
   // La vista de facturas de taller. Cuenta cualquier renglón de mano de obra,
   // casado o no: una factura donde el papel cobra un trabajo que nadie registró
   // es justo la que hay que poder encontrar desde esa pantalla.
+  // La vista de facturas de taller. La segunda condición es la que impide que
+  // una factura desaparezca de las DOS pantallas: una cabecera de taller recién
+  // dada de alta no tiene ni refacciones ni mano de obra todavía, y
+  // `con_refacciones` la excluye de allá con razón. Si aquí solo se pidiera
+  // tener mano de obra, quien la diera de alta y no la terminara no volvería a
+  // encontrarla nunca.
   if (p.con_mano_obra) {
-    where.push(`EXISTS (SELECT 1 FROM facturas_mano_obra fmo
-                        WHERE fmo.factura_id = f.id)`)
+    where.push(`(
+      EXISTS (SELECT 1 FROM facturas_mano_obra fmo WHERE fmo.factura_id = f.id)
+      OR (
+        NOT EXISTS (SELECT 1 FROM lotes_pieza l WHERE l.factura_id = f.id)
+        AND f.hallada_en_revision = 0
+        AND EXISTS (SELECT 1 FROM tecnicos t WHERE t.proveedor_id = f.proveedor_id)
+      )
+    )`)
+  }
+  // La vista de facturas de refacciones. No es la negación de la anterior, y si
+  // se escribiera así saldría mal por los dos lados.
+  //
+  // El problema es la factura VACÍA, porque hay dos clases y significan lo
+  // contrario: la hallada al revisar nace sin renglones y tiene que salir aquí
+  // —aquí es donde se le capturan—, y la cabecera de un taller recién dada de
+  // alta también nace sin renglones y no tiene nada que hacer en esta pantalla.
+  //
+  // De ahí las tres condiciones: sale si tiene refacciones capturadas; si no las
+  // tiene, sale solo cuando tampoco cobra mano de obra Y además no es de un
+  // taller (o sí lo es pero se halló al revisar, que entonces es una compra que
+  // alguien tiene que capturar).
+  if (p.con_refacciones) {
+    where.push(`(
+      EXISTS (SELECT 1 FROM lotes_pieza l WHERE l.factura_id = f.id)
+      OR (
+        NOT EXISTS (SELECT 1 FROM facturas_mano_obra fmo WHERE fmo.factura_id = f.id)
+        AND (
+          f.hallada_en_revision = 1
+          OR NOT EXISTS (SELECT 1 FROM tecnicos t WHERE t.proveedor_id = f.proveedor_id)
+        )
+      )
+    )`)
   }
   return where.length ? `WHERE ${where.join(' AND ')}` : ''
 }

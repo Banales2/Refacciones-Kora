@@ -355,6 +355,60 @@ function Transcripcion({ cuadre }: { cuadre: Cuadre }) {
   )
 }
 
+/**
+ * La mitad de refacciones, en una factura de taller.
+ *
+ * POR QUÉ NO SALE LA TABLA DE ENTRADA. En una factura de taller lo normal es que
+ * el papel cobre solo trabajo. Abrir el cuadre con una tabla vacía de
+ * refacciones, su selector de piezas y sus dos botones, encima de lo que de
+ * verdad se viene a capturar, es empujar hacia arriba lo importante para hacerle
+ * sitio a lo que casi nunca se usa.
+ *
+ * Así que se dice que existe —porque es el mismo papel y puede cobrar las dos
+ * cosas, y quien no lo sepa no lo va a adivinar— y la tabla aparece cuando hace
+ * falta. Si la factura YA tiene refacciones capturadas o transcritas, sale
+ * abierta: ahí no hay nada que anunciar, hay trabajo que hacer.
+ *
+ * Va en su propio componente para que el estado se reinicie con la factura: el
+ * modal no se desmonta al cambiar de una a otra, y sin esto la segunda heredaría
+ * si la primera estaba abierta.
+ */
+function MitadRefacciones({ cuadre }: { cuadre: Cuadre }) {
+  const hayAlgo = cuadre.lotes.length > 0 || cuadre.renglones.length > 0
+  const [mostrar, setMostrar] = useState(hayAlgo)
+
+  if (mostrar || hayAlgo) {
+    return (
+      <Transcripcion
+        // Se remonta cuando cambian los renglones guardados: así la tabla
+        // refleja lo que la base tiene después de registrar una compra que
+        // faltaba, en vez de quedarse con lo que había al abrir.
+        key={`${cuadre.factura.id}:${cuadre.renglones.map((r) => r.id).join(',')}`}
+        cuadre={cuadre}
+      />
+    )
+  }
+
+  return (
+    <Alert color="gray" variant="light">
+      <Stack gap="xs" align="flex-start">
+        <Text size="sm">
+          Esta factura no tiene refacciones capturadas. Si el papel también cobra
+          piezas, se capturan como una compra normal con este mismo folio —entran en
+          esta factura, no en otra— y aquí se transcribe lo que el papel dice de
+          ellas.
+        </Text>
+        <Button
+          size="xs" variant="light" leftSection={<IconPlus size={14} />}
+          onClick={() => setMostrar(true)}
+        >
+          El papel también cobra refacciones
+        </Button>
+      </Stack>
+    </Alert>
+  )
+}
+
 // ── La pantalla ──────────────────────────────────────────────────────────────
 
 export default function CuadreFacturaModal({
@@ -422,19 +476,14 @@ export default function CuadreFacturaModal({
             </Alert>
           ) : (
             <>
-              <Transcripcion
-                // Se remonta cuando cambian los renglones guardados: así la tabla
-                // refleja lo que la base tiene después de registrar una compra que
-                // faltaba, en vez de quedarse con lo que había al abrir.
-                key={`${cuadre.factura.id}:${cuadre.renglones.map((r) => r.id).join(',')}`}
-                cuadre={cuadre}
-              />
-
-              {/* La otra mitad del mismo papel. Aparece solo si la factura es de
-                  un taller —o si ya tiene mano de obra capturada—, porque una
-                  compra de refacciones normal no tiene ninguna que cuadrar. */}
-              {esDeTaller && (
+              {/* En una factura de taller las dos mitades se rotulan, porque son
+                  dos y hay que saber cuál se está capturando. En una compra de
+                  refacciones normal no hay nada que distinguir: solo hay una. */}
+              {esDeTaller ? (
                 <>
+                  <Divider label="Refacciones" labelPosition="center" />
+                  <MitadRefacciones key={`ref:${cuadre.factura.id}`} cuadre={cuadre} />
+
                   <Divider
                     label={`Mano de obra${taller.data?.taller ? ` · ${taller.data.taller.nombre}` : ''}`}
                     labelPosition="center"
@@ -444,6 +493,15 @@ export default function CuadreFacturaModal({
                     cuadre={cuadre}
                   />
                 </>
+              ) : (
+                <Transcripcion
+                  // Se remonta cuando cambian los renglones guardados: así la
+                  // tabla refleja lo que la base tiene después de registrar una
+                  // compra que faltaba, en vez de quedarse con lo que había al
+                  // abrir.
+                  key={`${cuadre.factura.id}:${cuadre.renglones.map((r) => r.id).join(',')}`}
+                  cuadre={cuadre}
+                />
               )}
             </>
           )}

@@ -361,6 +361,11 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
       desde: desde || undefined,
       hasta: hasta || undefined,
       por_revisar: porRevisar || undefined,
+      // Esta pantalla es la de refacciones. Sin esto salían también las facturas
+      // de puro taller, vacías y sin nada que hacerles aquí: su mano de obra se
+      // cuadra en Facturas → Mantenimientos. Las mixtas sí salen en las dos,
+      // porque son un solo papel que cobra las dos cosas.
+      con_refacciones: true,
     },
     activo,
   )
