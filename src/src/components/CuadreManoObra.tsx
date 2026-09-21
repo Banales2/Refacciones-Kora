@@ -22,7 +22,7 @@ import { useState } from 'react'
 import {
   Alert, Badge, Button, Card, Group, NumberInput, Stack, Table, Text, Tooltip,
 } from '@mantine/core'
-import { IconCopy, IconPlus, IconTrash } from '@tabler/icons-react'
+import { IconAlertTriangle, IconCopy, IconPlus, IconTrash } from '@tabler/icons-react'
 import {
   useCandidatosManoObra, useGuardarManoObra, MANTENIMIENTO_YA_FACTURADO,
 } from '../hooks/useFacturasMantenimiento'
@@ -294,10 +294,56 @@ export function TranscripcionManoObra({ cuadre }: { cuadre: Cuadre }) {
   )
 }
 
-/** Las diferencias de mano de obra, para el bloque de diferencias del cuadre. */
+/**
+ * Las diferencias de mano de obra, para el bloque de diferencias del cuadre.
+ *
+ * EL COBRO SIN SERVICIO REGISTRADO SE ANUNCIA APARTE, y no es decoración. Las
+ * otras diferencias son un número mal tecleado; esta son dos cosas distintas y
+ * las dos caras:
+ *
+ *   - el trabajo se hizo y nadie lo capturó -> hay gasto fuera de los libros, y
+ *     además el expediente del camión no dice que estuvo en el taller.
+ *   - el trabajo no se hizo -> el taller está cobrando algo que no debe.
+ *
+ * El sistema no puede saber cuál de las dos es; la única que puede es la persona
+ * con el papel en la mano. Por eso se le dice con todas sus letras en vez de
+ * dejarlo como una etiqueta más entre las tarjetas, que es donde se pasa por
+ * alto justo lo que más caro sale pasar por alto.
+ */
 export function DiferenciasManoObra({ diferencias }: { diferencias: DiferenciaManoObra[] }) {
+  const sinRegistrar = diferencias.filter((d) => d.tipo === 'sin_registrar')
+  const importe = sinRegistrar.reduce((s, d) => s + d.delta_dinero, 0)
+
   return (
     <Stack gap="xs">
+      {sinRegistrar.length > 0 && (
+        <Alert
+          color="orange"
+          variant="light"
+          icon={<IconAlertTriangle size={16} />}
+          title={
+            sinRegistrar.length === 1
+              ? 'El papel cobra un trabajo que nadie registró'
+              : `El papel cobra ${sinRegistrar.length} trabajos que nadie registró`
+          }
+        >
+          <Stack gap={6}>
+            <Text size="sm">
+              Son <b>{formatMXN(Math.abs(importe))}</b> que esta factura cobra y que
+              ningún servicio capturado explica. O el trabajo se hizo y nadie lo
+              registró —y entonces hay gasto fuera de los libros y el expediente de
+              la unidad no dice que estuvo en el taller—, o el taller está cobrando
+              algo que no hizo. Eso solo lo sabe quien tiene el papel.
+            </Text>
+            <Text size="xs" c="dimmed">
+              Si el trabajo sí se hizo, regístralo en el expediente de la unidad y
+              vuelve a comparar. Si no, quita el renglón o cierra la factura
+              dejándolo señalado: queda guardado como hallazgo y no se pierde.
+            </Text>
+          </Stack>
+        </Alert>
+      )}
+
       {diferencias.map((d) => (
         <TarjetaDiferencia key={`mo:${d.renglon_id}`} d={d} />
       ))}
