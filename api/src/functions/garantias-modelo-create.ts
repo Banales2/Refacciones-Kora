@@ -10,7 +10,7 @@ import { GarantiaModeloCreateSchema } from '../schemas/garantiaSchema'
 
 export async function garantiasModeloCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor')
+    const user = requireRole(req, 'admin', 'editor', 'responsable')
     const modeloId = parseInt(req.params.modeloId, 10)
     if (isNaN(modeloId)) return { status: 400, jsonBody: { error: 'ID de modelo inválido' } }
     const body = GarantiaModeloCreateSchema.parse(await req.json())

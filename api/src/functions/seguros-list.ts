@@ -8,7 +8,7 @@ export async function segurosList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'practicante')
+    requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'practicante', 'responsable')
     const data = await service.getAll()
     return { status: 200, jsonBody: { data } }
   } catch (err) {

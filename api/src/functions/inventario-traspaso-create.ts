@@ -9,7 +9,7 @@ import * as service from '../services/inventarioService'
 // registro del traspaso van en la misma transacción del repositorio.
 export async function inventarioTraspasoCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor')
+    const user = requireRole(req, 'admin', 'editor', 'responsable')
     const data = TraspasoCreateSchema.parse(await req.json())
     const created = await service.createTraspaso(data, user.userDetails)
 

@@ -11,7 +11,7 @@ export async function gasolinerasCreate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    const user = requireRole(request, 'admin', 'editor', 'responsable')
     const data = GasolineraCreateSchema.parse(await request.json())
     const created = await service.create(data)
     await audit({

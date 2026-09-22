@@ -5,7 +5,7 @@ import * as service from '../services/incidenciasService'
 
 export async function incidenciasListVehiculo(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer')
+    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
     const vehiculoId = parseInt(req.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     const data = await service.getByVehiculo(vehiculoId)

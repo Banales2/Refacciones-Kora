@@ -12,7 +12,7 @@ export async function descuadresList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector')
+    requireRole(request, 'admin', 'editor', 'lector', 'responsable')
     const raw = request.query.get('sucursal_id')
     const sucursalId = raw ? parseInt(raw, 10) : undefined
     if (raw && isNaN(sucursalId!)) {

@@ -8,7 +8,7 @@ import * as service from '../services/incidenciasService'
 // capturado para que la misma persona no acabe escrita de cinco formas.
 export async function incidenciasReportadores(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer')
+    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
     const data = await service.getReportadores()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

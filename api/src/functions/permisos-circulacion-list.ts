@@ -8,7 +8,7 @@ export async function permisosCirculacionList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'viewer')
+    requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'responsable')
     const data = await service.getAll()
     return { status: 200, jsonBody: { data } }
   } catch (err) {

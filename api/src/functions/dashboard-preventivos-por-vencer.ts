@@ -5,7 +5,7 @@ import * as service from '../services/dashboardService'
 
 export async function dashboardPreventivosPorVencer(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
+    requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'responsable')
     const data = await service.getPreventivosPorVencer()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

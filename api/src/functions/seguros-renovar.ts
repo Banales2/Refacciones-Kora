@@ -14,7 +14,7 @@ export async function segurosRenovar(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    const user = requireRole(request, 'admin', 'editor', 'responsable')
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 

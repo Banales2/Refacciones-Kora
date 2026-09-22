@@ -9,7 +9,7 @@ export async function permisosCirculacionVehiculosUnassign(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    const user = requireRole(request, 'admin', 'editor', 'responsable')
     const id         = parseInt(request.params.id, 10)
     const vehiculoId = parseInt(request.params.vehiculoId, 10)
     if (isNaN(id) || isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID inválido' } }

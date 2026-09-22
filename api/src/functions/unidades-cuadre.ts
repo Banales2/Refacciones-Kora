@@ -19,7 +19,7 @@ export async function unidadesCuadre(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector')
+    requireRole(request, 'admin', 'editor', 'lector', 'responsable')
     return { status: 200, jsonBody: { data: await repo.contarPorSucursal() } }
   } catch (err) {
     return handleError(err, context)

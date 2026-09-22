@@ -15,7 +15,7 @@ import * as service from '../services/chequeosService'
  */
 export async function chequeoFormulario(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector')
+    requireRole(req, 'admin', 'editor', 'lector', 'responsable')
     const vehiculoId = parseInt(req.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
 

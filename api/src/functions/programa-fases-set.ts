@@ -16,7 +16,7 @@ const Schema = z.object({ fases: FasesSchema })
 
 export async function programaFasesSet(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor')
+    const user = requireRole(req, 'admin', 'editor', 'responsable')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const { fases } = Schema.parse(await req.json())

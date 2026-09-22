@@ -11,7 +11,7 @@ export async function valesGasolinaCreate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'practicante')
+    const user = requireRole(request, 'admin', 'editor', 'practicante', 'responsable')
     const data = ValeGasolinaCreateSchema.parse(await request.json())
     // Quien crea el vale es siempre el usuario de la sesión.
     const created = await service.create(data, user.userDetails)

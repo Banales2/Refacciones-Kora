@@ -47,7 +47,7 @@
     },
     {
       "route": "/api/*",
-      "allowedRoles": ["admin", "editor", "lector", "practicante"]
+      "allowedRoles": ["admin", "editor", "lector", "practicante", "responsable"]
     }
   ],
   "responseOverrides": {

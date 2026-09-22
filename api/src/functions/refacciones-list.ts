@@ -10,7 +10,7 @@ export async function refaccionesList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante')
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante', 'responsable')
 
     const params = RefaccionQuerySchema.parse({
       page: request.query.get('page') ?? undefined,

@@ -20,7 +20,7 @@ export async function modeloTiposPiezaRename(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    const user = requireRole(request, 'admin', 'editor', 'responsable')
     const id     = parseInt(request.params.id, 10)
     const tipoId = parseInt(request.params.tipoId, 10)
     if (isNaN(id) || isNaN(tipoId)) return { status: 400, jsonBody: { error: 'ID inválido' } }

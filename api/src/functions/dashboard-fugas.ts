@@ -8,7 +8,7 @@ import * as service from '../services/fugasService'
 // partirlo en siete endpoints serían siete viajes para una pestaña.
 export async function dashboardFugas(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
+    requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'responsable')
     const data = await service.getFugas()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

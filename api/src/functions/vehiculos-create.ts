@@ -8,7 +8,7 @@ import * as service from '../services/vehiculosService'
 
 export async function vehiculosCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor')
+    const user = requireRole(req, 'admin', 'editor', 'responsable')
     const body = VehiculoCreateSchema.parse(await req.json())
     const created = await service.create(body)
     await audit({

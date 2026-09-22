@@ -15,7 +15,7 @@ import { ExcepcionesSchema } from '../schemas/programaVehiculoSchema'
 
 export async function vehiculoProgramaExcepciones(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor')
+    const user = requireRole(req, 'admin', 'editor', 'responsable')
     const vehiculoId = parseInt(req.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     const body = ExcepcionesSchema.parse(await req.json())

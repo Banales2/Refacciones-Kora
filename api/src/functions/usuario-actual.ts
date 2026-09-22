@@ -10,7 +10,7 @@ import { nombreOCorreo } from '../shared/usuario'
 
 export async function usuarioActual(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'practicante')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'practicante', 'responsable')
     return {
       status: 200,
       jsonBody: {

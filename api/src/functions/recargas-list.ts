@@ -8,7 +8,7 @@ export async function recargasList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'viewer')
+    requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'responsable')
     const vehiculoId = parseInt(request.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     const data = await service.getByVehiculo(vehiculoId)

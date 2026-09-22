@@ -8,7 +8,7 @@ import * as service from '../services/chequeosService'
 // la lista la misma persona termina escrita de cinco formas.
 export async function chequeosDeclarantes(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector')
+    requireRole(req, 'admin', 'editor', 'lector', 'responsable')
     const data = await service.getDeclarantes()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

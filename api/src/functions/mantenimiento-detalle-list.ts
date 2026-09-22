@@ -5,7 +5,7 @@ import * as service from '../services/detalleMttoPiezaService'
 
 export async function mantenimientoDetalleList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer')
+    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const data = await service.getDetalle(id)

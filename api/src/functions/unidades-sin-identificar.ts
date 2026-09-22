@@ -15,7 +15,7 @@ export async function unidadesSinIdentificar(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector')
+    requireRole(request, 'admin', 'editor', 'lector', 'responsable')
     const tipo  = request.query.get('tipo_pieza_id')
     const pieza = request.query.get('pieza_id')
     const tipoPiezaId = tipo  ? parseInt(tipo, 10)  : undefined

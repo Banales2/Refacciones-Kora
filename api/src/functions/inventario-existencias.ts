@@ -8,7 +8,7 @@ import * as service from '../services/inventarioService'
 // flota; con `resumen=1` agrupa por refacción en lugar de desglosar el lote.
 export async function inventarioExistencias(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector', 'viewer')
+    requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'responsable')
 
     const sucursalRaw = req.query.get('sucursal')
     const sucursalId = sucursalRaw ? parseInt(sucursalRaw, 10) : undefined

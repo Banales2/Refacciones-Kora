@@ -8,7 +8,7 @@ export async function tecnicosList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'viewer')
+    requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'responsable')
     // ?archivados=1 los incluye. Solo lo pide la pantalla del catálogo, para poder
     // verlos y restaurarlos; los selectores del alta usan la lista normal.
     const data = await service.getAll(request.query.get('archivados') === '1')

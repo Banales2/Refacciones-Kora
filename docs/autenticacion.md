@@ -40,15 +40,26 @@ VALUES ('Nombre Apellido', 'admin', '<OBJECT_ID_DE_ENTRA>', 'correo@dominio.com'
 
 `<OBJECT_ID_DE_ENTRA>` es el **Object ID** que aparece en Entra ID → Users →
 el usuario. Con guiones. Roles válidos: `admin`, `editor`, `lector`,
-`practicante`.
+`practicante`, `responsable`.
 
-`practicante` es el más nuevo y el más acotado: da de alta refacciones, lotes,
+`responsable` es el responsable de una sucursal. Está al nivel de `editor`
+—opera todo, no audita a nadie— y hoy es idéntico a él: no entra a la bitácora
+ni al reporte de errores de captura, que dicen el desempeño de personas con
+nombre y apellido. Existe porque el filtrado por sucursal necesita algo de donde
+colgarse, y ese filtrado **no es el rol**: vive en `usuarios.sucursal_id`
+(migración 049), que nace en `NULL` —ve todo— y todavía no lee ningún
+repositorio. Qué puede hacer y qué filas ve son dos ejes distintos; mezclarlos
+obligaría a inventar un `lector_sucursal` y un `admin_sucursal` el día que
+hagan falta.
+
+`practicante` es el más acotado: da de alta refacciones, lotes,
 pólizas, licencias de chofer, proveedores y vales de gasolina, y puede mirar las
-facturas sin tocarlas. No edita nada de lo que crea. Tres sitios lo definen y
-los tres tienen que estar de acuerdo: el `CHECK` de la tabla (migración 047),
-los `allowedRoles` de `staticwebapp.config.json` y la lista de cada
-`requireRole`. En el frontend, `usePermisos()` decide qué se enseña — y es sólo
-cortesía: la negativa real la da el 403 de la API.
+facturas sin tocarlas. No edita nada de lo que crea (migración 047).
+
+Tres sitios definen cada rol y los tres tienen que estar de acuerdo: el `CHECK`
+de la tabla, los `allowedRoles` de `staticwebapp.config.json` y la lista de cada
+`requireRole`. En el frontend, `usePermisos()` decide qué se enseña — y eso es
+sólo cortesía: la negativa real la da el 403 de la API.
 
 Un **App Role de Entra no sirve para esto**. Con `rolesSource` declarado, Static
 Web Apps ignora los roles del token y usa únicamente lo que devuelve

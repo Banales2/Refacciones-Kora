@@ -19,7 +19,7 @@ export async function recargasSinFacturar(
   req: HttpRequest, ctx: InvocationContext,
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer')
+    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
 
     const params = SinFacturarQuerySchema.parse({
       page: req.query.get('page') ?? undefined,

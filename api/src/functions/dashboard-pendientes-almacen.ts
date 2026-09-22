@@ -8,7 +8,7 @@ import * as service from '../services/dashboardService'
 // la marca.
 export async function dashboardPendientesAlmacen(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
+    requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'responsable')
     const data = await service.getPendientesAlmacen()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

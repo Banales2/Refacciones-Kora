@@ -11,7 +11,7 @@ export async function tiposPiezaCreate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    const user = requireRole(request, 'admin', 'editor', 'responsable')
     const data = TipoPiezaCreateSchema.parse(await request.json())
     const created = await service.create(data)
     await audit({

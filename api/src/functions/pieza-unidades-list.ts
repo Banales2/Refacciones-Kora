@@ -11,7 +11,7 @@ export async function piezaUnidadesList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector')
+    requireRole(request, 'admin', 'editor', 'lector', 'responsable')
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     return { status: 200, jsonBody: { data: await repo.findByPieza(id) } }

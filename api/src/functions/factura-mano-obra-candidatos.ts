@@ -25,7 +25,7 @@ export async function facturaManoObraCandidatos(
   req: HttpRequest, ctx: InvocationContext,
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer')
+    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 

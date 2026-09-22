@@ -8,7 +8,7 @@ import * as service from '../services/chequeosService'
 // una o dos personas caminan la flota entera sin abrir la ficha de cada unidad.
 export async function chequeosPatio(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector')
+    requireRole(req, 'admin', 'editor', 'lector', 'responsable')
     const sucursalId = parseInt(req.query.get('sucursal_id') ?? '', 10)
     if (isNaN(sucursalId)) return { status: 400, jsonBody: { error: 'Falta la sucursal' } }
     const fecha = req.query.get('fecha') ?? undefined

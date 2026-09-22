@@ -8,7 +8,7 @@ import * as service from '../services/inventarioService'
 // están por debajo, que es la lista que hay que salir a surtir.
 export async function inventarioMinimosList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector', 'viewer')
+    requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'responsable')
 
     const sucursalRaw = req.query.get('sucursal')
     const sucursalId = sucursalRaw ? parseInt(sucursalRaw, 10) : undefined

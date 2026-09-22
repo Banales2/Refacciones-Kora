@@ -5,7 +5,7 @@ import * as service from '../services/detalleMttoPiezaService'
 
 export async function lotesDisponibles(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor')
+    requireRole(req, 'admin', 'editor', 'responsable')
     const data = await service.getLotesDisponibles()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

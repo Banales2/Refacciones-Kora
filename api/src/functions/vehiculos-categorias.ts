@@ -9,7 +9,7 @@ import * as repo from '../repositories/vehiculosRepo'
 // acabe guardada de cinco formas.
 export async function vehiculosCategorias(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer')
+    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
     const data = await repo.findCategorias()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

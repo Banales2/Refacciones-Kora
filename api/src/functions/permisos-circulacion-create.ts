@@ -11,7 +11,7 @@ export async function permisosCirculacionCreate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    const user = requireRole(request, 'admin', 'editor', 'responsable')
     const data = PermisoCirculacionCreateSchema.parse(await request.json())
     const created = await service.create(data)
     await audit({

@@ -12,7 +12,7 @@ export async function compraCreate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    const user = requireRole(request, 'admin', 'editor', 'responsable')
     const body = CompraCreateSchema.parse(await request.json())
     // Quien registra la compra es quien la autoriza: sale de la sesión, no del
     // cuerpo, igual que en el alta de un lote suelto.

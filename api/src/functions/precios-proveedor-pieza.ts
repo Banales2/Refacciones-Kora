@@ -12,7 +12,7 @@ export async function preciosProveedorPieza(
   req: HttpRequest, ctx: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector', 'viewer')
+    requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'responsable')
     const piezaId = parseInt(req.params.id, 10)
     if (isNaN(piezaId)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const descRef = DescuentoReferenciaSchema.parse(
