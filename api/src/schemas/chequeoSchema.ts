@@ -6,9 +6,14 @@ import { RESULTADOS } from '../shared/chequeoItems'
 // porque quien captura no siempre la sabe.
 const HORA = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/
 
-// El nivel de combustible en octavos: "0/8" a "8/8". Es lo que se puede leer de
-// una aguja sin inventarle precisión que no tiene.
-const OCTAVOS = /^[0-8]\/8$/
+// El nivel de combustible en cuartos: "1/4" a "4/4". Son los cuatro que marca
+// la aguja de verdad; pedir más finura es pedir que alguien la invente.
+//
+// También se admiten los octavos que se capturaron antes ("0/8" a "8/8"): la
+// captura ya no los ofrece, pero un chequeo viejo que se corrige vuelve a pasar
+// por aquí con el valor que traiga, y rechazarlo sería impedir que se corrija
+// otra cosa del mismo chequeo. Mismo criterio que una pregunta `retirado`.
+const NIVEL_TANQUE = /^([1-4]\/4|[0-8]\/8)$/
 
 const vacioANull = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? null : v)
 
@@ -19,7 +24,7 @@ export const ChequeoItemSchema = z.object({
   resultado: z.enum(RESULTADOS as [string, ...string[]]),
   valor: z.preprocess(
     vacioANull,
-    z.string().trim().regex(OCTAVOS, 'Formato N/8').nullable().optional()
+    z.string().trim().regex(NIVEL_TANQUE, 'Nivel de tanque inválido').nullable().optional()
   ),
   nota: z.preprocess(
     vacioANull,

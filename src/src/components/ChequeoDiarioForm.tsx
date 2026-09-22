@@ -379,23 +379,33 @@ export default function ChequeoDiarioForm({
                     </Group>
 
                     {item.captura === 'fraccion' ? (
-                      // Rejilla y no SegmentedControl: son nueve niveles, y en
-                      // un teléfono nueve segmentos dan ~38px cada uno, donde
-                      // "3/8" se corta y se falla el toque. En dos filas de
-                      // cinco cada nivel queda en ~65px.
-                      <SimpleGrid cols={{ base: 5, xs: 9 }} spacing={4}>
-                        {NIVELES_TANQUE.map((nivel) => (
-                          <Button
-                            key={nivel}
-                            size="sm"
-                            px={4}
-                            variant={r.valor === nivel ? 'filled' : 'default'}
-                            onClick={() => responder(item.clave, { resultado: 'ok', valor: nivel })}
-                          >
-                            {nivel}
-                          </Button>
-                        ))}
-                      </SimpleGrid>
+                      <Stack gap={4}>
+                        {/* Rejilla y no SegmentedControl: en un teléfono los
+                            cuatro segmentos dan ~85px cada uno, donde "Lleno"
+                            entra completo y el toque no se falla. */}
+                        <SimpleGrid cols={4} spacing={4}>
+                          {NIVELES_TANQUE.map((nivel) => (
+                            <Button
+                              key={nivel.valor}
+                              size="md"
+                              px={4}
+                              variant={r.valor === nivel.valor ? 'filled' : 'default'}
+                              onClick={() => responder(item.clave, { resultado: 'ok', valor: nivel.valor })}
+                            >
+                              {nivel.label}
+                            </Button>
+                          ))}
+                        </SimpleGrid>
+                        {/* Un chequeo capturado en octavos que hoy se corrige:
+                            ninguno de los cuatro botones lo representa, y sin
+                            esto parecería que el nivel nunca se contestó. Se
+                            queda como está mientras no toquen un botón. */}
+                        {r.valor && !NIVELES_TANQUE.some((n) => n.valor === r.valor) && (
+                          <Text size="xs" c="dimmed">
+                            Capturado antes como {r.valor}. Toca un nivel para cambiarlo.
+                          </Text>
+                        )}
+                      </Stack>
                     ) : (
                       // Sin iconos: el icono más el texto no caben en un
                       // tercio de 390px y lo que se recortaba era la palabra,

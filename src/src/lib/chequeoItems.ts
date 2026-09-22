@@ -44,5 +44,21 @@ export function labelDeItem(clave: string): string {
   return ITEMS_CHEQUEO.find((i) => i.clave === clave && i.captura !== 'lectura')?.label ?? clave
 }
 
-/** Los niveles de tanque que se ofrecen. En octavos, que es lo que da una aguja. */
-export const NIVELES_TANQUE = ['0/8', '1/8', '2/8', '3/8', '4/8', '5/8', '6/8', '7/8', '8/8']
+/**
+ * Los niveles de tanque que se ofrecen: los cuatro que marca la aguja.
+ *
+ * Se guarda el cuarto (`4/4`) y se muestra la palabra ("Lleno"), que es como se
+ * dice de viva voz. Guardar la palabra dejaría el último nivel fuera de la
+ * escala y obligaría a un caso especial a cualquiera que quiera ordenarlos o
+ * graficarlos; `1/2` se muestra así y se guarda `2/4` por lo mismo, que es el
+ * mismo número escrito sobre la escala de los demás.
+ *
+ * Los octavos que se capturaron antes siguen siendo válidos en la API: ya no se
+ * ofrecen, pero un chequeo viejo que se corrige no tiene por qué ser rechazado.
+ */
+export const NIVELES_TANQUE: { valor: string; label: string }[] = [
+  { valor: '1/4', label: '1/4' },
+  { valor: '2/4', label: '1/2' },
+  { valor: '3/4', label: '3/4' },
+  { valor: '4/4', label: 'Lleno' },
+]

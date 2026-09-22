@@ -26,7 +26,7 @@ export interface ItemChequeo {
    * Cómo se contesta:
    *   'ok_falla'  los dos botones grandes. Es el caso normal.
    *   'lectura'   un número; va a `chequeos.lectura`, no a un renglón.
-   *   'fraccion'  el nivel de combustible en octavos.
+   *   'fraccion'  el nivel de combustible en cuartos de tanque.
    */
   captura: 'ok_falla' | 'lectura' | 'fraccion'
   /** Vacío = aplica a todos los tipos. */

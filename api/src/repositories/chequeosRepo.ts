@@ -16,7 +16,7 @@ export type Resultado = 'ok' | 'falla' | 'na'
 export interface ChequeoItem {
   clave:        string
   resultado:    Resultado
-  /** Solo lo llenan las preguntas que no son de sí o no. Hoy: "3/8" de tanque. */
+  /** Solo lo llenan las preguntas que no son de sí o no. Hoy: "3/4" de tanque. */
   valor:        string | null
   nota:         string | null
   /** La incidencia que abrió esta falla, si abrió alguna. */

@@ -7,7 +7,7 @@ import type { ItemChequeo, Resultado, Severidad } from '../lib/chequeoItems'
 export interface ChequeoItem {
   clave:        string
   resultado:    Resultado
-  /** Solo las preguntas que no son de sí o no. Hoy: "3/8" de tanque. */
+  /** Solo las preguntas que no son de sí o no. Hoy: "3/4" de tanque. */
   valor:        string | null
   nota:         string | null
   /** La incidencia que abrió esta falla, si abrió alguna. */
