@@ -63,6 +63,21 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
 ]
 
 /**
+ * Las preguntas que le toca contestar a un tipo de unidad. Espejo de `itemsDe`
+ * del backend, que es quien valida: aquí sirve para ofrecerlas en un select
+ * —hoy, el de "a qué punto del chequeo corresponde esta incidencia"—.
+ *
+ * Sin las retiradas ni la lectura: la primera ya no se pregunta y la segunda no
+ * es un renglón, así que ninguna de las dos puede quedar ligada a nada nuevo.
+ */
+export function itemsDeTipo(tipo: string): ItemChequeo[] {
+  return ITEMS_CHEQUEO.filter(
+    (i) => !i.retirado && i.captura !== 'lectura' &&
+      (i.tipos.length === 0 || i.tipos.includes(tipo))
+  )
+}
+
+/**
  * Cómo se llama una pregunta guardada. Busca sin filtrar por tipo ni por
  * retirada: un chequeo de hace seis meses puede traer una pregunta que ya no se
  * hace, y el historial tiene que poder nombrarla. Si ni así aparece —un front

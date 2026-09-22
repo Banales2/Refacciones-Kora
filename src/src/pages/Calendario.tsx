@@ -416,6 +416,7 @@ function AgendaForm({
           error={nuevaIncError}
           onSubmit={handleCrearIncidencia}
           onCancel={() => setNuevaIncOpen(false)}
+          tipoVehiculo={vehiculo.tipo}
         />
       </Modal>
 

@@ -39,6 +39,20 @@ export const IncidenciaBase = {
   severidad: z.enum(['superficial', 'moderada', 'grave']),
   fecha:     z.string().date(),
   hora:      z.string().regex(HORA, 'Formato HH:MM').nullable().optional(),
+  /**
+   * De qué punto del chequeo diario es esta incidencia. Opcional, y así se
+   * queda: la mayoría no son de ninguno. Sirve para que el chequeo se enganche
+   * a ella en vez de abrir otra por lo mismo.
+   *
+   * La forma se valida aquí; que la pregunta exista y le toque a ESA unidad lo
+   * valida el servicio, que es el único que sabe de qué tipo es el vehículo.
+   */
+  clave_chequeo: z
+    .string().trim()
+    .max(30, 'Máximo 30 caracteres')
+    .regex(/^[a-z_]+$/, 'Clave inválida')
+    .nullable()
+    .optional(),
 }
 
 // `autorizado_por` no aparece en ningún schema a propósito: no se recibe del

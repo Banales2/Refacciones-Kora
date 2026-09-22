@@ -37,6 +37,15 @@ export interface Incidencia {
   // El mantenimiento que la atendió, para poder abrir su detalle desde la
   // incidencia ya cerrada. NULL mientras nadie la haya atendido.
   mantenimiento_id: number | null
+  /**
+   * De qué pregunta del chequeo diario es esta incidencia, si es de alguna.
+   *
+   * Es lo que permite que el chequeo de mañana se enganche a esto en vez de
+   * abrir una segunda por lo mismo, tanto si la abrió un chequeo como si la
+   * capturó alguien a mano. NULL = no corresponde a ningún punto del checklist
+   * (un golpe en el taller, una refacción que se pidió), que es el caso normal.
+   */
+  clave_chequeo: string | null
 }
 
 export interface IncidenciaConVehiculo extends Incidencia {
@@ -55,6 +64,7 @@ export interface IncidenciaCreate {
   fecha:          string
   hora?:          string | null
   ubicacion:      string
+  clave_chequeo?: string | null
 }
 
 export interface IncidenciaUpdate {
@@ -67,6 +77,7 @@ export interface IncidenciaUpdate {
   fecha?:         string
   hora?:          string | null
   ubicacion?:     string
+  clave_chequeo?: string | null
 }
 
 // `hora` se convierte a texto "HH:MM" aquí: el driver devuelve las columnas TIME
@@ -86,7 +97,7 @@ const MTTO_ATENDIO = `
 const SELECT_INC = `
   SELECT ${PENDIENTE_COLS},
          i.reportado_por, i.severidad, i.fecha, ${HORA_TXT}, i.ubicacion,
-         i.autorizado_por, ${MTTO_ATENDIO}
+         i.autorizado_por, i.clave_chequeo, ${MTTO_ATENDIO}
   FROM pendientes p
   JOIN incidencias i ON i.id = p.id`
 
@@ -104,7 +115,7 @@ export async function findAllConVehiculo(): Promise<IncidenciaConVehiculo[]> {
   const r = await pool.request().query(`
     SELECT ${PENDIENTE_COLS},
            i.reportado_por, i.severidad, i.fecha, ${HORA_TXT}, i.ubicacion,
-           i.autorizado_por, ${MTTO_ATENDIO},
+           i.autorizado_por, i.clave_chequeo, ${MTTO_ATENDIO},
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
            v.tipo AS vehiculo_tipo
     FROM pendientes p
@@ -167,9 +178,10 @@ export async function insertEnTx(
     .input('hora',      sql.VarChar(8),    data.hora ?? null)
     .input('ubicacion', sql.NVarChar(160), data.ubicacion)
     .input('autoriza',  sql.NVarChar(120), autorizadoPor)
+    .input('clave',     sql.VarChar(30),   data.clave_chequeo ?? null)
     .query(`
-      INSERT INTO incidencias (id, reportado_por, severidad, fecha, hora, ubicacion, autorizado_por)
-      VALUES (@id, @reportado, @severidad, @fecha, @hora, @ubicacion, @autoriza)
+      INSERT INTO incidencias (id, reportado_por, severidad, fecha, hora, ubicacion, autorizado_por, clave_chequeo)
+      VALUES (@id, @reportado, @severidad, @fecha, @hora, @ubicacion, @autoriza, @clave)
     `)
   return id
 }
@@ -215,6 +227,7 @@ export async function update(id: number, data: IncidenciaUpdate): Promise<Incide
     if (data.severidad     !== undefined) { req.input('severidad', sql.NVarChar(20),  data.severidad);     sets.push('severidad=@severidad')     }
     if (data.fecha         !== undefined) { req.input('fecha',     sql.Date,          data.fecha);         sets.push('fecha=@fecha')             }
     if ('hora' in data)                   { req.input('hora',      sql.VarChar(8),    data.hora ?? null);  sets.push('hora=@hora')               }
+    if ('clave_chequeo' in data)          { req.input('clavech',   sql.VarChar(30),   data.clave_chequeo ?? null); sets.push('clave_chequeo=@clavech') }
     if (sets.length) {
       await req.query(`UPDATE incidencias SET ${sets.join(',')} WHERE id=@id`)
     }

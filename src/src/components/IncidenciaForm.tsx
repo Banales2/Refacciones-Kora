@@ -10,6 +10,7 @@ import { useReportadorOptions } from '../hooks/useReportadorOptions'
 import SelectCatalogo from './SelectCatalogo'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { TEXTO_SIMPLE, TEXTO_LIBRE, limpiarTextoSimple, limpiarTextoLibre } from '../lib/validaciones'
+import { itemsDeTipo } from '../lib/chequeoItems'
 
 function todayIso() {
   const d = new Date()
@@ -17,13 +18,19 @@ function todayIso() {
 }
 
 export default function IncidenciaForm({
-  initial, isPending, error, onSubmit, onCancel,
+  initial, isPending, error, onSubmit, onCancel, tipoVehiculo,
 }: {
   initial?:  Incidencia
   isPending: boolean
   error:     string | null
   onSubmit:  (p: IncidenciaPayload) => void
   onCancel:  () => void
+  /**
+   * El tipo de la unidad. Sin él no se puede ofrecer el punto del chequeo —las
+   * preguntas dependen del tipo— y el campo no se muestra: es preferible no
+   * poder ligarla a ofrecer preguntas que esa unidad no contesta.
+   */
+  tipoVehiculo?: string
 }) {
   const form = useForm({
     initialValues: {
@@ -36,6 +43,7 @@ export default function IncidenciaForm({
       hora:          initial?.hora?.slice(0, 5) ?? '',
       ubicacion:     initial?.ubicacion ?? '',
       reportado_por: initial?.reportado_por ?? '',
+      clave_chequeo: initial?.clave_chequeo ?? '',
       status:        (initial?.status ?? 'activo') as StatusIncidencia,
     },
     validate: {
@@ -86,6 +94,7 @@ export default function IncidenciaForm({
       hora:          vals.hora || null,
       ubicacion:     vals.ubicacion.trim(),
       reportado_por: vals.reportado_por.trim(),
+      clave_chequeo: vals.clave_chequeo || null,
       status:        vals.status,
     })
   }
@@ -127,6 +136,25 @@ export default function IncidenciaForm({
           allowDeselect={false}
           {...form.getInputProps('severidad')}
         />
+        {/* Opcional y así se queda: la mayoría de las incidencias no son de
+            ningún punto del chequeo —un golpe en el taller, una refacción que
+            se pidió— y obligar a elegir uno sería inventar una liga.
+            
+            Cuando sí lo es, esto es lo que evita el duplicado: el chequeo de
+            mañana encuentra esta incidencia por su clave y se engancha en vez
+            de abrir la segunda por los mismos stops. */}
+        {tipoVehiculo && (
+          <Select
+            label="Punto del chequeo diario"
+            description="Si es algo que el chequeo pregunta, ligarla evita que se abra otra igual mañana"
+            placeholder="No corresponde a ninguno"
+            clearable
+            searchable
+            data={itemsDeTipo(tipoVehiculo).map((i) => ({ value: i.clave, label: i.label }))}
+            value={form.values.clave_chequeo || null}
+            onChange={(v) => form.setFieldValue('clave_chequeo', v ?? '')}
+          />
+        )}
         <Group grow align="flex-start">
           <FechaInput
             label="Fecha" required

@@ -31,6 +31,12 @@ export interface Incidencia {
   // El mantenimiento que la atendió, para abrir su detalle desde la ficha.
   // NULL mientras siga sin atenderse.
   mantenimiento_id: number | null
+  /**
+   * De qué pregunta del chequeo diario es, si es de alguna. Con esto el chequeo
+   * de mañana se engancha a ella en vez de abrir otra por lo mismo. NULL = no
+   * corresponde a ningún punto del checklist, que es el caso normal.
+   */
+  clave_chequeo: string | null
 }
 
 export interface IncidenciaConVehiculo extends Incidencia {
@@ -48,6 +54,7 @@ export interface IncidenciaPayload {
   fecha:          string
   hora?:          string | null
   ubicacion:      string
+  clave_chequeo?: string | null
 }
 
 export function useIncidencias() {

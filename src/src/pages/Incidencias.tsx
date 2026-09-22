@@ -104,6 +104,11 @@ export default function Incidencias({ onNavigateVehiculo }: {
     value: String(v.id), label: vehiculoLabel(v),
   }))
 
+  // El tipo de la unidad elegida para el alta: de él dependen las preguntas del
+  // chequeo que se pueden ligar, y aquí el vehículo se escoge en el modal.
+  const tipoNueva = (vehiculosData?.data ?? [])
+    .find((v) => String(v.id) === vehiculoNueva)?.tipo
+
   // Marcar una incidencia como atendida obliga a registrar el mantenimiento que
   // la cerró: si no, quedaría cerrada sin nada que explique cómo (y de hecho la
   // sincronización diaria la volvería a abrir). El cambio se guarda primero
@@ -394,6 +399,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
               error={formError}
               onSubmit={handleCreate}
               onCancel={() => setCreateOpen(false)}
+              tipoVehiculo={tipoNueva}
             />
           ) : (
             <Text c="dimmed" size="sm">Elige primero el vehículo.</Text>
@@ -538,6 +544,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
             error={formError}
             onSubmit={handleUpdate}
             onCancel={() => setEditando(null)}
+            tipoVehiculo={editando.vehiculo_tipo}
           />
         )}
       </Modal>

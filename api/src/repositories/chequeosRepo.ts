@@ -423,16 +423,15 @@ export async function fallasArrastradas(
     .input('vid', sql.Int,  vehiculoId)
     .input('hoy', sql.Date, hoy)
     .query(`
-      SELECT ci.clave, MIN(inc.fecha) AS desde
-      FROM chequeo_items ci
-      JOIN chequeos ch  ON ch.id = ci.chequeo_id
-      JOIN pendientes p ON p.id = ci.pendiente_id
+      SELECT inc.clave_chequeo AS clave, MIN(inc.fecha) AS desde
+      FROM pendientes p
       JOIN incidencias inc ON inc.id = p.id
-      WHERE ch.vehiculo_id = @vid
+      WHERE p.vehiculo_id = @vid
         AND p.origen = 'incidencia'
         AND p.status = 'activo'
+        AND inc.clave_chequeo IS NOT NULL
         AND inc.fecha < @hoy
-      GROUP BY ci.clave
+      GROUP BY inc.clave_chequeo
     `)
   return r.recordset.map((row: { clave: string; desde: string }) => ({
     clave: row.clave, desde: row.desde,
@@ -453,6 +452,15 @@ export async function fallasArrastradas(
  * Se busca por CLAVE y no por nombre ni categoría: es la pregunta la que dice
  * si es lo mismo. "Faros fundidos" y "Stops fundidos" comparten categoría y no
  * son el mismo problema.
+ *
+ * Y se le pregunta a la INCIDENCIA (`clave_chequeo`, migración 048), no al
+ * renglón que la abrió: así también se engancha a la que alguien capturó a mano
+ * desde la pantalla de Incidencias, que no tiene ningún chequeo detrás y aun así
+ * es el mismo problema.
+ *
+ * La más vieja de las que haya (`ORDER BY fecha`): si por lo que sea hubiera dos
+ * abiertas por la misma pregunta, la que importa es la que lleva más tiempo sin
+ * atenderse.
  */
 async function incidenciaAbiertaDe(
   tx: sql.Transaction, vehiculoId: number, clave: string
@@ -462,15 +470,13 @@ async function incidenciaAbiertaDe(
     .input('clave', sql.VarChar(30), clave)
     .query(`
       SELECT TOP 1 p.id, inc.fecha
-      FROM chequeo_items ci
-      JOIN chequeos ch  ON ch.id = ci.chequeo_id
-      JOIN pendientes p ON p.id = ci.pendiente_id
+      FROM pendientes p
       JOIN incidencias inc ON inc.id = p.id
-      WHERE ch.vehiculo_id = @vid
-        AND ci.clave = @clave
+      WHERE p.vehiculo_id = @vid
+        AND inc.clave_chequeo = @clave
         AND p.origen = 'incidencia'
         AND p.status = 'activo'
-      ORDER BY ch.fecha DESC, ci.chequeo_id DESC
+      ORDER BY inc.fecha ASC, p.id ASC
     `)
   const fila = r.recordset[0]
   return fila ? { id: fila.id, fecha: fila.fecha } : null
@@ -507,6 +513,9 @@ async function insertarItems(
         fecha:         cabecera.fecha,
         hora:          cabecera.hora,
         ubicacion:     cabecera.ubicacion,
+        // De qué pregunta salió. Es lo que hará que el chequeo de mañana se
+        // enganche a esta en vez de abrir la segunda por lo mismo.
+        clave_chequeo: item.clave,
       }, revisadoPor)
     }
 

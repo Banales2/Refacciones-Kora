@@ -105,6 +105,21 @@ por `pendiente_id` y no se crea nada. Se busca por clave y no por nombre ni
 categoría: "Faros fundidos" y "Stops fundidos" comparten categoría y no son el
 mismo problema.
 
+La liga vive en la incidencia (`incidencias.clave_chequeo`, migración 048) y no
+en el renglón que la abrió. La diferencia importa: una incidencia capturada a
+mano desde la pantalla de Incidencias —por esos mismos stops— no la abrió ningún
+chequeo, así que ningún renglón la referencia, y buscando por el renglón el
+chequeo del día siguiente abría la segunda por lo mismo. Por eso el formulario
+de incidencias tiene un campo opcional "Punto del chequeo diario": es lo único
+que hace falta para que las dos mitades se reconozcan.
+
+El campo es opcional y así se queda. La mayoría de las incidencias no son de
+ningún punto del checklist —un golpe en el taller, una refacción que se pidió— y
+obligarlas a elegir uno sería inventar una liga. `NULL` significa "esto no es un
+punto del chequeo", no "falta capturarlo". Lo que sí se valida es que la
+pregunta exista y le toque a esa unidad: una caja de tráiler no contesta por sus
+faros, así que tampoco puede tener una incidencia colgada de esa pregunta.
+
 "Continua" es `pendientes.status = 'activo'`. Si la incidencia se cerró —se
 atendió— y la falla reaparece, sí abre una nueva: eso ya no es lo mismo que
 seguía roto, es algo que se arregló y se volvió a romper, y esa distinción es la

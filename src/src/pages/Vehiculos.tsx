@@ -444,6 +444,7 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
           error={formError}
           onSubmit={handleSubmit}
           onCancel={() => setFormOpen(false)}
+          tipoVehiculo={tipoVehiculo}
         />
       </Modal>
 
