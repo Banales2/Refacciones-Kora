@@ -407,6 +407,15 @@ export default function ChequeoDiarioForm({
                         )}
                       </Stack>
                     ) : (
+                      // "Sí" y "No", no "Bien" y "Mal": las preguntas están
+                      // redactadas como preguntas —"Sin golpes nuevos",
+                      // "Parabrisas sin estrellar"— y a una pregunta se le
+                      // contesta sí o no. Con "Bien"/"Mal" había que traducir
+                      // en la cabeza en cada renglón, y en una redactada en
+                      // negativo la traducción se invierte: "sin golpes" está
+                      // "bien" cuando la respuesta es "sí". Es justo el
+                      // renglón que se contesta al revés con prisa.
+                      //
                       // Sin iconos: el icono más el texto no caben en un
                       // tercio de 390px y lo que se recortaba era la palabra,
                       // que es lo único que de verdad se lee. El color ya
@@ -419,7 +428,7 @@ export default function ChequeoDiarioForm({
                           color="teal"
                           onClick={() => responder(item.clave, { resultado: 'ok', nota: '' })}
                         >
-                          Bien
+                          Sí
                         </Button>
                         <Button
                           size="md"
@@ -428,7 +437,7 @@ export default function ChequeoDiarioForm({
                           color="red"
                           onClick={() => responder(item.clave, { resultado: 'falla' })}
                         >
-                          Mal
+                          No
                         </Button>
                         <Button
                           size="md"
