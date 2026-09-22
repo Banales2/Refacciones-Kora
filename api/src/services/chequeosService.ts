@@ -256,6 +256,58 @@ export async function getPatio(sucursalId: number, fecha?: string) {
   }
 }
 
+/**
+ * Qué decirle a quien acaba de guardar sobre lo que salió mal.
+ *
+ * Son dos cosas distintas y por eso son dos frases: las fallas nuevas abrieron
+ * su incidencia, y las que ya venían de días pasados se engancharon a la que
+ * seguía abierta. Contarlas juntas diría "se abrieron 5 incidencias" cuando se
+ * abrieron dos, y a la tercera vez que pasa nadie vuelve a leer el aviso.
+ *
+ * El arrastre no se calla por no haber abierto nada: es justo lo contrario de
+ * una buena noticia. Una falla que lleva cuatro días es peor que una de hoy, y
+ * el aviso es el único lugar donde quien recorre se entera.
+ */
+function avisosDeIncidencias(chequeo: repo.Chequeo): string[] {
+  const avisos: string[] = []
+  const conIncidencia = chequeo.items.filter((i) => i.pendiente_id != null)
+  const dia = soloFecha(chequeo.fecha)!
+  // La de hoy la abrió este chequeo; una anterior ya estaba abierta.
+  const desde = (i: repo.ChequeoItem) => soloFecha(i.incidencia_desde) ?? dia
+  const nuevas   = conIncidencia.filter((i) => desde(i) >= dia)
+  const arrastre = conIncidencia.filter((i) => desde(i) <  dia)
+
+  if (nuevas.length > 0) {
+    avisos.push(nuevas.length === 1
+      ? 'Se abrió 1 incidencia por lo que salió mal.'
+      : `Se abrieron ${nuevas.length} incidencias por lo que salió mal.`)
+  }
+  for (const i of arrastre) {
+    const def = itemPorClave(i.clave)
+    avisos.push(
+      `"${def?.label ?? i.clave}" sigue fallando desde el ${fechaCorta(desde(i))}: ` +
+      `se ligó a la incidencia que ya estaba abierta, no se abrió otra.`
+    )
+  }
+  return avisos
+}
+
+/**
+ * mssql devuelve las columnas `date` como objetos Date, no como el string que
+ * dice el tipo: la conversión ocurre al serializar la respuesta, que es después
+ * de esto. Sin esto, comparar dos fechas aquí compara un Date con un string.
+ */
+function soloFecha(d: string | Date | null | undefined): string | null {
+  if (d == null) return null
+  return (d instanceof Date ? d.toISOString() : d).split('T')[0]
+}
+
+/** "2026-09-18" → "18/09". El año sobra en un aviso del día. */
+function fechaCorta(fecha: string): string {
+  const [, m, d] = fecha.split('-')
+  return `${d}/${m}`
+}
+
 export async function create(
   vehiculoId: number, data: ChequeoCreate, revisadoPor: string
 ): Promise<ResultadoChequeo> {
@@ -301,12 +353,7 @@ export async function create(
     vehiculoId, vehiculo.tipo, data.lectura ?? null, vehiculo.kilometraje
   )
 
-  const abiertas = chequeo.items.filter((i) => i.pendiente_id != null).length
-  if (abiertas > 0) {
-    avisos.push(abiertas === 1
-      ? 'Se abrió 1 incidencia por lo que salió mal.'
-      : `Se abrieron ${abiertas} incidencias por lo que salió mal.`)
-  }
+  avisos.push(...avisosDeIncidencias(chequeo))
   if (chequeo.hay_novedad) {
     avisos.push('El reporte del chofer quedó pendiente de revisión.')
   }
@@ -415,6 +462,9 @@ export async function update(
     )
     avisos.push(...res.avisos)
   }
+  // Corregir un chequeo también abre incidencias: una pregunta que estaba en
+  // "sí" y se corrige a "no" es una falla que nadie había reportado.
+  avisos.push(...avisosDeIncidencias(chequeo))
 
   return { chequeo, avisos }
 }

@@ -102,3 +102,29 @@ export function nivelEsFalla(item: ItemChequeo, valor: string): boolean {
   const umbral = NIVELES_TANQUE.findIndex((n) => n.valor === item.umbralFalla)
   return i >= 0 && umbral >= 0 && i <= umbral
 }
+
+/**
+ * Cuántos días lleva fallando esto, si viene de antes.
+ *
+ * Una falla cuya incidencia es de un día anterior no abrió nada: se enganchó a
+ * la que seguía abierta (lo hace `incidenciaAbiertaDe` en el backend). Devuelve
+ * la fecha en que se detectó por primera vez, o null si es de hoy.
+ *
+ * Existe para que la pantalla lo GRITE. Un pendiente que se arrastra es peor
+ * que uno nuevo, y si la falla de hoy se viera igual que la de un problema de
+ * hace cuatro días, la que lleva cuatro días no la vería nadie.
+ */
+export function arrastra(
+  item: { pendiente_id: number | null; incidencia_desde: string | null },
+  fechaChequeo: string
+): string | null {
+  if (item.pendiente_id == null || !item.incidencia_desde) return null
+  const desde = item.incidencia_desde.slice(0, 10)
+  return desde < fechaChequeo.slice(0, 10) ? desde : null
+}
+
+/** "2026-09-18" → "18/09". */
+export function diaMes(fecha: string): string {
+  const [, m, d] = fecha.slice(0, 10).split('-')
+  return `${d}/${m}`
+}

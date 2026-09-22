@@ -92,6 +92,31 @@ interpretar —la luz prende o no prende— y el catálogo ya dice de antemano q
 severidad le toca a cada falla. La única excepción es `golpes`, donde se
 pregunta: un rayón y un cuarto hundido no son lo mismo y se ven distinto.
 
+## Una falla continua no abre una incidencia nueva cada día
+
+Unos stops fundidos que nadie arregla se reportan otra vez mañana, y pasado. Si
+cada chequeo abriera su incidencia, a la semana habría siete pendientes
+idénticos y la lista de incidencias dejaría de servir para saber qué hay que
+atender.
+
+Al guardar una falla, `incidenciaAbiertaDe` busca si esa MISMA pregunta ya tiene
+una incidencia activa en esa unidad. Si la hay, el renglón se engancha a ella
+por `pendiente_id` y no se crea nada. Se busca por clave y no por nombre ni
+categoría: "Faros fundidos" y "Stops fundidos" comparten categoría y no son el
+mismo problema.
+
+"Continua" es `pendientes.status = 'activo'`. Si la incidencia se cerró —se
+atendió— y la falla reaparece, sí abre una nueva: eso ya no es lo mismo que
+seguía roto, es algo que se arregló y se volvió a romper, y esa distinción es la
+que deja ver que una unidad reincide.
+
+**No abrir nada no puede significar no avisar**, que es el riesgo de todo esto:
+lo que se arrastra dejaría de hacer ruido justo por llevar más tiempo mal. Por
+eso la falla enganchada se marca en rojo sólido con la fecha en que empezó, en
+los reportes del día y en el historial de la unidad, y al guardar el chequeo
+sale un aviso por cada una. La incidencia conserva su fecha original, que es lo
+que dice cuánto lleva sin atenderse.
+
 ## Las dos pestañas de la pantalla
 
 "Chequeo de flotilla" tiene dos mitades del mismo día: **Recorrido**, que es

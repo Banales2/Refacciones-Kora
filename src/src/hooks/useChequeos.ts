@@ -12,6 +12,12 @@ export interface ChequeoItem {
   nota:         string | null
   /** La incidencia que abrió esta falla, si abrió alguna. */
   pendiente_id: number | null
+  /**
+   * La fecha de esa incidencia. Anterior a la del chequeo = la falla no abrió
+   * nada: se enganchó a la que ya venía abierta. Es lo que hace visible que el
+   * problema lleva días sin atenderse (ver `arrastra` en `chequeoItems`).
+   */
+  incidencia_desde: string | null
 }
 
 export interface Chequeo {

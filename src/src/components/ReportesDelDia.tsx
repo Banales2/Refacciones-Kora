@@ -14,8 +14,13 @@
 //
 // Las fallas del checklist ya abrieron su incidencia solas al guardar el
 // chequeo (el catálogo trae la severidad de antemano). Aquí se listan para
-// saber qué se abrió hoy, no para decidirlo: lo único que se decide en esta
-// pantalla es qué hacer con lo que dijo el chofer.
+// saber qué salió, no para decidirlo: lo único que se decide en esta pantalla
+// es qué hacer con lo que dijo el chofer.
+//
+// Lo que sí hay que mirar es el rojo sólido: son las fallas que NO abrieron
+// nada porque ya tenían una incidencia abierta de días pasados. Al no abrir
+// nada, no generan ruido en ningún lado, y sin este aviso la falla que lleva
+// cuatro días sin atenderse se vería exactamente igual que la de esta mañana.
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Card, Badge, Button, Alert, Loader, Center, Modal,
@@ -25,7 +30,7 @@ import {
   IconAlertTriangle, IconCheck, IconEye, IconMessageReport, IconTruck,
 } from '@tabler/icons-react'
 import RevisarReporteChequeo from './RevisarReporteChequeo'
-import { labelDeItem } from '../lib/chequeoItems'
+import { labelDeItem, arrastra, diaMes } from '../lib/chequeoItems'
 import { useChequeosRango, type ChequeoConVehiculo } from '../hooks/useChequeos'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
 
@@ -43,6 +48,10 @@ function Renglon({
   const fallas     = chequeo.items.filter((i) => i.resultado === 'falla')
   const sinRevisar = chequeo.hay_novedad && !chequeo.revisada_en
   const hora       = horaCorta(chequeo.hora)
+  // Lo que ya venía fallando de días pasados. No abrió incidencia nueva, y por
+  // eso hay que decirlo dos veces: en el encabezado del renglón, para que se
+  // vea sin desplegar, y en la falla misma.
+  const arrastradas = fallas.filter((f) => arrastra(f, chequeo.fecha) != null).length
 
   return (
     <Card
@@ -91,6 +100,11 @@ function Renglon({
           </Group>
 
           <Group gap={4} wrap="nowrap">
+            {arrastradas > 0 && (
+              <Badge size="xs" color="red" variant="filled">
+                {arrastradas} sin atender
+              </Badge>
+            )}
             {fallas.length > 0 && (
               <Badge size="xs" color="red" variant="light">{fallas.length}</Badge>
             )}
@@ -134,14 +148,27 @@ function Renglon({
 
         {fallas.length > 0 && (
           <Stack gap={2}>
-            {fallas.map((f) => (
-              <Text key={f.clave} size="xs" c="red">
-                • {labelDeItem(f.clave)}
-                {f.valor ? ` — ${f.valor}` : ''}
-                {f.nota ? `: ${f.nota}` : ''}
-                {f.pendiente_id == null ? ' (sin incidencia)' : ''}
-              </Text>
-            ))}
+            {fallas.map((f) => {
+              const desde = arrastra(f, chequeo.fecha)
+              return (
+                <Group key={f.clave} gap={6} wrap="nowrap" align="flex-start">
+                  <Text size="xs" c="red" style={{ flex: 1 }}>
+                    • {labelDeItem(f.clave)}
+                    {f.valor ? ` — ${f.valor}` : ''}
+                    {f.nota ? `: ${f.nota}` : ''}
+                    {f.pendiente_id == null ? ' (sin incidencia)' : ''}
+                  </Text>
+                  {/* No abrió incidencia porque ya había una: sin este aviso, la
+                      falla que lleva días se vería igual que la de hoy, que es
+                      justo al revés de lo que importa. */}
+                  {desde && (
+                    <Badge size="xs" color="red" variant="filled">
+                      Desde {diaMes(desde)}
+                    </Badge>
+                  )}
+                </Group>
+              )
+            })}
           </Stack>
         )}
 

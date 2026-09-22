@@ -21,6 +21,12 @@ export interface ChequeoItem {
   nota:         string | null
   /** La incidencia que abrió esta falla, si abrió alguna. */
   pendiente_id: number | null
+  /**
+   * La fecha de esa incidencia. Si es ANTERIOR a la del chequeo, la falla no
+   * abrió nada: se enganchó a la que ya estaba abierta de días pasados, y eso
+   * es lo que convierte el renglón en "esto lleva fallando desde el…".
+   */
+  incidencia_desde: string | null
 }
 
 export interface Chequeo {
@@ -118,16 +124,19 @@ async function itemsDe(
   const req = exec.request()
   const params = ids.map((id, i) => { req.input(`c${i}`, sql.Int, id); return `@c${i}` }).join(',')
   const r = await req.query(`
-    SELECT chequeo_id, clave, resultado, valor, nota, pendiente_id
-    FROM chequeo_items
-    WHERE chequeo_id IN (${params})
-    ORDER BY chequeo_id, clave
+    SELECT ci.chequeo_id, ci.clave, ci.resultado, ci.valor, ci.nota, ci.pendiente_id,
+           inc.fecha AS incidencia_desde
+    FROM chequeo_items ci
+    LEFT JOIN incidencias inc ON inc.id = ci.pendiente_id
+    WHERE ci.chequeo_id IN (${params})
+    ORDER BY ci.chequeo_id, ci.clave
   `)
   for (const row of r.recordset) {
     const lista = porChequeo.get(row.chequeo_id) ?? []
     lista.push({
       clave: row.clave, resultado: row.resultado, valor: row.valor,
       nota: row.nota, pendiente_id: row.pendiente_id,
+      incidencia_desde: row.incidencia_desde,
     })
     porChequeo.set(row.chequeo_id, lista)
   }
@@ -388,6 +397,43 @@ export async function findDeclarantes(): Promise<string[]> {
   return r.recordset.map((row: { declarado_por: string }) => row.declarado_por)
 }
 
+/**
+ * La incidencia que esta misma pregunta ya tiene abierta en esta unidad, si la
+ * hay. Es lo que evita que unos stops fundidos tres días seguidos acaben en
+ * tres pendientes idénticos: el problema es uno solo hasta que alguien lo
+ * arregla.
+ *
+ * "Abierta" es `pendientes.status = 'activo'`: mientras nadie la cierre ni la
+ * cancele, la falla de hoy es la continuación de la misma. Si ya se cerró y la
+ * falla vuelve a aparecer, no es continua —se arregló y se volvió a romper— y
+ * ahí sí abre una nueva, que es lo que permite ver que reincide.
+ *
+ * Se busca por CLAVE y no por nombre ni categoría: es la pregunta la que dice
+ * si es lo mismo. "Faros fundidos" y "Stops fundidos" comparten categoría y no
+ * son el mismo problema.
+ */
+async function incidenciaAbiertaDe(
+  tx: sql.Transaction, vehiculoId: number, clave: string
+): Promise<{ id: number; fecha: string } | null> {
+  const r = await tx.request()
+    .input('vid',   sql.Int,         vehiculoId)
+    .input('clave', sql.VarChar(30), clave)
+    .query(`
+      SELECT TOP 1 p.id, inc.fecha
+      FROM chequeo_items ci
+      JOIN chequeos ch  ON ch.id = ci.chequeo_id
+      JOIN pendientes p ON p.id = ci.pendiente_id
+      JOIN incidencias inc ON inc.id = p.id
+      WHERE ch.vehiculo_id = @vid
+        AND ci.clave = @clave
+        AND p.origen = 'incidencia'
+        AND p.status = 'activo'
+      ORDER BY ch.fecha DESC, ci.chequeo_id DESC
+    `)
+  const fila = r.recordset[0]
+  return fila ? { id: fila.id, fecha: fila.fecha } : null
+}
+
 async function insertarItems(
   tx: sql.Transaction, chequeoId: number, vehiculoId: number,
   items: ItemAGuardar[], cabecera: ChequeoCabecera, revisadoPor: string,
@@ -399,7 +445,11 @@ async function insertarItems(
     // no existe.
     let pendienteId: number | null = null
     if (item.incidencia) {
-      pendienteId = await incidenciasRepo.insertEnTx(tx, {
+      // Si ya hay una abierta por esta misma pregunta, el renglón se engancha a
+      // ella. No se toca la incidencia: su fecha sigue siendo la del día en que
+      // se detectó, que es el dato que dice cuánto lleva sin atenderse.
+      const abierta = await incidenciaAbiertaDe(tx, vehiculoId, item.clave)
+      pendienteId = abierta?.id ?? await incidenciasRepo.insertEnTx(tx, {
         vehiculo_id:   vehiculoId,
         nombre:        item.incidencia.nombre,
         descripcion:   item.incidencia.descripcion,

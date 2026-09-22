@@ -15,7 +15,7 @@ import {
 } from '@tabler/icons-react'
 import ChequeoDiarioForm from './ChequeoDiarioForm'
 import RevisarReporteChequeo from './RevisarReporteChequeo'
-import { labelDeItem } from '../lib/chequeoItems'
+import { labelDeItem, arrastra, diaMes } from '../lib/chequeoItems'
 import { useChequeosVehiculo, type Chequeo } from '../hooks/useChequeos'
 
 function fechaLegible(iso: string): string {
@@ -105,11 +105,18 @@ function ResumenChequeo({ chequeo, onRevisar }: { chequeo: Chequeo; onRevisar: (
 
         {fallas.length > 0 && (
           <Stack gap={2}>
-            {fallas.map((f) => (
-              <Text key={f.clave} size="xs" c="red">
-                • {labelDeItem(f.clave)}{f.nota ? `: ${f.nota}` : ''}
-              </Text>
-            ))}
+            {fallas.map((f) => {
+              const desde = arrastra(f, chequeo.fecha)
+              return (
+                <Text key={f.clave} size="xs" c="red">
+                  • {labelDeItem(f.clave)}{f.nota ? `: ${f.nota}` : ''}
+                  {/* Viene de antes: no abrió incidencia, se enganchó a la que
+                      seguía abierta. En el historial de la unidad es donde se
+                      ve la racha completa. */}
+                  {desde && <strong> — sin atender desde el {diaMes(desde)}</strong>}
+                </Text>
+              )
+            })}
           </Stack>
         )}
 
