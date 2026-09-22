@@ -117,6 +117,17 @@ los reportes del día y en el historial de la unidad, y al guardar el chequeo
 sale un aviso por cada una. La incidencia conserva su fecha original, que es lo
 que dice cuánto lleva sin atenderse.
 
+Y se avisa ANTES, no solo después: el formulario trae `arrastradas` (las
+preguntas que esa unidad ya tiene abiertas de días anteriores) y la pregunta
+deja de hacerse en frío —"Ya reportado desde el 18/09 y sin atender. ¿Sigue
+igual?"—. Quien está parado frente a la unidad es el único que puede decir si
+el pendiente del lunes sigue ahí o ya lo arreglaron y nadie lo cerró, y
+enterarse al guardar es enterarse cuando ya no cambia nada de lo que hizo.
+
+Si contesta que sí está bien, se le dice que la incidencia igual sigue abierta:
+un pendiente no se cierra marcando la pregunta en verde, se cierra
+atendiéndolo.
+
 ## Las dos pestañas de la pantalla
 
 "Chequeo de flotilla" tiene dos mitades del mismo día: **Recorrido**, que es

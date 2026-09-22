@@ -397,6 +397,48 @@ export async function findDeclarantes(): Promise<string[]> {
   return r.recordset.map((row: { declarado_por: string }) => row.declarado_por)
 }
 
+/** Una pregunta que esta unidad ya trae reportada de días pasados. */
+export interface FallaArrastrada {
+  clave: string
+  /** El día en que se detectó por primera vez y sigue sin atenderse. */
+  desde: string
+}
+
+/**
+ * Lo que esta unidad ya tiene abierto de días ANTERIORES, por pregunta.
+ *
+ * Es para el formulario: quien está parado frente a la unidad tiene que saber
+ * que el stop que va a reportar ya está reportado desde el lunes. Sin eso, la
+ * pregunta se contesta a ciegas y la única forma de enterarse es después, en el
+ * aviso de guardado, cuando ya no cambia nada de lo que hizo.
+ *
+ * `< @hoy` y no `<=`: lo que se abrió hoy lo abrió el chequeo de hoy, y
+ * anunciárselo a quien lo acaba de capturar sería contarle lo que ya sabe.
+ */
+export async function fallasArrastradas(
+  vehiculoId: number, hoy: string
+): Promise<FallaArrastrada[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('vid', sql.Int,  vehiculoId)
+    .input('hoy', sql.Date, hoy)
+    .query(`
+      SELECT ci.clave, MIN(inc.fecha) AS desde
+      FROM chequeo_items ci
+      JOIN chequeos ch  ON ch.id = ci.chequeo_id
+      JOIN pendientes p ON p.id = ci.pendiente_id
+      JOIN incidencias inc ON inc.id = p.id
+      WHERE ch.vehiculo_id = @vid
+        AND p.origen = 'incidencia'
+        AND p.status = 'activo'
+        AND inc.fecha < @hoy
+      GROUP BY ci.clave
+    `)
+  return r.recordset.map((row: { clave: string; desde: string }) => ({
+    clave: row.clave, desde: row.desde,
+  }))
+}
+
 /**
  * La incidencia que esta misma pregunta ya tiene abierta en esta unidad, si la
  * hay. Es lo que evita que unos stops fundidos tres días seguidos acaben en

@@ -182,6 +182,11 @@ export async function getFormulario(vehiculoId: number) {
     kilometraje: vehiculo.kilometraje,
     lectura:     lecturaDe(vehiculo.tipo),
     items:       itemsDe(vehiculo.tipo),
+    // Lo que esta unidad ya trae reportado y sin atender. El formulario lo usa
+    // para preguntar "¿esto sigue así?" en vez de preguntar a secas: quien
+    // revisa merece saber que el stop que va a reportar lleva reportado desde
+    // el lunes, y es la única forma de que la respuesta signifique algo.
+    arrastradas: await repo.fallasArrastradas(vehiculoId, fechaMexico()),
   }
 }
 

@@ -31,7 +31,7 @@ import {
   type ItemPayload, type ChequeoPayload,
 } from '../hooks/useChequeos'
 import type { Resultado, Severidad } from '../lib/chequeoItems'
-import { NIVELES_TANQUE, nivelEsFalla } from '../lib/chequeoItems'
+import { NIVELES_TANQUE, nivelEsFalla, diaMes } from '../lib/chequeoItems'
 import { TEXTO_LIBRE, TEXTO_SIMPLE, limpiarTextoLibre, limpiarTextoSimple, KM_MAX } from '../lib/validaciones'
 import { useOpcionesTexto } from '../hooks/useOpcionesTexto'
 
@@ -146,6 +146,12 @@ export default function ChequeoDiarioForm({
       </Alert>
     )
   }
+
+  // Lo que esta unidad ya trae reportado de antes, por clave. En un mapa porque
+  // se consulta una vez por renglón dibujado.
+  const arrastradas = new Map(
+    (formulario.arrastradas ?? []).map((a) => [a.clave, a.desde])
+  )
 
   const responder = (clave: string, cambio: Partial<Respuesta>) => {
     setRespuestas((prev) => ({ ...prev, [clave]: { ...VACIA, ...prev[clave], ...cambio } }))
@@ -402,10 +408,42 @@ export default function ChequeoDiarioForm({
                   <Stack gap="xs">
                     <Group justify="space-between" wrap="nowrap" align="flex-start">
                       <Text size="sm" fw={500} style={{ flex: 1 }}>{item.label}</Text>
+                      {/* Lo que ya está reportado no vuelve a abrir incidencia:
+                          se engancha a la abierta. Decir "Abre incidencia" ahí
+                          sería mentir, y decirlo cuando ya lleva días abierta
+                          sería además tranquilizador al revés. */}
                       {r.resultado === 'falla' && (
-                        <Badge color="red" variant="light" size="sm">Abre incidencia</Badge>
+                        arrastradas.has(item.clave)
+                          ? <Badge color="red" variant="filled" size="sm">Sigue abierta</Badge>
+                          : <Badge color="red" variant="light" size="sm">Abre incidencia</Badge>
                       )}
                     </Group>
+
+                    {/* "¿Esto sigue roto?" en vez de preguntar como si fuera la
+                        primera vez. Quien está frente a la unidad es el único
+                        que puede decir si el pendiente de hace cuatro días
+                        sigue ahí o ya lo arreglaron y nadie lo cerró. */}
+                    {arrastradas.has(item.clave) && (
+                      <Alert
+                        color={r.resultado === 'ok' ? 'gray' : 'orange'}
+                        variant="light"
+                        p={6}
+                        icon={<IconAlertTriangle size={14} />}
+                      >
+                        <Text size="xs">
+                          {r.resultado === 'ok'
+                            // Contestar "sí" aquí NO cierra el pendiente: se
+                            // cierra atendiéndolo, con un mantenimiento. Decirlo
+                            // aquí evita que alguien se vaya creyendo que ya
+                            // quedó resuelto porque lo marcó bien.
+                            ? `Estaba reportado desde el ${diaMes(arrastradas.get(item.clave)!)}.
+                               Lo marcaste bien, pero la incidencia sigue abierta hasta que
+                               se atienda.`
+                            : `Ya reportado desde el ${diaMes(arrastradas.get(item.clave)!)}
+                               y sin atender. ¿Sigue igual?`}
+                        </Text>
+                      </Alert>
+                    )}
 
                     {item.captura === 'fraccion' ? (
                       <Stack gap={4}>

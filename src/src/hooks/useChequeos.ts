@@ -94,6 +94,12 @@ export interface FormularioChequeo {
   /** Odómetro u horómetro, o null si esta unidad no lleva ninguno. */
   lectura:     ItemChequeo | null
   items:       ItemChequeo[]
+  /**
+   * Lo que esta unidad ya trae reportado de días anteriores y sin atender, por
+   * pregunta. Con esto el formulario pregunta "¿sigue así?" en vez de preguntar
+   * como si fuera la primera vez.
+   */
+  arrastradas: { clave: string; desde: string }[]
   /** El chequeo de hoy, si ya lo hicieron. */
   hoy:         Chequeo | null
 }
