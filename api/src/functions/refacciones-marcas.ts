@@ -8,7 +8,7 @@ import * as service from '../services/refaccionesService'
 // reaprovecha lo capturado para que Bosch no acabe escrita de cinco formas.
 export async function refaccionesMarcas(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
+    requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'practicante')
     const data = await service.getMarcas()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

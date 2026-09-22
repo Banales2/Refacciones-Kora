@@ -67,6 +67,7 @@ import type { Conductor, ConductorPayload } from '../hooks/useConductores'
 import type { Tecnico, TecnicoPayload } from '../hooks/useTecnicos'
 import type { Seguro, SeguroPayload, RenovacionPayload, Renovacion } from '../hooks/useSeguros'
 import type { PermisoCirculacion, PermisoCirculacionPayload } from '../hooks/usePermisosCirculacion'
+import { usePermisos } from '../hooks/usePermisos'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 import Proveedores from './Proveedores'
 
@@ -115,6 +116,7 @@ function SitioForm({
 // ── Panel de sucursales ───────────────────────────────────────────────────────
 
 function SucursalesPanel() {
+  const { puedeEditar } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Sucursal | null>(null)
   const [archivando, setArchivando] = useState<Sucursal | null>(null)
@@ -193,17 +195,21 @@ function SucursalesPanel() {
                     <Table.Td c="dimmed">{s.ubicacion}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(s)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                        <Tooltip label={s.archivado_en ? 'Restaurar' : 'Archivar'}>
-                          <ActionIcon
-                            variant="subtle" size="sm"
-                            color={s.archivado_en ? 'teal' : 'orange'}
-                            aria-label={s.archivado_en ? 'Restaurar' : 'Archivar'}
-                            onClick={() => setArchivando(s)}
-                          >
-                            {s.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
-                          </ActionIcon>
-                        </Tooltip>
+                        {puedeEditar && (
+                          <>
+                          <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(s)}><IconPencil size={14} /></ActionIcon></Tooltip>
+                          <Tooltip label={s.archivado_en ? 'Restaurar' : 'Archivar'}>
+                            <ActionIcon
+                              variant="subtle" size="sm"
+                              color={s.archivado_en ? 'teal' : 'orange'}
+                              aria-label={s.archivado_en ? 'Restaurar' : 'Archivar'}
+                              onClick={() => setArchivando(s)}
+                            >
+                              {s.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                            </ActionIcon>
+                          </Tooltip>
+                          </>
+                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -235,6 +241,7 @@ function SucursalesPanel() {
 // ── Panel de rutas ────────────────────────────────────────────────────────────
 
 function RutasPanel() {
+  const { puedeEditar } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Ruta | null>(null)
   const [archivando, setArchivando] = useState<Ruta | null>(null)
@@ -313,17 +320,21 @@ function RutasPanel() {
                     <Table.Td c="dimmed">{r.ubicacion}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(r)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                        <Tooltip label={r.archivado_en ? 'Restaurar' : 'Archivar'}>
-                          <ActionIcon
-                            variant="subtle" size="sm"
-                            color={r.archivado_en ? 'teal' : 'orange'}
-                            aria-label={r.archivado_en ? 'Restaurar' : 'Archivar'}
-                            onClick={() => setArchivando(r)}
-                          >
-                            {r.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
-                          </ActionIcon>
-                        </Tooltip>
+                        {puedeEditar && (
+                          <>
+                          <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(r)}><IconPencil size={14} /></ActionIcon></Tooltip>
+                          <Tooltip label={r.archivado_en ? 'Restaurar' : 'Archivar'}>
+                            <ActionIcon
+                              variant="subtle" size="sm"
+                              color={r.archivado_en ? 'teal' : 'orange'}
+                              aria-label={r.archivado_en ? 'Restaurar' : 'Archivar'}
+                              onClick={() => setArchivando(r)}
+                            >
+                              {r.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                            </ActionIcon>
+                          </Tooltip>
+                          </>
+                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -695,6 +706,7 @@ function ConsumosGasolineraDrawer({
 // ── Panel de gasolineras ──────────────────────────────────────────────────────
 
 function GasolinerasPanel() {
+  const { puedeEditar } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Gasolinera | null>(null)
   const [archivando, setArchivando] = useState<Gasolinera | null>(null)
@@ -776,17 +788,21 @@ function GasolinerasPanel() {
                     <Table.Td c="dimmed">{g.ubicacion}</Table.Td>
                     <Table.Td onClick={(e) => e.stopPropagation()}>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(g)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                        <Tooltip label={g.archivado_en ? 'Restaurar' : 'Archivar'}>
-                          <ActionIcon
-                            variant="subtle" size="sm"
-                            color={g.archivado_en ? 'teal' : 'orange'}
-                            aria-label={g.archivado_en ? 'Restaurar' : 'Archivar'}
-                            onClick={() => setArchivando(g)}
-                          >
-                            {g.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
-                          </ActionIcon>
-                        </Tooltip>
+                        {puedeEditar && (
+                          <>
+                          <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(g)}><IconPencil size={14} /></ActionIcon></Tooltip>
+                          <Tooltip label={g.archivado_en ? 'Restaurar' : 'Archivar'}>
+                            <ActionIcon
+                              variant="subtle" size="sm"
+                              color={g.archivado_en ? 'teal' : 'orange'}
+                              aria-label={g.archivado_en ? 'Restaurar' : 'Archivar'}
+                              onClick={() => setArchivando(g)}
+                            >
+                              {g.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                            </ActionIcon>
+                          </Tooltip>
+                          </>
+                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -867,6 +883,7 @@ function CeldaDocumento({ numero, vigencia }: { numero: string | null; vigencia:
 }
 
 function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
+  const { puedeEditar } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Conductor | null>(null)
   const [archivando, setArchivando] = useState<Conductor | null>(null)
@@ -997,17 +1014,21 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
                     </Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(c)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                        <Tooltip label={c.archivado_en ? 'Restaurar' : 'Archivar'}>
-                          <ActionIcon
-                            variant="subtle" size="sm"
-                            color={c.archivado_en ? 'teal' : 'orange'}
-                            aria-label={c.archivado_en ? 'Restaurar' : 'Archivar'}
-                            onClick={() => setArchivando(c)}
-                          >
-                            {c.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
-                          </ActionIcon>
-                        </Tooltip>
+                        {puedeEditar && (
+                          <>
+                          <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(c)}><IconPencil size={14} /></ActionIcon></Tooltip>
+                          <Tooltip label={c.archivado_en ? 'Restaurar' : 'Archivar'}>
+                            <ActionIcon
+                              variant="subtle" size="sm"
+                              color={c.archivado_en ? 'teal' : 'orange'}
+                              aria-label={c.archivado_en ? 'Restaurar' : 'Archivar'}
+                              onClick={() => setArchivando(c)}
+                            >
+                              {c.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                            </ActionIcon>
+                          </Tooltip>
+                          </>
+                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -1040,6 +1061,7 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
 // también lo abren para dar de alta un técnico sin salir de su formulario.
 
 function TecnicosPanel() {
+  const { puedeEditar } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Tecnico | null>(null)
   const [archivando, setArchivando] = useState<Tecnico | null>(null)
@@ -1129,17 +1151,21 @@ function TecnicosPanel() {
                             <IconReceipt size={14} />
                           </ActionIcon>
                         </Tooltip>
-                        <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(t)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                        <Tooltip label={t.archivado_en ? 'Restaurar' : 'Archivar'}>
-                          <ActionIcon
-                            variant="subtle" size="sm"
-                            color={t.archivado_en ? 'teal' : 'orange'}
-                            aria-label={t.archivado_en ? 'Restaurar' : 'Archivar'}
-                            onClick={() => setArchivando(t)}
-                          >
-                            {t.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
-                          </ActionIcon>
-                        </Tooltip>
+                        {puedeEditar && (
+                          <>
+                          <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(t)}><IconPencil size={14} /></ActionIcon></Tooltip>
+                          <Tooltip label={t.archivado_en ? 'Restaurar' : 'Archivar'}>
+                            <ActionIcon
+                              variant="subtle" size="sm"
+                              color={t.archivado_en ? 'teal' : 'orange'}
+                              aria-label={t.archivado_en ? 'Restaurar' : 'Archivar'}
+                              onClick={() => setArchivando(t)}
+                            >
+                              {t.archivado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                            </ActionIcon>
+                          </Tooltip>
+                          </>
+                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -1409,6 +1435,7 @@ function SegurosPanel({
   onOpenIdChange?: (id: number | null) => void
   destacadoId?:    number | null
 }) {
+  const { puedeEditar } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Seguro | null>(null)
   const [renovando, setRenovando] = useState<Seguro | null>(null)
@@ -1542,6 +1569,11 @@ function SegurosPanel({
                       </Table.Td>
                       <Table.Td onClick={(e) => e.stopPropagation()}>
                         <Group gap={4} justify="flex-end" wrap="nowrap">
+                          {/* Renovar, terminar y editar son las tres formas de
+                              tocar una póliza ya emitida, así que las tres caen
+                              del mismo lado: el practicante la da de alta y ahí
+                              termina su trabajo. */}
+                          {puedeEditar && (<>
                           {/* Terminar solo se ofrece donde tiene sentido: una
                               póliza vigente se renueva, no se archiva. */}
                           {terminada ? (
@@ -1565,6 +1597,7 @@ function SegurosPanel({
                             </>
                           )}
                           <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(s)}><IconPencil size={14} /></ActionIcon></Tooltip>
+                          </>)}
                         </Group>
                       </Table.Td>
                     </Table.Tr>

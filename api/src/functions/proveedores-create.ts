@@ -11,7 +11,7 @@ export async function proveedoresCreate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    const user = requireRole(request, 'admin', 'editor', 'practicante')
     const data = ProveedorCreateSchema.parse(await request.json())
     const created = await service.create(data)
     await audit({

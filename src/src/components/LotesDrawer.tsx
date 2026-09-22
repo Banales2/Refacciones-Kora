@@ -16,6 +16,7 @@ import {
   useLotes, useCreateLote, useUpdateLote,
 } from '../hooks/useLotes'
 import type { Lote, LotePayload } from '../hooks/useLotes'
+import { usePermisos } from '../hooks/usePermisos'
 import { useComparativaPieza } from '../hooks/usePreciosProveedor'
 import { exportComparativaPiezaPdf } from '../lib/reportes/comparativaPieza'
 import { IVA_DEFAULT } from '../lib/totales'
@@ -52,6 +53,8 @@ interface Props {
 }
 
 export default function LotesDrawer({ piezaId, onClose }: Props) {
+  // El lote se captura una vez; corregirlo es cosa de un editor.
+  const { puedeEditar } = usePermisos()
   const [createOpen, setCreateOpen] = useState(false)
   const [editLote, setEditLote] = useState<Lote | null>(null)
   const [generando, setGenerando]   = useState(false)
@@ -239,15 +242,17 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                         </Table.Td>
                         <Table.Td>
                           <Group gap={4} justify="flex-end" wrap="nowrap">
-                            <ActionIcon
-                              variant="subtle"
-                              color="blue"
-                              size="sm"
-                              aria-label="Editar lote"
-                              onClick={() => setEditLote(lote)}
-                            >
-                              <IconPencil size={14} />
-                            </ActionIcon>
+                            {puedeEditar && (
+                              <ActionIcon
+                                variant="subtle"
+                                color="blue"
+                                size="sm"
+                                aria-label="Editar lote"
+                                onClick={() => setEditLote(lote)}
+                              >
+                                <IconPencil size={14} />
+                              </ActionIcon>
+                            )}
                           </Group>
                         </Table.Td>
                       </Table.Tr>

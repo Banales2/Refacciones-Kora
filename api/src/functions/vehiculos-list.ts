@@ -9,7 +9,7 @@ export async function vehiculosList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector')
+    requireRole(request, 'admin', 'editor', 'lector', 'practicante')
 
     const params = VehiculoQuerySchema.parse({
       page:      request.query.get('page')      ?? undefined,

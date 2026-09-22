@@ -23,6 +23,7 @@ import {
 } from '../hooks/useFacturas'
 import type { Factura, FacturaRenglon } from '../hooks/useFacturas'
 import { useAuth } from '../hooks/useAuth'
+import { usePermisos } from '../hooks/usePermisos'
 import { EstadoRevision, RevisionCabecera } from './RevisionFactura'
 import CuadreFacturaModal from './CuadreFactura'
 import FacturaHalladaModal from './FacturaHalladaModal'
@@ -45,6 +46,7 @@ const PAGE_SIZE = 10
  * con la bandera. Para deshacerlo están los folios por renglón.
  */
 function FolioDeFactura({ factura }: { factura: Factura }) {
+  const { puedeEditar } = usePermisos()
   const [folio, setFolio] = useState(factura.num_factura)
   const mut = useSetFolioFactura()
 
@@ -65,6 +67,18 @@ function FolioDeFactura({ factura }: { factura: Factura }) {
       nuevo_num_factura: nuevo,
       confirmar_fusion:  confirmarFusion,
     })
+  }
+
+  // Sin permiso de edición el folio se enseña y ya: la factura se mira, no se
+  // toca. Se devuelve el dato en vez de nada porque es justo lo que identifica
+  // al papel en pantalla.
+  if (!puedeEditar) {
+    return (
+      <Stack gap={2}>
+        <Text size="xs" c="dimmed">Folio de la factura</Text>
+        <Text size="sm" fw={600}>{factura.num_factura}</Text>
+      </Stack>
+    )
   }
 
   return (
@@ -134,10 +148,13 @@ function FolioDeFactura({ factura }: { factura: Factura }) {
  * compras— sin tocar los demás. Al guardarlo el renglón desaparece de esta
  * factura y aparece en la del folio que se le puso.
  */
+// Mover un renglón a otro folio es editar la factura, así que el lápiz no se
+// ofrece a quien sólo puede mirarla.
 function FolioDeLote({ renglon, folioActual }: {
   renglon:     FacturaRenglon
   folioActual: string
 }) {
+  const { puedeEditar } = usePermisos()
   const [abierto, setAbierto] = useState(false)
   const [folio, setFolio] = useState('')
   const mut = useSetFolioLote()
@@ -157,6 +174,8 @@ function FolioDeLote({ renglon, folioActual }: {
       { onSuccess: () => setAbierto(false) },
     )
   }
+
+  if (!puedeEditar) return null
 
   return (
     <Popover
@@ -210,6 +229,7 @@ function FolioDeLote({ renglon, folioActual }: {
  * queda. Separarlos dejaría guardar medio desglose.
  */
 function TotalesDeFactura({ factura }: { factura: Factura }) {
+  const { puedeEditar } = usePermisos()
   const [sumar, setSumar] = useState(factura.tasa_iva != null)
   const [tasa, setTasa] = useState<number | string>(factura.tasa_iva ?? IVA_DEFAULT)
   const [conDescuento, setConDescuento] = useState(factura.descuento_pct != null)
@@ -245,7 +265,9 @@ function TotalesDeFactura({ factura }: { factura: Factura }) {
   return (
     <Stack gap="xs">
       {/* En el orden en que se aplican: primero el descuento, y el IVA sobre lo
-          que queda. */}
+          que queda. Los interruptores desaparecen para quien sólo mira: el
+          desglose de abajo se queda, porque es lo que se vino a ver. */}
+      {puedeEditar && (<>
       <Group gap="md" align="flex-start" wrap="nowrap">
         <Switch
           label="Descuento del proveedor"
@@ -280,6 +302,7 @@ function TotalesDeFactura({ factura }: { factura: Factura }) {
           />
         )}
       </Group>
+      </>)}
 
       <Group justify="space-between" align="flex-end">
         <Stack gap={2}>
@@ -309,14 +332,16 @@ function TotalesDeFactura({ factura }: { factura: Factura }) {
             Total <Text component="span" fw={700}>{formatMXN(total)}</Text>
           </Text>
         </Stack>
-        <Button
-          size="xs"
-          disabled={!cambiada || tasaInvalida || descuentoInvalido}
-          loading={mut.isPending}
-          onClick={guardar}
-        >
-          {cambiada ? 'Guardar totales' : 'Sin cambios'}
-        </Button>
+        {puedeEditar && (
+          <Button
+            size="xs"
+            disabled={!cambiada || tasaInvalida || descuentoInvalido}
+            loading={mut.isPending}
+            onClick={guardar}
+          >
+            {cambiada ? 'Guardar totales' : 'Sin cambios'}
+          </Button>
+        )}
       </Group>
 
       {mut.error && <Alert color="red" title="Error">{(mut.error as Error).message}</Alert>}

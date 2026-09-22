@@ -18,6 +18,7 @@ import {
   useRefacciones, useTodasLasPiezas, useCreateRefaccion, useUpdateRefaccion,
   fetchTodasLasPiezas,
 } from '../hooks/useRefacciones'
+import { usePermisos } from '../hooks/usePermisos'
 import type { Pieza, SearchBy } from '../hooks/useRefacciones'
 import { MARCA_FALTANTE } from '../hooks/useRefacciones'
 import ArchivarCatalogoModal from '../components/ArchivarCatalogoModal'
@@ -44,6 +45,10 @@ function PiezasTable({
   onEdit:   (p: Pieza) => void
   onArchivar: (p: Pieza) => void
 }) {
+  // El practicante da de alta refacciones pero no las corrige, así que la
+  // columna de acciones se le queda vacía en vez de ofrecerle botones que la
+  // API le va a negar con un 403.
+  const { puedeEditar } = usePermisos()
   return (
     <Table.ScrollContainer minWidth={480}>
       <Table striped highlightOnHover withTableBorder>
@@ -92,17 +97,21 @@ function PiezasTable({
               </Table.Td>
               <Table.Td onClick={(e) => e.stopPropagation()} style={{ textAlign: 'right' }}>
                 <Group gap={4} justify="flex-end" wrap="nowrap">
-                  <ActionIcon variant="subtle" color="blue" aria-label="Editar" onClick={() => onEdit(pieza)}>
-                    <IconPencil size={16} />
-                  </ActionIcon>
-                  <ActionIcon
-                    variant="subtle"
-                    color={pieza.archivado_en ? 'teal' : 'orange'}
-                    aria-label={pieza.archivado_en ? 'Restaurar' : 'Archivar'}
-                    onClick={() => onArchivar(pieza)}
-                  >
-                    {pieza.archivado_en ? <IconArchiveOff size={16} /> : <IconArchive size={16} />}
-                  </ActionIcon>
+                  {puedeEditar && (
+                    <>
+                      <ActionIcon variant="subtle" color="blue" aria-label="Editar" onClick={() => onEdit(pieza)}>
+                        <IconPencil size={16} />
+                      </ActionIcon>
+                      <ActionIcon
+                        variant="subtle"
+                        color={pieza.archivado_en ? 'teal' : 'orange'}
+                        aria-label={pieza.archivado_en ? 'Restaurar' : 'Archivar'}
+                        onClick={() => onArchivar(pieza)}
+                      >
+                        {pieza.archivado_en ? <IconArchiveOff size={16} /> : <IconArchive size={16} />}
+                      </ActionIcon>
+                    </>
+                  )}
                 </Group>
               </Table.Td>
             </Table.Tr>

@@ -39,7 +39,21 @@ VALUES ('Nombre Apellido', 'admin', '<OBJECT_ID_DE_ENTRA>', 'correo@dominio.com'
 ```
 
 `<OBJECT_ID_DE_ENTRA>` es el **Object ID** que aparece en Entra ID → Users →
-el usuario. Con guiones. Roles válidos: `admin`, `editor`, `lector`.
+el usuario. Con guiones. Roles válidos: `admin`, `editor`, `lector`,
+`practicante`.
+
+`practicante` es el más nuevo y el más acotado: da de alta refacciones, lotes,
+pólizas, licencias de chofer, proveedores y vales de gasolina, y puede mirar las
+facturas sin tocarlas. No edita nada de lo que crea. Tres sitios lo definen y
+los tres tienen que estar de acuerdo: el `CHECK` de la tabla (migración 047),
+los `allowedRoles` de `staticwebapp.config.json` y la lista de cada
+`requireRole`. En el frontend, `usePermisos()` decide qué se enseña — y es sólo
+cortesía: la negativa real la da el 403 de la API.
+
+Un **App Role de Entra no sirve para esto**. Con `rolesSource` declarado, Static
+Web Apps ignora los roles del token y usa únicamente lo que devuelve
+`getRoles`, que lee esta tabla. Crear el rol en App registrations o asignarlo en
+Enterprise applications no cambia nada de lo que llega a `userRoles`.
 
 Cuidado, porque aquí se pierde tiempo: el `userId` que aparece en `/.auth/me`
 **no siempre es el Object ID de Entra**. Con el proveedor `aad` preconfigurado

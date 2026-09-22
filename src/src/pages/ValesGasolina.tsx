@@ -17,6 +17,7 @@ import {
   useValesGasolina, useCreateValeGasolina, useUpdateValeGasolina,
 } from '../hooks/useValesGasolina'
 import type { ValeGasolina, ValeGasolinaPayload } from '../hooks/useValesGasolina'
+import { usePermisos } from '../hooks/usePermisos'
 import { useConductores } from '../hooks/useConductores'
 import type { Conductor } from '../hooks/useConductores'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
@@ -290,6 +291,8 @@ function ValesTabla({
   onEdit: (v: ValeGasolina) => void
   onNavigateConductor?: (id: number) => void
 }) {
+  // El vale se captura una vez; corregirlo es cosa de un editor.
+  const { puedeEditar } = usePermisos()
   return (
     <Table highlightOnHover verticalSpacing="xs">
       <Table.Thead>
@@ -317,10 +320,12 @@ function ValesTabla({
             </Table.Td>
             <Table.Td>
               <Group gap={4} justify="flex-end" wrap="nowrap">
-                <ActionIcon variant="subtle" color="blue" size="sm"
-                  aria-label="Editar" onClick={() => onEdit(v)}>
-                  <IconPencil size={14} />
-                </ActionIcon>
+                {puedeEditar && (
+                  <ActionIcon variant="subtle" color="blue" size="sm"
+                    aria-label="Editar" onClick={() => onEdit(v)}>
+                    <IconPencil size={14} />
+                  </ActionIcon>
+                )}
               </Group>
             </Table.Td>
           </Table.Tr>

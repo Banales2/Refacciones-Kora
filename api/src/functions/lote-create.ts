@@ -12,7 +12,7 @@ export async function loteCreate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    const user = requireRole(request, 'admin', 'editor', 'practicante')
     const piezaId = parseInt(request.params.id, 10)
     if (isNaN(piezaId)) return { status: 400, jsonBody: { error: 'ID de pieza inválido' } }
 

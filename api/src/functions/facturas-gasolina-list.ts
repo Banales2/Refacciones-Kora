@@ -8,7 +8,7 @@ export async function facturasGasolinaList(
   req: HttpRequest, ctx: InvocationContext,
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer')
+    requireRole(req, 'admin', 'editor', 'viewer', 'practicante')
     const params = FacturaGasolinaQuerySchema.parse({
       page: req.query.get('page') ?? undefined,
       pageSize: req.query.get('pageSize') ?? undefined,

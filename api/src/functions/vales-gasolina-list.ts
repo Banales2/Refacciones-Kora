@@ -8,7 +8,7 @@ export async function valesGasolinaList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'viewer')
+    requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'practicante')
     const data = await service.getAll()
     return { status: 200, jsonBody: { data } }
   } catch (err) {

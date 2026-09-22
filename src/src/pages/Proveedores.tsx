@@ -17,12 +17,15 @@ import {
   useProveedores, useCreateProveedor, useUpdateProveedor,
 } from '../hooks/useProveedores'
 import type { Proveedor } from '../hooks/useProveedores'
+import { usePermisos } from '../hooks/usePermisos'
 import ProveedorForm from '../components/ProveedorForm'
 import ProveedorDetalle from './ProveedorDetalle'
 import ComparativaPrecios from './ComparativaPrecios'
 import ArchivarCatalogoModal from '../components/ArchivarCatalogoModal'
 
 export default function Proveedores() {
+  // El practicante da de alta proveedores pero no los corrige.
+  const { puedeEditar } = usePermisos()
   const [createOpen, setCreateOpen]       = useState(false)
   const [editProveedor, setEditProveedor] = useState<Proveedor | null>(null)
   // Proveedor que se está por archivar (o restaurar). No hay borrado.
@@ -164,22 +167,26 @@ export default function Proveedores() {
                     </Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <ActionIcon
-                          variant="subtle"
-                          color="blue"
-                          aria-label="Editar"
-                          onClick={(e) => { e.stopPropagation(); setEditProveedor(p) }}
-                        >
-                          <IconPencil size={16} />
-                        </ActionIcon>
-                        <ActionIcon
-                          variant="subtle"
-                          color={p.archivado_en ? 'teal' : 'orange'}
-                          aria-label={p.archivado_en ? 'Restaurar' : 'Archivar'}
-                          onClick={(e) => { e.stopPropagation(); setArchivando(p) }}
-                        >
-                          {p.archivado_en ? <IconArchiveOff size={16} /> : <IconArchive size={16} />}
-                        </ActionIcon>
+                        {puedeEditar && (
+                          <>
+                            <ActionIcon
+                              variant="subtle"
+                              color="blue"
+                              aria-label="Editar"
+                              onClick={(e) => { e.stopPropagation(); setEditProveedor(p) }}
+                            >
+                              <IconPencil size={16} />
+                            </ActionIcon>
+                            <ActionIcon
+                              variant="subtle"
+                              color={p.archivado_en ? 'teal' : 'orange'}
+                              aria-label={p.archivado_en ? 'Restaurar' : 'Archivar'}
+                              onClick={(e) => { e.stopPropagation(); setArchivando(p) }}
+                            >
+                              {p.archivado_en ? <IconArchiveOff size={16} /> : <IconArchive size={16} />}
+                            </ActionIcon>
+                          </>
+                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>

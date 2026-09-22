@@ -10,6 +10,7 @@ import {
 } from '@mantine/core'
 import { IconTrash, IconPlus } from '@tabler/icons-react'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
+import { usePermisos } from '../hooks/usePermisos'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 
 export interface AsignarVehiculosDrawerProps {
@@ -39,6 +40,9 @@ export function AsignarVehiculosDrawer({
   actualLabel, assign, assignPending, assignError, unassign, unassignPendingId,
   onNavigateVehiculo,
 }: AsignarVehiculosDrawerProps) {
+  // Asignar o quitar unidades es tocar la poliza o el permiso, no darlo de
+  // alta: queda del lado de quien puede editar.
+  const { puedeEditar } = usePermisos()
   const [seleccion, setSeleccion] = useState<string[]>([])
 
   // Solo se piden los vehículos mientras el drawer está abierto.
@@ -79,6 +83,7 @@ export function AsignarVehiculosDrawer({
       ) : (
         <Stack gap="lg">
           {/* Agregar */}
+          {puedeEditar && (
           <div>
             <Text size="sm" fw={600} mb={4}>Agregar vehículos</Text>
             <Group align="flex-end" gap="sm" wrap="nowrap">
@@ -103,6 +108,7 @@ export function AsignarVehiculosDrawer({
             </Group>
             {assignError && <Alert color="red" mt="xs">{assignError}</Alert>}
           </div>
+          )}
 
           {/* Lista de asignados */}
           <div>
@@ -137,15 +143,17 @@ export function AsignarVehiculosDrawer({
                         <Table.Td>{v.serie}</Table.Td>
                         <Table.Td>{v.placas ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
                         <Table.Td onClick={(e) => e.stopPropagation()}>
-                          <Tooltip label="Quitar de la lista">
-                            <ActionIcon
-                              variant="subtle" color="red" size="sm"
-                              loading={unassignPendingId === v.id}
-                              onClick={() => unassign(v.id)}
-                            >
-                              <IconTrash size={14} />
-                            </ActionIcon>
-                          </Tooltip>
+                          {puedeEditar && (
+                            <Tooltip label="Quitar de la lista">
+                              <ActionIcon
+                                variant="subtle" color="red" size="sm"
+                                loading={unassignPendingId === v.id}
+                                onClick={() => unassign(v.id)}
+                              >
+                                <IconTrash size={14} />
+                              </ActionIcon>
+                            </Tooltip>
+                          )}
                         </Table.Td>
                       </Table.Tr>
                     ))}

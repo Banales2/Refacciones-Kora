@@ -29,6 +29,7 @@ import {
 } from '@tabler/icons-react'
 import type { Icon } from '@tabler/icons-react'
 import { useAuth } from '../hooks/useAuth'
+import { usePermisos } from '../hooks/usePermisos'
 import Dashboard from './Dashboard'
 import Piezas from '../pages/Piezas'
 import Inventario from '../pages/Inventario'
@@ -189,6 +190,7 @@ function NavItem({
 // en el padre sólo abre/cierra: navegar a ciegas a Proveedores era el problema.
 function CatalogosNavItem({
   description, icon: IconComponent, active, opened, onToggle, activeTab, onSelectTab,
+  tabs,
 }: {
   description:  string
   icon:         Icon
@@ -197,6 +199,7 @@ function CatalogosNavItem({
   onToggle:     () => void
   activeTab:    string | null
   onSelectTab:  (tab: string) => void
+  tabs:         typeof CATALOGOS_TABS
 }) {
   return (
     <Tooltip label={description} position="right" openDelay={500} withArrow>
@@ -211,7 +214,7 @@ function CatalogosNavItem({
         style={{ borderRadius: 6 }}
         styles={{ label: { fontSize: 13.5 } }}
       >
-        {CATALOGOS_TABS.map((tab) => (
+        {tabs.map((tab) => (
           <NavLink
             key={tab.value}
             label={tab.label}
@@ -251,11 +254,14 @@ function AvisoSinConexion() {
 
 export default function Layout() {
   const { user } = useAuth()
+  const { rol, esAdmin, puedeVerSeccion, puedeVerCatalogo, seccionInicial } = usePermisos()
   const qc = useQueryClient()
   const fetching = useIsFetching()
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure()
   const [desktopCollapsed, setDesktopCollapsed] = useState(false)
-  const [section, setSection] = useState<Section>('dashboard')
+  // App.tsx no monta Layout hasta tener el usuario de /.auth/me, así que el rol
+  // ya se conoce en el primer render y la sección de arranque no parpadea.
+  const [section, setSection] = useState<Section>(seccionInicial)
   const [pendingVehiculo, setPendingVehiculo] = useState<VehiculoRow | null>(null)
   const [pendingVehiculoId, setPendingVehiculoId] = useState<number | null>(null)
   const [pendingPiezaId, setPendingPiezaId] = useState<number | null>(null)
@@ -282,8 +288,8 @@ export default function Layout() {
   // poder regresar al mismo modelo (no solo a la lista de modelos).
   const [modeloDetalleId, setModeloDetalleId] = useState<number | null>(null)
 
-  const rol = user?.userRoles.find((r) => !['anonymous', 'authenticated'].includes(r))
-  const esAdmin = user?.userRoles.includes('admin') ?? false
+  // El submenú de Catálogos, recortado a lo que este rol puede abrir.
+  const catalogosTabs = CATALOGOS_TABS.filter((t) => puedeVerCatalogo(t.value))
 
   function navigate(s: Section) {
     if (s !== 'vehiculos') {
@@ -455,38 +461,50 @@ export default function Layout() {
       <AppShell.Navbar p="xs">
         <AppShell.Section grow component={ScrollArea} type="auto" offsetScrollbars>
           <Stack gap={1} pb="xs">
-            <NavItem
-              label="Dashboard" description="Resumen de la flota" icon={IconLayoutDashboard}
-              active={section === 'dashboard'} onClick={() => navigate('dashboard')}
-            />
+            {puedeVerSeccion('dashboard') && (
+              <NavItem
+                label="Dashboard" description="Resumen de la flota" icon={IconLayoutDashboard}
+                active={section === 'dashboard'} onClick={() => navigate('dashboard')}
+              />
+            )}
 
-            {NAV_GROUPS.map((grupo) => (
-              <Stack key={grupo.titulo} gap={1} mt="sm">
-                <GrupoTitulo>{grupo.titulo}</GrupoTitulo>
-                {grupo.items.map((item) => (
-                  item.section === 'sitios' ? (
-                    <CatalogosNavItem
-                      key={item.section}
-                      description={item.description}
-                      icon={item.icon}
-                      active={section === 'sitios'}
-                      opened={catalogosOpen}
-                      onToggle={() => setCatalogosOpen((o) => !o)}
-                      activeTab={section === 'sitios' ? sitiosTab : null}
-                      onSelectTab={navigateToCatalogo}
-                    />
-                  ) : (
-                    <NavItem
-                      key={item.section}
-                      label={item.label} description={item.description} icon={item.icon}
-                      active={section === item.section}
-                      disabled={item.pendiente}
-                      onClick={() => navigate(item.section)}
-                    />
-                  )
-                ))}
-              </Stack>
-            ))}
+            {/* El menú se recorta por rol y los grupos que se quedan sin
+                entradas desaparecen: al practicante no tiene sentido enseñarle
+                el título "Flota" sobre un hueco. La protección real sigue
+                siendo el 403 de la API; esto sólo evita ofrecer pantallas que
+                acabarían en error. */}
+            {NAV_GROUPS.map((grupo) => {
+              const items = grupo.items.filter((i) => puedeVerSeccion(i.section))
+              if (items.length === 0) return null
+              return (
+                <Stack key={grupo.titulo} gap={1} mt="sm">
+                  <GrupoTitulo>{grupo.titulo}</GrupoTitulo>
+                  {items.map((item) => (
+                    item.section === 'sitios' ? (
+                      <CatalogosNavItem
+                        key={item.section}
+                        description={item.description}
+                        icon={item.icon}
+                        active={section === 'sitios'}
+                        opened={catalogosOpen}
+                        onToggle={() => setCatalogosOpen((o) => !o)}
+                        activeTab={section === 'sitios' ? sitiosTab : null}
+                        onSelectTab={navigateToCatalogo}
+                        tabs={catalogosTabs}
+                      />
+                    ) : (
+                      <NavItem
+                        key={item.section}
+                        label={item.label} description={item.description} icon={item.icon}
+                        active={section === item.section}
+                        disabled={item.pendiente}
+                        onClick={() => navigate(item.section)}
+                      />
+                    )
+                  ))}
+                </Stack>
+              )
+            })}
 
             {/* La bitácora enseña la actividad de todo el mundo, con su correo.
                 Ocultarla no es la protección real —esa la da el allowedRoles de
@@ -519,23 +537,32 @@ export default function Layout() {
       {/* ── Contenido ── */}
       <AppShell.Main>
         <AvisoSinConexion />
-        {section === 'dashboard' && (
+        {/* Red por si algo lleva a una sección que este rol no puede abrir:
+            los saltos entre pantallas (al detalle de un vehículo, de una pieza)
+            llaman a setSection sin pasar por el menú. */}
+        {!puedeVerSeccion(section) && (
+          <Alert color="gray" variant="light" title="Sin acceso">
+            Tu rol no tiene acceso a {SECTION_LABELS[section]}. Elige otra
+            sección en el menú.
+          </Alert>
+        )}
+        {section === 'dashboard' && puedeVerSeccion('dashboard') && (
           <Dashboard
             onNavigateVehiculo={navigateToVehiculoId}
             onNavigatePieza={navigateToPiezaId}
             onNavigateDocumento={navigateToDocumento}
           />
         )}
-        {section === 'piezas'    && <Piezas initialPiezaId={pendingPiezaId ?? undefined} />}
-        {section === 'inventario' && <Inventario />}
-        {section === 'modelos'   && (
+        {section === 'piezas'    && puedeVerSeccion('piezas') && <Piezas initialPiezaId={pendingPiezaId ?? undefined} />}
+        {section === 'inventario' && puedeVerSeccion('inventario') && <Inventario />}
+        {section === 'modelos'   && puedeVerSeccion('modelos') && (
           <Modelos
             onNavigateVehiculo={navigateToVehiculo}
             openId={modeloDetalleId}
             onOpenIdChange={setModeloDetalleId}
           />
         )}
-        {section === 'vehiculos' && (
+        {section === 'vehiculos' && puedeVerSeccion('vehiculos') && (
           <Vehiculos
             initialVehiculo={pendingVehiculo ?? undefined}
             initialVehiculoId={pendingVehiculoId ?? undefined}
@@ -544,9 +571,9 @@ export default function Layout() {
             onNavigateModelo={navigateToModeloId}
           />
         )}
-        {section === 'incidencias' && <Incidencias onNavigateVehiculo={navigateToVehiculoId} />}
-        {section === 'chequeos' && <ChequeoPatio />}
-        {section === 'sitios'    && (
+        {section === 'incidencias' && puedeVerSeccion('incidencias') && <Incidencias onNavigateVehiculo={navigateToVehiculoId} />}
+        {section === 'chequeos' && puedeVerSeccion('chequeos') && <ChequeoPatio />}
+        {section === 'sitios'    && puedeVerSeccion('sitios') && (
           <SitiosYRutas
             onNavigateVehiculo={navigateToVehiculo}
             activeTab={sitiosTab}
@@ -559,10 +586,10 @@ export default function Layout() {
             onPermisoDrawerChange={setPermisoDrawerId}
           />
         )}
-        {section === 'mantenimientos' && (
+        {section === 'mantenimientos' && puedeVerSeccion('mantenimientos') && (
           <Mantenimientos onNavigateVehiculo={navigateToVehiculoId} />
         )}
-        {section === 'vales'      && (
+        {section === 'vales'      && puedeVerSeccion('vales') && (
           <ValesGasolina
             onNavigateVehiculo={navigateToVehiculoId}
             onNavigateConductor={navigateToConductor}
@@ -570,9 +597,9 @@ export default function Layout() {
         )}
         {section === 'registros' && esAdmin && <RegistrosCambios />}
         {section === 'errores-captura' && esAdmin && <ErroresCaptura />}
-        {section === 'facturas'  && <Facturas />}
-        {section === 'facturas-gasolina' && <FacturasGasolina />}
-        {section === 'facturas-mantenimientos' && <FacturasMantenimientos />}
+        {section === 'facturas'  && puedeVerSeccion('facturas') && <Facturas />}
+        {section === 'facturas-gasolina' && puedeVerSeccion('facturas-gasolina') && <FacturasGasolina />}
+        {section === 'facturas-mantenimientos' && puedeVerSeccion('facturas-mantenimientos') && <FacturasMantenimientos />}
       </AppShell.Main>
     </AppShell>
   )
