@@ -446,7 +446,7 @@ export default function ChequeoDiarioForm({
                           color="gray"
                           onClick={() => responder(item.clave, { resultado: 'na' })}
                         >
-                          No se pudo
+                          Sin revisar
                         </Button>
                       </SimpleGrid>
                     )}
@@ -455,7 +455,7 @@ export default function ChequeoDiarioForm({
                         convierte once preguntas en once cuadros de texto. */}
                     {(r.resultado === 'falla' || r.resultado === 'na') && (
                       <TextInput
-                        placeholder={r.resultado === 'falla' ? '¿Qué tiene?' : '¿Por qué no se pudo?'}
+                        placeholder={r.resultado === 'falla' ? '¿Qué tiene?' : '¿Por qué no se revisó?'}
                         maxLength={200}
                         value={r.nota}
                         onChange={(e) => responder(item.clave, {

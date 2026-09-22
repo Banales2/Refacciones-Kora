@@ -203,7 +203,7 @@ function ResumenChequeo({ chequeo, onRevisar }: { chequeo: Chequeo; onRevisar: (
 
         {noSePudo.length > 0 && (
           <Text size="xs" c="dimmed">
-            No se pudo revisar: {noSePudo.map((n) => labelDeItem(n.clave)).join(', ')}
+            Sin revisar: {noSePudo.map((n) => labelDeItem(n.clave)).join(', ')}
           </Text>
         )}
       </Stack>
