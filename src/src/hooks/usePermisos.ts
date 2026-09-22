@@ -48,6 +48,13 @@ export interface Permisos {
   puedeVerSeccion: (s: Seccion) => boolean
   /** Si la pestaña de Catálogos debe aparecer. */
   puedeVerCatalogo: (tab: string) => boolean
+  /**
+   * Si puede abrir la ficha de un proveedor. Son dos pestañas —precios
+   * pactados y cuánto se le ha pagado— y las dos son información comercial que
+   * el practicante no tiene por qué ver; sus endpoints se la niegan igual, así
+   * que el renglón no se hace clicable en vez de abrir una ficha rota.
+   */
+  puedeVerFichaProveedor: boolean
   /** Sección de arranque: la primera que la persona sí puede abrir. */
   seccionInicial: Seccion
 }
@@ -70,6 +77,7 @@ export function usePermisos(): Permisos {
       return true
     },
     puedeVerCatalogo: (tab) => !esPracticante || CATALOGOS_PRACTICANTE.includes(tab),
+    puedeVerFichaProveedor: !esPracticante,
     seccionInicial: esPracticante ? 'piezas' : 'dashboard',
   }
 }

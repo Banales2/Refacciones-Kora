@@ -25,7 +25,7 @@ import ArchivarCatalogoModal from '../components/ArchivarCatalogoModal'
 
 export default function Proveedores() {
   // El practicante da de alta proveedores pero no los corrige.
-  const { puedeEditar } = usePermisos()
+  const { puedeEditar, puedeVerFichaProveedor } = usePermisos()
   const [createOpen, setCreateOpen]       = useState(false)
   const [editProveedor, setEditProveedor] = useState<Proveedor | null>(null)
   // Proveedor que se está por archivar (o restaurar). No hay borrado.
@@ -80,9 +80,11 @@ export default function Proveedores() {
         <Group justify="space-between" wrap="wrap" gap="sm">
           {proveedores.length > 0 ? (
             <Text size="sm" c="dimmed">
-              {q === ''
-                ? `${proveedores.length} proveedores · abre uno para ver y comparar sus precios`
-                : `${visibles.length} de ${proveedores.length} proveedores`}
+              {q !== ''
+                ? `${visibles.length} de ${proveedores.length} proveedores`
+                : puedeVerFichaProveedor
+                  ? `${proveedores.length} proveedores · abre uno para ver y comparar sus precios`
+                  : `${proveedores.length} proveedores`}
             </Text>
           ) : <span />}
           <TextInput
@@ -95,15 +97,19 @@ export default function Proveedores() {
           <Group gap="xs">
             {/* La comparativa vive junto al catálogo de proveedores y no dentro
                 de uno: comparar precios es justamente mirar a todos a la vez. */}
-            <Tooltip label="Cada refacción con lo que cuesta con cada proveedor: lo que cotizan y lo que ya se les paga">
-              <Button
-                size="xs" variant="default"
-                leftSection={<IconScale size={14} />}
-                onClick={() => setComparativaAbierta(true)}
-              >
-                Comparativa de precios
-              </Button>
-            </Tooltip>
+            {/* Misma razón que la ficha: la comparativa es precio pactado, y
+                eso no es de quien sólo da de alta el proveedor. */}
+            {puedeVerFichaProveedor && (
+              <Tooltip label="Cada refacción con lo que cuesta con cada proveedor: lo que cotizan y lo que ya se les paga">
+                <Button
+                  size="xs" variant="default"
+                  leftSection={<IconScale size={14} />}
+                  onClick={() => setComparativaAbierta(true)}
+                >
+                  Comparativa de precios
+                </Button>
+              </Tooltip>
+            )}
             {(archivados > 0 || verArchivados) && (
               <Switch
                 size="sm" label={`Ver archivados (${archivados})`}
@@ -150,8 +156,8 @@ export default function Proveedores() {
                 {visibles.map((p) => (
                   <Table.Tr
                     key={p.id}
-                    onClick={() => setDetalleId(p.id)}
-                    style={{ cursor: 'pointer' }}
+                    onClick={puedeVerFichaProveedor ? () => setDetalleId(p.id) : undefined}
+                    style={{ cursor: puedeVerFichaProveedor ? 'pointer' : 'default' }}
                   >
                     <Table.Td fw={500} c={p.archivado_en ? 'dimmed' : undefined}>
                       <Group gap={6} wrap="nowrap">
