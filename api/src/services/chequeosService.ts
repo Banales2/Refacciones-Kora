@@ -104,12 +104,13 @@ function incidenciaDe(
 /**
  * Qué hacer con la lectura capturada.
  *
- * Solo avanza el odómetro de los tipos que lo llevan (espeja TABLA_KM). Si la
- * lectura es menor que la que ya traía la unidad, NO se descarta en silencio
- * como hace `avanzarKilometraje`: se guarda igual y se avisa, porque un
- * odómetro que baja es exactamente la señal de que está desconectado o lo
- * alteraron. Es el mismo trato que `costosService` le da al odómetro que
- * retrocede entre dos cargas de combustible.
+ * Solo toca el odómetro de los tipos que lo llevan (espeja TABLA_KM). A
+ * diferencia del resto de los módulos, aquí la lectura manda aunque sea MENOR
+ * que la registrada: el chequeo lo hace alguien parado frente al tablero, así
+ * que su lectura es la buena (odómetro reemplazado, corregido, o un km de más
+ * cargado antes por error) y la unidad la adopta. Se avisa igual, porque un
+ * odómetro que baja también puede ser la señal de que está desconectado o lo
+ * alteraron, y eso lo revisa una persona.
  */
 async function aplicarLectura(
   vehiculoId: number, tipo: TipoVehiculo, lectura: number | null, kmActual: number | null
@@ -118,17 +119,18 @@ async function aplicarLectura(
   if (lectura == null) return { avisos }
 
   const etiqueta = lecturaDe(tipo)?.label ?? 'La lectura'
-
-  if (kmActual != null && lectura < kmActual) {
-    avisos.push(
-      `${etiqueta} capturado (${lectura.toLocaleString('es-MX')}) es menor que el registrado ` +
-      `(${kmActual.toLocaleString('es-MX')}). Se guardó la lectura, pero el odómetro de la unidad no bajó.`
-    )
-    return { avisos }
-  }
+  const retrocede = kmActual != null && lectura < kmActual
 
   if (TIPOS_CON_ODOMETRO.includes(tipo)) {
-    await vehiculosRepo.avanzarKilometraje(vehiculoId, lectura)
+    if (retrocede) await vehiculosRepo.fijarKilometraje(vehiculoId, lectura)
+    else           await vehiculosRepo.avanzarKilometraje(vehiculoId, lectura)
+  }
+
+  if (retrocede) {
+    avisos.push(
+      `${etiqueta} capturado (${lectura.toLocaleString('es-MX')}) es menor que el registrado ` +
+      `(${kmActual!.toLocaleString('es-MX')}). Se tomó como bueno y el odómetro de la unidad bajó a esa lectura.`
+    )
   }
   return { avisos }
 }

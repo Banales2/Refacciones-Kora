@@ -141,10 +141,20 @@ cargue gasolina.
 hay ninguna (ver `TABLA_KM` en `vehiculosRepo.ts`). Un nombre que solo es cierto
 para tres de los cinco tipos miente en los otros dos.
 
-**Si la lectura es menor que la registrada, se guarda igual y se avisa.** No se
-descarta en silencio como hace `avanzarKilometraje`: un odómetro que baja es
-exactamente la señal de que está desconectado o lo alteraron. Es el mismo trato
-que `costosService` le da al odómetro que retrocede entre dos cargas.
+**Si la lectura es menor que la registrada, la unidad la adopta igual y se
+avisa.** El chequeo lo hace alguien parado frente al tablero, así que su lectura
+manda sobre lo que trae el sistema —odómetro reemplazado, corregido, o un km de
+más cargado antes por error— y por eso usa `fijarKilometraje` y no
+`avanzarKilometraje`, que solo sube y es lo que siguen usando mantenimientos y
+recargas. El aviso queda porque un odómetro que baja también puede ser la señal
+de que está desconectado o lo alteraron, igual que el trato que `costosService`
+le da al odómetro que retrocede entre dos cargas.
+
+Antes de mandarlo, el formulario pregunta (`ConfirmarLecturaMenor`). No es el
+mismo caso que `ConfirmarAvanceKm`, que avisa de un odómetro que sube: la causa
+más común de una lectura menor no es un odómetro reemplazado, es un dígito mal
+tecleado con el teléfono en la mano, y aquí el dato sí retrocede. Un aviso
+después de guardar no deshace nada.
 
 `lectura_anterior` es la columna que hace posible todo esto: guarda el odómetro
 que traía la unidad en el momento del chequeo. Sin ella, el retroceso se pierde

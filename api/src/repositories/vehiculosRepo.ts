@@ -299,15 +299,10 @@ const TABLA_KM: Partial<Record<TipoVehiculo, string>> = {
 // Solo avanza: un mantenimiento capturado con fecha vieja (o con un km menor al
 // ya registrado) no debe hacer retroceder el odómetro.
 export async function avanzarKilometraje(vehiculoId: number, km: number): Promise<void> {
-  const pool = await getPool()
-
-  const r = await pool.request()
-    .input('vid', sql.Int, vehiculoId)
-    .query('SELECT tipo FROM vehiculos WHERE id=@vid')
-  const tipo: TipoVehiculo | undefined = r.recordset[0]?.tipo
-  const tabla = tipo ? TABLA_KM[tipo] : undefined
+  const tabla = await tablaKmDe(vehiculoId)
   if (!tabla) return
 
+  const pool = await getPool()
   await pool.request()
     .input('vid', sql.Int, vehiculoId)
     .input('km',  sql.Int, km)
@@ -315,6 +310,31 @@ export async function avanzarKilometraje(vehiculoId: number, km: number): Promis
       UPDATE ${tabla} SET kilometraje=@km
       WHERE vehiculo_id=@vid AND (kilometraje IS NULL OR @km > kilometraje)
     `)
+}
+
+// Deja el odómetro exactamente en la lectura dada, aunque sea menor que la
+// registrada. Es lo que necesita el chequeo de flotilla: ahí la lectura la toma
+// alguien parado frente al tablero, así que manda sobre lo que traía el sistema
+// (odómetro reemplazado, corregido o cargado mal antes). El resto de los
+// módulos siguen usando `avanzarKilometraje`, que solo sube.
+export async function fijarKilometraje(vehiculoId: number, km: number): Promise<void> {
+  const tabla = await tablaKmDe(vehiculoId)
+  if (!tabla) return
+
+  const pool = await getPool()
+  await pool.request()
+    .input('vid', sql.Int, vehiculoId)
+    .input('km',  sql.Int, km)
+    .query(`UPDATE ${tabla} SET kilometraje=@km WHERE vehiculo_id=@vid`)
+}
+
+async function tablaKmDe(vehiculoId: number): Promise<string | undefined> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('vid', sql.Int, vehiculoId)
+    .query('SELECT tipo FROM vehiculos WHERE id=@vid')
+  const tipo: TipoVehiculo | undefined = r.recordset[0]?.tipo
+  return tipo ? TABLA_KM[tipo] : undefined
 }
 
 export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdate): Promise<VehiculoRow | null> {

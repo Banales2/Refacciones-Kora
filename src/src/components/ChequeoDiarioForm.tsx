@@ -25,6 +25,7 @@ import {
   IconAlertTriangle, IconCheck, IconGauge, IconUserOff,
 } from '@tabler/icons-react'
 import { SelectCatalogo } from './SelectCatalogo'
+import ConfirmarLecturaMenor from './ConfirmarLecturaMenor'
 import {
   useFormularioChequeo, useCreateChequeo, useUpdateChequeo, useDeclarantes,
   type ItemPayload, type ChequeoPayload,
@@ -107,6 +108,10 @@ export default function ChequeoDiarioForm({
     return inicial
   })
   const [error, setError] = useState<string | null>(null)
+  // Una lectura menor que la registrada sí baja el odómetro de la unidad (el
+  // chequeo es el único módulo donde retrocede), así que se pregunta antes de
+  // mandarla. `true` = ya se confirmó y el próximo guardar pasa de largo.
+  const [confirmarBaja, setConfirmarBaja] = useState(false)
 
   const {
     options: declaranteOptions, setSearch: setDeclaranteSearch,
@@ -187,10 +192,26 @@ export default function ChequeoDiarioForm({
     }
   }
 
+  // `lectura_anterior` del chequeo: contra esto se compara y esto es lo que
+  // baja. Solo aplica a las unidades con odómetro —en las demás `kilometraje`
+  // llega null— y solo si la lectura cambió, que es cuando la API la aplica.
+  const kmVehiculo = formulario.kilometraje
+  const lecturaBaja =
+    kmVehiculo != null && lectura !== '' && lectura < kmVehiculo &&
+    lectura !== (existente?.lectura ?? null)
+
   const guardar = async () => {
     const problema = validar()
     if (problema) { setError(problema); return }
     setError(null)
+    if (lecturaBaja) { setConfirmarBaja(true); return }
+    await enviar()
+  }
+
+  // El modal se queda abierto mientras guarda —su botón es el que trae el
+  // spinner— y se cierra al terminar, pase lo que pase: si algo falló, el error
+  // se lee en el formulario, no detrás de un modal.
+  const enviar = async () => {
     try {
       const payload = armarPayload()
       const res = existente
@@ -199,6 +220,8 @@ export default function ChequeoDiarioForm({
       onListo(res.avisos ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar el chequeo')
+    } finally {
+      setConfirmarBaja(false)
     }
   }
 
@@ -476,6 +499,16 @@ export default function ChequeoDiarioForm({
           {existente ? 'Guardar corrección' : 'Guardar chequeo'}
         </Button>
       </Group>
+
+      <ConfirmarLecturaMenor
+        opened={confirmarBaja}
+        etiqueta={formulario.lectura?.label ?? 'Odómetro'}
+        kmVehiculo={kmVehiculo ?? 0}
+        kmNuevo={lectura === '' ? 0 : lectura}
+        isPending={guardando}
+        onCancel={() => setConfirmarBaja(false)}
+        onConfirm={enviar}
+      />
     </Stack>
   )
 }
