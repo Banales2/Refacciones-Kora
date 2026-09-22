@@ -1,7 +1,7 @@
 // El catálogo de preguntas del chequeo diario.
 //
 // Vive en código y no en una tabla porque cambia cuando cambia el formulario,
-// no cuando lo decide un usuario: una pantalla de mantenimiento para dieciséis
+// no cuando lo decide un usuario: una pantalla de mantenimiento para diecisiete
 // renglones sería mantenimiento puro sin nadie que la use. La base no se
 // ensucia porque el servicio valida contra esta constante y rechaza con 400
 // cualquier clave que no esté aquí (ver `validarClaves`).
