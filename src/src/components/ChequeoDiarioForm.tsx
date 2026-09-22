@@ -31,7 +31,7 @@ import {
   type ItemPayload, type ChequeoPayload,
 } from '../hooks/useChequeos'
 import type { Resultado, Severidad } from '../lib/chequeoItems'
-import { NIVELES_TANQUE } from '../lib/chequeoItems'
+import { NIVELES_TANQUE, nivelEsFalla } from '../lib/chequeoItems'
 import { TEXTO_LIBRE, TEXTO_SIMPLE, limpiarTextoLibre, limpiarTextoSimple, KM_MAX } from '../lib/validaciones'
 import { useOpcionesTexto } from '../hooks/useOpcionesTexto'
 
@@ -48,6 +48,16 @@ const VACIA: Respuesta = { resultado: null, valor: null, nota: '', severidad: 'm
 // A nivel de módulo: `useOpcionesTexto` la trae en las dependencias de su
 // useMemo, y una función nueva en cada render recalcularía las opciones cada vez.
 const etiquetaNueva = (v: string) => `+ Usar "${v}"`
+
+/**
+ * Qué se le pide a la nota cuando un renglón sale mal. Casi siempre es "qué
+ * tiene"; en los cuartos es además QUÉ FOCO lleva la unidad, que es el dato con
+ * el que se compra el repuesto y el único momento en que alguien lo tiene a la
+ * vista. Preguntarlo después es ir a buscar la unidad otra vez.
+ */
+function pistaFalla(clave: string): string {
+  return clave === 'luces_cuartos' ? '¿Cuál falla y qué foco lleva?' : '¿Qué tiene?'
+}
 
 export default function ChequeoDiarioForm({
   vehiculoId, onListo, onCancel, ubicacionFija,
@@ -107,6 +117,10 @@ export default function ChequeoDiarioForm({
     }
     return inicial
   })
+  // El comentario final: la cabecera del chequeo ya tenía la columna (`nota`),
+  // pero nadie la llenaba. Es lo que no cabe en ningún renglón —"la dejaron con
+  // la caja sucia", "le falta la calcomanía"— y por eso es libre y opcional.
+  const [notaFinal, setNotaFinal] = useState(existente?.nota ?? '')
   const [error, setError] = useState<string | null>(null)
   // Una lectura menor que la registrada sí baja el odómetro de la unidad (el
   // chequeo es el único módulo donde retrocede), así que se pregunta antes de
@@ -139,7 +153,15 @@ export default function ChequeoDiarioForm({
 
   // Ninguna pregunta se puede quedar sin contestar: un chequeo a medias no dice
   // si la unidad está bien o si a quien revisó se le acabó la prisa.
-  const faltantes = formulario.items.filter((i) => !respuestas[i.clave]?.resultado)
+  // Una `fraccion` sin nivel tampoco está contestada, aunque traiga resultado:
+  // así queda un chequeo capturado antes de que la pregunta llevara escala, y
+  // sin esto el formulario lo daría por completo y la API lo rechazaría al
+  // guardar. 'na' es la excepción: ahí no hay nivel que capturar.
+  const faltantes = formulario.items.filter((i) => {
+    const r = respuestas[i.clave]
+    if (!r?.resultado) return true
+    return i.captura === 'fraccion' && r.resultado !== 'na' && !r.valor
+  })
 
   const validar = (): string | null => {
     if (paso1 === null) return 'Contesta primero si el chofer reporta algo'
@@ -159,10 +181,16 @@ export default function ChequeoDiarioForm({
     }
     // Una falla sin nota obliga a quien la atienda a adivinar qué vio el que
     // revisó, y para entonces la unidad ya se fue.
+    // No se le pide a una `fraccion`: ahí la falla es el nivel, y el nivel ya
+    // quedó capturado. Pedir además que lo escriban es pedir que tecleen "1/4".
     const sinNota = formulario.items.find(
-      (i) => respuestas[i.clave]?.resultado === 'falla' && !respuestas[i.clave]?.nota.trim()
+      (i) => i.captura !== 'fraccion' &&
+        respuestas[i.clave]?.resultado === 'falla' && !respuestas[i.clave]?.nota.trim()
     )
     if (sinNota) return `Describe qué pasa con: ${sinNota.label}`
+    if (notaFinal.trim() && !TEXTO_LIBRE.test(notaFinal.trim())) {
+      return 'El comentario final tiene caracteres no permitidos'
+    }
     return null
   }
 
@@ -188,6 +216,7 @@ export default function ChequeoDiarioForm({
       declarado_por: sinChofer ? null : declaradoPor.trim(),
       declaracion:   hayNovedad ? declaracion.trim() : null,
       lectura:       lectura === '' ? null : lectura,
+      nota:          notaFinal.trim() || null,
       // Solo cuando toca: mandarla siempre la volvería ruido y la API dejaría
       // de frenar la lectura mal tecleada, que es justo para lo que está.
       ...(confirmarBajaLectura ? { confirmar_baja: true } : {}),
@@ -382,20 +411,48 @@ export default function ChequeoDiarioForm({
                       <Stack gap={4}>
                         {/* Rejilla y no SegmentedControl: en un teléfono los
                             cuatro segmentos dan ~85px cada uno, donde "Lleno"
-                            entra completo y el toque no se falla. */}
+                            entra completo y el toque no se falla.
+
+                            El nivel que el catálogo marca como bajo se pinta
+                            en rojo —y al elegirlo el renglón queda en falla—
+                            para que quien revisa vea ahí mismo que eso abre
+                            un pendiente. El servidor lo decide otra vez con el
+                            mismo umbral: esto es para los ojos, no la regla. */}
                         <SimpleGrid cols={4} spacing={4}>
-                          {NIVELES_TANQUE.map((nivel) => (
-                            <Button
-                              key={nivel.valor}
-                              size="md"
-                              px={4}
-                              variant={r.valor === nivel.valor ? 'filled' : 'default'}
-                              onClick={() => responder(item.clave, { resultado: 'ok', valor: nivel.valor })}
-                            >
-                              {nivel.label}
-                            </Button>
-                          ))}
+                          {NIVELES_TANQUE.map((nivel) => {
+                            const bajo = nivelEsFalla(item, nivel.valor)
+                            return (
+                              <Button
+                                key={nivel.valor}
+                                size="md"
+                                px={4}
+                                color={bajo ? 'red' : undefined}
+                                variant={r.valor === nivel.valor ? 'filled' : 'default'}
+                                onClick={() => responder(item.clave, {
+                                  resultado: bajo ? 'falla' : 'ok',
+                                  valor: nivel.valor,
+                                  ...(bajo ? {} : { nota: '' }),
+                                })}
+                              >
+                                {nivel.label}
+                              </Button>
+                            )
+                          })}
                         </SimpleGrid>
+
+                        {/* La misma salida que tienen las preguntas de sí o no:
+                            el cofre trabado o el depósito opaco existen, y sin
+                            esto la única forma de avanzar sería inventar un
+                            nivel. Va debajo y en gris para que no compita con
+                            los cuatro de arriba, que son el caso normal. */}
+                        <Button
+                          size="sm"
+                          variant={r.resultado === 'na' ? 'filled' : 'subtle'}
+                          color="gray"
+                          onClick={() => responder(item.clave, { resultado: 'na', valor: null })}
+                        >
+                          Sin revisar
+                        </Button>
                         {/* Un chequeo capturado en octavos que hoy se corrige:
                             ninguno de los cuatro botones lo representa, y sin
                             esto parecería que el nivel nunca se contestó. Se
@@ -452,10 +509,11 @@ export default function ChequeoDiarioForm({
                     )}
 
                     {/* La nota aparece solo cuando hace falta: pedirla siempre
-                        convierte diecisiete preguntas en diecisiete cuadros de texto. */}
+                        convierte veinticuatro preguntas en veinticuatro cuadros
+                        de texto. */}
                     {(r.resultado === 'falla' || r.resultado === 'na') && (
                       <TextInput
-                        placeholder={r.resultado === 'falla' ? '¿Qué tiene?' : '¿Por qué no se revisó?'}
+                        placeholder={r.resultado === 'falla' ? pistaFalla(item.clave) : '¿Por qué no se revisó?'}
                         maxLength={200}
                         value={r.nota}
                         onChange={(e) => responder(item.clave, {
@@ -484,6 +542,23 @@ export default function ChequeoDiarioForm({
               )
             })}
           </Stack>
+
+          {/* Al final y opcional: lo que no cabe en ningún renglón. Va después
+              del checklist a propósito —quien recorre ya vio la unidad entera y
+              recién entonces sabe si hay algo que contar—, y sin asterisco
+              porque un comentario obligatorio se llena con "ok" y deja de
+              servir. Llena `chequeos.nota`, que existía desde la migración 038
+              y hasta ahora no la escribía nadie. */}
+          <Textarea
+            label="Comentario final"
+            description="Opcional: algo de la unidad que no encaje en las preguntas de arriba"
+            placeholder="La dejaron con la caja sucia…"
+            autosize
+            minRows={2}
+            maxLength={255}
+            value={notaFinal}
+            onChange={(e) => setNotaFinal(limpiarTextoLibre(e.currentTarget.value, 255))}
+          />
         </>
       )}
 

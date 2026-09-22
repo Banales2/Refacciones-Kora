@@ -12,7 +12,7 @@ import * as sucursalesRepo from '../repositories/sucursalesRepo'
 import { fechaMexico } from '../shared/fechaMexico'
 import { NotFoundError, ValidationError, ConflictError } from '../shared/errors'
 import {
-  itemsDe, lecturaDe, itemPorClave, TIPOS_CON_ODOMETRO, type ItemChequeo,
+  itemsDe, lecturaDe, itemPorClave, nivelEsFalla, TIPOS_CON_ODOMETRO, type ItemChequeo,
 } from '../shared/chequeoItems'
 import { revisarDeclaracion } from '../schemas/chequeoSchema'
 import type {
@@ -62,7 +62,7 @@ function prepararItems(
     }
     vistas.add(item.clave)
 
-    if (def.captura === 'fraccion' && item.resultado === 'ok' && !item.valor) {
+    if (def.captura === 'fraccion' && item.resultado !== 'na' && !item.valor) {
       throw new ValidationError(`Falta el nivel en "${def.label}"`)
     }
     if (def.captura === 'ok_falla' && item.valor) {
@@ -75,18 +75,29 @@ function prepararItems(
       throw new ValidationError(`"${def.label}" no lleva gravedad: la fija el sistema`)
     }
 
+    // En una `fraccion` el resultado NO es del formulario: lo dice el nivel.
+    // Si el catálogo marca que 1/4 de líquido de frenos es falla, es falla
+    // aunque el teléfono mande 'ok' —una PWA vieja no conoce el umbral— y no
+    // es falla aunque mande 'falla'. Lo único que el formulario decide es 'na',
+    // que es lo que el nivel no puede decir: que no se pudo mirar.
+    const resultado: ItemAGuardar['resultado'] =
+      def.captura === 'fraccion' && item.resultado !== 'na'
+        ? (nivelEsFalla(def, item.valor ?? null) ? 'falla' : 'ok')
+        : (item.resultado as ItemAGuardar['resultado'])
+
     return {
       clave:     def.clave,
-      resultado: item.resultado as ItemAGuardar['resultado'],
+      resultado,
       valor:     item.valor ?? null,
       nota:      item.nota ?? null,
-      incidencia: incidenciaDe(def, item, declaracion),
+      incidencia: incidenciaDe(def, { ...item, resultado }, declaracion),
     }
   })
 }
 
 // Qué incidencia abre este renglón. Solo las fallas, y solo las preguntas que
-// el catálogo marca: un tanque a la mitad no es un pendiente.
+// el catálogo marca: un TANQUE a la mitad no es un pendiente, pero un depósito
+// de frenos en un cuarto sí (ver `umbralFalla`).
 function incidenciaDe(
   def: ItemChequeo, item: ChequeoItemIn, ctx: { fecha: string }
 ): ItemAGuardar['incidencia'] {
@@ -95,7 +106,14 @@ function incidenciaDe(
     // `incidencias.nombre` topa en 40 caracteres y algunas preguntas son más
     // largas; el texto completo va en la descripción.
     nombre:      def.label.slice(0, 40),
-    descripcion: item.nota ?? `Detectado en el chequeo del ${ctx.fecha}`,
+    // El nivel va en la descripción cuando lo hay: sin él, una incidencia de
+    // "Nivel de líquido de frenos" no dice si estaba en un cuarto o seco, y esa
+    // es toda la información que trae.
+    descripcion: item.nota ?? (
+      item.valor
+        ? `En ${item.valor} al chequeo del ${ctx.fecha}`
+        : `Detectado en el chequeo del ${ctx.fecha}`
+    ),
     categoria:   def.incidencia.categoria,
     severidad:   item.severidad ?? def.incidencia.severidad,
   }

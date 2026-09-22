@@ -92,6 +92,39 @@ interpretar —la luz prende o no prende— y el catálogo ya dice de antemano q
 severidad le toca a cada falla. La única excepción es `golpes`, donde se
 pregunta: un rayón y un cuarto hundido no son lo mismo y se ven distinto.
 
+## Los niveles se capturan en cuartos, no con sí o no
+
+Aceite de motor, aceite hidráulico, dirección, frenos, anticongelante y
+limpiaparabrisas usan la misma escala que el combustible (1/4, 1/2, 3/4,
+Lleno). "Está bien" no distingue un depósito lleno de uno a la mitad, y esa es
+justo la diferencia entre una unidad que aguanta la semana y una que hay que
+rellenar antes de que alguien se quede tirado.
+
+A diferencia del combustible, estos sí abren incidencia: `umbralFalla` en el
+catálogo dice en qué nivel un renglón cuenta como falla (hoy `1/4` en los seis).
+Un tanque de gasolina en un cuarto solo quiere decir que hay que cargar; un
+depósito de frenos en un cuarto es un pendiente.
+
+**El resultado de una `fraccion` lo decide el servidor, no el formulario**
+(`prepararItems`): si el nivel está en el umbral, el renglón es falla aunque el
+teléfono mande `ok` —una PWA vieja no conoce el umbral— y no lo es aunque mande
+`falla`. Lo único que el formulario decide es `na`, que es lo que el nivel no
+puede decir: que no se pudo mirar. Por eso las fracciones también llevan su
+botón de "Sin revisar".
+
+## El comentario final
+
+`chequeos.nota` existe desde la migración 038, pero hasta ahora el formulario no
+la escribía. Es el cuadro libre del final: lo que no encaja en ningún renglón
+—"la dejaron con la caja sucia"— y que si no tiene dónde ir, acaba metido a
+empujones en la nota de una pregunta que no era.
+
+Va al final y es opcional a propósito. Al final porque quien recorre recién
+entonces vio la unidad entera; opcional porque un comentario obligatorio se
+llena con "ok" en el segundo chequeo del día y deja de significar nada. No se
+confunde con `declaracion`, que es del chofer y sí desata una revisión: esta es
+de quien recorre y no desata nada.
+
 ## Por qué renglones y no una columna por pregunta
 
 La lista de preguntas va a crecer —empezó en tres y nació con once—, y una
@@ -116,7 +149,7 @@ tienen llave foránea contra nada: el servicio valida contra la constante y
 rechaza con 400 cualquier clave que no reconozca, así que la base no se ensucia.
 
 Una tabla de catálogo aquí solo agregaría una pantalla de mantenimiento para
-diecisiete renglones que cambian cuando cambia el formulario, no cuando lo decide un
+veinticuatro renglones que cambian cuando cambia el formulario, no cuando lo decide un
 usuario.
 
 Un ítem que se deja de preguntar se marca `retirado` en vez de borrarse: los
