@@ -68,6 +68,12 @@ export interface ChequeoPayload {
   sin_chofer:    boolean
   declaracion?:  string | null
   lectura?:      number | null
+  /**
+   * Acuse de que la lectura baja el odómetro de la unidad y aun así se sostiene.
+   * Sin él la API rechaza la lectura menor; lo manda el formulario después de
+   * que quien captura lo confirma (`ConfirmarLecturaMenor`).
+   */
+  confirmar_baja?: boolean
   fecha?:        string
   hora?:         string | null
   nota?:         string | null

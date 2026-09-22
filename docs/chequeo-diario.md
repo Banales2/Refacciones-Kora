@@ -156,6 +156,15 @@ más común de una lectura menor no es un odómetro reemplazado, es un dígito m
 tecleado con el teléfono en la mano, y aquí el dato sí retrocede. Un aviso
 después de guardar no deshace nada.
 
+Y la pregunta no se puede saltar: el alta y la corrección rechazan la lectura
+menor si no viene `confirmar_baja: true` (`validarBaja` en el servicio). La
+bandera no se guarda en ningún lado —no es un dato del chequeo, es un acuse— y
+va ausente por omisión, que es lo correcto: un cliente viejo o alguien pegando
+directo al endpoint cae del lado seguro. La validación corre ANTES de insertar,
+porque una vez guardado el chequeo el odómetro ya se movió. Al corregir solo se
+exige si la lectura de verdad cambia: arreglar la ubicación de un chequeo cuya
+lectura ya estaba abajo no vuelve a preguntar.
+
 `lectura_anterior` es la columna que hace posible todo esto: guarda el odómetro
 que traía la unidad en el momento del chequeo. Sin ella, el retroceso se pierde
 en cuanto el vehículo vuelve a avanzar, y los kilómetros por día habría que

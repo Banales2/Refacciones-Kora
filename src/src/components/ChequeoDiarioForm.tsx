@@ -166,7 +166,7 @@ export default function ChequeoDiarioForm({
     return null
   }
 
-  const armarPayload = (): ChequeoPayload => {
+  const armarPayload = (confirmarBajaLectura: boolean): ChequeoPayload => {
     const items: ItemPayload[] = formulario.items.map((i) => {
       const r = respuestas[i.clave]
       return {
@@ -188,6 +188,9 @@ export default function ChequeoDiarioForm({
       declarado_por: sinChofer ? null : declaradoPor.trim(),
       declaracion:   hayNovedad ? declaracion.trim() : null,
       lectura:       lectura === '' ? null : lectura,
+      // Solo cuando toca: mandarla siempre la volvería ruido y la API dejaría
+      // de frenar la lectura mal tecleada, que es justo para lo que está.
+      ...(confirmarBajaLectura ? { confirmar_baja: true } : {}),
       items,
     }
   }
@@ -213,7 +216,7 @@ export default function ChequeoDiarioForm({
   // se lee en el formulario, no detrás de un modal.
   const enviar = async () => {
     try {
-      const payload = armarPayload()
+      const payload = armarPayload(lecturaBaja)
       const res = existente
         ? await actualizar.mutateAsync({ id: existente.id, payload })
         : await crear.mutateAsync(payload)

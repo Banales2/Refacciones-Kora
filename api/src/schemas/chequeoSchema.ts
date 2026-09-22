@@ -64,6 +64,12 @@ export const ChequeoBase = {
     .min(0, 'No puede ser negativa')
     .max(KM_MAX, 'Lectura fuera de rango')
     .nullable().optional(),
+  // Acuse de que quien captura vio que la lectura BAJA el odómetro de la unidad
+  // y aun así la sostiene. No se guarda en ningún lado: solo abre la puerta en
+  // el servicio. Ausente = no confirmado, que es lo correcto para un cliente
+  // viejo o para quien pega directo al endpoint —el caso que hay que frenar es
+  // el dígito mal tecleado, y ese llega sin bandera—.
+  confirmar_baja: z.boolean().default(false),
   // La pone el servidor cuando no viene (fecha de México). Se admite del
   // cliente para poder capturar el chequeo de ayer que se quedó en papel.
   fecha: z.string().date().optional(),

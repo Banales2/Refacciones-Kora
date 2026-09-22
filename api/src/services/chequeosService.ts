@@ -256,6 +256,7 @@ export async function create(
 
   const items = prepararItems(vehiculo.tipo, data.items, { fecha })
   validarLectura(vehiculo.tipo, data.lectura ?? null)
+  validarBaja(vehiculo.tipo, data.lectura ?? null, vehiculo.kilometraje, data.confirmar_baja)
 
   const chequeo = await repo.create({
     vehiculo_id:   vehiculoId,
@@ -306,6 +307,29 @@ function validarLectura(tipo: TipoVehiculo, lectura: number | null) {
   }
 }
 
+/**
+ * Una lectura menor que la registrada hace RETROCEDER el odómetro de la unidad
+ * (ver `aplicarLectura`), y de ese dato cuelga la proyección de preventivos por
+ * kilómetro. La causa más común no es un odómetro reemplazado: es un dígito mal
+ * tecleado con el teléfono en la mano. Por eso no pasa sin un `confirmar_baja`
+ * explícito, y se frena ANTES de guardar nada: un aviso después del alta no
+ * deshace el chequeo ni el odómetro que ya se movió.
+ *
+ * El formulario lo pregunta (`ConfirmarLecturaMenor`); esto es lo que hace que
+ * la pregunta no se pueda saltar.
+ */
+function validarBaja(
+  tipo: TipoVehiculo, lectura: number | null, kmActual: number | null, confirmada: boolean
+) {
+  if (lectura == null || kmActual == null || lectura >= kmActual || confirmada) return
+  const etiqueta = lecturaDe(tipo)?.label ?? 'La lectura'
+  throw new ValidationError(
+    `${etiqueta} capturado (${lectura.toLocaleString('es-MX')}) es menor que el registrado ` +
+    `(${kmActual.toLocaleString('es-MX')}) y haría bajar el odómetro de la unidad. ` +
+    `Revisa la lectura, o vuelve a enviarla confirmando la baja.`
+  )
+}
+
 export async function update(
   id: number, data: ChequeoUpdate, revisadoPor: string
 ): Promise<ResultadoChequeo> {
@@ -319,7 +343,15 @@ export async function update(
     ? prepararItems(vehiculo.tipo, data.items, { fecha: actual.fecha })
     : undefined
 
-  if (data.lectura !== undefined) validarLectura(vehiculo.tipo, data.lectura ?? null)
+  if (data.lectura !== undefined) {
+    validarLectura(vehiculo.tipo, data.lectura ?? null)
+    // Solo si de verdad cambia: corregir la ubicación de un chequeo cuya lectura
+    // ya estaba abajo no vuelve a preguntar, porque esa corrección no mueve el
+    // odómetro (es la misma condición con la que se llama a `aplicarLectura`).
+    if (data.lectura !== actual.lectura) {
+      validarBaja(vehiculo.tipo, data.lectura ?? null, vehiculo.kilometraje, data.confirmar_baja)
+    }
+  }
 
   // El estado de la declaración se arma mezclando lo guardado con lo que viene,
   // y se juzga entero: un payload parcial no se puede validar solo (mandar solo
