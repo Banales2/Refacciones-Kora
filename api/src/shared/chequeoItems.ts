@@ -1,7 +1,7 @@
 // El catálogo de preguntas del chequeo diario.
 //
 // Vive en código y no en una tabla porque cambia cuando cambia el formulario,
-// no cuando lo decide un usuario: una pantalla de mantenimiento para once
+// no cuando lo decide un usuario: una pantalla de mantenimiento para dieciséis
 // renglones sería mantenimiento puro sin nadie que la use. La base no se
 // ensucia porque el servicio valida contra esta constante y rechaza con 400
 // cualquier clave que no esté aquí (ver `validarClaves`).
@@ -120,11 +120,42 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     tipos: TODOS,
     incidencia: { severidad: 'moderada', categoria: 'Fugas' },
   },
+  // Las luces, los papeles y los accesorios se preguntan uno por uno y no en un
+  // renglón que enumera tres o cuatro cosas. Un renglón así solo se puede
+  // contestar "no" entero: quien revisa ve el stop fundido y marca falla, y la
+  // incidencia que sale dice "Faros, direccionales, stops y reversa", sin decir
+  // cuál. Peor todavía, obliga a marcar mal la unidad completa por una pieza, y
+  // eso empuja a dejarlo en "sí" y anotarlo en la nota, que es donde nadie lo
+  // busca. Separados, cada falla nombra la pieza y abre su propia incidencia.
+  //
+  // Los renglones viejos siguen abajo marcados `retirado`: salen de la captura,
+  // no de la historia.
   {
-    clave: 'luces',
-    label: 'Faros, direccionales, stops y reversa',
+    clave: 'luces_faros',
+    label: 'Faros funcionando',
+    captura: 'ok_falla',
+    tipos: TIPOS_CON_CABINA,
+    incidencia: { severidad: 'moderada', categoria: 'Luces' },
+  },
+  {
+    clave: 'luces_direccionales',
+    label: 'Direccionales funcionando',
     captura: 'ok_falla',
     tipos: TODOS,
+    incidencia: { severidad: 'moderada', categoria: 'Luces' },
+  },
+  {
+    clave: 'luces_stops',
+    label: 'Stops funcionando',
+    captura: 'ok_falla',
+    tipos: TODOS,
+    incidencia: { severidad: 'moderada', categoria: 'Luces' },
+  },
+  {
+    clave: 'luces_reversa',
+    label: 'Reversa funcionando',
+    captura: 'ok_falla',
+    tipos: TIPOS_CON_CABINA,
     incidencia: { severidad: 'moderada', categoria: 'Luces' },
   },
   {
@@ -135,15 +166,43 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     incidencia: { severidad: 'superficial', categoria: 'Carrocería' },
   },
   {
-    clave: 'documentacion',
-    label: 'Tarjeta, póliza y permiso a bordo',
+    clave: 'doc_tarjeta',
+    label: 'Tarjeta de circulación a bordo',
     captura: 'ok_falla',
     tipos: TIPOS_CON_PAPELES,
     incidencia: { severidad: 'superficial', categoria: 'Documentación' },
   },
   {
-    clave: 'accesorios',
-    label: 'Extintor, llanta de refacción y herramienta',
+    clave: 'doc_poliza',
+    label: 'Póliza del seguro a bordo',
+    captura: 'ok_falla',
+    tipos: TIPOS_CON_PAPELES,
+    incidencia: { severidad: 'superficial', categoria: 'Documentación' },
+  },
+  {
+    clave: 'doc_permiso',
+    label: 'Permiso a bordo',
+    captura: 'ok_falla',
+    tipos: TIPOS_CON_PAPELES,
+    incidencia: { severidad: 'superficial', categoria: 'Documentación' },
+  },
+  {
+    clave: 'acc_extintor',
+    label: 'Extintor a bordo',
+    captura: 'ok_falla',
+    tipos: TODOS,
+    incidencia: { severidad: 'superficial', categoria: 'Accesorios' },
+  },
+  {
+    clave: 'acc_llanta_refaccion',
+    label: 'Llanta de refacción a bordo',
+    captura: 'ok_falla',
+    tipos: TODOS,
+    incidencia: { severidad: 'superficial', categoria: 'Accesorios' },
+  },
+  {
+    clave: 'acc_herramienta',
+    label: 'Herramienta a bordo',
     captura: 'ok_falla',
     tipos: TODOS,
     incidencia: { severidad: 'superficial', categoria: 'Accesorios' },
@@ -154,6 +213,35 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'ok_falla',
     tipos: ['caja_trailer'],
     incidencia: { severidad: 'moderada', categoria: 'Carrocería' },
+  },
+
+  // ─── Retirados ────────────────────────────────────────────────────────────
+  // Ya no se preguntan: cada uno se abrió en los renglones de arriba. Siguen
+  // aquí para que el historial pueda nombrarlos, que es lo único que se les
+  // pide (ver `itemPorClave`).
+  {
+    clave: 'luces',
+    label: 'Faros, direccionales, stops y reversa',
+    captura: 'ok_falla',
+    tipos: TODOS,
+    incidencia: { severidad: 'moderada', categoria: 'Luces' },
+    retirado: true,
+  },
+  {
+    clave: 'documentacion',
+    label: 'Tarjeta, póliza y permiso a bordo',
+    captura: 'ok_falla',
+    tipos: TIPOS_CON_PAPELES,
+    incidencia: { severidad: 'superficial', categoria: 'Documentación' },
+    retirado: true,
+  },
+  {
+    clave: 'accesorios',
+    label: 'Extintor, llanta de refacción y herramienta',
+    captura: 'ok_falla',
+    tipos: TODOS,
+    incidencia: { severidad: 'superficial', categoria: 'Accesorios' },
+    retirado: true,
   },
 ]
 

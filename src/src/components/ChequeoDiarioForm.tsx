@@ -452,7 +452,7 @@ export default function ChequeoDiarioForm({
                     )}
 
                     {/* La nota aparece solo cuando hace falta: pedirla siempre
-                        convierte once preguntas en once cuadros de texto. */}
+                        convierte dieciséis preguntas en dieciséis cuadros de texto. */}
                     {(r.resultado === 'falla' || r.resultado === 'na') && (
                       <TextInput
                         placeholder={r.resultado === 'falla' ? '¿Qué tiene?' : '¿Por qué no se revisó?'}

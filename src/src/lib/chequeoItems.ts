@@ -27,11 +27,24 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
   { clave: 'llantas_estado', label: 'Ninguna llanta baja ni con desgaste desparejo',    captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Llantas' } },
   { clave: 'golpes',         label: 'Sin golpes nuevos',                                captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Carrocería', preguntarSeveridad: true } },
   { clave: 'fugas',          label: 'Sin manchas debajo de la unidad',                  captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Fugas' } },
-  { clave: 'luces',          label: 'Faros, direccionales, stops y reversa',            captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
+  { clave: 'luces_faros',        label: 'Faros funcionando',          captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
+  { clave: 'luces_direccionales', label: 'Direccionales funcionando',  captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
+  { clave: 'luces_stops',        label: 'Stops funcionando',          captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
+  { clave: 'luces_reversa',      label: 'Reversa funcionando',        captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
   { clave: 'parabrisas',     label: 'Parabrisas sin estrellar y espejos completos',     captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'superficial', categoria: 'Carrocería' } },
-  { clave: 'documentacion',  label: 'Tarjeta, póliza y permiso a bordo',                captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'caja_trailer', 'utilitario'], incidencia: { severidad: 'superficial', categoria: 'Documentación' } },
-  { clave: 'accesorios',     label: 'Extintor, llanta de refacción y herramienta',      captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' } },
+  { clave: 'doc_tarjeta',    label: 'Tarjeta de circulación a bordo',                  captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'caja_trailer', 'utilitario'], incidencia: { severidad: 'superficial', categoria: 'Documentación' } },
+  { clave: 'doc_poliza',     label: 'Póliza del seguro a bordo',                       captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'caja_trailer', 'utilitario'], incidencia: { severidad: 'superficial', categoria: 'Documentación' } },
+  { clave: 'doc_permiso',    label: 'Permiso a bordo',                                 captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'caja_trailer', 'utilitario'], incidencia: { severidad: 'superficial', categoria: 'Documentación' } },
+  { clave: 'acc_extintor',         label: 'Extintor a bordo',            captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' } },
+  { clave: 'acc_llanta_refaccion', label: 'Llanta de refacción a bordo', captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' } },
+  { clave: 'acc_herramienta',      label: 'Herramienta a bordo',         captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' } },
   { clave: 'sellos',         label: 'Puertas cierran y sellos puestos',                 captura: 'ok_falla', tipos: ['caja_trailer'], incidencia: { severidad: 'moderada', categoria: 'Carrocería' } },
+
+  // Retirados: cada uno se abrió en varios renglones. Siguen aquí solo para
+  // ponerle nombre a un chequeo viejo en el historial.
+  { clave: 'luces',          label: 'Faros, direccionales, stops y reversa',            captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' }, retirado: true },
+  { clave: 'documentacion',  label: 'Tarjeta, póliza y permiso a bordo',                captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'caja_trailer', 'utilitario'], incidencia: { severidad: 'superficial', categoria: 'Documentación' }, retirado: true },
+  { clave: 'accesorios',     label: 'Extintor, llanta de refacción y herramienta',      captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' }, retirado: true },
 ]
 
 /**

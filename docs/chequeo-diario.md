@@ -116,7 +116,7 @@ tienen llave foránea contra nada: el servicio valida contra la constante y
 rechaza con 400 cualquier clave que no reconozca, así que la base no se ensucia.
 
 Una tabla de catálogo aquí solo agregaría una pantalla de mantenimiento para
-once renglones que cambian cuando cambia el formulario, no cuando lo decide un
+dieciséis renglones que cambian cuando cambia el formulario, no cuando lo decide un
 usuario.
 
 Un ítem que se deja de preguntar se marca `retirado` en vez de borrarse: los
