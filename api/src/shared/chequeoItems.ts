@@ -20,7 +20,13 @@ export const RESULTADOS: Resultado[] = ['ok', 'falla', 'na']
 
 export interface ItemChequeo {
   clave: string
-  /** Lo que se le pregunta a quien revisa, redactado para que "sí" sea lo bueno. */
+  /**
+   * Lo que se le pregunta a quien revisa. Una pregunta literal —"¿Los faros
+   * funcionan?"— y no un enunciado que haya que traducir a sí o no; y siempre
+   * con el "sí" del lado bueno, para que la respuesta buena sea la misma en
+   * todos los renglones. Los de `fraccion` no llevan signos: ahí no se contesta
+   * sí o no, se toca un nivel.
+   */
   label: string
   /**
    * Cómo se contesta:
@@ -40,7 +46,19 @@ export interface ItemChequeo {
    * puede pedir que además gradúe. La excepción es `golpes`, donde sí se
    * pregunta: un rayón y un cuarto hundido no son lo mismo y se ven distinto.
    */
-  incidencia: { severidad: Severidad; categoria: string; preguntarSeveridad?: true } | null
+  incidencia: {
+    severidad: Severidad
+    categoria: string
+    preguntarSeveridad?: true
+    /**
+     * Cómo se llama el pendiente que abre esta falla. Va aparte del `label`
+     * porque no son lo mismo: el label es lo que se le pregunta a quien revisa
+     * ("¿Los faros funcionan?") y el nombre es lo que lee después quien tiene
+     * que arreglarlo ("Faros fundidos"). Una pregunta en la lista de pendientes
+     * no dice qué hay que hacer. Tope de 40, como la columna.
+     */
+    nombre?: string
+  } | null
   /**
    * Solo para `fraccion`: el nivel en el que ya cuenta como falla, y por debajo
    * del cual también. Un tanque de combustible a 1/4 no es un pendiente —se
@@ -134,7 +152,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
   },
   {
     clave: 'combustible',
-    label: 'Nivel de combustible al recibir',
+    label: 'Combustible al recibir',
     captura: 'fraccion',
     tipos: TIPOS_CON_TANQUE,
     incidencia: null,
@@ -156,79 +174,79 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
   // se le puede pedir que además gradúe.
   {
     clave: 'nivel_aceite_motor',
-    label: 'Nivel de aceite de motor',
+    label: 'Aceite de motor',
     captura: 'fraccion',
     tipos: TIPOS_CON_MOTOR,
-    incidencia: { severidad: 'grave', categoria: 'Niveles' },
+    incidencia: { severidad: 'grave', categoria: 'Niveles', nombre: 'Aceite de motor bajo' },
     umbralFalla: '1/4',
   },
   {
     clave: 'nivel_aceite_hidraulico',
-    label: 'Nivel de aceite hidráulico',
+    label: 'Aceite hidráulico',
     captura: 'fraccion',
     tipos: TIPOS_CON_HIDRAULICO,
-    incidencia: { severidad: 'moderada', categoria: 'Niveles' },
+    incidencia: { severidad: 'moderada', categoria: 'Niveles', nombre: 'Aceite hidráulico bajo' },
     umbralFalla: '1/4',
   },
   {
     clave: 'nivel_liquido_direccion',
-    label: 'Nivel de líquido de dirección hidráulica',
+    label: 'Líquido de dirección hidráulica',
     captura: 'fraccion',
     tipos: TIPOS_CON_MOTOR,
-    incidencia: { severidad: 'moderada', categoria: 'Niveles' },
+    incidencia: { severidad: 'moderada', categoria: 'Niveles', nombre: 'Líquido de dirección bajo' },
     umbralFalla: '1/4',
   },
   {
     clave: 'nivel_liquido_frenos',
-    label: 'Nivel de líquido de frenos',
+    label: 'Líquido de frenos',
     captura: 'fraccion',
     tipos: TIPOS_CON_MOTOR,
-    incidencia: { severidad: 'grave', categoria: 'Niveles' },
+    incidencia: { severidad: 'grave', categoria: 'Niveles', nombre: 'Líquido de frenos bajo' },
     umbralFalla: '1/4',
   },
   {
     clave: 'nivel_anticongelante',
-    label: 'Nivel de anticongelante',
+    label: 'Anticongelante',
     captura: 'fraccion',
     tipos: TIPOS_CON_MOTOR,
-    incidencia: { severidad: 'grave', categoria: 'Niveles' },
+    incidencia: { severidad: 'grave', categoria: 'Niveles', nombre: 'Anticongelante bajo' },
     umbralFalla: '1/4',
   },
   {
     clave: 'nivel_limpiaparabrisas',
-    label: 'Nivel de limpiaparabrisas',
+    label: 'Líquido limpiaparabrisas',
     captura: 'fraccion',
     tipos: TIPOS_CON_MOTOR,
-    incidencia: { severidad: 'superficial', categoria: 'Niveles' },
+    incidencia: { severidad: 'superficial', categoria: 'Niveles', nombre: 'Líquido limpiaparabrisas bajo' },
     umbralFalla: '1/4',
   },
   {
     clave: 'llantas_marca',
-    label: 'La marca de las llantas coincide con lo registrado',
+    label: '¿La marca de las llantas es la registrada?',
     captura: 'ok_falla',
     tipos: TODOS,
-    incidencia: { severidad: 'moderada', categoria: 'Llantas' },
+    incidencia: { severidad: 'moderada', categoria: 'Llantas', nombre: 'Llantas de otra marca' },
   },
   {
     clave: 'llantas_estado',
-    label: 'Ninguna llanta baja ni con desgaste desparejo',
+    label: '¿Las llantas están bien?',
     captura: 'ok_falla',
     tipos: TODOS,
-    incidencia: { severidad: 'moderada', categoria: 'Llantas' },
+    incidencia: { severidad: 'moderada', categoria: 'Llantas', nombre: 'Llantas en mal estado' },
   },
   {
     clave: 'golpes',
-    label: 'Sin golpes nuevos',
+    label: '¿Está sin golpes nuevos?',
     captura: 'ok_falla',
     tipos: TODOS,
-    incidencia: { severidad: 'moderada', categoria: 'Carrocería', preguntarSeveridad: true },
+    incidencia: { severidad: 'moderada', categoria: 'Carrocería', preguntarSeveridad: true, nombre: 'Golpe nuevo' },
   },
   {
     clave: 'fugas',
-    label: 'Sin manchas debajo de la unidad',
+    label: '¿Está sin manchas debajo?',
     captura: 'ok_falla',
     tipos: TODOS,
-    incidencia: { severidad: 'moderada', categoria: 'Fugas' },
+    incidencia: { severidad: 'moderada', categoria: 'Fugas', nombre: 'Manchas debajo de la unidad' },
   },
   // Cada pregunta es UNA cosa. Ni las luces, ni los papeles, ni los accesorios,
   // ni la cabina, ni la caja se preguntan en un renglón que enumera varias. Un renglón así solo se puede
@@ -242,31 +260,31 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
   // no de la historia.
   {
     clave: 'luces_faros',
-    label: 'Faros funcionando',
+    label: '¿Los faros funcionan?',
     captura: 'ok_falla',
     tipos: TIPOS_CON_CABINA,
-    incidencia: { severidad: 'moderada', categoria: 'Luces' },
+    incidencia: { severidad: 'moderada', categoria: 'Luces', nombre: 'Faros fundidos' },
   },
   {
     clave: 'luces_direccionales',
-    label: 'Direccionales funcionando',
+    label: '¿Las direccionales funcionan?',
     captura: 'ok_falla',
     tipos: TODOS,
-    incidencia: { severidad: 'moderada', categoria: 'Luces' },
+    incidencia: { severidad: 'moderada', categoria: 'Luces', nombre: 'Direccionales fundidas' },
   },
   {
     clave: 'luces_stops',
-    label: 'Stops funcionando',
+    label: '¿Los stops funcionan?',
     captura: 'ok_falla',
     tipos: TODOS,
-    incidencia: { severidad: 'moderada', categoria: 'Luces' },
+    incidencia: { severidad: 'moderada', categoria: 'Luces', nombre: 'Stops fundidos' },
   },
   {
     clave: 'luces_reversa',
-    label: 'Reversa funcionando',
+    label: '¿La reversa funciona?',
     captura: 'ok_falla',
     tipos: TIPOS_CON_CABINA,
-    incidencia: { severidad: 'moderada', categoria: 'Luces' },
+    incidencia: { severidad: 'moderada', categoria: 'Luces', nombre: 'Luz de reversa fundida' },
   },
   {
     // Los cuartos van a todos, caja de tráiler incluida: es la única luz que
@@ -277,80 +295,80 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     // anotarlo es el único en que alguien tiene el foco a la vista. Ver el
     // placeholder de la nota en `ChequeoDiarioForm`.
     clave: 'luces_cuartos',
-    label: 'Cuartos funcionando',
+    label: '¿Los cuartos funcionan?',
     captura: 'ok_falla',
     tipos: TODOS,
-    incidencia: { severidad: 'moderada', categoria: 'Luces' },
+    incidencia: { severidad: 'moderada', categoria: 'Luces', nombre: 'Cuartos fundidos' },
   },
   {
     clave: 'cab_parabrisas',
-    label: 'Parabrisas sin estrellar',
+    label: '¿El parabrisas está sin estrellar?',
     captura: 'ok_falla',
     tipos: TIPOS_CON_CABINA,
-    incidencia: { severidad: 'superficial', categoria: 'Carrocería' },
+    incidencia: { severidad: 'superficial', categoria: 'Carrocería', nombre: 'Parabrisas estrellado' },
   },
   {
     clave: 'cab_espejos',
-    label: 'Espejos completos',
+    label: '¿Los espejos están completos?',
     captura: 'ok_falla',
     tipos: TIPOS_CON_CABINA,
-    incidencia: { severidad: 'superficial', categoria: 'Carrocería' },
+    incidencia: { severidad: 'superficial', categoria: 'Carrocería', nombre: 'Falta un espejo' },
   },
   {
     clave: 'doc_tarjeta',
-    label: 'Tarjeta de circulación a bordo',
+    label: '¿Trae la tarjeta de circulación?',
     captura: 'ok_falla',
     tipos: TIPOS_CON_PAPELES,
-    incidencia: { severidad: 'superficial', categoria: 'Documentación' },
+    incidencia: { severidad: 'superficial', categoria: 'Documentación', nombre: 'Sin tarjeta de circulación' },
   },
   {
     clave: 'doc_poliza',
-    label: 'Póliza del seguro a bordo',
+    label: '¿Trae la póliza del seguro?',
     captura: 'ok_falla',
     tipos: TIPOS_CON_PAPELES,
-    incidencia: { severidad: 'superficial', categoria: 'Documentación' },
+    incidencia: { severidad: 'superficial', categoria: 'Documentación', nombre: 'Sin póliza a bordo' },
   },
   {
     clave: 'doc_permiso',
-    label: 'Permiso a bordo',
+    label: '¿Trae el permiso?',
     captura: 'ok_falla',
     tipos: TIPOS_CON_PAPELES,
-    incidencia: { severidad: 'superficial', categoria: 'Documentación' },
+    incidencia: { severidad: 'superficial', categoria: 'Documentación', nombre: 'Sin permiso a bordo' },
   },
   {
     clave: 'acc_extintor',
-    label: 'Extintor a bordo',
+    label: '¿Trae extintor?',
     captura: 'ok_falla',
     tipos: TODOS,
-    incidencia: { severidad: 'superficial', categoria: 'Accesorios' },
+    incidencia: { severidad: 'superficial', categoria: 'Accesorios', nombre: 'Sin extintor' },
   },
   {
     clave: 'acc_llanta_refaccion',
-    label: 'Llanta de refacción a bordo',
+    label: '¿Trae llanta de refacción?',
     captura: 'ok_falla',
     tipos: TODOS,
-    incidencia: { severidad: 'superficial', categoria: 'Accesorios' },
+    incidencia: { severidad: 'superficial', categoria: 'Accesorios', nombre: 'Sin llanta de refacción' },
   },
   {
     clave: 'acc_herramienta',
-    label: 'Herramienta a bordo',
+    label: '¿Trae herramienta?',
     captura: 'ok_falla',
     tipos: TODOS,
-    incidencia: { severidad: 'superficial', categoria: 'Accesorios' },
+    incidencia: { severidad: 'superficial', categoria: 'Accesorios', nombre: 'Sin herramienta' },
   },
   {
     clave: 'caja_puertas',
-    label: 'Puertas cierran bien',
+    label: '¿Las puertas cierran bien?',
     captura: 'ok_falla',
     tipos: ['caja_trailer'],
-    incidencia: { severidad: 'moderada', categoria: 'Carrocería' },
+    incidencia: { severidad: 'moderada', categoria: 'Carrocería', nombre: 'Puertas que no cierran' },
   },
   {
     clave: 'caja_sellos',
-    label: 'Sellos puestos',
+    label: '¿Los sellos están puestos?',
     captura: 'ok_falla',
     tipos: ['caja_trailer'],
-    incidencia: { severidad: 'moderada', categoria: 'Carrocería' },
+    incidencia: { severidad: 'moderada', categoria: 'Carrocería', nombre: 'Sin sellos' },
   },
 
   // ─── Retirados ────────────────────────────────────────────────────────────

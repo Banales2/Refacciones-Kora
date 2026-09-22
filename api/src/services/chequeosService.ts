@@ -103,9 +103,10 @@ function incidenciaDe(
 ): ItemAGuardar['incidencia'] {
   if (item.resultado !== 'falla' || !def.incidencia) return null
   return {
-    // `incidencias.nombre` topa en 40 caracteres y algunas preguntas son más
-    // largas; el texto completo va en la descripción.
-    nombre:      def.label.slice(0, 40),
+    // El nombre del pendiente, no la pregunta: quien lo atiende lee "Faros
+    // fundidos", no "¿Los faros funcionan?". Si el catálogo no lo trae, cae al
+    // label, que topa en los 40 de la columna.
+    nombre:      (def.incidencia.nombre ?? def.label).slice(0, 40),
     // El nivel va en la descripción cuando lo hay: sin él, una incidencia de
     // "Nivel de líquido de frenos" no dice si estaba en un cuarto o seco, y esa
     // es toda la información que trae.

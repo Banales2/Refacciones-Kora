@@ -15,6 +15,8 @@ export interface ItemChequeo {
   label:   string
   captura: 'ok_falla' | 'lectura' | 'fraccion'
   tipos:   string[]
+  // `nombre` (cómo se llama el pendiente que abre la falla) vive solo en el
+  // catálogo del backend: es quien crea la incidencia, y aquí nunca se lee.
   incidencia: { severidad: Severidad; categoria: string; preguntarSeveridad?: true } | null
   /** Solo `fraccion`: el nivel en el que ya cuenta como falla, y por debajo. */
   umbralFalla?: string
@@ -24,32 +26,32 @@ export interface ItemChequeo {
 export const ITEMS_CHEQUEO: ItemChequeo[] = [
   { clave: 'lectura',        label: 'Odómetro',                                        captura: 'lectura',  tipos: ['camion', 'tractocamion', 'utilitario'], incidencia: null },
   { clave: 'lectura',        label: 'Horómetro',                                       captura: 'lectura',  tipos: ['montacargas'],                          incidencia: null },
-  { clave: 'combustible',    label: 'Nivel de combustible al recibir',                 captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: null },
-  { clave: 'nivel_aceite_motor',      label: 'Nivel de aceite de motor',                captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'grave', categoria: 'Niveles' }, umbralFalla: '1/4' },
-  { clave: 'nivel_aceite_hidraulico', label: 'Nivel de aceite hidráulico',              captura: 'fraccion', tipos: ['camion', 'tractocamion', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Niveles' }, umbralFalla: '1/4' },
-  { clave: 'nivel_liquido_direccion', label: 'Nivel de líquido de dirección hidráulica', captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Niveles' }, umbralFalla: '1/4' },
-  { clave: 'nivel_liquido_frenos',    label: 'Nivel de líquido de frenos',              captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'grave', categoria: 'Niveles' }, umbralFalla: '1/4' },
-  { clave: 'nivel_anticongelante',    label: 'Nivel de anticongelante',                 captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'grave', categoria: 'Niveles' }, umbralFalla: '1/4' },
-  { clave: 'nivel_limpiaparabrisas',  label: 'Nivel de limpiaparabrisas',               captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'superficial', categoria: 'Niveles' }, umbralFalla: '1/4' },
-  { clave: 'llantas_marca',  label: 'La marca de las llantas coincide con lo registrado', captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Llantas' } },
-  { clave: 'llantas_estado', label: 'Ninguna llanta baja ni con desgaste desparejo',    captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Llantas' } },
-  { clave: 'golpes',         label: 'Sin golpes nuevos',                                captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Carrocería', preguntarSeveridad: true } },
-  { clave: 'fugas',          label: 'Sin manchas debajo de la unidad',                  captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Fugas' } },
-  { clave: 'luces_faros',        label: 'Faros funcionando',          captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
-  { clave: 'luces_direccionales', label: 'Direccionales funcionando',  captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
-  { clave: 'luces_stops',        label: 'Stops funcionando',          captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
-  { clave: 'luces_reversa',      label: 'Reversa funcionando',        captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
-  { clave: 'luces_cuartos',      label: 'Cuartos funcionando',        captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
-  { clave: 'cab_parabrisas', label: 'Parabrisas sin estrellar',  captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'superficial', categoria: 'Carrocería' } },
-  { clave: 'cab_espejos',    label: 'Espejos completos',        captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'superficial', categoria: 'Carrocería' } },
-  { clave: 'doc_tarjeta',    label: 'Tarjeta de circulación a bordo',                  captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'caja_trailer', 'utilitario'], incidencia: { severidad: 'superficial', categoria: 'Documentación' } },
-  { clave: 'doc_poliza',     label: 'Póliza del seguro a bordo',                       captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'caja_trailer', 'utilitario'], incidencia: { severidad: 'superficial', categoria: 'Documentación' } },
-  { clave: 'doc_permiso',    label: 'Permiso a bordo',                                 captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'caja_trailer', 'utilitario'], incidencia: { severidad: 'superficial', categoria: 'Documentación' } },
-  { clave: 'acc_extintor',         label: 'Extintor a bordo',            captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' } },
-  { clave: 'acc_llanta_refaccion', label: 'Llanta de refacción a bordo', captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' } },
-  { clave: 'acc_herramienta',      label: 'Herramienta a bordo',         captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' } },
-  { clave: 'caja_puertas',   label: 'Puertas cierran bien',     captura: 'ok_falla', tipos: ['caja_trailer'], incidencia: { severidad: 'moderada', categoria: 'Carrocería' } },
-  { clave: 'caja_sellos',    label: 'Sellos puestos',           captura: 'ok_falla', tipos: ['caja_trailer'], incidencia: { severidad: 'moderada', categoria: 'Carrocería' } },
+  { clave: 'combustible',    label: 'Combustible al recibir',                 captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: null },
+  { clave: 'nivel_aceite_motor',      label: 'Aceite de motor',                captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'grave', categoria: 'Niveles' }, umbralFalla: '1/4' },
+  { clave: 'nivel_aceite_hidraulico', label: 'Aceite hidráulico',              captura: 'fraccion', tipos: ['camion', 'tractocamion', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Niveles' }, umbralFalla: '1/4' },
+  { clave: 'nivel_liquido_direccion', label: 'Líquido de dirección hidráulica', captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Niveles' }, umbralFalla: '1/4' },
+  { clave: 'nivel_liquido_frenos',    label: 'Líquido de frenos',              captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'grave', categoria: 'Niveles' }, umbralFalla: '1/4' },
+  { clave: 'nivel_anticongelante',    label: 'Anticongelante',                 captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'grave', categoria: 'Niveles' }, umbralFalla: '1/4' },
+  { clave: 'nivel_limpiaparabrisas',  label: 'Líquido limpiaparabrisas',               captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'superficial', categoria: 'Niveles' }, umbralFalla: '1/4' },
+  { clave: 'llantas_marca',  label: '¿La marca de las llantas es la registrada?', captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Llantas' } },
+  { clave: 'llantas_estado', label: '¿Las llantas están bien?',    captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Llantas' } },
+  { clave: 'golpes',         label: '¿Está sin golpes nuevos?',                                captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Carrocería', preguntarSeveridad: true } },
+  { clave: 'fugas',          label: '¿Está sin manchas debajo?',                  captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Fugas' } },
+  { clave: 'luces_faros',        label: '¿Los faros funcionan?',          captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
+  { clave: 'luces_direccionales', label: '¿Las direccionales funcionan?',  captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
+  { clave: 'luces_stops',        label: '¿Los stops funcionan?',          captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
+  { clave: 'luces_reversa',      label: '¿La reversa funciona?',        captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
+  { clave: 'luces_cuartos',      label: '¿Los cuartos funcionan?',        captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
+  { clave: 'cab_parabrisas', label: '¿El parabrisas está sin estrellar?',  captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'superficial', categoria: 'Carrocería' } },
+  { clave: 'cab_espejos',    label: '¿Los espejos están completos?',        captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'superficial', categoria: 'Carrocería' } },
+  { clave: 'doc_tarjeta',    label: '¿Trae la tarjeta de circulación?',                  captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'caja_trailer', 'utilitario'], incidencia: { severidad: 'superficial', categoria: 'Documentación' } },
+  { clave: 'doc_poliza',     label: '¿Trae la póliza del seguro?',                       captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'caja_trailer', 'utilitario'], incidencia: { severidad: 'superficial', categoria: 'Documentación' } },
+  { clave: 'doc_permiso',    label: '¿Trae el permiso?',                                 captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'caja_trailer', 'utilitario'], incidencia: { severidad: 'superficial', categoria: 'Documentación' } },
+  { clave: 'acc_extintor',         label: '¿Trae extintor?',            captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' } },
+  { clave: 'acc_llanta_refaccion', label: '¿Trae llanta de refacción?', captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' } },
+  { clave: 'acc_herramienta',      label: '¿Trae herramienta?',         captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' } },
+  { clave: 'caja_puertas',   label: '¿Las puertas cierran bien?',     captura: 'ok_falla', tipos: ['caja_trailer'], incidencia: { severidad: 'moderada', categoria: 'Carrocería' } },
+  { clave: 'caja_sellos',    label: '¿Los sellos están puestos?',           captura: 'ok_falla', tipos: ['caja_trailer'], incidencia: { severidad: 'moderada', categoria: 'Carrocería' } },
 
   // Retirados: cada uno se abrió en varios renglones. Siguen aquí solo para
   // ponerle nombre a un chequeo viejo en el historial.

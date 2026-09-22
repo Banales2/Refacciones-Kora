@@ -92,6 +92,20 @@ interpretar —la luz prende o no prende— y el catálogo ya dice de antemano q
 severidad le toca a cada falla. La única excepción es `golpes`, donde se
 pregunta: un rayón y un cuarto hundido no son lo mismo y se ven distinto.
 
+## La pregunta y el pendiente son dos textos
+
+`label` es lo que se le pregunta a quien revisa y es una pregunta literal:
+"¿Los faros funcionan?", no "Faros funcionando". Con el teléfono en la mano y
+treinta unidades por delante, un enunciado hay que traducirlo a sí o no en la
+cabeza, y en uno redactado en negativo la traducción se invierte. El "sí" va
+siempre del lado bueno, para que la respuesta buena sea la misma en todos.
+
+`incidencia.nombre` es cómo se llama el pendiente que abre esa falla: "Faros
+fundidos". Son textos distintos porque los leen personas distintas en momentos
+distintos —uno lo lee quien revisa, el otro quien tiene que arreglarlo— y una
+pregunta en la lista de pendientes no dice qué hay que hacer. Si el catálogo no
+trae nombre, se cae al label, recortado a los 40 de la columna.
+
 ## Los niveles se capturan en cuartos, no con sí o no
 
 Aceite de motor, aceite hidráulico, dirección, frenos, anticongelante y
