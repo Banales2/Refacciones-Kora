@@ -120,8 +120,8 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     tipos: TODOS,
     incidencia: { severidad: 'moderada', categoria: 'Fugas' },
   },
-  // Las luces, los papeles y los accesorios se preguntan uno por uno y no en un
-  // renglón que enumera tres o cuatro cosas. Un renglón así solo se puede
+  // Cada pregunta es UNA cosa. Ni las luces, ni los papeles, ni los accesorios,
+  // ni la cabina, ni la caja se preguntan en un renglón que enumera varias. Un renglón así solo se puede
   // contestar "no" entero: quien revisa ve el stop fundido y marca falla, y la
   // incidencia que sale dice "Faros, direccionales, stops y reversa", sin decir
   // cuál. Peor todavía, obliga a marcar mal la unidad completa por una pieza, y
@@ -159,8 +159,15 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     incidencia: { severidad: 'moderada', categoria: 'Luces' },
   },
   {
-    clave: 'parabrisas',
-    label: 'Parabrisas sin estrellar y espejos completos',
+    clave: 'cab_parabrisas',
+    label: 'Parabrisas sin estrellar',
+    captura: 'ok_falla',
+    tipos: TIPOS_CON_CABINA,
+    incidencia: { severidad: 'superficial', categoria: 'Carrocería' },
+  },
+  {
+    clave: 'cab_espejos',
+    label: 'Espejos completos',
     captura: 'ok_falla',
     tipos: TIPOS_CON_CABINA,
     incidencia: { severidad: 'superficial', categoria: 'Carrocería' },
@@ -208,8 +215,15 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     incidencia: { severidad: 'superficial', categoria: 'Accesorios' },
   },
   {
-    clave: 'sellos',
-    label: 'Puertas cierran y sellos puestos',
+    clave: 'caja_puertas',
+    label: 'Puertas cierran bien',
+    captura: 'ok_falla',
+    tipos: ['caja_trailer'],
+    incidencia: { severidad: 'moderada', categoria: 'Carrocería' },
+  },
+  {
+    clave: 'caja_sellos',
+    label: 'Sellos puestos',
     captura: 'ok_falla',
     tipos: ['caja_trailer'],
     incidencia: { severidad: 'moderada', categoria: 'Carrocería' },
@@ -241,6 +255,22 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'ok_falla',
     tipos: TODOS,
     incidencia: { severidad: 'superficial', categoria: 'Accesorios' },
+    retirado: true,
+  },
+  {
+    clave: 'parabrisas',
+    label: 'Parabrisas sin estrellar y espejos completos',
+    captura: 'ok_falla',
+    tipos: TIPOS_CON_CABINA,
+    incidencia: { severidad: 'superficial', categoria: 'Carrocería' },
+    retirado: true,
+  },
+  {
+    clave: 'sellos',
+    label: 'Puertas cierran y sellos puestos',
+    captura: 'ok_falla',
+    tipos: ['caja_trailer'],
+    incidencia: { severidad: 'moderada', categoria: 'Carrocería' },
     retirado: true,
   },
 ]
