@@ -25,18 +25,19 @@
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Card, Badge, Button, Progress, Modal, Alert, Loader,
-  Center, TextInput, Divider, ThemeIcon, ScrollArea,
+  Center, TextInput, Divider, ThemeIcon, ScrollArea, Tabs,
 } from '@mantine/core'
 import {
   IconClipboardCheck, IconCheck, IconSearch, IconPlus,
-  IconTruck, IconMessageReport,
+  IconTruck, IconMessageReport, IconListCheck,
 } from '@tabler/icons-react'
 import { SelectCatalogo } from '../components/SelectCatalogo'
 import ChequeoDiarioForm from '../components/ChequeoDiarioForm'
+import ReportesDelDia from '../components/ReportesDelDia'
 import { useSucursales } from '../hooks/useSucursales'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { useVehiculos } from '../hooks/useVehiculos'
-import { usePatio, type UnidadPatio } from '../hooks/useChequeos'
+import { usePatio, useResumenChequeos, type UnidadPatio } from '../hooks/useChequeos'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
 
 function Renglon({
@@ -106,6 +107,16 @@ export default function ChequeoPatio() {
   // recorre es una sola en todo el patio, el chofer es uno por unidad.
   const { data: usuario } = useUsuarioActual()
 
+  // Las dos mitades del día son dos pestañas y no dos pantallas: quien recorre
+  // termina con el teléfono en la mano y lo siguiente que hace es ver qué salió.
+  // Mandarlo a otra sección del menú para eso era perderlo a medio camino.
+  const [pestana, setPestana] = useState<string | null>('recorrido')
+
+  // Solo para el número de la pestaña. Es la misma consulta que ya usa el
+  // tablero, así que normalmente llega de la caché y no cuesta una llamada.
+  const resumen = useResumenChequeos()
+  const sinLeer = resumen.data?.data.por_revisar.length ?? 0
+
   const [abierta, setAbierta] = useState<UnidadPatio | null>(null)
   const [avisos, setAvisos] = useState<string[]>([])
   const [busqueda, setBusqueda] = useState('')
@@ -146,9 +157,9 @@ export default function ChequeoPatio() {
     // `chequeo-movil` sube la escala de Mantine en el teléfono (ver index.css):
     // esta pantalla se usa ahí casi siempre.
     <Stack gap="md" className="chequeo-movil">
-      {/* En el teléfono el selector baja y ocupa el ancho completo: a 390px, un
-          campo de 240px junto al título deja los dos apretados contra los
-          bordes. */}
+      {/* El encabezado es de la pantalla entera, no del recorrido: quien
+          recorre sigue siendo el mismo cuando pasa a ver lo que salió. El
+          selector de sucursal sí bajó a su pestaña, porque solo manda ahí. */}
       <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
         <Stack gap={2}>
           <Group gap="xs">
@@ -161,64 +172,92 @@ export default function ChequeoPatio() {
             </Text>
           )}
         </Stack>
-        <SelectCatalogo
-          label="Sucursal"
-          placeholder="¿Qué sucursal se recorre?"
-          nombre="sucursales"
-          estado={sucursales}
-          data={opcionesSucursal}
-          value={sucursalId != null ? String(sucursalId) : null}
-          onChange={(v) => { setSucursalId(v ? Number(v) : null); setAbierta(null) }}
-          w={{ base: '100%', sm: 240 }}
-        />
       </Group>
 
-      {sucursalId == null ? (
-        <Alert color="blue" variant="light">
-          Elige la sucursal que vas a recorrer para ver qué unidades le faltan hoy.
-        </Alert>
-      ) : isLoading ? (
-        <Center py="xl"><Loader /></Center>
-      ) : isError || !patio ? (
-        <Alert color="red" title="No se pudo cargar la flotilla">
-          <Button size="xs" variant="light" onClick={() => refetch()}>Reintentar</Button>
-        </Alert>
-      ) : (
-        <>
-          <Card withBorder radius="md" padding="md">
-            <Stack gap="xs">
-              <Group justify="space-between">
-                <Text fw={600}>
-                  {patio.base.length - pendientes.length} de {patio.base.length} revisadas
-                </Text>
-                {pendientes.length === 0 ? (
-                  <Badge color="teal" leftSection={<IconCheck size={12} />}>Flotilla completa</Badge>
-                ) : (
-                  <Badge color="orange">Faltan {pendientes.length}</Badge>
-                )}
-              </Group>
-              <Progress value={avance} color={pendientes.length === 0 ? 'teal' : 'blue'} />
-              {/* Sin botón para "empezar": no hay un orden que empezar. Las
-                  pendientes salen primero en la lista y se pica la que se tenga
-                  enfrente. */}
-            </Stack>
-          </Card>
+      {/* `keepMounted={false}`: la bandeja del día es otra consulta, y montarla
+          con la pantalla la pediría siempre, aunque nadie abra la pestaña. Se
+          paga cuando se entra. */}
+      <Tabs value={pestana} onChange={setPestana} keepMounted={false}>
+        <Tabs.List grow>
+          <Tabs.Tab value="recorrido" leftSection={<IconClipboardCheck size={16} />}>
+            Recorrido
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="reportes"
+            leftSection={<IconListCheck size={16} />}
+            // El número es lo que hace que la pestaña se vea: sin él, la
+            // bandeja solo la abre quien ya se acordó de que existe.
+            rightSection={sinLeer > 0
+              ? <Badge size="xs" color="orange" circle>{sinLeer}</Badge>
+              : null}
+          >
+            Reportes de hoy
+          </Tabs.Tab>
+        </Tabs.List>
 
-          {avisos.length > 0 && (
-            <Alert color="blue" variant="light" withCloseButton onClose={() => setAvisos([])}>
-              <Stack gap={2}>
-                {avisos.map((a, i) => <Text key={i} size="sm">{a}</Text>)}
-              </Stack>
+        <Tabs.Panel value="reportes" pt="md">
+          <ReportesDelDia />
+        </Tabs.Panel>
+
+        <Tabs.Panel value="recorrido" pt="md">
+          <Stack gap="md">
+            <SelectCatalogo
+              label="Sucursal"
+              placeholder="¿Qué sucursal se recorre?"
+              nombre="sucursales"
+              estado={sucursales}
+              data={opcionesSucursal}
+              value={sucursalId != null ? String(sucursalId) : null}
+              onChange={(v) => { setSucursalId(v ? Number(v) : null); setAbierta(null) }}
+              w={{ base: '100%', sm: 240 }}
+            />
+
+          {sucursalId == null ? (
+            <Alert color="blue" variant="light">
+              Elige la sucursal que vas a recorrer para ver qué unidades le faltan hoy.
             </Alert>
-          )}
+          ) : isLoading ? (
+            <Center py="xl"><Loader /></Center>
+          ) : isError || !patio ? (
+            <Alert color="red" title="No se pudo cargar la flotilla">
+              <Button size="xs" variant="light" onClick={() => refetch()}>Reintentar</Button>
+            </Alert>
+          ) : (
+            <>
+              <Card withBorder radius="md" padding="md">
+                <Stack gap="xs">
+                  <Group justify="space-between">
+                    <Text fw={600}>
+                      {patio.base.length - pendientes.length} de {patio.base.length} revisadas
+                    </Text>
+                    {pendientes.length === 0 ? (
+                      <Badge color="teal" leftSection={<IconCheck size={12} />}>Flotilla completa</Badge>
+                    ) : (
+                      <Badge color="orange">Faltan {pendientes.length}</Badge>
+                    )}
+                  </Group>
+                  <Progress value={avance} color={pendientes.length === 0 ? 'teal' : 'blue'} />
+                  {/* Sin botón para "empezar": no hay un orden que empezar. Las
+                      pendientes salen primero en la lista y se pica la que se tenga
+                      enfrente. */}
+                </Stack>
+              </Card>
 
-          <Stack gap="xs">
-            {patio.base.map((u) => (
-              <Renglon key={u.vehiculo_id} unidad={u} onAbrir={() => setAbierta(u)} />
-            ))}
-            {patio.base.length === 0 && (
-              <Text size="sm" c="dimmed">Esta sucursal no tiene unidades con base aquí.</Text>
-            )}
+              {avisos.length > 0 && (
+                <Alert color="blue" variant="light" withCloseButton onClose={() => setAvisos([])}>
+                  <Stack gap={2}>
+                    {avisos.map((a, i) => <Text key={i} size="sm">{a}</Text>)}
+                  </Stack>
+                </Alert>
+              )}
+
+              <Stack gap="xs">
+                {patio.base.map((u) => (
+                  <Renglon key={u.vehiculo_id} unidad={u} onAbrir={() => setAbierta(u)} />
+                ))}
+                {patio.base.length === 0 && (
+                  <Text size="sm" c="dimmed">Esta sucursal no tiene unidades con base aquí.</Text>
+                )}
           </Stack>
 
           <Divider
@@ -276,6 +315,9 @@ export default function ChequeoPatio() {
           </Stack>
         </>
       )}
+          </Stack>
+        </Tabs.Panel>
+      </Tabs>
 
       <Modal
         opened={abierta != null}

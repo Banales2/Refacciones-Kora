@@ -92,6 +92,24 @@ interpretar —la luz prende o no prende— y el catálogo ya dice de antemano q
 severidad le toca a cada falla. La única excepción es `golpes`, donde se
 pregunta: un rayón y un cuarto hundido no son lo mismo y se ven distinto.
 
+## Las dos pestañas de la pantalla
+
+"Chequeo de flotilla" tiene dos mitades del mismo día: **Recorrido**, que es
+capturar, y **Reportes de hoy**, que es leer lo que salió. Son pestañas y no dos
+secciones del menú porque las hace la misma persona con el mismo teléfono y una
+detrás de la otra: al terminar el patio, lo siguiente es ver qué reportó la
+gente. Mandarla a otro lado del menú para eso la pierde a medio camino.
+
+La bandeja ordena por urgencia y no por hora: primero los reportes del chofer
+que nadie ha leído —los únicos que esperan una decisión de una persona—, luego
+las unidades con fallas, y hasta abajo las limpias, que por omisión ni se
+muestran. Un orden cronológico se vería más natural y serviría menos: lo que hay
+que atender quedaría repartido entre lo que no.
+
+El panel de revisión (`RevisarReporteChequeo`) es el mismo que usa la ficha de
+la unidad. Ahí se lee de una en una; aquí se vacía la bandeja del día sin entrar
+a treinta fichas, que es la razón de que la pestaña exista.
+
 ## La pregunta y el pendiente son dos textos
 
 `label` es lo que se le pregunta a quien revisa y es una pregunta literal:

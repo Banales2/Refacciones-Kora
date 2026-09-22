@@ -8,107 +8,19 @@
 import { useState } from 'react'
 import {
   Stack, Group, Button, Text, Card, Badge, Alert, Loader, Center, Modal,
-  Timeline, Textarea, SegmentedControl, Divider, Paper, ScrollArea, SimpleGrid,
+  Timeline, Paper, ScrollArea,
 } from '@mantine/core'
 import {
-  IconClipboardCheck, IconAlertTriangle, IconCheck, IconGauge, IconEye,
+  IconClipboardCheck, IconCheck, IconGauge, IconEye,
 } from '@tabler/icons-react'
 import ChequeoDiarioForm from './ChequeoDiarioForm'
+import RevisarReporteChequeo from './RevisarReporteChequeo'
 import { labelDeItem } from '../lib/chequeoItems'
-import type { Severidad } from '../lib/chequeoItems'
-import {
-  useChequeosVehiculo, useRevisarChequeo, type Chequeo,
-} from '../hooks/useChequeos'
-import { limpiarTextoLibre } from '../lib/validaciones'
+import { useChequeosVehiculo, type Chequeo } from '../hooks/useChequeos'
 
 function fechaLegible(iso: string): string {
   const [a, m, d] = iso.slice(0, 10).split('-')
   return `${d}/${m}/${a}`
-}
-
-/** El panel de revisión de un reporte del chofer. */
-function RevisarReporte({
-  chequeo, vehiculoId, onListo,
-}: {
-  chequeo:    Chequeo
-  vehiculoId: number
-  onListo:    () => void
-}) {
-  const revisar = useRevisarChequeo(vehiculoId)
-  const [nota, setNota] = useState('')
-  const [severidad, setSeveridad] = useState<Severidad>('moderada')
-  const [error, setError] = useState<string | null>(null)
-
-  const enviar = async (abrir: boolean) => {
-    setError(null)
-    try {
-      await revisar.mutateAsync({
-        id: chequeo.id,
-        payload: {
-          nota: nota.trim() || null,
-          abrir_incidencia: abrir,
-          ...(abrir ? { severidad } : {}),
-        },
-      })
-      onListo()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo guardar la revisión')
-    }
-  }
-
-  return (
-    <Stack gap="sm">
-      <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
-        <Text size="sm" fw={500}>{chequeo.declarado_por} reportó:</Text>
-        <Text size="sm" mt={4}>{chequeo.declaracion}</Text>
-      </Alert>
-
-      <Textarea
-        label="Qué se hizo con esto"
-        placeholder="Se revisó con el mecánico: era la banda, ya se ajustó."
-        autosize
-        minRows={2}
-        maxLength={255}
-        value={nota}
-        onChange={(e) => setNota(limpiarTextoLibre(e.currentTarget.value, 255))}
-      />
-
-      <Divider label="Si hay que atenderlo" labelPosition="center" />
-      <SegmentedControl
-        fullWidth
-        size="xs"
-        data={[
-          { label: 'Superficial', value: 'superficial' },
-          { label: 'Moderada',    value: 'moderada'    },
-          { label: 'Grave',       value: 'grave'       },
-        ]}
-        value={severidad}
-        onChange={(v) => setSeveridad(v as Severidad)}
-      />
-
-      {error && <Alert color="red">{error}</Alert>}
-
-      {/* Uno por renglón en el teléfono: "Solo marcar revisado" no cabe en
-          media pantalla y salía recortado, justo en el botón donde importa
-          entender qué se va a hacer. */}
-      <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
-        <Button
-          variant="default"
-          onClick={() => enviar(false)}
-          loading={revisar.isPending}
-        >
-          Solo marcar revisado
-        </Button>
-        <Button
-          color="orange"
-          onClick={() => enviar(true)}
-          loading={revisar.isPending}
-        >
-          Abrir incidencia
-        </Button>
-      </SimpleGrid>
-    </Stack>
-  )
 }
 
 function ResumenChequeo({ chequeo, onRevisar }: { chequeo: Chequeo; onRevisar: () => void }) {
@@ -316,7 +228,7 @@ export default function ChequeosVehiculoSection({ vehiculoId }: { vehiculoId: nu
         classNames={{ content: 'chequeo-movil' }}
       >
         {revisando && (
-          <RevisarReporte
+          <RevisarReporteChequeo
             chequeo={revisando}
             vehiculoId={vehiculoId}
             onListo={() => setRevisando(null)}
