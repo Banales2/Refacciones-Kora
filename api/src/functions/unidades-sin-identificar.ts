@@ -3,6 +3,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { alcanceDe, soloDeSucursal } from '../shared/alcance'
 import * as repo from '../repositories/unidadesPiezaRepo'
+import { sinDatosDeCompra } from '../shared/datosDeCompra'
 
 /**
  * El stock que está en el estante sin identidad, porque se compró antes de que
@@ -27,7 +28,9 @@ export async function unidadesSinIdentificar(
     return {
       status: 200,
       jsonBody: {
-        data: soloDeSucursal(await repo.findSinIdentificar({ tipoPiezaId, piezaId }), await alcanceDe(user)),
+        data: sinDatosDeCompra(
+          soloDeSucursal(await repo.findSinIdentificar({ tipoPiezaId, piezaId }), await alcanceDe(user)), user,
+        ),
       },
     }
   } catch (err) {

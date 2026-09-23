@@ -2,13 +2,15 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import * as service from '../services/permisosCirculacionService'
+import { exigirSucursalAsignada } from '../shared/alcance'
 
 export async function permisosCirculacionList(
   request: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'responsable')
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'responsable')
+    await exigirSucursalAsignada(user)
     const data = await service.getAll()
     return { status: 200, jsonBody: { data } }
   } catch (err) {

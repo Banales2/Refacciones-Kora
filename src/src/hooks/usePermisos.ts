@@ -24,9 +24,9 @@ const SECCIONES_PRACTICANTE: readonly Seccion[] = [
 ]
 
 // El responsable de sucursal: la flota de su sucursal y la de translado, el
-// chequeo, las incidencias, los vales, las refacciones y su inventario. Fuera
-// quedan mantenimientos, modelos, facturas y el tablero, cuyos endpoints se le
-// niegan. Qué filas ve dentro de cada sección no se decide aquí: lo acota la
+// chequeo, las incidencias, los vales, las refacciones y su inventario (sin
+// precios ni facturas). Fuera quedan mantenimientos, modelos, facturas y el
+// tablero, cuyos endpoints se le niegan. Qué filas ve dentro de cada sección no se decide aquí: lo acota la
 // API por `usuarios.sucursal_id` (ver api/src/shared/alcance.ts).
 const SECCIONES_RESPONSABLE: readonly Seccion[] = [
   'chequeos', 'vehiculos', 'incidencias', 'vales', 'piezas', 'inventario', 'sitios',
@@ -67,6 +67,12 @@ export interface Permisos {
    * programa, garantías y refacciones montadas.
    */
   puedeVerMantenimiento: boolean
+  /**
+   * Si ve de qué compra salió una refacción: costo, IVA, factura, proveedor y
+   * quién la compró. Al responsable la API ni siquiera se los manda
+   * (api/src/shared/datosDeCompra.ts); esto sólo quita las columnas vacías.
+   */
+  puedeVerCompras: boolean
   /** Si la sección debe aparecer en el menú y poder abrirse. */
   puedeVerSeccion: (s: Seccion) => boolean
   /** Si la pestaña de Catálogos debe aparecer. */
@@ -98,6 +104,7 @@ export function usePermisos(): Permisos {
     puedeEditar: !esPracticante && !esResponsable,
     puedeDarDeAlta: !esResponsable,
     puedeVerMantenimiento: !esResponsable,
+    puedeVerCompras: !esResponsable,
     puedeVerSeccion: (s) => {
       if (s === 'registros' || s === 'errores-captura') return esAdmin
       if (esPracticante) return SECCIONES_PRACTICANTE.includes(s)

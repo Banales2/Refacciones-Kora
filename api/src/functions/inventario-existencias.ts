@@ -3,10 +3,12 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { alcanceDe, sucursalPermitida } from '../shared/alcance'
 import * as service from '../services/inventarioService'
+import { sinDatosDeCompra } from '../shared/datosDeCompra'
 
 // Qué hay en cada sucursal, renglón por lote: además de la cantidad trae de qué
-// compra salió (proveedor, factura, costo). Sin `sucursal` devuelve toda la
-// flota; con `resumen=1` agrupa por refacción en lugar de desglosar el lote.
+// compra salió (proveedor, factura, costo; el responsable no los recibe). Sin
+// `sucursal` devuelve toda la flota; con `resumen=1` agrupa por refacción en
+// lugar de desglosar el lote.
 export async function inventarioExistencias(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
     const user = requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'responsable')
@@ -25,7 +27,7 @@ export async function inventarioExistencias(req: HttpRequest, ctx: InvocationCon
       return { status: 200, jsonBody: { data: await service.getResumen(sucursalId) } }
     }
 
-    return { status: 200, jsonBody: { data: await service.getExistencias(sucursalId) } }
+    return { status: 200, jsonBody: { data: sinDatosDeCompra(await service.getExistencias(sucursalId), user) } }
   } catch (err) { return handleError(err, ctx) }
 }
 

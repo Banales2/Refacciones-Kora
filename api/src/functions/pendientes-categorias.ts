@@ -2,13 +2,15 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import * as repo from '../repositories/pendientesRepo'
+import { exigirSucursalAsignada } from '../shared/alcance'
 
 // Categorías ya capturadas, para el selector de los formularios de incidencia y
 // de operación del programa. No hay catálogo: se reaprovecha lo escrito para que
 // la misma categoría no acabe guardada de cinco formas.
 export async function pendientesCategorias(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
+    await exigirSucursalAsignada(user)
     const data = await repo.findCategorias()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

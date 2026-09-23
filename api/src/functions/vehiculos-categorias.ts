@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import * as repo from '../repositories/vehiculosRepo'
+import { exigirSucursalAsignada } from '../shared/alcance'
 
 // Categorías de carrocería ya usadas en la flota (torton, rabon, camioneta…),
 // para el selector del formulario. Mismo papel que /pendientes/categorias: no
@@ -9,7 +10,8 @@ import * as repo from '../repositories/vehiculosRepo'
 // acabe guardada de cinco formas.
 export async function vehiculosCategorias(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
+    await exigirSucursalAsignada(user)
     const data = await repo.findCategorias()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

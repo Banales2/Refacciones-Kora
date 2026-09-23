@@ -96,7 +96,7 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
   // rastreo. La existencia las cuenta, pero no se pueden seguir.
   const { data: pendientes } = useSinIdentificar({ piezaId })
   const [identificando, setIdentificando] = useState(false)
-  const { puedeDarDeAlta } = usePermisos()
+  const { puedeDarDeAlta, puedeVerCompras } = usePermisos()
   const unidades = data?.data ?? []
 
   const faltantes = (pendientes?.data ?? []).reduce((n, g) => n + g.faltan, 0)
@@ -163,7 +163,7 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
               <Table.Th>Etiqueta</Table.Th>
               <Table.Th>Estado</Table.Th>
               <Table.Th>Dónde</Table.Th>
-              <Table.Th>Compra</Table.Th>
+              {puedeVerCompras && <Table.Th>Compra</Table.Th>}
               <Table.Th style={{ textAlign: 'center' }}>Montajes</Table.Th>
               <Table.Th style={{ textAlign: 'right' }}>Recorrido</Table.Th>
             </Table.Tr>
@@ -194,10 +194,12 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
                       <Text size="sm" c="dimmed">{u.sucursal ?? '—'}</Text>
                     )}
                   </Table.Td>
-                  <Table.Td>
-                    <Text size="xs">{u.num_factura ?? 'Sin factura'}</Text>
-                    <Text size="xs" c="dimmed">{u.proveedor ?? 'Recuperada de unidad'}</Text>
-                  </Table.Td>
+                  {puedeVerCompras && (
+                    <Table.Td>
+                      <Text size="xs">{u.num_factura ?? 'Sin factura'}</Text>
+                      <Text size="xs" c="dimmed">{u.proveedor ?? 'Recuperada de unidad'}</Text>
+                    </Table.Td>
+                  )}
                   <Table.Td style={{ textAlign: 'center' }}>{u.montajes}</Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
                     <Text size="sm">{fmtKm(u.km_recorridos)}</Text>

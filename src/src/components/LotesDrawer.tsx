@@ -56,7 +56,7 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
   // El lote se captura una vez; corregirlo es cosa de un editor.
   // El responsable de sucursal ve los lotes de la suya y nada más: ni da de
   // alta compras ni ve qué cobra cada proveedor.
-  const { puedeEditar, puedeDarDeAlta, puedeVerFichaProveedor } = usePermisos()
+  const { puedeEditar, puedeDarDeAlta, puedeVerFichaProveedor, puedeVerCompras } = usePermisos()
   const [createOpen, setCreateOpen] = useState(false)
   const [editLote, setEditLote] = useState<Lote | null>(null)
   const [generando, setGenerando]   = useState(false)
@@ -198,17 +198,20 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                 <Text c="dimmed">Esta refacción no tiene lotes registrados.</Text>
               </Center>
             ) : (
-              <Table.ScrollContainer minWidth={840}>
+              <Table.ScrollContainer minWidth={puedeVerCompras ? 840 : 360}>
                 <Table withTableBorder withColumnBorders striped>
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Fecha compra</Table.Th>
-                      <Table.Th>Proveedor</Table.Th>
-                      <Table.Th>Factura</Table.Th>
-                      <Table.Th>Compró</Table.Th>
-                      <Table.Th>Autorizó</Table.Th>
-                      <Table.Th style={{ textAlign: 'right' }}>Costo unit.</Table.Th>
-                      <Table.Th style={{ textAlign: 'right' }}>IVA</Table.Th>
+                      {/* Al responsable la API no le manda nada de la compra. */}
+                      {puedeVerCompras && <>
+                        <Table.Th>Proveedor</Table.Th>
+                        <Table.Th>Factura</Table.Th>
+                        <Table.Th>Compró</Table.Th>
+                        <Table.Th>Autorizó</Table.Th>
+                        <Table.Th style={{ textAlign: 'right' }}>Costo unit.</Table.Th>
+                        <Table.Th style={{ textAlign: 'right' }}>IVA</Table.Th>
+                      </>}
                       <Table.Th style={{ textAlign: 'center' }}>Inicial</Table.Th>
                       <Table.Th style={{ textAlign: 'center' }}>Disponible</Table.Th>
                       <Table.Th style={{ width: 72 }} />
@@ -218,26 +221,28 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                     {data?.lotes.map((lote) => (
                       <Table.Tr key={lote.id}>
                         <Table.Td>{formatDate(lote.fecha_compra)}</Table.Td>
-                        {/* Sin proveedor solo puede ser el lote de
-                            recuperación: piezas que volvieron al estante sin
-                            haber salido de una compra. */}
-                        <Table.Td>
-                          {lote.proveedor ?? (
-                            <Text component="span" size="sm" c="dimmed">Recuperada de unidad</Text>
-                          )}
-                        </Table.Td>
-                        <Table.Td c="dimmed">{lote.num_factura ?? '—'}</Table.Td>
-                        <Table.Td>{lote.comprado_por || '—'}</Table.Td>
-                        <Table.Td>{lote.autorizado_por || '—'}</Table.Td>
-                        <Table.Td style={{ textAlign: 'right' }}>
-                          {formatMXN(lote.costo_unitario)}
-                        </Table.Td>
-                        {/* Lo que hay que sumarle al costo. "Incluido" es el
-                            caso normal y el de todo lo histórico: el precio
-                            capturado ya lo trae dentro. */}
-                        <Table.Td style={{ textAlign: 'right' }} c="dimmed">
-                          {lote.tasa_iva != null ? `+${lote.tasa_iva}%` : 'Incluido'}
-                        </Table.Td>
+                        {puedeVerCompras && <>
+                          {/* Sin proveedor solo puede ser el lote de
+                              recuperación: piezas que volvieron al estante sin
+                              haber salido de una compra. */}
+                          <Table.Td>
+                            {lote.proveedor ?? (
+                              <Text component="span" size="sm" c="dimmed">Recuperada de unidad</Text>
+                            )}
+                          </Table.Td>
+                          <Table.Td c="dimmed">{lote.num_factura ?? '—'}</Table.Td>
+                          <Table.Td>{lote.comprado_por || '—'}</Table.Td>
+                          <Table.Td>{lote.autorizado_por || '—'}</Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            {formatMXN(lote.costo_unitario)}
+                          </Table.Td>
+                          {/* Lo que hay que sumarle al costo. "Incluido" es el
+                              caso normal y el de todo lo histórico: el precio
+                              capturado ya lo trae dentro. */}
+                          <Table.Td style={{ textAlign: 'right' }} c="dimmed">
+                            {lote.tasa_iva != null ? `+${lote.tasa_iva}%` : 'Incluido'}
+                          </Table.Td>
+                        </>}
                         <Table.Td style={{ textAlign: 'center' }}>{lote.cantidad_inicial}</Table.Td>
                         <Table.Td style={{ textAlign: 'center' }}>
                           <Badge color={stockColor(lote.cantidad_disponible)} variant="light" size="sm">

@@ -47,12 +47,19 @@ las unidades de translado, hace el chequeo diario, reporta incidencias (sin
 editarlas ni atenderlas: atender es registrar el mantenimiento), entrega vales,
 registra cargas de gasolina y consulta refacciones, su inventario, choferes y
 permisos. No ve mantenimientos, modelos, facturas, proveedores ni el tablero.
+De las refacciones tampoco ve de qué compra salieron —costo, IVA, factura,
+proveedor, quién compró y autorizó—: `api/src/shared/datosDeCompra.ts` quita
+esos campos de la respuesta, no sólo de la pantalla. Todo endpoint nuevo que
+devuelva lotes o existencias al responsable tiene que pasar por
+`sinDatosDeCompra`.
 La lista exacta es qué funciones llevan `'responsable'` en su `requireRole`; en
 la interfaz, `SECCIONES_RESPONSABLE` de `usePermisos`.
 
 Qué filas ve **no es el rol**: vive en `usuarios.sucursal_id` (migración 049)
 y lo aplica `api/src/shared/alcance.ts`. Cualquier rol se acota poniéndole una
-sucursal; `NULL` ve todo. Qué puede hacer y qué filas ve son dos ejes
+sucursal; `NULL` ve todo — **salvo el responsable**, que con `NULL` no ve nada:
+la API le contesta 403 en todo y la interfaz le dice que pida una sucursal.
+Olvidarla al darlo de alta no puede enseñarle la flota entera. Qué puede hacer y qué filas ve son dos ejes
 distintos; mezclarlos obligaría a inventar un `lector_sucursal` y un
 `admin_sucursal` el día que hagan falta.
 
@@ -68,7 +75,9 @@ distintos; mezclarlos obligaría a inventar un `lector_sucursal` y un
   rutas acotadas contestan 403 en vez de enseñar todo. Con el emulador local de
   SWA eso significa usar como `userId` el Object ID dado de alta.
 - Toda función nueva que lea flota o inventario tiene que pasar por
-  `alcanceDe`. Si no lo hace, el responsable ve todo, y nada lo avisa.
+  `alcanceDe`. Si no lo hace, el responsable ve todo, y nada lo avisa. Los
+  catálogos que no filtran filas pero que el responsable puede abrir llaman a
+  `exigirSucursalAsignada`, para que el responsable sin sucursal tampoco los vea.
 
 `practicante` es el más acotado: da de alta refacciones, lotes,
 pólizas, licencias de chofer, proveedores y vales de gasolina, y puede mirar las

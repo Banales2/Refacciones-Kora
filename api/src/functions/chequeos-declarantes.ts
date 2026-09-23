@@ -2,13 +2,15 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import * as service from '../services/chequeosService'
+import { exigirSucursalAsignada } from '../shared/alcance'
 
 // Quiénes han declarado alguna vez, para ofrecerlos en el formulario. Mismo
 // criterio que `incidencias/reportadores`: no hay catálogo de empleados, y sin
 // la lista la misma persona termina escrita de cinco formas.
 export async function chequeosDeclarantes(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
+    await exigirSucursalAsignada(user)
     const data = await service.getDeclarantes()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

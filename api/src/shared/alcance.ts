@@ -12,7 +12,8 @@
 // sin pedirle que cierre sesión.
 //
 // NULL = sin acotar, ve todo. Es lo que tienen los usuarios que no se acotan, y
-// por eso el filtro es opt-in: nadie pierde acceso por sorpresa.
+// por eso el filtro es opt-in: nadie pierde acceso por sorpresa. La excepción es
+// el responsable: sin sucursal no ve nada (ver `alcanceDe`).
 //
 // FALLA CERRADO. Si la consulta falla, la petición falla; y si el `userId` de la
 // sesión no casa con ninguna fila, se niega. Devolver "sin acotar" en cualquiera
@@ -48,11 +49,39 @@ function conGuiones(valor: string): string {
   return [valor.slice(0, 8), valor.slice(8, 12), valor.slice(12, 16), valor.slice(16, 20), valor.slice(20)].join('-')
 }
 
-/** Alcance de quien está conectado. Lanza si no se puede resolver. */
+/**
+ * Alcance de quien está conectado. Lanza si no se puede resolver.
+ *
+ * EL RESPONSABLE SIN SUCURSAL NO VE NADA. Para él, NULL no significa "ve todo"
+ * sino "está mal dado de alta": su rol existe para mirar un patio, y olvidar la
+ * sucursal al darlo de alta le enseñaría la flota entera sin que nada avisara.
+ */
 export async function alcanceDe(user: ClientPrincipal): Promise<Alcance> {
+  const alcance = { sucursalId: await sucursalAsignada(user) }
+  if (alcance.sucursalId == null && user.userRoles.includes('responsable')) {
+    throw new AuthError('Responsable sin sucursal asignada', 403)
+  }
+  return alcance
+}
+
+/**
+ * Candado para rutas que no filtran filas —catálogos, listas de nombres— pero
+ * que un responsable sin sucursal tampoco debe abrir. A los demás roles no les
+ * cuesta ninguna consulta.
+ */
+export async function exigirSucursalAsignada(user: ClientPrincipal): Promise<void> {
+  if (user.userRoles.includes('responsable')) await alcanceDe(user)
+}
+
+/**
+ * La sucursal tal cual está en la tabla, sin el candado del responsable. Sólo
+ * para informarla (`usuario-actual`, que la interfaz usa para explicar por qué
+ * no ve nada); para filtrar filas se usa siempre `alcanceDe`.
+ */
+export async function sucursalAsignada(user: ClientPrincipal): Promise<number | null> {
   const oid = conGuiones(user.userId ?? '')
   const enCache = cache.get(oid)
-  if (enCache && enCache.expira > Date.now()) return enCache.alcance
+  if (enCache && enCache.expira > Date.now()) return enCache.alcance.sucursalId
 
   const pool = await getPool()
   const r = await pool.request()
@@ -68,7 +97,7 @@ export async function alcanceDe(user: ClientPrincipal): Promise<Alcance> {
 
   const alcance: Alcance = { sucursalId: (fila.sucursal_id as number | null) ?? null }
   cache.set(oid, { alcance, expira: Date.now() + TTL_MS })
-  return alcance
+  return alcance.sucursalId
 }
 
 // ── SQL ──────────────────────────────────────────────────────────────────────

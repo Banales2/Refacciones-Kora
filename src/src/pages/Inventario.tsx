@@ -191,7 +191,7 @@ function PanelExistencias({
 }) {
   const { data, isLoading } = useExistencias(sucursalId)
   // El responsable de sucursal consulta su inventario; moverlo es de almacén.
-  const { puedeDarDeAlta } = usePermisos()
+  const { puedeDarDeAlta, puedeVerCompras } = usePermisos()
   const filas = data?.data ?? []
 
   if (isLoading) return <Center py="xl"><Loader /></Center>
@@ -213,10 +213,12 @@ function PanelExistencias({
             <Text size="xs" c="dimmed">Piezas</Text>
             <Text fw={600}>{filas.reduce((s, f) => s + f.cantidad, 0).toLocaleString('es-MX')}</Text>
           </Stack>
-          <Stack gap={0}>
-            <Text size="xs" c="dimmed">Valor a costo</Text>
-            <Text fw={600}>{formatMXN(total)}</Text>
-          </Stack>
+          {puedeVerCompras && (
+            <Stack gap={0}>
+              <Text size="xs" c="dimmed">Valor a costo</Text>
+              <Text fw={600}>{formatMXN(total)}</Text>
+            </Stack>
+          )}
           {enCamino > 0 && (
             <Stack gap={0}>
               <Text size="xs" c="dimmed">En camino</Text>
@@ -234,7 +236,7 @@ function PanelExistencias({
               <Table.Th>Tipo</Table.Th>
               <Table.Th>Compra</Table.Th>
               <Table.Th ta="right">Cantidad</Table.Th>
-              <Table.Th ta="right">Costo unit.</Table.Th>
+              {puedeVerCompras && <Table.Th ta="right">Costo unit.</Table.Th>}
               <Table.Th style={{ width: 40 }} />
             </Table.Tr>
           </Table.Thead>
@@ -247,12 +249,16 @@ function PanelExistencias({
                 </Table.Td>
                 <Table.Td><Text size="xs">{f.tipo_pieza ?? 'Sin tipo'}</Text></Table.Td>
                 <Table.Td>
-                  {/* Sin proveedor solo puede ser el lote de recuperación. */}
-                  <Text size="xs" c={f.proveedor ? undefined : 'dimmed'}>
-                    {f.proveedor ?? 'Recuperada de unidad'}
-                  </Text>
+                  {/* Sin proveedor solo puede ser el lote de recuperación. Al
+                      responsable la API no le manda la compra: solo la fecha. */}
+                  {puedeVerCompras && (
+                    <Text size="xs" c={f.proveedor ? undefined : 'dimmed'}>
+                      {f.proveedor ?? 'Recuperada de unidad'}
+                    </Text>
+                  )}
                   <Text size="xs" c="dimmed">
-                    {f.num_factura ? `Fact. ${f.num_factura}` : 'Sin factura'} · {formatearFecha(f.fecha_compra)}
+                    {puedeVerCompras && (f.num_factura ? `Fact. ${f.num_factura} · ` : 'Sin factura · ')}
+                    {formatearFecha(f.fecha_compra)}
                   </Text>
                 </Table.Td>
                 <Table.Td ta="right">
@@ -264,7 +270,9 @@ function PanelExistencias({
                     <Text size="xs" c="orange">{f.en_camino} en camino</Text>
                   )}
                 </Table.Td>
-                <Table.Td ta="right"><Text size="xs">{formatMXN(f.costo_unitario)}</Text></Table.Td>
+                {puedeVerCompras && (
+                  <Table.Td ta="right"><Text size="xs">{formatMXN(f.costo_unitario)}</Text></Table.Td>
+                )}
                 <Table.Td>
                   {puedeDarDeAlta && <Tooltip
                     label={f.cantidad > 0
@@ -887,7 +895,7 @@ function resumenPorSucursal(descuadres: Descuadre[]) {
 function PanelDescuadres({ sucursalId }: { sucursalId: number }) {
   const { data, isLoading, isError } = useDescuadres(sucursalId)
   const [cerrando, setCerrando] = useState<{ d: Descuadre; status: ResolucionDescuadre } | null>(null)
-  const { puedeDarDeAlta } = usePermisos()
+  const { puedeDarDeAlta, puedeVerCompras } = usePermisos()
 
   const filas = data?.data ?? []
 
@@ -942,8 +950,10 @@ function PanelDescuadres({ sucursalId }: { sucursalId: number }) {
               <Text size="xs">{d.motivo}</Text>
 
               <Text size="xs" c="dimmed">
-                {d.num_factura ? `Factura ${d.num_factura}` : 'Sin factura'}
-                {d.vehiculo ? ` · Unidad ${d.vehiculo}` : ''}
+                {[
+                  puedeVerCompras && (d.num_factura ? `Factura ${d.num_factura}` : 'Sin factura'),
+                  d.vehiculo && `Unidad ${d.vehiculo}`,
+                ].filter(Boolean).join(' · ')}
               </Text>
 
               {puedeDarDeAlta && <Group gap="xs" mt={2}>

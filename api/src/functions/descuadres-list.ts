@@ -3,6 +3,7 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { alcanceDe, sucursalPermitida } from '../shared/alcance'
 import * as service from '../services/descuadresService'
+import { sinDatosDeCompra } from '../shared/datosDeCompra'
 
 // Los descuadres de inventario que siguen abiertos. Sin `sucursal_id` devuelve
 // los de toda la flota, que es lo que necesita el aviso de la pantalla de
@@ -20,7 +21,7 @@ export async function descuadresList(
       return { status: 400, jsonBody: { error: 'sucursal_id inválido' } }
     }
     const sucursalId = sucursalPermitida(pedida, await alcanceDe(user))
-    return { status: 200, jsonBody: { data: await service.getAbiertos(sucursalId) } }
+    return { status: 200, jsonBody: { data: sinDatosDeCompra(await service.getAbiertos(sucursalId), user) } }
   } catch (err) {
     return handleError(err, context)
   }
