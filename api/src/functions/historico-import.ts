@@ -11,7 +11,7 @@ export async function historicoImport(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'responsable')
+    const user = requireRole(request, 'admin', 'editor')
     const body = ImportacionHistoricaSchema.parse(await request.json())
     // Quien sube el archivo es quien lo autoriza, igual que en una compra: sale
     // de la sesión, no del cuerpo.

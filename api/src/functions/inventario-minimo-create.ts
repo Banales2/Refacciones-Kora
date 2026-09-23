@@ -7,7 +7,7 @@ import * as service from '../services/inventarioService'
 
 export async function inventarioMinimoCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor')
     const data = MinimoCreateSchema.parse(await req.json())
     const created = await service.createMinimo(data)
 

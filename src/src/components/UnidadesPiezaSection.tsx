@@ -21,6 +21,7 @@ import {
 } from '../hooks/useUnidadesPieza'
 import type { UnidadPieza } from '../hooks/useUnidadesPieza'
 import IdentificarExistentesModal from './IdentificarExistentesModal'
+import { usePermisos } from '../hooks/usePermisos'
 
 function fmtKm(km: number | null) {
   if (km == null) return '—'
@@ -32,6 +33,8 @@ function Etiqueta({ unidad, piezaId }: { unidad: UnidadPieza; piezaId: number })
   const [editando, setEditando] = useState(false)
   const [valor, setValor] = useState(unidad.etiqueta ?? '')
   const mut = useSetEtiquetaUnidad(piezaId)
+  // Rotular es capturar inventario: el responsable de sucursal sólo lo consulta.
+  const { puedeDarDeAlta } = usePermisos()
 
   function guardar() {
     mut.mutate(
@@ -46,13 +49,15 @@ function Etiqueta({ unidad, piezaId }: { unidad: UnidadPieza; piezaId: number })
         {unidad.etiqueta
           ? <Text size="sm">{unidad.etiqueta}</Text>
           : <Text size="sm" c="dimmed">Sin etiqueta</Text>}
-        <ActionIcon
-          variant="subtle" color="gray" size="xs"
-          aria-label={`Etiquetar unidad ${unidad.id}`}
-          onClick={() => { setValor(unidad.etiqueta ?? ''); mut.reset(); setEditando(true) }}
-        >
-          <IconPencil size={12} />
-        </ActionIcon>
+        {puedeDarDeAlta && (
+          <ActionIcon
+            variant="subtle" color="gray" size="xs"
+            aria-label={`Etiquetar unidad ${unidad.id}`}
+            onClick={() => { setValor(unidad.etiqueta ?? ''); mut.reset(); setEditando(true) }}
+          >
+            <IconPencil size={12} />
+          </ActionIcon>
+        )}
       </Group>
     )
   }
@@ -91,6 +96,7 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
   // rastreo. La existencia las cuenta, pero no se pueden seguir.
   const { data: pendientes } = useSinIdentificar({ piezaId })
   const [identificando, setIdentificando] = useState(false)
+  const { puedeDarDeAlta } = usePermisos()
   const unidades = data?.data ?? []
 
   const faltantes = (pendientes?.data ?? []).reduce((n, g) => n + g.faltan, 0)
@@ -136,13 +142,15 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
               antes de encender el rastreo de este tipo. Captura el número de cada una
               para poder seguirles la pista.
             </Text>
-            <Button
-              size="compact-xs"
-              leftSection={<IconTag size={13} />}
-              onClick={() => setIdentificando(true)}
-            >
-              Identificar {faltantes === 1 ? 'esa pieza' : `esas ${faltantes} piezas`}
-            </Button>
+            {puedeDarDeAlta && (
+              <Button
+                size="compact-xs"
+                leftSection={<IconTag size={13} />}
+                onClick={() => setIdentificando(true)}
+              >
+                Identificar {faltantes === 1 ? 'esa pieza' : `esas ${faltantes} piezas`}
+              </Button>
+            )}
           </Stack>
         </Alert>
       )}

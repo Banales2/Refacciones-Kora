@@ -15,7 +15,7 @@ export async function facturaCorrecciones(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'responsable')
+    requireRole(request, 'admin', 'editor')
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID de factura inválido' } }
 

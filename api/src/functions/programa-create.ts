@@ -10,7 +10,7 @@ import { ProgramaCreateSchema } from '../schemas/programaSchema'
 
 export async function programaCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor')
     const modeloId = parseInt(req.params.modeloId, 10)
     if (isNaN(modeloId)) return { status: 400, jsonBody: { error: 'ID de modelo inválido' } }
     const body = ProgramaCreateSchema.parse(await req.json())

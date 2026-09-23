@@ -36,7 +36,7 @@ const Schema = z.object({
 
 export async function modelosCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor')
     const { marca, nombre, anio, tipos_permitidos } = Schema.parse(await req.json())
     const created = await service.create(marca, nombre, anio ?? null, tipos_permitidos)
     await audit({

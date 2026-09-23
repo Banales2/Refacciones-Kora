@@ -12,7 +12,7 @@ export async function preciosProveedorCreate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'responsable')
+    const user = requireRole(request, 'admin', 'editor')
     const proveedorId = parseInt(request.params.id, 10)
     if (isNaN(proveedorId)) return { status: 400, jsonBody: { error: 'ID de proveedor inválido' } }
 

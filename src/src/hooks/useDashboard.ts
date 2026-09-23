@@ -80,8 +80,9 @@ export interface ServicioPreventivo {
   garantia_en_riesgo: boolean
 }
 
-export function usePreventivosVencidos() {
+export function usePreventivosVencidos(activo = true) {
   return useQuery({
+    enabled: activo,
     queryKey: ['dashboard', 'preventivos-vencidos'],
     queryFn: () => api.get<{ data: ServicioPreventivo[] }>('/dashboard/preventivos-vencidos'),
   })
@@ -171,8 +172,9 @@ export interface DocumentosPorVencer {
 
 // Seguros y permisos de circulación ya vencidos o próximos a vencer (30 días),
 // más las licencias de conductor con vigencia dentro de 2 meses.
-export function useDocumentosPorVencer() {
+export function useDocumentosPorVencer(activo = true) {
   return useQuery({
+    enabled: activo,
     queryKey: ['dashboard', 'documentos-por-vencer'],
     queryFn: () => api.get<{ data: DocumentosPorVencer }>('/dashboard/documentos-por-vencer'),
   })

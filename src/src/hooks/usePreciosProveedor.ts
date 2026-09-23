@@ -241,10 +241,10 @@ export interface ComparativaPieza {
   descuento_referencia: number
 }
 
-export function useComparativaPieza(piezaId: number | null) {
+export function useComparativaPieza(piezaId: number | null, activo = true) {
   return useQuery({
     queryKey: ['precios-proveedor', 'pieza', piezaId],
     queryFn: () => api.get<{ data: ComparativaPieza }>(`/piezas/${piezaId}/comparativa-precios`),
-    enabled: piezaId != null,
+    enabled: activo && piezaId != null,
   })
 }

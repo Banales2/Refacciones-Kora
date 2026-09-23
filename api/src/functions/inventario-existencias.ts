@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, sucursalPermitida } from '../shared/alcance'
 import * as service from '../services/inventarioService'
 
 // Qué hay en cada sucursal, renglón por lote: además de la cantidad trae de qué
@@ -8,13 +9,14 @@ import * as service from '../services/inventarioService'
 // flota; con `resumen=1` agrupa por refacción en lugar de desglosar el lote.
 export async function inventarioExistencias(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'responsable')
 
     const sucursalRaw = req.query.get('sucursal')
-    const sucursalId = sucursalRaw ? parseInt(sucursalRaw, 10) : undefined
-    if (sucursalRaw && isNaN(sucursalId!)) {
+    const pedida = sucursalRaw ? parseInt(sucursalRaw, 10) : undefined
+    if (sucursalRaw && isNaN(pedida!)) {
       return { status: 400, jsonBody: { error: 'Sucursal inválida' } }
     }
+    const sucursalId = sucursalPermitida(pedida, await alcanceDe(user))
 
     if (req.query.get('resumen') === '1') {
       if (sucursalId === undefined) {

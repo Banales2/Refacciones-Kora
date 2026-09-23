@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, soloDeSucursal } from '../shared/alcance'
 import * as repo from '../repositories/unidadesPiezaRepo'
 
 /**
@@ -15,7 +16,7 @@ export async function unidadesSinIdentificar(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'responsable')
     const tipo  = request.query.get('tipo_pieza_id')
     const pieza = request.query.get('pieza_id')
     const tipoPiezaId = tipo  ? parseInt(tipo, 10)  : undefined
@@ -25,7 +26,9 @@ export async function unidadesSinIdentificar(
     }
     return {
       status: 200,
-      jsonBody: { data: await repo.findSinIdentificar({ tipoPiezaId, piezaId }) },
+      jsonBody: {
+        data: soloDeSucursal(await repo.findSinIdentificar({ tipoPiezaId, piezaId }), await alcanceDe(user)),
+      },
     }
   } catch (err) {
     return handleError(err, context)

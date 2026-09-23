@@ -883,7 +883,8 @@ function CeldaDocumento({ numero, vigencia }: { numero: string | null; vigencia:
 }
 
 function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
-  const { puedeEditar } = usePermisos()
+  // El responsable de sucursal consulta los choferes, no los da de alta.
+  const { puedeEditar, puedeDarDeAlta } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Conductor | null>(null)
   const [archivando, setArchivando] = useState<Conductor | null>(null)
@@ -947,7 +948,9 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
                 onChange={(e) => setVerArchivados(e.currentTarget.checked)}
               />
             )}
-            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo conductor</Button>
+            {puedeDarDeAlta && (
+              <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo conductor</Button>
+            )}
           </Group>
         </Group>
 
@@ -1792,6 +1795,8 @@ function PermisosPanel({
   onOpenIdChange?: (id: number | null) => void
   destacadoId?:    number | null
 }) {
+  // El responsable de sucursal consulta los permisos: ni altas ni cambios.
+  const { puedeEditar, puedeDarDeAlta } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<PermisoCirculacion | null>(null)
   const [terminando, setTerminando] = useState<PermisoCirculacion | null>(null)
@@ -1849,7 +1854,9 @@ function PermisosPanel({
                 onChange={(e) => setVerTerminados(e.currentTarget.checked)}
               />
             )}
-            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo permiso</Button>
+            {puedeDarDeAlta && (
+              <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo permiso</Button>
+            )}
           </Group>
         </Group>
 
@@ -1898,7 +1905,7 @@ function PermisosPanel({
                           : terminado ? ` (terminado el ${p.terminado_en})` : ''}
                       </Table.Td>
                       <Table.Td onClick={(e) => e.stopPropagation()}>
-                        <Group gap={4} justify="flex-end" wrap="nowrap">
+                        {puedeEditar && <Group gap={4} justify="flex-end" wrap="nowrap">
                           {/* Terminar solo donde tiene sentido: un permiso vigente
                               se renueva, no se archiva. */}
                           {terminado ? (
@@ -1917,7 +1924,7 @@ function PermisosPanel({
                             </Tooltip>
                           )}
                           <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(p)}><IconPencil size={14} /></ActionIcon></Tooltip>
-                        </Group>
+                        </Group>}
                       </Table.Td>
                     </Table.Tr>
                   )

@@ -23,7 +23,7 @@ export async function facturaFolioUpdate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'responsable')
+    const user = requireRole(request, 'admin', 'editor')
     const body = FacturaFolioSchema.parse(await request.json())
 
     const facturaId = await service.getId(body.num_factura, body.proveedor_id)

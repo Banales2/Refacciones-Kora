@@ -23,6 +23,7 @@ import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
 import { avisarMontajes, avisarHistoricos } from '../lib/montajes'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import IncidenciaForm from '../components/IncidenciaForm'
+import { usePermisos } from '../hooks/usePermisos'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import MantenimientoForm from '../components/MantenimientoForm'
 import type { DeshacerAtencion } from './Vehiculos'
@@ -58,6 +59,9 @@ export default function Incidencias({ onNavigateVehiculo }: {
   const [busqueda, setBusqueda]   = useState('')
   const [debounced]               = useDebouncedValue(busqueda, 250)
 
+  // El responsable reporta pero no edita ni atiende: atender es registrar el
+  // mantenimiento, que no es suyo.
+  const { puedeEditar } = usePermisos()
   // El vehículo se elige al crear; al editar sale de la propia incidencia.
   const [createOpen, setCreateOpen]   = useState(false)
   const [vehiculoNueva, setVehiculoNueva] = useState<string | null>(null)
@@ -344,7 +348,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
                         <Group gap={4} justify="flex-end">
                           {/* Solo las que siguen sin atender: registrarle un
                               mantenimiento a una ya cerrada no cierra nada. */}
-                          {i.status === 'activo' && (
+                          {puedeEditar && i.status === 'activo' && (
                             <Tooltip label="Registrar el mantenimiento que la atiende">
                               <ActionIcon variant="subtle" color="teal" size="sm"
                                 onClick={() => abrirAtender(i)}>
@@ -354,7 +358,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
                           )}
                           {/* Y al revés, la que ya se atendió lleva al servicio
                               con el que se cerró. */}
-                          {i.mantenimiento_id !== null && (
+                          {puedeEditar && i.mantenimiento_id !== null && (
                             <Tooltip label="Ver el mantenimiento que la atendió">
                               <ActionIcon variant="subtle" color="gray" size="sm"
                                 onClick={() => verMantenimiento(i.mantenimiento_id!)}>
@@ -362,12 +366,14 @@ export default function Incidencias({ onNavigateVehiculo }: {
                               </ActionIcon>
                             </Tooltip>
                           )}
-                          <Tooltip label="Editar">
-                            <ActionIcon variant="subtle" color="blue" size="sm"
-                              onClick={() => { setFormError(null); setEditando(i) }}>
-                              <IconPencil size={14} />
-                            </ActionIcon>
-                          </Tooltip>
+                          {puedeEditar && (
+                            <Tooltip label="Editar">
+                              <ActionIcon variant="subtle" color="blue" size="sm"
+                                onClick={() => { setFormError(null); setEditando(i) }}>
+                                <IconPencil size={14} />
+                              </ActionIcon>
+                            </Tooltip>
+                          )}
                         </Group>
                       </Table.Td>
                     </Table.Tr>
@@ -400,6 +406,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
               onSubmit={handleCreate}
               onCancel={() => setCreateOpen(false)}
               tipoVehiculo={tipoNueva}
+              soloAbiertas={!puedeEditar}
             />
           ) : (
             <Text c="dimmed" size="sm">Elige primero el vehículo.</Text>
@@ -460,7 +467,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
               </Grid.Col>
             </Grid>
 
-            <Group justify="space-between" mt="xs">
+            {puedeEditar && <Group justify="space-between" mt="xs">
               <Button variant="subtle" leftSection={<IconPencil size={16} />}
                 onClick={() => { setFormError(null); setEditando(detalle); setDetalle(null) }}>
                 Editar
@@ -479,7 +486,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
                   </Button>
                 )}
               </Group>
-            </Group>
+            </Group>}
           </Stack>
         )}
       </Modal>

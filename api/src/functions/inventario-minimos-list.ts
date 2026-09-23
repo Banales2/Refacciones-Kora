@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, sucursalPermitida } from '../shared/alcance'
 import * as service from '../services/inventarioService'
 
 // Mínimos configurados, cada uno con la existencia actual de esa refacción en
@@ -8,13 +9,14 @@ import * as service from '../services/inventarioService'
 // están por debajo, que es la lista que hay que salir a surtir.
 export async function inventarioMinimosList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'responsable')
 
     const sucursalRaw = req.query.get('sucursal')
-    const sucursalId = sucursalRaw ? parseInt(sucursalRaw, 10) : undefined
-    if (sucursalRaw && isNaN(sucursalId!)) {
+    const pedida = sucursalRaw ? parseInt(sucursalRaw, 10) : undefined
+    if (sucursalRaw && isNaN(pedida!)) {
       return { status: 400, jsonBody: { error: 'Sucursal inválida' } }
     }
+    const sucursalId = sucursalPermitida(pedida, await alcanceDe(user))
 
     const data = req.query.get('faltantes') === '1'
       ? await service.getFaltantes(sucursalId)

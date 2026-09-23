@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, exigirVehiculo } from '../shared/alcance'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { ValeGasolinaCreateSchema } from '../schemas/valeGasolinaSchema'
@@ -13,6 +14,7 @@ export async function valesGasolinaCreate(
   try {
     const user = requireRole(request, 'admin', 'editor', 'practicante', 'responsable')
     const data = ValeGasolinaCreateSchema.parse(await request.json())
+    await exigirVehiculo(data.vehiculo_id, await alcanceDe(user))
     // Quien crea el vale es siempre el usuario de la sesión.
     const created = await service.create(data, user.userDetails)
     await audit({

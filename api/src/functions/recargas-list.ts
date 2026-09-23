@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, exigirVehiculo } from '../shared/alcance'
 import * as service from '../services/recargasService'
 
 export async function recargasList(
@@ -8,9 +9,10 @@ export async function recargasList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'responsable')
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'responsable')
     const vehiculoId = parseInt(request.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
+    await exigirVehiculo(vehiculoId, await alcanceDe(user))
     const data = await service.getByVehiculo(vehiculoId)
     return { status: 200, jsonBody: { data } }
   } catch (err) {

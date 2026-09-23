@@ -7,6 +7,7 @@
 // devuelve la cabecera pelada.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { Alcance, SIN_ACOTAR, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 import * as incidenciasRepo from './incidenciasRepo'
 import type { Severidad } from '../shared/chequeoItems'
 import { JOINS_HIJAS, NO_DADO_DE_BAJA } from './vehiculosSql'
@@ -377,13 +378,14 @@ export async function findSinChequeo(fecha: string): Promise<UnidadSinChequeo[]>
 }
 
 /** Cuántas unidades activas hay, para el denominador de la cobertura. */
-export async function contarActivas(): Promise<number> {
+export async function contarActivas(alcance: Alcance = SIN_ACOTAR): Promise<number> {
   const pool = await getPool()
-  const r = await pool.request().query(`
+  const r = await conAlcance(pool.request(), alcance).query(`
     SELECT COUNT(*) AS total
     FROM vehiculos v
     ${JOINS_HIJAS}
     WHERE ${NO_DADO_DE_BAJA}
+      AND ${vehiculoEnAlcance('v.id')}
   `)
   return r.recordset[0]?.total ?? 0
 }

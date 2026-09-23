@@ -38,7 +38,7 @@ const Schema = z.object({
 
 export async function modelosUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const { marca, nombre, anio, tipos_permitidos } = Schema.parse(await req.json())

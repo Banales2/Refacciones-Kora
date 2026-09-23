@@ -13,6 +13,7 @@ import {
   Divider, Grid, Paper, Accordion, Anchor,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
+import { usePermisos } from '../hooks/usePermisos'
 import {
   IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight, IconAlertTriangle,
   IconFileTypePdf, IconReportAnalytics, IconTool, IconExternalLink, IconClipboardList,
@@ -189,6 +190,9 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
   const updateMut = useUpdateIncidencia(vehiculoId)
   const mantMut   = useCreateMantenimiento(vehiculoId)
   const piezasMut = useCreateDetallesMtto()
+  // El responsable reporta pero no edita ni atiende: atender es registrar el
+  // mantenimiento, que no es suyo.
+  const { puedeEditar } = usePermisos()
 
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Incidencia | null>(null)
@@ -402,7 +406,7 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
                       <Group gap={4} justify="flex-end">
                         {/* Solo las que siguen abiertas: registrarle un
                             mantenimiento a una ya cerrada no cierra nada. */}
-                        {i.status === 'activo' && (
+                        {puedeEditar && i.status === 'activo' && (
                           <Tooltip label="Registrar el mantenimiento que la atiende">
                             <ActionIcon variant="subtle" color="teal" size="sm"
                               onClick={() => abrirAtender(i)}>
@@ -410,7 +414,7 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
                             </ActionIcon>
                           </Tooltip>
                         )}
-                        {i.mantenimiento_id !== null && (
+                        {puedeEditar && i.mantenimiento_id !== null && (
                           <Tooltip label="Ver el mantenimiento que la atendió">
                             <ActionIcon variant="subtle" color="gray" size="sm"
                               onClick={() => verMantenimiento(i.mantenimiento_id!)}>
@@ -418,11 +422,13 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
                             </ActionIcon>
                           </Tooltip>
                         )}
-                        <Tooltip label="Editar">
-                          <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(i)}>
-                            <IconPencil size={14} />
-                          </ActionIcon>
-                        </Tooltip>
+                        {puedeEditar && (
+                          <Tooltip label="Editar">
+                            <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(i)}>
+                              <IconPencil size={14} />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -445,6 +451,7 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
           onSubmit={handleSubmit}
           onCancel={() => setFormOpen(false)}
           tipoVehiculo={tipoVehiculo}
+          soloAbiertas={!puedeEditar}
         />
       </Modal>
 
@@ -493,7 +500,7 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
               </Grid.Col>
             </Grid>
 
-            <Group justify="space-between" mt="xs">
+            {puedeEditar && <Group justify="space-between" mt="xs">
               <Button variant="subtle" leftSection={<IconPencil size={16} />}
                 onClick={() => { setDetalle(null); openEdit(detalle) }}>
                 Editar
@@ -512,7 +519,7 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
                   </Button>
                 )}
               </Group>
-            </Group>
+            </Group>}
           </Stack>
         )}
       </Modal>
@@ -1301,24 +1308,29 @@ function VehiculoDetalle({
   // Etiqueta de la sección de origen (p. ej. "Dashboard"). Si viene, el botón de
   // regreso vuelve ahí; si no, regresa a la lista de vehículos.
   backLabel?: string
-  onEdit: (v: VehiculoRow) => void
+  /** Sin él la ficha es de consulta: ni lápiz ni kilometraje editable. */
+  onEdit?: (v: VehiculoRow) => void
   onVehiculoUpdate: (v: VehiculoRow) => void
   onNavigateModelo?: (modeloId: number) => void
 }) {
   const ti = tipoInfo(vehiculo.tipo)
+  // El responsable de sucursal no ve lo de mantenimiento (servicios, programa,
+  // garantías, piezas montadas) y la API se lo niega: esas consultas ni se
+  // lanzan, para no llenar la ficha de 403.
+  const { puedeVerMantenimiento: conMtto } = usePermisos()
 
-  const { data: mantData } = useMantenimientos(vehiculo.id)
+  const { data: mantData } = useMantenimientos(vehiculo.id, conMtto)
   // Las secciones de abajo ya piden estas tres listas; React Query las comparte
   // por clave, asi que pedirlas aqui para el expediente no agrega peticiones.
   const { data: incidData }   = useIncidenciasVehiculo(vehiculo.id)
-  const { data: piezasData }  = usePiezasVehiculo(vehiculo.id)
+  const { data: piezasData }  = usePiezasVehiculo(vehiculo.id, conMtto)
   const { data: recargasData } = useRecargas(vehiculo.id)
   // Misma clave que usa la sección de garantías de abajo: React Query la
   // comparte, así que pedirla aquí para el expediente no agrega una petición.
-  const { data: garantiasData } = useGarantiasVehiculo(vehiculo.id)
+  const { data: garantiasData } = useGarantiasVehiculo(vehiculo.id, conMtto)
   // Misma clave que usa la sección del programa de abajo: React Query la
   // comparte, así que pedirla aquí para el expediente no agrega una petición.
-  const { data: programaData } = useProgramaVehiculo(vehiculo.id)
+  const { data: programaData } = useProgramaVehiculo(vehiculo.id, conMtto)
   const [generando, setGenerando] = useState<'pdf' | 'excel' | null>(null)
   const [expedienteAbierto, setExpedienteAbierto] = useState(false)
 
@@ -1523,8 +1535,8 @@ function VehiculoDetalle({
                       }}
                     />
                   ) : (
-                    <Tooltip label="Doble clic para editar" openDelay={400}>
-                      <div onDoubleClick={startEditKm} style={{ cursor: 'pointer' }}>
+                    <Tooltip label="Doble clic para editar" openDelay={400} disabled={!onEdit}>
+                      <div onDoubleClick={onEdit ? startEditKm : undefined} style={{ cursor: onEdit ? 'pointer' : undefined }}>
                         <InfoItem label="Kilometraje" value={`${vehiculo.kilometraje.toLocaleString('es-MX')} km`} />
                       </div>
                     </Tooltip>
@@ -1594,25 +1606,33 @@ function VehiculoDetalle({
             {/* El expediente completo de la unidad: todo lo que esta en esta
                 pantalla mas el consumo y el costo por kilometro, que es lo que
                 se necesita para decidir si conviene seguir reparandola. */}
-            <Button
-              variant="light" size="xs"
-              leftSection={<IconReportAnalytics size={16} />}
-              loading={generando !== null}
-              onClick={() => setExpedienteAbierto(true)}
-            >
-              Expediente
-            </Button>
-            <ExpedienteVehiculoModal
-              opened={expedienteAbierto}
-              onClose={() => setExpedienteAbierto(false)}
-              etiqueta={`${vehiculo.marca} ${vehiculo.modelo} — ${vehiculo.serie}`}
-              onGenerar={generarExpediente}
-            />
-            <Tooltip label="Editar vehículo">
-              <ActionIcon variant="light" color="blue" size="lg" onClick={() => onEdit(vehiculo)}>
-                <IconPencil size={16} />
-              </ActionIcon>
-            </Tooltip>
+            {/* El expediente es sobre todo mantenimiento: sin esa parte saldría
+                un expediente que dice que la unidad nunca ha ido al taller. */}
+            {conMtto && (
+              <>
+                <Button
+                  variant="light" size="xs"
+                  leftSection={<IconReportAnalytics size={16} />}
+                  loading={generando !== null}
+                  onClick={() => setExpedienteAbierto(true)}
+                >
+                  Expediente
+                </Button>
+                <ExpedienteVehiculoModal
+                  opened={expedienteAbierto}
+                  onClose={() => setExpedienteAbierto(false)}
+                  etiqueta={`${vehiculo.marca} ${vehiculo.modelo} — ${vehiculo.serie}`}
+                  onGenerar={generarExpediente}
+                />
+              </>
+            )}
+            {onEdit && (
+              <Tooltip label="Editar vehículo">
+                <ActionIcon variant="light" color="blue" size="lg" onClick={() => onEdit(vehiculo)}>
+                  <IconPencil size={16} />
+                </ActionIcon>
+              </Tooltip>
+            )}
           </Group>
         </Group>
       </Paper>
@@ -1622,33 +1642,37 @@ function VehiculoDetalle({
           desplazarse para verlo. */}
       <ChequeosVehiculoSection vehiculoId={vehiculo.id} />
 
-      {/* Refacción que usa esta unidad por cada tipo que pide su modelo */}
-      <PiezasVehiculoSection vehiculoId={vehiculo.id} kmVehiculo={vehiculo.kilometraje} />
+      {conMtto && (
+        <>
+          {/* Refacción que usa esta unidad por cada tipo que pide su modelo */}
+          <PiezasVehiculoSection vehiculoId={vehiculo.id} kmVehiculo={vehiculo.kilometraje} />
 
-      {/* Garantías: van antes del programa porque son su explicación. El
-          programa del fabricante existe para no perder la principal, y cuando
-          esa se acaba la unidad pasa al de después de la garantía. */}
-      <GarantiasVehiculoSection
-        vehiculoId={vehiculo.id}
-        fechaCompra={vehiculo.fecha_compra?.split('T')[0] ?? null}
-        soportaKm={!sinKilometraje(vehiculo.tipo)}
-      />
+          {/* Garantías: van antes del programa porque son su explicación. El
+              programa del fabricante existe para no perder la principal, y cuando
+              esa se acaba la unidad pasa al de después de la garantía. */}
+          <GarantiasVehiculoSection
+            vehiculoId={vehiculo.id}
+            fechaCompra={vehiculo.fecha_compra?.split('T')[0] ?? null}
+            soportaKm={!sinKilometraje(vehiculo.tipo)}
+          />
 
-      {/* El programa de mantenimiento: lo que manda el manual mientras haya
-          garantía, y lo que se acordó para después. */}
-      <ProgramaVehiculoSection
-        vehiculoId={vehiculo.id}
-        modeloId={vehiculo.modelo_id}
-        kilometraje={vehiculo.kilometraje}
-        tipoVehiculo={vehiculo.tipo}
-        onNavigateModelo={onNavigateModelo}
-      />
+          {/* El programa de mantenimiento: lo que manda el manual mientras haya
+              garantía, y lo que se acordó para después. */}
+          <ProgramaVehiculoSection
+            vehiculoId={vehiculo.id}
+            modeloId={vehiculo.modelo_id}
+            kilometraje={vehiculo.kilometraje}
+            tipoVehiculo={vehiculo.tipo}
+            onNavigateModelo={onNavigateModelo}
+          />
+        </>
+      )}
 
       {/* Incidencias reportadas */}
       <IncidenciasSection vehiculoId={vehiculo.id} tipoVehiculo={vehiculo.tipo} />
 
       {/* Mantenimientos */}
-      <MantenimientosSection vehiculoId={vehiculo.id} tipoVehiculo={vehiculo.tipo} />
+      {conMtto && <MantenimientosSection vehiculoId={vehiculo.id} tipoVehiculo={vehiculo.tipo} />}
 
       {/* Recargas de combustible */}
       <RecargasSection vehiculoId={vehiculo.id} kmVehiculo={vehiculo.kilometraje} />
@@ -1686,7 +1710,8 @@ function VehiculosTable({
   showTipo?:    boolean
   extraColumn?: { header: string; render: (v: VehiculoRow) => string | null }
   onSelect:     (v: VehiculoRow) => void
-  onEdit:       (v: VehiculoRow, e?: React.MouseEvent) => void
+  /** Sin él la tabla es de consulta: ni lápiz ni doble clic en el kilometraje. */
+  onEdit?:      (v: VehiculoRow, e?: React.MouseEvent) => void
   km:           KmEditProps
 }) {
   if (items.length === 0) {
@@ -1751,8 +1776,8 @@ function VehiculosTable({
                 </Table.Td>
                 <Table.Td
                   style={{ textAlign: 'right', width: 140 }}
-                  onClick={sinKilometraje(v.tipo) ? undefined : (e) => e.stopPropagation()}
-                  onDoubleClick={sinKilometraje(v.tipo) ? undefined : (e) => km.startEditKm(v, e)}
+                  onClick={sinKilometraje(v.tipo) || !onEdit ? undefined : (e) => e.stopPropagation()}
+                  onDoubleClick={sinKilometraje(v.tipo) || !onEdit ? undefined : (e) => km.startEditKm(v, e)}
                 >
                   {km.editingKmId === v.id ? (
                     <NumberInput
@@ -1768,7 +1793,7 @@ function VehiculosTable({
                       styles={{ input: { textAlign: 'right' } }}
                     />
                   ) : sinKilometraje(v.tipo) ? null : (
-                    <Tooltip label="Doble clic para editar" openDelay={400}>
+                    <Tooltip label="Doble clic para editar" openDelay={400} disabled={!onEdit}>
                       <span>
                         {v.kilometraje !== null
                           ? `${v.kilometraje.toLocaleString('es-MX')} km`
@@ -1779,11 +1804,13 @@ function VehiculosTable({
                 </Table.Td>
                 <Table.Td>
                   <Group gap={4} justify="flex-end" wrap="nowrap">
-                    <Tooltip label="Editar">
-                      <ActionIcon variant="subtle" color="blue" size="sm" onClick={(e) => onEdit(v, e)}>
-                        <IconPencil size={14} />
-                      </ActionIcon>
-                    </Tooltip>
+                    {onEdit && (
+                      <Tooltip label="Editar">
+                        <ActionIcon variant="subtle" color="blue" size="sm" onClick={(e) => onEdit(v, e)}>
+                          <IconPencil size={14} />
+                        </ActionIcon>
+                      </Tooltip>
+                    )}
                     <IconChevronRight size={14} color="var(--mantine-color-dimmed)" />
                   </Group>
                 </Table.Td>
@@ -1815,7 +1842,7 @@ function VehiculosAgrupados({
   vehiculos:  VehiculoRow[]
   sucursales: Sucursal[]
   onSelect:   (v: VehiculoRow) => void
-  onEdit:     (v: VehiculoRow, e?: React.MouseEvent) => void
+  onEdit?:    (v: VehiculoRow, e?: React.MouseEvent) => void
   km:         KmEditProps
 }) {
   const rutas       = vehiculos.filter(v => v.tipo === 'tractocamion' || v.tipo === 'caja_trailer')
@@ -1959,8 +1986,11 @@ export default function Vehiculos({
   // Conteos de toda la flota (no de la página visible): salen de los mismos
   // endpoints que alimentan los avisos del tablero, así que ambas pantallas
   // cuentan lo mismo.
-  const { data: documentosData }   = useDocumentosPorVencer()
-  const { data: preventivosData } = usePreventivosVencidos()
+  // Los avisos salen del tablero, que al responsable de sucursal no le
+  // responde (y contaría la flota entera, no la suya): sin ellos, sin avisos.
+  const { puedeEditar, puedeVerMantenimiento } = usePermisos()
+  const { data: documentosData }   = useDocumentosPorVencer(puedeVerMantenimiento)
+  const { data: preventivosData } = usePreventivosVencidos(puedeVerMantenimiento)
 
   const sinTenencia = documentosData?.data.sin_tenencia.length ?? 0
   const sinSeguro   = documentosData?.data.sin_seguro.length   ?? 0
@@ -2072,7 +2102,7 @@ export default function Vehiculos({
           vehiculo={selected}
           onBack={handleDetailBack}
           backLabel={externalEntry ? backLabel : undefined}
-          onEdit={(v) => openEdit(v)}
+          onEdit={puedeEditar ? (v) => openEdit(v) : undefined}
           onVehiculoUpdate={(v) => setSelected(v)}
           onNavigateModelo={onNavigateModelo}
         />
@@ -2114,7 +2144,7 @@ export default function Vehiculos({
           >
             Generar reporte
           </Button>
-          <Button size="sm" onClick={openCreate}>+ Nuevo vehículo</Button>
+          {puedeEditar && <Button size="sm" onClick={openCreate}>+ Nuevo vehículo</Button>}
         </Group>
       </Group>
 
@@ -2191,7 +2221,7 @@ export default function Vehiculos({
           <>
             <VehiculosTable
               items={data?.data ?? []} showTipo
-              onSelect={selectFromList} onEdit={openEdit} km={kmEdit}
+              onSelect={selectFromList} onEdit={puedeEditar ? openEdit : undefined} km={kmEdit}
             />
             {totalPages > 1 && (
               <Group justify="center">
@@ -2208,7 +2238,7 @@ export default function Vehiculos({
         <VehiculosAgrupados
           vehiculos={allData?.data ?? []}
           sucursales={sucursalesData?.data ?? []}
-          onSelect={selectFromList} onEdit={openEdit} km={kmEdit}
+          onSelect={selectFromList} onEdit={puedeEditar ? openEdit : undefined} km={kmEdit}
         />
       )}
 

@@ -11,6 +11,7 @@ import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import * as sucursalesRepo from '../repositories/sucursalesRepo'
 import { fechaMexico } from '../shared/fechaMexico'
 import { NotFoundError, ValidationError, ConflictError } from '../shared/errors'
+import { Alcance, SIN_ACOTAR, soloVisibles, sucursalPermitida } from '../shared/alcance'
 import {
   itemsDe, lecturaDe, itemPorClave, nivelEsFalla, TIPOS_CON_ODOMETRO, type ItemChequeo,
 } from '../shared/chequeoItems'
@@ -190,14 +191,15 @@ export async function getFormulario(vehiculoId: number) {
   }
 }
 
-export async function getRango(params: ChequeoQuery) {
+export async function getRango(params: ChequeoQuery, alcance: Alcance = SIN_ACOTAR) {
   const hoy = fechaMexico()
-  return repo.findRango({
+  const filas = await repo.findRango({
     desde: params.desde ?? hoy,
     hasta: params.hasta ?? params.desde ?? hoy,
     vehiculoId: params.vehiculo_id,
     soloPorRevisar: params.filtro === 'por_revisar',
   })
+  return soloVisibles(filas, alcance)
 }
 
 /**
@@ -208,15 +210,21 @@ export async function getRango(params: ChequeoQuery) {
  * dice si el chequeo se está haciendo, y las declaraciones pendientes dicen si
  * está sirviendo de algo.
  */
-export async function getResumenHoy(fecha?: string) {
+export async function getResumenHoy(fecha?: string, alcance: Alcance = SIN_ACOTAR) {
   const dia = fecha ?? fechaMexico()
   // La cobertura es de hoy; los reportes sin leer NO. Un reporte del viernes
   // que nadie revisó sigue sin revisar el lunes, y la bandeja tiene que
   // vaciarse, no rotar con el calendario.
-  const [total, faltan, porRevisar] = await Promise.all([
-    repo.contarActivas(),
+  const [total, todasFaltan, todasPorRevisar] = await Promise.all([
+    repo.contarActivas(alcance),
     repo.findSinChequeo(dia),
     repo.findPorRevisar(),
+  ])
+  // El denominador ya viene acotado de SQL; las listas se acotan aquí, para que
+  // "faltan 3 de 12" cuente las mismas unidades arriba y abajo.
+  const [faltan, porRevisar] = await Promise.all([
+    soloVisibles(todasFaltan, alcance),
+    soloVisibles(todasPorRevisar, alcance),
   ])
   return {
     fecha:      dia,
@@ -241,15 +249,19 @@ export async function getResumenHoy(fecha?: string) {
  * `ubicacion` viaja en la respuesta para que la pantalla la escriba tal cual en
  * cada chequeo: de esa igualdad depende que las visitantes se puedan encontrar.
  */
-export async function getPatio(sucursalId: number, fecha?: string) {
+export async function getPatio(sucursalId: number, fecha?: string, alcance: Alcance = SIN_ACOTAR) {
+  // Un responsable sólo recorre su patio. Las de base son de su sucursal por
+  // definición; de las visitantes se queda con las que su alcance ve.
+  sucursalPermitida(sucursalId, alcance)
   const sucursal = await sucursalesRepo.findById(sucursalId)
   if (!sucursal) throw new NotFoundError('Sucursal')
 
   const dia = fecha ?? fechaMexico()
-  const [base, visitantes] = await Promise.all([
+  const [base, todasVisitantes] = await Promise.all([
     repo.findPatio(sucursalId, dia),
     repo.findVisitantes(sucursalId, sucursal.nombre, dia),
   ])
+  const visitantes = await soloVisibles(todasVisitantes, alcance)
 
   return {
     fecha: dia,

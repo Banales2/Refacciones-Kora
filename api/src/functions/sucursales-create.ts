@@ -13,7 +13,7 @@ const Schema = z.object({
 
 export async function sucursalesCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor')
     const { nombre, ubicacion } = Schema.parse(await req.json())
     const created = await service.create(nombre, ubicacion)
     await audit({

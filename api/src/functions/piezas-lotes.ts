@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, soloDeSucursal } from '../shared/alcance'
 import { audit } from '../shared/audit'
 import * as service from '../services/refaccionesService'
 
@@ -12,7 +13,8 @@ export async function piezasLotes(
     const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante', 'responsable')
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
-    const data = await service.getLotesByPiezaId(id)
+    const { pieza, lotes } = await service.getLotesByPiezaId(id)
+    const data = { pieza, lotes: soloDeSucursal(lotes, await alcanceDe(user)) }
     await audit({ user, accion: 'VER_SENSIBLE', tabla: 'lotes_pieza', registroId: id })
     return { status: 200, jsonBody: data }
   } catch (err) {

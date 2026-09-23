@@ -10,7 +10,7 @@ import { AtenderOperacionSchema } from '../schemas/programaVehiculoSchema'
 
 export async function vehiculoProgramaAtender(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor')
     const vehiculoId  = parseInt(req.params.vehiculoId, 10)
     const operacionId = parseInt(req.params.operacionId, 10)
     if (isNaN(vehiculoId) || isNaN(operacionId)) {

@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { Alcance, SIN_ACOTAR, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 import {
   AlertaVehiculo, TipoVehiculo, VehiculoCreate, VehiculoUpdate,
   TIPOS_CON_SEGURO, TIPOS_CON_PERMISO,
@@ -140,6 +141,9 @@ const WHERE_FILTER = `
                    AND ${PERMISO_ID_SQL} IS NOT NULL AND per.fecha_expiracion <= @limite)
                OR (@alerta = 'programa_atrasado'
                    AND v.id IN (SELECT TRY_CAST(value AS INT) FROM STRING_SPLIT(@idsAlerta, ','))))))
+    -- La sucursal de quien pregunta (ver shared/alcance.ts). Con @alcance NULL
+    -- no filtra nada.
+    AND ${vehiculoEnAlcance('v.id')}
 `
 
 // ── Read ──────────────────────────────────────────────────────────────────────
@@ -149,9 +153,9 @@ export async function findAll(params: {
   // Filtro de atención, con lo que hace falta para resolverlo: la fecha límite
   // de "por vencer" y los ids que el servicio ya clasificó.
   alerta?: AlertaVehiculo; limite?: string; idsAlerta?: number[]
-}): Promise<{ data: VehiculoRow[]; total: number }> {
+}, alcance: Alcance = SIN_ACOTAR): Promise<{ data: VehiculoRow[]; total: number }> {
   const pool = await getPool()
-  const req = conHoy(pool.request())
+  const req = conAlcance(conHoy(pool.request()), alcance)
     .input('search',    sql.NVarChar(100), params.search ? `%${params.search}%` : null)
     .input('tipo',      sql.NVarChar(20),  params.tipo     ?? null)
     .input('modeloId',  sql.Int,           params.modelo_id ?? null)

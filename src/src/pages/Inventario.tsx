@@ -27,6 +27,7 @@ import SelectCatalogo from '../components/SelectCatalogo'
 import { formatearFecha } from '../lib/fechas'
 import { useAutorizadorOptions } from '../hooks/useAutorizadorOptions'
 import { limpiarTextoSimple } from '../lib/validaciones'
+import { usePermisos } from '../hooks/usePermisos'
 
 const formatMXN = (n: number) =>
   n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -40,7 +41,10 @@ export default function Inventario() {
 
   // Sin sucursal elegida no se asume ninguna: elegir por el usuario haría que
   // la primera lectura de la pantalla fuera de una sucursal que no pidió.
-  const [sucursalId, setSucursalId] = useState<string | null>(null)
+  // La excepción es cuando sólo hay una: al responsable de sucursal la API le
+  // devuelve nada más la suya, y hacerle elegirla sería un clic sin decisión.
+  const [elegida, setSucursalId] = useState<string | null>(null)
+  const sucursalId = elegida ?? (sucursales.length === 1 ? String(sucursales[0].id) : null)
   const sucursal = sucursales.find((s) => String(s.id) === sucursalId)
   const idNum = sucursal?.id
 
@@ -186,6 +190,8 @@ function PanelExistencias({
   onTraspasar: (e: ExistenciaEnSucursal) => void
 }) {
   const { data, isLoading } = useExistencias(sucursalId)
+  // El responsable de sucursal consulta su inventario; moverlo es de almacén.
+  const { puedeDarDeAlta } = usePermisos()
   const filas = data?.data ?? []
 
   if (isLoading) return <Center py="xl"><Loader /></Center>
@@ -260,7 +266,7 @@ function PanelExistencias({
                 </Table.Td>
                 <Table.Td ta="right"><Text size="xs">{formatMXN(f.costo_unitario)}</Text></Table.Td>
                 <Table.Td>
-                  <Tooltip
+                  {puedeDarDeAlta && <Tooltip
                     label={f.cantidad > 0
                       ? 'Traspasar a otra sucursal'
                       : 'No queda nada en el estante: todo va en camino'}
@@ -277,7 +283,7 @@ function PanelExistencias({
                         <IconArrowsExchange size={16} />
                       </ActionIcon>
                     </span>
-                  </Tooltip>
+                  </Tooltip>}
                 </Table.Td>
               </Table.Tr>
             ))}
@@ -300,6 +306,7 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
   // Quitar el mínimo apaga el aviso de faltante de esa refacción en esta
   // sucursal, y apagado no vuelve a pedir atención solo: se pregunta.
   const [quitando, setQuitando] = useState<{ id: number; nombre: string } | null>(null)
+  const { puedeDarDeAlta } = usePermisos()
 
   const filas = data?.data ?? []
   const faltantes = filas.filter((m) => m.existencia < m.minimo)
@@ -312,9 +319,11 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
         <Text size="sm" c="dimmed">
           Refacciones que esta sucursal debe tener siempre disponibles.
         </Text>
-        <Button size="xs" leftSection={<IconPlus size={14} />} onClick={onNuevo}>
-          Nuevo mínimo
-        </Button>
+        {puedeDarDeAlta && (
+          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={onNuevo}>
+            Nuevo mínimo
+          </Button>
+        )}
       </Group>
 
       {faltantes.length > 0 && (
@@ -346,6 +355,7 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
                 <FilaMinimo
                   key={m.id}
                   minimo={m}
+                  soloConsulta={!puedeDarDeAlta}
                   onGuardar={(valor) => updateMut.mutate({ id: m.id, minimo: valor })}
                   onBorrar={() => {
                     deleteMut.reset()
@@ -378,9 +388,10 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
 }
 
 function FilaMinimo({
-  minimo, onGuardar, onBorrar, guardando, borrando,
+  minimo, onGuardar, onBorrar, guardando, borrando, soloConsulta,
 }: {
   minimo: MinimoSucursal
+  soloConsulta: boolean
   onGuardar: (valor: number) => void
   onBorrar: () => void
   guardando: boolean
@@ -401,6 +412,7 @@ function FilaMinimo({
         <Group gap={4} wrap="nowrap" justify="flex-end">
           <NumberInput
             size="xs" w={60} min={1} max={999} allowDecimal={false}
+            readOnly={soloConsulta} variant={soloConsulta ? 'unstyled' : undefined}
             value={valor}
             onChange={(v) => setValor(v === '' ? '' : Number(v))}
             aria-label={`Mínimo de ${minimo.numero_serie}`}
@@ -423,13 +435,15 @@ function FilaMinimo({
         )}
       </Table.Td>
       <Table.Td>
-        <ActionIcon
-          variant="subtle" color="red" loading={borrando}
-          aria-label={`Quitar el mínimo de ${minimo.numero_serie}`}
-          onClick={onBorrar}
-        >
-          <IconTrash size={14} />
-        </ActionIcon>
+        {!soloConsulta && (
+          <ActionIcon
+            variant="subtle" color="red" loading={borrando}
+            aria-label={`Quitar el mínimo de ${minimo.numero_serie}`}
+            onClick={onBorrar}
+          >
+            <IconTrash size={14} />
+          </ActionIcon>
+        )}
       </Table.Td>
     </Table.Tr>
   )
@@ -440,6 +454,7 @@ function FilaMinimo({
 function PanelTraspasos({ sucursalId }: { sucursalId: number }) {
   const { data, isLoading } = useTraspasos(sucursalId)
   const resolverMut = useResolverTraspaso()
+  const { puedeDarDeAlta } = usePermisos()
   const filas = data?.data ?? []
 
   // El traspaso que se está rechazando o cancelando: las dos piden un motivo
@@ -497,8 +512,8 @@ function PanelTraspasos({ sucursalId }: { sucursalId: number }) {
               const est = ESTADO_TRASPASO[t.estado]
               // Quién resuelve depende del lado en que esté esta sucursal: el
               // destino acepta o rechaza, el origen solo puede retirarlo.
-              const puedeAceptar  = t.estado === 'pendiente' && !salio
-              const puedeCancelar = t.estado === 'pendiente' && salio
+              const puedeAceptar  = puedeDarDeAlta && t.estado === 'pendiente' && !salio
+              const puedeCancelar = puedeDarDeAlta && t.estado === 'pendiente' && salio
               return (
                 <Table.Tr key={t.id}>
                   <Table.Td><Text size="xs">{formatearFecha(t.fecha)}</Text></Table.Td>
@@ -872,6 +887,7 @@ function resumenPorSucursal(descuadres: Descuadre[]) {
 function PanelDescuadres({ sucursalId }: { sucursalId: number }) {
   const { data, isLoading, isError } = useDescuadres(sucursalId)
   const [cerrando, setCerrando] = useState<{ d: Descuadre; status: ResolucionDescuadre } | null>(null)
+  const { puedeDarDeAlta } = usePermisos()
 
   const filas = data?.data ?? []
 
@@ -930,7 +946,7 @@ function PanelDescuadres({ sucursalId }: { sucursalId: number }) {
                 {d.vehiculo ? ` · Unidad ${d.vehiculo}` : ''}
               </Text>
 
-              <Group gap="xs" mt={2}>
+              {puedeDarDeAlta && <Group gap="xs" mt={2}>
                 <Button size="compact-xs" onClick={() => setCerrando({ d, status: 'ajustado' })}>
                   Ya ajusté la existencia
                 </Button>
@@ -940,7 +956,7 @@ function PanelDescuadres({ sucursalId }: { sucursalId: number }) {
                 >
                   Conté y sí estaba: era correcto
                 </Button>
-              </Group>
+              </Group>}
             </Stack>
           </Paper>
         ))}

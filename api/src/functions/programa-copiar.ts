@@ -12,7 +12,7 @@ import * as service from '../services/programaService'
 // POST y no PUT: no edita el programa de la ruta, crea uno nuevo en otro modelo.
 export async function programaCopiar(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 

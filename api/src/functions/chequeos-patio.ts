@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe } from '../shared/alcance'
 import * as service from '../services/chequeosService'
 
 // El recorrido del patio de una sucursal: qué unidades le faltan hoy y cuáles
@@ -8,12 +9,12 @@ import * as service from '../services/chequeosService'
 // una o dos personas caminan la flota entera sin abrir la ficha de cada unidad.
 export async function chequeosPatio(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
     const sucursalId = parseInt(req.query.get('sucursal_id') ?? '', 10)
     if (isNaN(sucursalId)) return { status: 400, jsonBody: { error: 'Falta la sucursal' } }
     const fecha = req.query.get('fecha') ?? undefined
 
-    const data = await service.getPatio(sucursalId, fecha)
+    const data = await service.getPatio(sucursalId, fecha, await alcanceDe(user))
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
 }

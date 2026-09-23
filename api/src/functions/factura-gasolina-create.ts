@@ -18,7 +18,7 @@ export async function facturaGasolinaCreate(
   req: HttpRequest, ctx: InvocationContext,
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor')
     const body = FacturaGasolinaCreateSchema.parse(await req.json())
 
     // Quien la registra sale de la sesión, no del cuerpo: mismo criterio que en

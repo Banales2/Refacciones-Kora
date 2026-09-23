@@ -8,7 +8,7 @@ import { ProgramaUpdateSchema } from '../schemas/programaSchema'
 
 export async function programaUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const body = ProgramaUpdateSchema.parse(await req.json())

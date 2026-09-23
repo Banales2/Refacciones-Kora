@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, soloDeSucursal } from '../shared/alcance'
 import * as repo from '../repositories/unidadesPiezaRepo'
 
 /**
@@ -19,8 +20,8 @@ export async function unidadesCuadre(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'responsable')
-    return { status: 200, jsonBody: { data: await repo.contarPorSucursal() } }
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'responsable')
+    return { status: 200, jsonBody: { data: soloDeSucursal(await repo.contarPorSucursal(), await alcanceDe(user)) } }
   } catch (err) {
     return handleError(err, context)
   }

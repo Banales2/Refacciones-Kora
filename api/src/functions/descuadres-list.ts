@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, sucursalPermitida } from '../shared/alcance'
 import * as service from '../services/descuadresService'
 
 // Los descuadres de inventario que siguen abiertos. Sin `sucursal_id` devuelve
@@ -12,12 +13,13 @@ export async function descuadresList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'responsable')
     const raw = request.query.get('sucursal_id')
-    const sucursalId = raw ? parseInt(raw, 10) : undefined
-    if (raw && isNaN(sucursalId!)) {
+    const pedida = raw ? parseInt(raw, 10) : undefined
+    if (raw && isNaN(pedida!)) {
       return { status: 400, jsonBody: { error: 'sucursal_id inválido' } }
     }
+    const sucursalId = sucursalPermitida(pedida, await alcanceDe(user))
     return { status: 200, jsonBody: { data: await service.getAbiertos(sucursalId) } }
   } catch (err) {
     return handleError(err, context)

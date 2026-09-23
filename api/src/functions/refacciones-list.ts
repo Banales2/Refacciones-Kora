@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe } from '../shared/alcance'
 import { audit } from '../shared/audit'
 import { RefaccionQuerySchema } from '../schemas/refaccionSchema'
 import * as service from '../services/refaccionesService'
@@ -21,7 +22,7 @@ export async function refaccionesList(
       incluirArchivados: request.query.get('archivados') ?? undefined,
     })
 
-    const result = await service.getAll(params)
+    const result = await service.getAll(params, await alcanceDe(user))
 
     await audit({ user, accion: 'VER_SENSIBLE', tabla: 'piezas' })
 

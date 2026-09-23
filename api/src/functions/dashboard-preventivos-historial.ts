@@ -5,7 +5,7 @@ import * as service from '../services/dashboardService'
 
 export async function dashboardHistorialPreventivos(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'responsable')
+    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
     const mesesParam = req.query.get('meses')
     const meses = mesesParam ? parseInt(mesesParam, 10) : 12
     const data = await service.getHistorial(isNaN(meses) ? 12 : meses)

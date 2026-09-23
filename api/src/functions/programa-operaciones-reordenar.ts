@@ -11,7 +11,7 @@ import { ReordenarSchema } from '../schemas/programaSchema'
 
 export async function programaOperacionesReordenar(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor')
     const programaId = parseInt(req.params.programaId, 10)
     if (isNaN(programaId)) return { status: 400, jsonBody: { error: 'ID de programa inválido' } }
     const { ids } = ReordenarSchema.parse(await req.json())

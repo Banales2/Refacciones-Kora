@@ -42,15 +42,33 @@ VALUES ('Nombre Apellido', 'admin', '<OBJECT_ID_DE_ENTRA>', 'correo@dominio.com'
 el usuario. Con guiones. Roles válidos: `admin`, `editor`, `lector`,
 `practicante`, `responsable`.
 
-`responsable` es el responsable de una sucursal. Está al nivel de `editor`
-—opera todo, no audita a nadie— y hoy es idéntico a él: no entra a la bitácora
-ni al reporte de errores de captura, que dicen el desempeño de personas con
-nombre y apellido. Existe porque el filtrado por sucursal necesita algo de donde
-colgarse, y ese filtrado **no es el rol**: vive en `usuarios.sucursal_id`
-(migración 049), que nace en `NULL` —ve todo— y todavía no lee ningún
-repositorio. Qué puede hacer y qué filas ve son dos ejes distintos; mezclarlos
-obligaría a inventar un `lector_sucursal` y un `admin_sucursal` el día que
-hagan falta.
+`responsable` es el responsable de una sucursal. Ve la flota de su sucursal y
+las unidades de translado, hace el chequeo diario, reporta incidencias (sin
+editarlas ni atenderlas: atender es registrar el mantenimiento), entrega vales,
+registra cargas de gasolina y consulta refacciones, su inventario, choferes y
+permisos. No ve mantenimientos, modelos, facturas, proveedores ni el tablero.
+La lista exacta es qué funciones llevan `'responsable'` en su `requireRole`; en
+la interfaz, `SECCIONES_RESPONSABLE` de `usePermisos`.
+
+Qué filas ve **no es el rol**: vive en `usuarios.sucursal_id` (migración 049)
+y lo aplica `api/src/shared/alcance.ts`. Cualquier rol se acota poniéndole una
+sucursal; `NULL` ve todo. Qué puede hacer y qué filas ve son dos ejes
+distintos; mezclarlos obligaría a inventar un `lector_sucursal` y un
+`admin_sucursal` el día que hagan falta.
+
+- La sucursal **no viaja en la sesión**: la API la lee de la tabla en cada
+  petición, con un caché de un minuto. Reasignar a alguien surte efecto sin
+  cerrar sesión, a diferencia del rol.
+- Acotado a una sucursal ve los camiones y montacargas de ella más los tipos de
+  `TIPOS_COMPARTIDOS` (hoy, tractocamiones). Cajas y utilitarios no tienen
+  sucursal y quedan fuera.
+- Pedir una unidad, un chequeo o una sucursal ajena contesta **404**, no 403:
+  decir "existe pero no es tuyo" ya es enseñar algo de otra sucursal.
+- **Falla cerrado**: si el `userId` de la sesión no aparece en `usuarios`, las
+  rutas acotadas contestan 403 en vez de enseñar todo. Con el emulador local de
+  SWA eso significa usar como `userId` el Object ID dado de alta.
+- Toda función nueva que lea flota o inventario tiene que pasar por
+  `alcanceDe`. Si no lo hace, el responsable ve todo, y nada lo avisa.
 
 `practicante` es el más acotado: da de alta refacciones, lotes,
 pólizas, licencias de chofer, proveedores y vales de gasolina, y puede mirar las

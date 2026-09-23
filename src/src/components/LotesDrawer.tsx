@@ -54,7 +54,9 @@ interface Props {
 
 export default function LotesDrawer({ piezaId, onClose }: Props) {
   // El lote se captura una vez; corregirlo es cosa de un editor.
-  const { puedeEditar } = usePermisos()
+  // El responsable de sucursal ve los lotes de la suya y nada más: ni da de
+  // alta compras ni ve qué cobra cada proveedor.
+  const { puedeEditar, puedeDarDeAlta, puedeVerFichaProveedor } = usePermisos()
   const [createOpen, setCreateOpen] = useState(false)
   const [editLote, setEditLote] = useState<Lote | null>(null)
   const [generando, setGenerando]   = useState(false)
@@ -63,7 +65,7 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
   // La comparativa se pide junto con los lotes y no al pulsar el botón: así el
   // drawer ya sabe si hay algo que comparar y puede decirlo antes de que
   // alguien genere un PDF vacío.
-  const { data: comparativa, isLoading: cargandoComparativa } = useComparativaPieza(piezaId)
+  const { data: comparativa, isLoading: cargandoComparativa } = useComparativaPieza(piezaId, puedeVerFichaProveedor)
   const createMut = useCreateLote()
   const updateMut = useUpdateLote()
 
@@ -157,7 +159,7 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                 </div>
               </Group>
               <Group gap="xs">
-                <Tooltip
+                {puedeVerFichaProveedor && <Tooltip
                   label={
                     conPrecio === 0
                       ? 'Ningún proveedor cotiza esta refacción y nunca se le ha comprado a nadie'
@@ -178,14 +180,16 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                       Comparar proveedores
                     </Button>
                   </span>
-                </Tooltip>
-                <Button
-                  size="xs"
-                  leftSection={<IconPlus size={14} />}
-                  onClick={() => setCreateOpen(true)}
-                >
-                  Nuevo lote
-                </Button>
+                </Tooltip>}
+                {puedeDarDeAlta && (
+                  <Button
+                    size="xs"
+                    leftSection={<IconPlus size={14} />}
+                    onClick={() => setCreateOpen(true)}
+                  >
+                    Nuevo lote
+                  </Button>
+                )}
               </Group>
             </Group>
 

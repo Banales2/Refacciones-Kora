@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, soloVisibles } from '../shared/alcance'
 import * as service from '../services/valesGasolinaService'
 
 export async function valesGasolinaList(
@@ -8,8 +9,8 @@ export async function valesGasolinaList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'practicante', 'responsable')
-    const data = await service.getAll()
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'practicante', 'responsable')
+    const data = await soloVisibles(await service.getAll(), await alcanceDe(user))
     return { status: 200, jsonBody: { data } }
   } catch (err) {
     return handleError(err, context)

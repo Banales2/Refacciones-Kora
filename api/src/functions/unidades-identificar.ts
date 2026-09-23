@@ -21,7 +21,7 @@ export async function unidadesIdentificar(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'responsable')
+    const user = requireRole(request, 'admin', 'editor')
     const { grupos } = Schema.parse(await request.json())
 
     // Dos piezas no pueden llevar el mismo folio dentro de una refacción. El

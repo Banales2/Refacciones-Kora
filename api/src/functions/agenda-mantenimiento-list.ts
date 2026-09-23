@@ -5,7 +5,7 @@ import * as service from '../services/agendaMantenimientoService'
 
 export async function agendaMantenimientoList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'responsable')
+    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
     const vehiculoId = parseInt(req.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     const data = await service.getByVehiculo(vehiculoId)

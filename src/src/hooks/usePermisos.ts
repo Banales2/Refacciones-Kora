@@ -23,6 +23,17 @@ const SECCIONES_PRACTICANTE: readonly Seccion[] = [
   'piezas', 'sitios', 'vales', 'facturas', 'facturas-gasolina',
 ]
 
+// El responsable de sucursal: la flota de su sucursal y la de translado, el
+// chequeo, las incidencias, los vales, las refacciones y su inventario. Fuera
+// quedan mantenimientos, modelos, facturas y el tablero, cuyos endpoints se le
+// niegan. Qué filas ve dentro de cada sección no se decide aquí: lo acota la
+// API por `usuarios.sucursal_id` (ver api/src/shared/alcance.ts).
+const SECCIONES_RESPONSABLE: readonly Seccion[] = [
+  'chequeos', 'vehiculos', 'incidencias', 'vales', 'piezas', 'inventario', 'sitios',
+]
+
+const CATALOGOS_RESPONSABLE: readonly string[] = ['conductores', 'permisos']
+
 // Pestañas de Catálogos cuyo listado responde al practicante. Faltan Translados,
 // Técnicos y Permisos: sus `-list` piden `lector` o `viewer`.
 const CATALOGOS_PRACTICANTE: readonly string[] = [
@@ -34,6 +45,7 @@ export interface Permisos {
   rol: string | undefined
   esAdmin: boolean
   esPracticante: boolean
+  esResponsable: boolean
   /**
    * Si puede modificar lo que ya existe. El practicante da de alta pero no
    * corrige: si se equivocó, lo arregla un editor.
@@ -44,6 +56,17 @@ export interface Permisos {
    * apagarle la interfaz a un rol que nadie revisó.
    */
   puedeEditar: boolean
+  /**
+   * Si puede dar de alta en refacciones, inventario y catálogos. El
+   * responsable sólo los consulta: lo que captura es lo de su patio (chequeos,
+   * incidencias, vales y recargas), que tiene sus propios botones.
+   */
+  puedeDarDeAlta: boolean
+  /**
+   * Si ve lo que es de mantenimiento en la ficha de una unidad: servicios,
+   * programa, garantías y refacciones montadas.
+   */
+  puedeVerMantenimiento: boolean
   /** Si la sección debe aparecer en el menú y poder abrirse. */
   puedeVerSeccion: (s: Seccion) => boolean
   /** Si la pestaña de Catálogos debe aparecer. */
@@ -65,19 +88,29 @@ export function usePermisos(): Permisos {
   const rol = user?.userRoles.find((r) => !['anonymous', 'authenticated'].includes(r))
   const esAdmin = user?.userRoles.includes('admin') ?? false
   const esPracticante = user?.userRoles.includes('practicante') ?? false
+  const esResponsable = user?.userRoles.includes('responsable') ?? false
 
   return {
     rol,
     esAdmin,
     esPracticante,
-    puedeEditar: !esPracticante,
+    esResponsable,
+    puedeEditar: !esPracticante && !esResponsable,
+    puedeDarDeAlta: !esResponsable,
+    puedeVerMantenimiento: !esResponsable,
     puedeVerSeccion: (s) => {
       if (s === 'registros' || s === 'errores-captura') return esAdmin
       if (esPracticante) return SECCIONES_PRACTICANTE.includes(s)
+      if (esResponsable) return SECCIONES_RESPONSABLE.includes(s)
       return true
     },
-    puedeVerCatalogo: (tab) => !esPracticante || CATALOGOS_PRACTICANTE.includes(tab),
-    puedeVerFichaProveedor: !esPracticante,
-    seccionInicial: esPracticante ? 'piezas' : 'dashboard',
+    puedeVerCatalogo: (tab) => {
+      if (esPracticante) return CATALOGOS_PRACTICANTE.includes(tab)
+      if (esResponsable) return CATALOGOS_RESPONSABLE.includes(tab)
+      return true
+    },
+    puedeVerFichaProveedor: !esPracticante && !esResponsable,
+    // El chequeo es lo que el responsable tiene que hacer cada mañana.
+    seccionInicial: esPracticante ? 'piezas' : esResponsable ? 'chequeos' : 'dashboard',
   }
 }

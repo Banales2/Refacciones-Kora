@@ -146,11 +146,11 @@ export function useDeleteGarantiaModelo(modeloId: number) {
 
 // `vehiculoId` puede llegar en 0 desde un formulario que todavía no sabe de qué
 // unidad habla: ahí no se pide nada.
-export function useGarantiasVehiculo(vehiculoId: number) {
+export function useGarantiasVehiculo(vehiculoId: number, activo = true) {
   return useQuery({
     queryKey: ['garantias-vehiculo', vehiculoId],
     queryFn: () => api.get<{ data: GarantiaVehiculo[] }>(`/vehiculos/${vehiculoId}/garantias`),
-    enabled: vehiculoId > 0,
+    enabled: activo && vehiculoId > 0,
   })
 }
 

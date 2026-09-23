@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe } from '../shared/alcance'
 import { VehiculoQuerySchema } from '../schemas/vehiculoSchema'
 import * as service from '../services/vehiculosService'
 
@@ -9,7 +10,7 @@ export async function vehiculosList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'practicante', 'responsable')
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante', 'responsable')
 
     const params = VehiculoQuerySchema.parse({
       page:      request.query.get('page')      ?? undefined,
@@ -20,7 +21,7 @@ export async function vehiculosList(
       alerta:    request.query.get('alerta')    ?? undefined,
     })
 
-    const result = await service.getAll(params)
+    const result = await service.getAll(params, await alcanceDe(user))
 
     return {
       status: 200,

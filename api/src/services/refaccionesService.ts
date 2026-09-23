@@ -3,6 +3,7 @@ import * as piezasVehiculoRepo from '../repositories/piezasVehiculoRepo'
 import { Pieza, PiezaConCantidad, LoteConProveedor } from '../types/domain'
 import { RefaccionCreate, RefaccionUpdate, SearchBy } from '../schemas/refaccionSchema'
 import { NotFoundError, ConflictError } from '../shared/errors'
+import { Alcance, SIN_ACOTAR } from '../shared/alcance'
 
 export async function getAll(params: {
   page: number
@@ -10,12 +11,12 @@ export async function getAll(params: {
   search?: string
   searchBy?: SearchBy
   incluirArchivados?: boolean
-}): Promise<{ data: PiezaConCantidad[]; total: number; page: number; pageSize: number }> {
+}, alcance: Alcance = SIN_ACOTAR): Promise<{ data: PiezaConCantidad[]; total: number; page: number; pageSize: number }> {
   const offset = (params.page - 1) * params.pageSize
   const result = await repo.findAll({
     offset, pageSize: params.pageSize, search: params.search, searchBy: params.searchBy,
     incluirArchivados: params.incluirArchivados,
-  })
+  }, alcance)
   return { ...result, page: params.page, pageSize: params.pageSize }
 }
 

@@ -26,6 +26,7 @@ import SelectCatalogo from './SelectCatalogo'
 import ConfirmarAvanceKm from './ConfirmarAvanceKm'
 import { avanzaOdometro } from '../lib/odometro'
 import { formatLitros as fmtLitros } from '../lib/formato'
+import { usePermisos } from '../hooks/usePermisos'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -378,7 +379,8 @@ function RecargasTabla({
 }: {
   items: Recarga[]
   rendimientos: Map<number, number | null>
-  onEdit: (r: Recarga) => void
+  /** Sin él la tabla es de consulta. */
+  onEdit?: (r: Recarga) => void
 }) {
   return (
     <Table highlightOnHover verticalSpacing="xs">
@@ -436,11 +438,13 @@ function RecargasTabla({
               </Table.Td>
               <Table.Td>
                 <Group gap={4} justify="flex-end" wrap="nowrap">
-                  <Tooltip label="Editar">
-                    <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => onEdit(r)}>
-                      <IconPencil size={14} />
-                    </ActionIcon>
-                  </Tooltip>
+                  {onEdit && (
+                    <Tooltip label="Editar">
+                      <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => onEdit(r)}>
+                        <IconPencil size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
                 </Group>
               </Table.Td>
             </Table.Tr>
@@ -504,6 +508,8 @@ export default function RecargasSection({
 
   const createMut = useCreateRecarga(vehiculoId)
   const updateMut = useUpdateRecarga(vehiculoId)
+  // El responsable de sucursal registra cargas pero no las corrige.
+  const { puedeEditar } = usePermisos()
 
   const totalLitros = items.reduce((s, r) => s + Number(r.litros), 0)
   const totalCosto  = items.reduce((s, r) => s + Number(r.costo), 0)
@@ -566,7 +572,7 @@ export default function RecargasSection({
                           <ResumenGrupo label={m.label} litros={m.litros} costo={m.costo} fw={500} />
                         </Accordion.Control>
                         <Accordion.Panel>
-                          <RecargasTabla items={m.items} rendimientos={rendimientos} onEdit={openEdit} />
+                          <RecargasTabla items={m.items} rendimientos={rendimientos} onEdit={puedeEditar ? openEdit : undefined} />
                         </Accordion.Panel>
                       </Accordion.Item>
                     ))}

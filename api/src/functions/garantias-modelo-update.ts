@@ -10,7 +10,7 @@ import { GarantiaModeloUpdateSchema } from '../schemas/garantiaSchema'
 
 export async function garantiasModeloUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const body = GarantiaModeloUpdateSchema.parse(await req.json())

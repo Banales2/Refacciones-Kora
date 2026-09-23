@@ -9,7 +9,7 @@ import * as service from '../services/programaService'
 
 export async function programaGet(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
+    requireRole(req, 'admin', 'editor', 'viewer')
     const modeloId = parseInt(req.params.modeloId, 10)
     if (isNaN(modeloId)) return { status: 400, jsonBody: { error: 'ID de modelo inválido' } }
     return { status: 200, jsonBody: { data: await service.getByModelo(modeloId) } }

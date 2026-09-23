@@ -9,6 +9,7 @@ import {
   TIPOS_CON_SEGURO, TIPOS_CON_PERMISO,
 } from '../schemas/vehiculoSchema'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
+import { Alcance, SIN_ACOTAR, exigirVehiculo } from '../shared/alcance'
 
 function requireField(value: unknown, label: string) {
   if (value == null || value === '') throw new ValidationError(`${label} es requerido`)
@@ -46,7 +47,7 @@ function validateCreate(data: VehiculoCreate) {
   }
 }
 
-export async function getAll(params: VehiculoQuery) {
+export async function getAll(params: VehiculoQuery, alcance: Alcance = SIN_ACOTAR) {
   const offset = (params.page - 1) * params.pageSize
 
   // El atraso del programa lo clasifica el tablero, no SQL. Si no hay ninguna
@@ -65,11 +66,12 @@ export async function getAll(params: VehiculoQuery) {
     alerta: params.alerta,
     limite: params.alerta === 'permiso_por_vencer' ? dashboardService.limiteAlertaDocumentos() : undefined,
     idsAlerta,
-  })
+  }, alcance)
   return { ...result, page: params.page, pageSize: params.pageSize }
 }
 
-export async function getById(id: number) {
+export async function getById(id: number, alcance: Alcance = SIN_ACOTAR) {
+  await exigirVehiculo(id, alcance)
   const vehiculo = await repo.findById(id)
   if (!vehiculo) throw new NotFoundError('Vehículo')
   return vehiculo

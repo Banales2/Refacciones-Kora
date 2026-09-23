@@ -42,11 +42,11 @@ export interface MantenimientoDeFlota extends Mantenimiento {
   vehiculo_tipo:   string
 }
 
-export function useMantenimientos(vehiculoId: number) {
+export function useMantenimientos(vehiculoId: number, activo = true) {
   return useQuery({
     queryKey: ['mantenimientos', vehiculoId],
     queryFn: () => api.get<{ data: Mantenimiento[] }>(`/vehiculos/${vehiculoId}/mantenimientos`),
-    enabled: vehiculoId > 0,
+    enabled: activo && vehiculoId > 0,
   })
 }
 

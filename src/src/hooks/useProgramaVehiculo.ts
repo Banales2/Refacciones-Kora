@@ -182,8 +182,9 @@ export interface EstadoProgramaVehiculo {
   operaciones_tiempo: OperacionPorTiempo[]
 }
 
-export function useProgramaVehiculo(vehiculoId: number) {
+export function useProgramaVehiculo(vehiculoId: number, activo = true) {
   return useQuery({
+    enabled: activo,
     // `data` viene en null cuando la unidad no sigue ningún programa: no es un
     // error, es la ficha ofreciendo asignarlo.
     queryKey: ['programa-vehiculo', vehiculoId],

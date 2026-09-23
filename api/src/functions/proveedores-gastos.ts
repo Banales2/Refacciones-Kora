@@ -8,7 +8,7 @@ import * as repo from '../repositories/lotesRepo'
 
 export async function proveedoresGastos(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
+    requireRole(req, 'admin', 'editor', 'viewer')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     return { status: 200, jsonBody: { data: await repo.findGastosDeProveedor(id) } }

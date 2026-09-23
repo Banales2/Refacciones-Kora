@@ -11,7 +11,7 @@ export async function conductoresCreate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'practicante', 'responsable')
+    const user = requireRole(request, 'admin', 'editor', 'practicante')
     const data = ConductorCreateSchema.parse(await request.json())
     const created = await service.create(data)
     await audit({

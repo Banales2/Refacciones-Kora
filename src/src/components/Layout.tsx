@@ -269,7 +269,11 @@ export default function Layout() {
   const [vehiculoOrigin, setVehiculoOrigin] = useState<Section | null>(null)
   // Pestaña activa de Catálogos; vive aquí para persistir al saltar a un
   // vehículo y regresar a la misma pestaña (Seguros, Permisos, etc.).
-  const [sitiosTab, setSitiosTab] = useState<string | null>('proveedores')
+  // Arranca en la primera que este rol puede abrir: al responsable no le
+  // responde Proveedores.
+  const [sitiosTab, setSitiosTab] = useState<string | null>(
+    () => CATALOGOS_TABS.find((t) => puedeVerCatalogo(t.value))?.value ?? 'proveedores'
+  )
   // Catálogos es la única entrada con submenú: se despliega para saltar directo
   // a una pestaña sin pasar por la de Proveedores.
   const [catalogosOpen, setCatalogosOpen] = useState(false)
@@ -568,7 +572,9 @@ export default function Layout() {
             initialVehiculoId={pendingVehiculoId ?? undefined}
             onBack={vehiculoOrigin ? backFromVehiculo : undefined}
             backLabel={vehiculoOrigin ? SECTION_LABELS[vehiculoOrigin] : undefined}
-            onNavigateModelo={navigateToModeloId}
+            // Sin Modelos en el menú, el enlace de la ficha llevaría a una
+            // pantalla que no se le enseña.
+            onNavigateModelo={puedeVerSeccion('modelos') ? navigateToModeloId : undefined}
           />
         )}
         {section === 'incidencias' && puedeVerSeccion('incidencias') && <Incidencias onNavigateVehiculo={navigateToVehiculoId} />}

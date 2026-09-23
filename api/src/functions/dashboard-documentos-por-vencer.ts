@@ -6,7 +6,7 @@ import { parseRango } from '../shared/rangoReporte'
 
 export async function dashboardDocumentosPorVencer(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'responsable')
+    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
     // Con rango la pregunta cambia de "qué vence pronto" a "qué vence entre
     // estas fechas": es como se arma el calendario de trámites de un año.
     const data = await service.getDocumentosPorVencer(parseRango(req.query))

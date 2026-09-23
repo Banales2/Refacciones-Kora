@@ -190,6 +190,9 @@ function ValeForm({
   function choferCreado(conductor: Conductor) {
     form.setFieldValue('conductor_id', String(conductor.id))
   }
+  // El responsable de sucursal entrega vales pero no da de alta choferes: el
+  // catálogo lo consulta.
+  const { puedeDarDeAlta } = usePermisos()
 
   return (
     <>
@@ -226,15 +229,17 @@ function ValeForm({
               placeholder={conductores.length ? 'Selecciona un chofer' : 'No hay choferes registrados'}
               data={conductores}
               required
-              nothingFoundMessage='Sin coincidencias: usa "Nuevo chofer"'
+              nothingFoundMessage={puedeDarDeAlta ? 'Sin coincidencias: usa "Nuevo chofer"' : 'Sin coincidencias'}
               {...form.getInputProps('conductor_id')}
             />
-            <Button
-              variant="subtle" size="compact-xs" mt={4} leftSection={<IconPlus size={12} />}
-              onClick={() => setNuevoChoferOpen(true)}
-            >
-              Nuevo chofer
-            </Button>
+            {puedeDarDeAlta && (
+              <Button
+                variant="subtle" size="compact-xs" mt={4} leftSection={<IconPlus size={12} />}
+                onClick={() => setNuevoChoferOpen(true)}
+              >
+                Nuevo chofer
+              </Button>
+            )}
           </div>
           <Select
             label="Vehículo"

@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, exigirVehiculo } from '../shared/alcance'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { RecargaCreateSchema } from '../schemas/recargaSchema'
@@ -14,6 +15,7 @@ export async function recargaCreate(
     const user = requireRole(request, 'admin', 'editor', 'responsable')
     const vehiculoId = parseInt(request.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
+    await exigirVehiculo(vehiculoId, await alcanceDe(user))
 
     const data = RecargaCreateSchema.parse(await request.json())
     const created = await service.create(vehiculoId, data)

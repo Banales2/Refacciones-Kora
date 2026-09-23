@@ -7,6 +7,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { nombreOCorreo } from '../shared/usuario'
+import { alcanceDe } from '../shared/alcance'
 
 export async function usuarioActual(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
@@ -18,6 +19,9 @@ export async function usuarioActual(req: HttpRequest, ctx: InvocationContext): P
           email:  user.userDetails,
           nombre: await nombreOCorreo(user),
           roles:  user.userRoles,
+          // A qué sucursal está acotado (null = ve todo). Sólo es cortesía para
+          // la interfaz: quien filtra de verdad es la API.
+          sucursal_id: (await alcanceDe(user)).sucursalId,
         },
       },
     }

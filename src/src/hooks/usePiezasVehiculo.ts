@@ -25,11 +25,11 @@ export interface PiezaDeVehiculo {
   km_instalacion:    number | null
 }
 
-export function usePiezasVehiculo(vehiculoId?: number) {
+export function usePiezasVehiculo(vehiculoId?: number, activo = true) {
   return useQuery({
     queryKey: ['piezas-vehiculo', vehiculoId],
     queryFn: () => api.get<{ data: PiezaDeVehiculo[] }>(`/vehiculos/${vehiculoId}/piezas`),
-    enabled: vehiculoId !== undefined,
+    enabled: activo && vehiculoId !== undefined,
   })
 }
 

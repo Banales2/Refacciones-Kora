@@ -154,6 +154,9 @@ function PiezasAgrupadas({
 }
 
 export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) {
+  // El responsable de sucursal consulta el catálogo: ni altas, ni tipos, ni
+  // facturas, que son de compras.
+  const { puedeDarDeAlta } = usePermisos()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [searchBy, setSearchBy] = useState<SearchBy>('all')
@@ -240,24 +243,28 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
             {/* Las compras vistas por factura, no por refacción: es donde se
                 cuadra contra el papel y donde se le pone el IVA a una compra
                 vieja sin ir lote por lote. */}
-            <Button
-              variant="default"
-              leftSection={<IconReceipt size={16} />}
-              onClick={() => setFacturasOpen(true)}
-            >
-              Facturas
-            </Button>
+            {puedeDarDeAlta && (
+              <Button
+                variant="default"
+                leftSection={<IconReceipt size={16} />}
+                onClick={() => setFacturasOpen(true)}
+              >
+                Facturas
+              </Button>
+            )}
             {/* El catálogo de tipos: hasta ahora solo se podían crear al vuelo
                 desde el formulario de una refacción, así que un nombre mal
                 escrito se quedaba así. Y es donde se decide qué tipos se
                 rastrean pieza por pieza. */}
-            <Button
-              variant="default"
-              leftSection={<IconTags size={16} />}
-              onClick={() => setTiposOpen(true)}
-            >
-              Tipos de pieza
-            </Button>
+            {puedeDarDeAlta && (
+              <Button
+                variant="default"
+                leftSection={<IconTags size={16} />}
+                onClick={() => setTiposOpen(true)}
+              >
+                Tipos de pieza
+              </Button>
+            )}
             <Button
               variant="default"
               leftSection={<IconFileTypePdf size={16} />}
@@ -271,12 +278,14 @@ export default function Piezas({ initialPiezaId }: { initialPiezaId?: number }) 
               checked={verArchivados}
               onChange={(e) => setVerArchivados(e.currentTarget.checked)}
             />
-            <Button
-              leftSection={<IconPlus size={16} />}
-              onClick={() => setCreateOpen(true)}
-            >
-              Nueva refacción
-            </Button>
+            {puedeDarDeAlta && (
+              <Button
+                leftSection={<IconPlus size={16} />}
+                onClick={() => setCreateOpen(true)}
+              >
+                Nueva refacción
+              </Button>
+            )}
           </Group>
         </Group>
 

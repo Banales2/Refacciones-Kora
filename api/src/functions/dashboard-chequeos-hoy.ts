@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe } from '../shared/alcance'
 import * as service from '../services/chequeosService'
 
 // Las dos cifras del día: cuántas unidades llevan chequeo y qué reportes del
@@ -9,8 +10,8 @@ import * as service from '../services/chequeosService'
 // las dos tienen que estar en cero al cerrar.
 export async function dashboardChequeosHoy(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'responsable')
-    const data = await service.getResumenHoy()
+    const user = requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'responsable')
+    const data = await service.getResumenHoy(undefined, await alcanceDe(user))
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
 }

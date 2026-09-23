@@ -6,7 +6,7 @@ import { parseRango } from '../shared/rangoReporte'
 
 export async function dashboardResumenMes(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'responsable')
+    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
     // Sin ?anio ni ?desde/?hasta sigue siendo la ventana móvil de 30 días con
     // la que se pinta el tablero; con ellos, el periodo que se pidió para el
     // reporte.

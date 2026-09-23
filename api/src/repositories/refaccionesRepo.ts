@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { Alcance, SIN_ACOTAR, conAlcance } from '../shared/alcance'
 import { Pieza, PiezaConCantidad, LoteConProveedor } from '../types/domain'
 import { RefaccionCreate, RefaccionUpdate, SearchBy, MARCA_FALTANTE } from '../schemas/refaccionSchema'
 import { disponibleDelLote } from './inventarioSql'
@@ -13,9 +14,9 @@ export async function findAll(params: {
   searchBy?: SearchBy
   /** La pantalla del catálogo los pide para poder restaurarlos. */
   incluirArchivados?: boolean
-}): Promise<{ data: PiezaConCantidad[]; total: number }> {
+}, alcance: Alcance = SIN_ACOTAR): Promise<{ data: PiezaConCantidad[]; total: number }> {
   const pool = await getPool()
-  const req = pool.request()
+  const req = conAlcance(pool.request(), alcance)
     .input('offset', params.offset)
     .input('pageSize', params.pageSize)
 
@@ -56,8 +57,10 @@ export async function findAll(params: {
     LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id
     LEFT JOIN lotes_pieza l ON l.pieza_id = p.id
     -- El stock sale de las existencias por sucursal, no de la columna del lote
-    -- (migración 002). Un lote sin existencias no suma nada.
+    -- (migración 002). Un lote sin existencias no suma nada. Quien está
+    -- acotado a una sucursal ve sólo lo que hay en la suya (shared/alcance.ts).
     LEFT JOIN existencias_lote ex ON ex.lote_id = l.id
+                                 AND (@alcance IS NULL OR ex.sucursal_id = @alcance)
     ${where}
     GROUP BY p.id, p.numero_serie, p.descripcion, p.marca, p.tipo_pieza_id,
              t.nombre, p.archivado_en, p.archivado_motivo

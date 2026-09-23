@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, soloDeSucursal } from '../shared/alcance'
 import * as repo from '../repositories/unidadesPiezaRepo'
 
 // Las piezas físicas de una refacción, una por una. Solo tienen unidades las de
@@ -11,10 +12,10 @@ export async function piezaUnidadesList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'responsable')
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
-    return { status: 200, jsonBody: { data: await repo.findByPieza(id) } }
+    return { status: 200, jsonBody: { data: soloDeSucursal(await repo.findByPieza(id), await alcanceDe(user)) } }
   } catch (err) {
     return handleError(err, context)
   }

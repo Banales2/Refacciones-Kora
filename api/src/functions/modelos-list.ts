@@ -5,7 +5,7 @@ import * as service from '../services/modelosService'
 
 export async function modelosList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
+    requireRole(req, 'admin', 'editor', 'viewer')
     // ?descontinuados=1 los incluye. Solo lo pide la pantalla de modelos, para
     // poder verlos y revivirlos; los selectores del alta usan la lista normal,
     // que ya los deja fuera.

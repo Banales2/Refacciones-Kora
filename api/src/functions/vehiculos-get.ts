@@ -1,14 +1,15 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe } from '../shared/alcance'
 import * as service from '../services/vehiculosService'
 
 export async function vehiculosGet(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
-    const vehiculo = await service.getById(id)
+    const vehiculo = await service.getById(id, await alcanceDe(user))
     return { status: 200, jsonBody: { data: vehiculo } }
   } catch (err) { return handleError(err, ctx) }
 }

@@ -10,7 +10,7 @@ export async function mantenimientosListTodos(
   req: HttpRequest, ctx: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
+    requireRole(req, 'admin', 'editor', 'viewer')
     const data = await service.getAll()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

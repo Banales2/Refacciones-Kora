@@ -18,7 +18,7 @@ function todayIso() {
 }
 
 export default function IncidenciaForm({
-  initial, isPending, error, onSubmit, onCancel, tipoVehiculo,
+  initial, isPending, error, onSubmit, onCancel, tipoVehiculo, soloAbiertas = false,
 }: {
   initial?:  Incidencia
   isPending: boolean
@@ -31,6 +31,12 @@ export default function IncidenciaForm({
    * poder ligarla a ofrecer preguntas que esa unidad no contesta.
    */
   tipoVehiculo?: string
+  /**
+   * Quien sólo reporta (el responsable de sucursal) no elige status: la
+   * incidencia nace sin atender. Darla por atendida es repararla, y eso es de
+   * quien registra el mantenimiento.
+   */
+  soloAbiertas?: boolean
 }) {
   const form = useForm({
     initialValues: {
@@ -195,18 +201,20 @@ export default function IncidenciaForm({
             ? 'Quien dio de alta la incidencia; no cambia al editarla'
             : 'Se registra automáticamente con tu cuenta: darla de alta es autorizarla'}
         />
-        <Select
-          label="Status" required
-          description="Cancelada conserva el registro pero deja de alertar"
-          data={[
-            { value: 'activo',     label: 'Sin atender' },
-            { value: 'completado', label: 'Atendida' },
-            { value: 'pausado',    label: 'Pausada' },
-            { value: 'cancelado',  label: 'Cancelada' },
-          ]}
-          allowDeselect={false}
-          {...form.getInputProps('status')}
-        />
+        {!soloAbiertas && (
+          <Select
+            label="Status" required
+            description="Cancelada conserva el registro pero deja de alertar"
+            data={[
+              { value: 'activo',     label: 'Sin atender' },
+              { value: 'completado', label: 'Atendida' },
+              { value: 'pausado',    label: 'Pausada' },
+              { value: 'cancelado',  label: 'Cancelada' },
+            ]}
+            allowDeselect={false}
+            {...form.getInputProps('status')}
+          />
+        )}
 
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Group justify="flex-end" mt="xs">

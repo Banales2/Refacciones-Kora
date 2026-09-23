@@ -94,7 +94,11 @@ function Renglon({
 
 export default function ChequeoPatio() {
   const sucursales = useSucursales()
-  const [sucursalId, setSucursalId] = useState<number | null>(null)
+  // Al responsable la API le devuelve sólo su sucursal: con una sola opción se
+  // toma sola, que es el patio que recorre todos los días.
+  const [elegida, setSucursalId] = useState<number | null>(null)
+  const unica = sucursales.data?.data.length === 1 ? sucursales.data.data[0].id : null
+  const sucursalId = elegida ?? unica
   const { data, isLoading, isError, refetch } = usePatio(sucursalId)
   const patio = data?.data
 

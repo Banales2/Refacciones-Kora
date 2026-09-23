@@ -8,6 +8,8 @@ export interface UsuarioActual {
   email:  string
   nombre: string
   roles:  string[]
+  /** Sucursal a la que está acotado, o null si ve todas. */
+  sucursal_id: number | null
 }
 
 export function useUsuarioActual() {
