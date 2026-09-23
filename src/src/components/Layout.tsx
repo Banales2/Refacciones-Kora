@@ -259,8 +259,9 @@ export default function Layout() {
   const fetching = useIsFetching()
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure()
   const [desktopCollapsed, setDesktopCollapsed] = useState(false)
-  // App.tsx no monta Layout hasta tener el usuario de /.auth/me, así que el rol
-  // ya se conoce en el primer render y la sección de arranque no parpadea.
+  // App.tsx no monta Layout hasta tener el usuario de /.auth/me, y useAuth lo
+  // comparte ya resuelto: el rol se conoce en el primer render y la sección de
+  // arranque es la de ese rol, no el Dashboard por defecto.
   const [section, setSection] = useState<Section>(seccionInicial)
   const [pendingVehiculo, setPendingVehiculo] = useState<VehiculoRow | null>(null)
   const [pendingVehiculoId, setPendingVehiculoId] = useState<number | null>(null)

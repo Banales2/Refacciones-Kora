@@ -125,7 +125,7 @@ export function usePermisos(): Permisos {
       return true
     },
     puedeVerFichaProveedor: !esPracticante && !esResponsable,
-    // El chequeo es lo que el responsable tiene que hacer cada mañana.
-    seccionInicial: esPracticante ? 'piezas' : esResponsable ? 'chequeos' : 'dashboard',
+    // El responsable no ve el tablero: arranca en la flota de su sucursal.
+    seccionInicial: esPracticante ? 'piezas' : esResponsable ? 'vehiculos' : 'dashboard',
   }
 }
