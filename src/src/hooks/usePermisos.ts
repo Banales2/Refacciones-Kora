@@ -73,6 +73,12 @@ export interface Permisos {
    * (api/src/shared/datosDeCompra.ts); esto sólo quita las columnas vacías.
    */
   puedeVerCompras: boolean
+  /**
+   * Si envía, acepta, rechaza y cancela traspasos. Al responsable sí: mover
+   * piezas entre patios es parte de su día, aunque no dé de alta inventario. La
+   * API lo acota a su lado de cada traspaso.
+   */
+  puedeTraspasar: boolean
   /** Si la sección debe aparecer en el menú y poder abrirse. */
   puedeVerSeccion: (s: Seccion) => boolean
   /** Si la pestaña de Catálogos debe aparecer. */
@@ -105,6 +111,7 @@ export function usePermisos(): Permisos {
     puedeDarDeAlta: !esResponsable,
     puedeVerMantenimiento: !esResponsable,
     puedeVerCompras: !esResponsable,
+    puedeTraspasar: !esPracticante,
     puedeVerSeccion: (s) => {
       if (s === 'registros' || s === 'errores-captura') return esAdmin
       if (esPracticante) return SECCIONES_PRACTICANTE.includes(s)

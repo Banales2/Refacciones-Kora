@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { alcanceDe } from '../shared/alcance'
 import { TEXTO_LIBRE } from '../schemas/common'
 import * as service from '../services/inventarioService'
 
@@ -42,7 +43,7 @@ function handler(accion: Accion) {
     req: HttpRequest, ctx: InvocationContext,
   ): Promise<HttpResponseInit> {
     try {
-      const user = requireRole(req, 'admin', 'editor')
+      const user = requireRole(req, 'admin', 'editor', 'responsable')
       const id = parseInt(req.params.id, 10)
       if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 
@@ -55,6 +56,7 @@ function handler(accion: Accion) {
 
       const traspaso = await service.resolverTraspaso(
         id, ESTADO[accion], user.userDetails, accion === 'aceptar' ? null : motivo ?? null,
+        await alcanceDe(user),
       )
 
       await audit({

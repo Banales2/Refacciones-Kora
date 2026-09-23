@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
+import { alcanceDe } from '../shared/alcance'
 import { TraspasoCreateSchema } from '../schemas/inventarioSchema'
 import * as service from '../services/inventarioService'
 
@@ -9,9 +10,9 @@ import * as service from '../services/inventarioService'
 // registro del traspaso van en la misma transacción del repositorio.
 export async function inventarioTraspasoCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor')
+    const user = requireRole(req, 'admin', 'editor', 'responsable')
     const data = TraspasoCreateSchema.parse(await req.json())
-    const created = await service.createTraspaso(data, user.userDetails)
+    const created = await service.createTraspaso(data, user.userDetails, await alcanceDe(user))
 
     await audit({
       user,

@@ -120,6 +120,16 @@ export function useTraspasoAutorizadores() {
   })
 }
 
+// A dónde se puede mandar un traspaso. No es `useSucursales`: esa lista viene
+// acotada, y al responsable sólo le trae la suya.
+export function useDestinosTraspaso() {
+  return useQuery({
+    queryKey: ['inventario-traspaso-destinos'],
+    queryFn: () => api.get<{ data: { id: number; nombre: string }[] }>('/inventario/traspasos/destinos'),
+    staleTime: 10 * 60 * 1000,
+  })
+}
+
 export function useCreateTraspaso() {
   const qc = useQueryClient()
   return useMutation({

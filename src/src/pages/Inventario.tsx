@@ -14,7 +14,7 @@ import { useSucursales } from '../hooks/useSucursales'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
 import {
   useExistencias, useTraspasos, useCreateTraspaso, useResolverTraspaso,
-  ESTADO_TRASPASO,
+  useDestinosTraspaso, ESTADO_TRASPASO,
   useMinimos, useCreateMinimo, useUpdateMinimo, useDeleteMinimo,
 } from '../hooks/useInventario'
 import ConfirmarQuitar from '../components/ConfirmarQuitar'
@@ -190,8 +190,9 @@ function PanelExistencias({
   onTraspasar: (e: ExistenciaEnSucursal) => void
 }) {
   const { data, isLoading } = useExistencias(sucursalId)
-  // El responsable de sucursal consulta su inventario; moverlo es de almacén.
-  const { puedeDarDeAlta, puedeVerCompras } = usePermisos()
+  // El responsable de sucursal no da de alta inventario, pero sí envía piezas
+  // de su patio a otra sucursal.
+  const { puedeTraspasar, puedeVerCompras } = usePermisos()
   const filas = data?.data ?? []
 
   if (isLoading) return <Center py="xl"><Loader /></Center>
@@ -274,7 +275,7 @@ function PanelExistencias({
                   <Table.Td ta="right"><Text size="xs">{formatMXN(f.costo_unitario)}</Text></Table.Td>
                 )}
                 <Table.Td>
-                  {puedeDarDeAlta && <Tooltip
+                  {puedeTraspasar && <Tooltip
                     label={f.cantidad > 0
                       ? 'Traspasar a otra sucursal'
                       : 'No queda nada en el estante: todo va en camino'}
@@ -462,7 +463,7 @@ function FilaMinimo({
 function PanelTraspasos({ sucursalId }: { sucursalId: number }) {
   const { data, isLoading } = useTraspasos(sucursalId)
   const resolverMut = useResolverTraspaso()
-  const { puedeDarDeAlta } = usePermisos()
+  const { puedeTraspasar } = usePermisos()
   const filas = data?.data ?? []
 
   // El traspaso que se está rechazando o cancelando: las dos piden un motivo
@@ -520,8 +521,8 @@ function PanelTraspasos({ sucursalId }: { sucursalId: number }) {
               const est = ESTADO_TRASPASO[t.estado]
               // Quién resuelve depende del lado en que esté esta sucursal: el
               // destino acepta o rechaza, el origen solo puede retirarlo.
-              const puedeAceptar  = puedeDarDeAlta && t.estado === 'pendiente' && !salio
-              const puedeCancelar = puedeDarDeAlta && t.estado === 'pendiente' && salio
+              const puedeAceptar  = puedeTraspasar && t.estado === 'pendiente' && !salio
+              const puedeCancelar = puedeTraspasar && t.estado === 'pendiente' && salio
               return (
                 <Table.Tr key={t.id}>
                   <Table.Td><Text size="xs">{formatearFecha(t.fecha)}</Text></Table.Td>
@@ -676,9 +677,10 @@ function TraspasoModal({
   existencia: ExistenciaEnSucursal
   onClose: () => void
 }) {
-  const sucQuery = useSucursales()
+  const sucQuery = useDestinosTraspaso()
   const sucData = sucQuery.data
   const crearMut = useCreateTraspaso()
+  const { puedeVerCompras } = usePermisos()
 
   const [destino, setDestino] = useState<string | null>(null)
   const [cantidad, setCantidad] = useState<number | string>(1)
@@ -729,9 +731,14 @@ function TraspasoModal({
         <Paper withBorder p="xs">
           <Text size="sm" fw={500}>{existencia.numero_serie} — {existencia.descripcion}</Text>
           <Text size="xs" c="dimmed">
-            {existencia.proveedor ?? 'Recuperada de unidad'}
-            {existencia.num_factura ? ` · Fact. ${existencia.num_factura}` : ''}
-            {' · '}{existencia.cantidad} disponible(s) en {existencia.sucursal}
+            {/* Al responsable la API no le manda la compra: sin este corte, la
+                falta de proveedor se leería como "Recuperada de unidad". */}
+            {puedeVerCompras && <>
+              {existencia.proveedor ?? 'Recuperada de unidad'}
+              {existencia.num_factura ? ` · Fact. ${existencia.num_factura}` : ''}
+              {' · '}
+            </>}
+            {existencia.cantidad} disponible(s) en {existencia.sucursal}
           </Text>
         </Paper>
 

@@ -3,7 +3,8 @@ import * as sucursalesRepo from '../repositories/sucursalesRepo'
 import * as refaccionesRepo from '../repositories/refaccionesRepo'
 import { TraspasoCreate, MinimoCreate, MinimoUpdate } from '../schemas/inventarioSchema'
 import { NotFoundError, ValidationError, ConflictError } from '../shared/errors'
-import type { Alcance } from '../shared/alcance'
+import { type Alcance, sucursalPermitida } from '../shared/alcance'
+import { AuthError } from '../shared/auth'
 
 async function exigirSucursal(id: number) {
   const s = await sucursalesRepo.findById(id)
@@ -34,7 +35,11 @@ export async function getAutorizadores(alcance: Alcance) {
   return repo.findAutorizadores(alcance)
 }
 
-export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string) {
+export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string, alcance: Alcance) {
+  // Quien está acotado a una sucursal sólo envía lo que hay en la suya: mandar
+  // stock de otro almacén sería disponer de algo que no está a su cargo. El
+  // destino es libre, que es el sentido de un traspaso.
+  sucursalPermitida(data.origen_sucursal_id, alcance)
   const origen  = await exigirSucursal(data.origen_sucursal_id)
   await exigirSucursal(data.destino_sucursal_id)
 
@@ -57,17 +62,32 @@ export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string)
  * Resolver un traspaso pendiente: el destino lo acepta o lo rechaza, o el origen
  * lo cancela.
  *
- * Mientras los roles sean planos —admin/editor sobre toda la flota— no hay a
- * quién bloquearle cuál de las tres acciones. Lo que sí queda es el rastro: el
- * repositorio guarda quién lo resolvió y cuándo. El día que existan roles por
- * sucursal, el candado entra aquí y no hay que volver a tocar el modelo.
+ * Quien ve toda la flota puede resolver cualquiera. Quien está acotado a una
+ * sucursal (shared/alcance.ts) sólo resuelve desde su lado: acepta o rechaza lo
+ * que llega a la suya y cancela lo que salió de ella. Un traspaso entre otras
+ * dos sucursales le contesta 404, como todo lo ajeno.
  */
 export async function resolverTraspaso(
   id: number, estado: 'aceptado' | 'rechazado' | 'cancelado',
-  usuarioEmail: string, motivo: string | null,
+  usuarioEmail: string, motivo: string | null, alcance: Alcance,
 ) {
   const traspaso = await repo.findTraspasoById(id)
   if (!traspaso) throw new NotFoundError('Traspaso')
+
+  const suc = alcance.sucursalId
+  if (suc != null) {
+    const esOrigen  = traspaso.origen_sucursal_id  === suc
+    const esDestino = traspaso.destino_sucursal_id === suc
+    if (!esOrigen && !esDestino) throw new NotFoundError('Traspaso')
+    // 403 y no 404: el traspaso es suyo y lo está viendo en su pantalla; lo que
+    // no le toca es esta acción, y el mensaje le dice quién sí puede.
+    if (estado === 'cancelado' && !esOrigen) {
+      throw new AuthError('Solo la sucursal que lo envió puede cancelarlo; tú puedes aceptarlo o rechazarlo.', 403)
+    }
+    if (estado !== 'cancelado' && !esDestino) {
+      throw new AuthError('Solo la sucursal que lo recibe puede aceptarlo o rechazarlo; tú puedes cancelar el envío.', 403)
+    }
+  }
 
   // El 409 y no un 400: la petición era válida, lo que cambió es el estado del
   // traspaso. Casi siempre es que alguien más lo resolvió primero, así que el

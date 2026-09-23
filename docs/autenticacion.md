@@ -46,7 +46,10 @@ el usuario. Con guiones. Roles válidos: `admin`, `editor`, `lector`,
 las unidades de translado, hace el chequeo diario, reporta incidencias (sin
 editarlas ni atenderlas: atender es registrar el mantenimiento), entrega vales,
 registra cargas de gasolina y consulta refacciones, su inventario, choferes y
-permisos. No ve mantenimientos, modelos, facturas, proveedores ni el tablero.
+permisos. Sí mueve inventario: envía traspasos desde su sucursal, acepta o
+rechaza los que llegan a ella y cancela los que salieron de ella; la otra punta
+de cada traspaso no la puede resolver (`resolverTraspaso` en
+`inventarioService`). No ve mantenimientos, modelos, facturas, proveedores ni el tablero.
 De las refacciones tampoco ve de qué compra salieron —costo, IVA, factura,
 proveedor, quién compró y autorizó—: `api/src/shared/datosDeCompra.ts` quita
 esos campos de la respuesta, no sólo de la pantalla. Todo endpoint nuevo que
