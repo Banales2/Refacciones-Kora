@@ -24,12 +24,13 @@ const SECCIONES_PRACTICANTE: readonly Seccion[] = [
 ]
 
 // El responsable de sucursal: la flota de su sucursal y la de translado, el
-// chequeo, las incidencias, los vales, las refacciones y su inventario (sin
-// precios ni facturas). Fuera quedan mantenimientos, modelos, facturas y el
-// tablero, cuyos endpoints se le niegan. Qué filas ve dentro de cada sección no se decide aquí: lo acota la
-// API por `usuarios.sucursal_id` (ver api/src/shared/alcance.ts).
+// chequeo, las incidencias, los vales y el inventario de su sucursal (sin
+// precios ni facturas). Fuera quedan el catálogo de refacciones,
+// mantenimientos, modelos, facturas y el tablero, cuyos endpoints se le niegan.
+// Qué filas ve dentro de cada sección no se decide aquí: lo acota la API por
+// `usuarios.sucursal_id` (ver api/src/shared/alcance.ts).
 const SECCIONES_RESPONSABLE: readonly Seccion[] = [
-  'chequeos', 'vehiculos', 'incidencias', 'vales', 'piezas', 'inventario', 'sitios',
+  'chequeos', 'vehiculos', 'incidencias', 'vales', 'inventario', 'sitios',
 ]
 
 const CATALOGOS_RESPONSABLE: readonly string[] = ['conductores', 'permisos']

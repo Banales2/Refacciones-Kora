@@ -45,16 +45,17 @@ el usuario. Con guiones. Roles válidos: `admin`, `editor`, `lector`,
 `responsable` es el responsable de una sucursal. Ve la flota de su sucursal y
 las unidades de translado, hace el chequeo diario, reporta incidencias (sin
 editarlas ni atenderlas: atender es registrar el mantenimiento), entrega vales,
-registra cargas de gasolina y consulta refacciones, su inventario, choferes y
+registra cargas de gasolina y consulta el inventario de su sucursal, choferes y
 permisos. Sí mueve inventario: envía traspasos desde su sucursal, acepta o
 rechaza los que llegan a ella y cancela los que salieron de ella; la otra punta
 de cada traspaso no la puede resolver (`resolverTraspaso` en
-`inventarioService`). No ve mantenimientos, modelos, facturas, proveedores ni el tablero.
-De las refacciones tampoco ve de qué compra salieron —costo, IVA, factura,
-proveedor, quién compró y autorizó—: `api/src/shared/datosDeCompra.ts` quita
-esos campos de la respuesta, no sólo de la pantalla. Todo endpoint nuevo que
-devuelva lotes o existencias al responsable tiene que pasar por
-`sinDatosDeCompra`.
+`inventarioService`). No ve el catálogo de refacciones (piezas, lotes, unidades
+identificadas, tipos de pieza), mantenimientos, modelos, facturas, proveedores
+ni el tablero. De lo que hay en su inventario tampoco ve de qué compra salió
+—costo, IVA, factura, proveedor, quién compró y autorizó—:
+`api/src/shared/datosDeCompra.ts` quita esos campos de la respuesta, no sólo de
+la pantalla. Todo endpoint nuevo que devuelva lotes o existencias al
+responsable tiene que pasar por `sinDatosDeCompra`.
 La lista exacta es qué funciones llevan `'responsable'` en su `requireRole`; en
 la interfaz, `SECCIONES_RESPONSABLE` de `usePermisos`.
 

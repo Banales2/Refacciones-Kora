@@ -3,7 +3,6 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { alcanceDe, soloDeSucursal } from '../shared/alcance'
 import * as repo from '../repositories/unidadesPiezaRepo'
-import { sinDatosDeCompra } from '../shared/datosDeCompra'
 
 /**
  * El stock que está en el estante sin identidad, porque se compró antes de que
@@ -17,7 +16,7 @@ export async function unidadesSinIdentificar(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(request, 'admin', 'editor', 'lector')
     const tipo  = request.query.get('tipo_pieza_id')
     const pieza = request.query.get('pieza_id')
     const tipoPiezaId = tipo  ? parseInt(tipo, 10)  : undefined
@@ -28,9 +27,7 @@ export async function unidadesSinIdentificar(
     return {
       status: 200,
       jsonBody: {
-        data: sinDatosDeCompra(
-          soloDeSucursal(await repo.findSinIdentificar({ tipoPiezaId, piezaId }), await alcanceDe(user)), user,
-        ),
+        data: soloDeSucursal(await repo.findSinIdentificar({ tipoPiezaId, piezaId }), await alcanceDe(user)),
       },
     }
   } catch (err) {

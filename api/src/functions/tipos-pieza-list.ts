@@ -2,15 +2,13 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import * as service from '../services/tiposPiezaService'
-import { exigirSucursalAsignada } from '../shared/alcance'
 
 export async function tiposPiezaList(
   request: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante', 'responsable')
-    await exigirSucursalAsignada(user)
+    requireRole(request, 'admin', 'editor', 'lector', 'practicante')
     // ?archivados=1 los incluye. Solo lo pide la pantalla del catálogo, para poder
     // verlos y restaurarlos; los selectores del alta usan la lista normal.
     const data = await service.getAll(request.query.get('archivados') === '1')

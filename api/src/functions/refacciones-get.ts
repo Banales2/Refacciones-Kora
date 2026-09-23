@@ -3,15 +3,13 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit } from '../shared/audit'
 import * as service from '../services/refaccionesService'
-import { exigirSucursalAsignada } from '../shared/alcance'
 
 export async function refaccionesGet(
   request: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante', 'responsable')
-    await exigirSucursalAsignada(user)
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante')
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const data = await service.getById(id)

@@ -1,6 +1,6 @@
 // Lo que dice cuánto costó una refacción y a quién se le compró.
 //
-// El responsable de sucursal consulta refacciones e inventario para saber QUÉ
+// El responsable de sucursal consulta el inventario de su patio para saber QUÉ
 // hay en su patio, no cuánto se pagó por ello: precios, facturas y proveedores
 // son información comercial de almacén. Se quita aquí, en la respuesta, y no
 // sólo se esconde en la interfaz, porque lo que llega al navegador se puede leer

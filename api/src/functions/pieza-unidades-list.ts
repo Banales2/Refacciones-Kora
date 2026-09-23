@@ -3,7 +3,6 @@ import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { alcanceDe, soloDeSucursal } from '../shared/alcance'
 import * as repo from '../repositories/unidadesPiezaRepo'
-import { sinDatosDeCompra } from '../shared/datosDeCompra'
 
 // Las piezas físicas de una refacción, una por una. Solo tienen unidades las de
 // un tipo con rastreo individual (migración 025); para el resto la lista viene
@@ -13,10 +12,10 @@ export async function piezaUnidadesList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(request, 'admin', 'editor', 'lector')
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
-    return { status: 200, jsonBody: { data: sinDatosDeCompra(soloDeSucursal(await repo.findByPieza(id), await alcanceDe(user)), user) } }
+    return { status: 200, jsonBody: { data: soloDeSucursal(await repo.findByPieza(id), await alcanceDe(user)) } }
   } catch (err) {
     return handleError(err, context)
   }
