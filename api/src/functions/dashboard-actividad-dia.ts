@@ -5,7 +5,7 @@ import * as service from '../services/actividadDiaService'
 
 export async function dashboardActividadDia(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
+    requireRole(req, 'admin', 'editor', 'lector')
     const fecha = req.query.get('fecha')
     if (!fecha) throw new ValidationError('Falta el parámetro fecha (YYYY-MM-DD)')
     const data = await service.getActividadDelDia(fecha)

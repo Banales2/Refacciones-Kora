@@ -85,7 +85,10 @@ facturas sin tocarlas. No edita nada de lo que crea (migración 047).
 
 Tres sitios definen cada rol y los tres tienen que estar de acuerdo: el `CHECK`
 de la tabla, los `allowedRoles` de `staticwebapp.config.json` y la lista de cada
-`requireRole`. En el frontend, `usePermisos()` decide qué se enseña — y eso es
+`requireRole`. (`viewer` era un cuarto nombre que aparecía en los `requireRole`
+sin estar en los otros dos sitios, y por eso a `lector` le devolvían 403 los
+listados de incidencias, facturas o mantenimientos. Se sustituyó por `lector`;
+no lo vuelvas a usar.) En el frontend, `usePermisos()` decide qué se enseña — y eso es
 sólo cortesía: la negativa real la da el 403 de la API.
 
 Un **App Role de Entra no sirve para esto**. Con `rolesSource` declarado, Static

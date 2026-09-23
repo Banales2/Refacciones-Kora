@@ -244,8 +244,8 @@ es nada: se borra también, salvo que ya tenga correcciones registradas.
 
 | Ruta | Rol | Qué hace |
 |---|---|---|
-| `GET /facturas?por_revisar=1` | admin, editor, viewer | La bandeja de lo pendiente |
-| `GET /facturas/{id}/cuadre` | admin, editor, viewer | Las dos listas y sus diferencias |
+| `GET /facturas?por_revisar=1` | admin, editor, lector | La bandeja de lo pendiente |
+| `GET /facturas/{id}/cuadre` | admin, editor, lector | Las dos listas y sus diferencias |
 | `PUT /facturas/{id}/renglones` | **admin** | Guarda la transcripción del papel |
 | `POST /facturas/renglones/{id}/registrar` | **admin** | Da de alta la compra que falta |
 | `POST /facturas/{id}/cuadrar` | **admin** | Aplica el papel y sella la factura |

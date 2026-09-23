@@ -3,6 +3,7 @@ import * as sucursalesRepo from '../repositories/sucursalesRepo'
 import * as refaccionesRepo from '../repositories/refaccionesRepo'
 import { TraspasoCreate, MinimoCreate, MinimoUpdate } from '../schemas/inventarioSchema'
 import { NotFoundError, ValidationError, ConflictError } from '../shared/errors'
+import type { Alcance } from '../shared/alcance'
 
 async function exigirSucursal(id: number) {
   const s = await sucursalesRepo.findById(id)
@@ -29,8 +30,8 @@ export async function getTraspasos(sucursalId?: number) {
   return repo.findTraspasos(sucursalId)
 }
 
-export async function getAutorizadores() {
-  return repo.findAutorizadores()
+export async function getAutorizadores(alcance: Alcance) {
+  return repo.findAutorizadores(alcance)
 }
 
 export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string) {

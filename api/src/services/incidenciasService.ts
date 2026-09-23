@@ -4,6 +4,7 @@ import { NotFoundError, ValidationError } from '../shared/errors'
 import { itemsDe, itemPorClave } from '../shared/chequeoItems'
 import type { TipoVehiculo } from '../schemas/vehiculoSchema'
 import type { IncidenciaCreate, IncidenciaUpdate } from '../repositories/incidenciasRepo'
+import type { Alcance } from '../shared/alcance'
 
 /**
  * Que la pregunta del chequeo exista y le toque a esta unidad.
@@ -36,8 +37,8 @@ export async function getAll() {
   return repo.findAllConVehiculo()
 }
 
-export async function getReportadores() {
-  return repo.findReportadores()
+export async function getReportadores(alcance: Alcance) {
+  return repo.findReportadores(alcance)
 }
 
 export async function create(

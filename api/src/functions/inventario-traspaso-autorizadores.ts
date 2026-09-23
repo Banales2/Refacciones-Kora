@@ -2,7 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import * as service from '../services/inventarioService'
-import { exigirSucursalAsignada } from '../shared/alcance'
+import { alcanceDe } from '../shared/alcance'
 
 // Nombres ya usados al autorizar un traspaso, para el selector del formulario.
 // Mismo papel que /incidencias/reportadores: no hay catálogo de jefes de
@@ -10,9 +10,8 @@ import { exigirSucursalAsignada } from '../shared/alcance'
 // acabe escrita de cinco formas.
 export async function inventarioTraspasoAutorizadores(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'responsable')
-    await exigirSucursalAsignada(user)
-    const data = await service.getAutorizadores()
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
+    const data = await service.getAutorizadores(await alcanceDe(user))
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
 }

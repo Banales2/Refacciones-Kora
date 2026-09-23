@@ -24,7 +24,7 @@ function ventanaMovil(dias: number): { start: string; end: string } {
 
 export async function dashboardAnalisisCostos(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
+    requireRole(req, 'admin', 'editor', 'lector')
     // Un rango explícito (?anio o ?desde/?hasta) gana sobre ?dias: lo pide el
     // reporte, mientras que ?dias es lo que trae el tablero. `parseRango` ya
     // acota la amplitud, así que sigue sin poder barrerse la base entera.

@@ -11,7 +11,7 @@ export async function preciosProveedorComparativa(
   req: HttpRequest, ctx: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector', 'viewer')
+    requireRole(req, 'admin', 'editor', 'lector')
     // Ausente = el de referencia del servidor. Ver `preciosSql`.
     const descRef = DescuentoReferenciaSchema.parse(
       req.query.get('descuento_ref') ?? undefined)

@@ -6,7 +6,7 @@ import * as service from '../services/sucursalesService'
 
 export async function sucursalesList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'viewer', 'practicante', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'practicante', 'responsable')
     // ?archivados=1 los incluye. Solo lo pide la pantalla del catálogo, para poder
     // verlos y restaurarlos; los selectores del alta usan la lista normal.
     const todas = await service.getAll(req.query.get('archivados') === '1')

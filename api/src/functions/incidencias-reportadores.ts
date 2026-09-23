@@ -2,16 +2,15 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import * as service from '../services/incidenciasService'
-import { exigirSucursalAsignada } from '../shared/alcance'
+import { alcanceDe } from '../shared/alcance'
 
 // Nombres ya usados en "reportado por", para el selector del formulario. Mismo
 // papel que /pendientes/categorias: no hay catálogo, se reaprovecha lo
 // capturado para que la misma persona no acabe escrita de cinco formas.
 export async function incidenciasReportadores(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
-    await exigirSucursalAsignada(user)
-    const data = await service.getReportadores()
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
+    const data = await service.getReportadores(await alcanceDe(user))
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
 }

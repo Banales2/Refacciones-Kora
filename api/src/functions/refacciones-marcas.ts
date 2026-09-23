@@ -9,7 +9,7 @@ import { exigirSucursalAsignada } from '../shared/alcance'
 // reaprovecha lo capturado para que Bosch no acabe escrita de cinco formas.
 export async function refaccionesMarcas(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'practicante', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'practicante', 'responsable')
     await exigirSucursalAsignada(user)
     const data = await service.getMarcas()
     return { status: 200, jsonBody: { data } }

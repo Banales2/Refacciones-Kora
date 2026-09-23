@@ -10,7 +10,7 @@ import { exigirSucursalAsignada } from '../shared/alcance'
 // acabe guardada de cinco formas.
 export async function vehiculosCategorias(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'viewer', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
     await exigirSucursalAsignada(user)
     const data = await repo.findCategorias()
     return { status: 200, jsonBody: { data } }

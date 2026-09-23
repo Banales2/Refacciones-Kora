@@ -8,7 +8,7 @@ import * as service from '../services/inventarioService'
 // sucursal recibió y lo que entregó.
 export async function inventarioTraspasosList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
 
     const sucursalRaw = req.query.get('sucursal')
     const pedida = sucursalRaw ? parseInt(sucursalRaw, 10) : undefined

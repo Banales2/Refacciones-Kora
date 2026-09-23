@@ -7,6 +7,7 @@
 // queda el registro pero deja de alertar.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { Alcance, SIN_ACOTAR, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 import * as pendientes from './pendientesRepo'
 import { PENDIENTE_COLS, type StatusPendiente } from './pendientesRepo'
 
@@ -130,12 +131,18 @@ export async function findAllConVehiculo(): Promise<IncidenciaConVehiculo[]> {
 // Quiénes han reportado algo alguna vez, para ofrecerlos en el formulario. No
 // hay catálogo de empleados: el nombre es texto libre y las repeticiones salen
 // de lo ya capturado, igual que las categorías.
-export async function findReportadores(): Promise<string[]> {
+//
+// Acotado a una sucursal, sólo quien ha reportado en su patio: los nombres de
+// otra no le sirven para capturar y sí le enseñan quién trabaja allá.
+export async function findReportadores(alcance: Alcance = SIN_ACOTAR): Promise<string[]> {
   const pool = await getPool()
-  const r = await pool.request().query(`
-    SELECT DISTINCT reportado_por FROM incidencias
-    WHERE LTRIM(RTRIM(reportado_por)) <> ''
-    ORDER BY reportado_por
+  const r = await conAlcance(pool.request(), alcance).query(`
+    SELECT DISTINCT i.reportado_por
+    FROM incidencias i
+    JOIN pendientes p ON p.id = i.id
+    WHERE LTRIM(RTRIM(i.reportado_por)) <> ''
+      AND ${vehiculoEnAlcance('p.vehiculo_id')}
+    ORDER BY i.reportado_por
   `)
   return r.recordset.map((row: { reportado_por: string }) => row.reportado_por)
 }

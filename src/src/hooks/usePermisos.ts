@@ -35,7 +35,7 @@ const SECCIONES_RESPONSABLE: readonly Seccion[] = [
 const CATALOGOS_RESPONSABLE: readonly string[] = ['conductores', 'permisos']
 
 // Pestañas de Catálogos cuyo listado responde al practicante. Faltan Translados,
-// Técnicos y Permisos: sus `-list` piden `lector` o `viewer`.
+// Técnicos y Permisos: sus `-list` no admiten al practicante.
 const CATALOGOS_PRACTICANTE: readonly string[] = [
   'proveedores', 'sucursales', 'gasolineras', 'conductores', 'seguros',
 ]

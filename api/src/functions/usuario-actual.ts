@@ -11,7 +11,7 @@ import { sucursalAsignada } from '../shared/alcance'
 
 export async function usuarioActual(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'practicante', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'practicante', 'responsable')
     return {
       status: 200,
       jsonBody: {

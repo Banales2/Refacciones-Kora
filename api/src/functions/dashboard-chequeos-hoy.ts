@@ -10,7 +10,7 @@ import * as service from '../services/chequeosService'
 // las dos tienen que estar en cero al cerrar.
 export async function dashboardChequeosHoy(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'viewer', 'lector', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
     const data = await service.getResumenHoy(undefined, await alcanceDe(user))
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

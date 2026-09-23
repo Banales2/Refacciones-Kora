@@ -9,7 +9,7 @@ export async function valesGasolinaList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'practicante', 'responsable')
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante', 'responsable')
     const data = await soloVisibles(await service.getAll(), await alcanceDe(user))
     return { status: 200, jsonBody: { data } }
   } catch (err) {

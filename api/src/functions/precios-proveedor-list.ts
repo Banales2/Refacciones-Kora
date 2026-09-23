@@ -8,7 +8,7 @@ export async function preciosProveedorList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector', 'viewer')
+    requireRole(request, 'admin', 'editor', 'lector')
     const proveedorId = parseInt(request.params.id, 10)
     if (isNaN(proveedorId)) return { status: 400, jsonBody: { error: 'ID de proveedor inválido' } }
 

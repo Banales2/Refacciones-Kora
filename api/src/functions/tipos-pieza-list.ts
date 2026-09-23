@@ -9,7 +9,7 @@ export async function tiposPiezaList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'lector', 'viewer', 'practicante', 'responsable')
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante', 'responsable')
     await exigirSucursalAsignada(user)
     // ?archivados=1 los incluye. Solo lo pide la pantalla del catálogo, para poder
     // verlos y restaurarlos; los selectores del alta usan la lista normal.

@@ -239,13 +239,13 @@ el expediente del camión.** Ninguna de esas otras cosas sale de ninguna factura
 
 | Ruta | Rol | Qué hace |
 |---|---|---|
-| `GET /facturas?con_mano_obra=1` | admin, editor, viewer | Las facturas que cobran trabajo |
+| `GET /facturas?con_mano_obra=1` | admin, editor, lector | Las facturas que cobran trabajo |
 | `POST /facturas/taller` | **admin** | Da de alta la cabecera, resolviendo el proveedor del taller |
-| `GET /facturas/{id}/mano-obra/candidatos` | admin, editor, viewer | Los servicios que podría estar cobrando, y de qué taller es |
+| `GET /facturas/{id}/mano-obra/candidatos` | admin, editor, lector | Los servicios que podría estar cobrando, y de qué taller es |
 | `PUT /facturas/{id}/mano-obra` | **admin** | Guarda la transcripción de la mano de obra |
-| `GET /mantenimientos/sin-facturar` | admin, editor, viewer | Los servicios que ninguna factura reclama |
-| `GET /tecnicos/{id}/facturas` | admin, editor, viewer | Las facturas de un taller |
-| `GET /tecnicos/{id}/mantenimientos` | admin, editor, viewer | Los servicios que hizo un taller |
+| `GET /mantenimientos/sin-facturar` | admin, editor, lector | Los servicios que ninguna factura reclama |
+| `GET /tecnicos/{id}/facturas` | admin, editor, lector | Las facturas de un taller |
+| `GET /tecnicos/{id}/mantenimientos` | admin, editor, lector | Los servicios que hizo un taller |
 
 `GET /tecnicos/{id}/facturas` recibe un **taller** y resuelve el proveedor por
 dentro, para que el catálogo de técnicos no tenga que saber que un taller factura

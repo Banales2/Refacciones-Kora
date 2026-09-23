@@ -11,7 +11,7 @@ import { sinDatosDeCompra } from '../shared/datosDeCompra'
 // lugar de desglosar el lote.
 export async function inventarioExistencias(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'lector', 'viewer', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
 
     const sucursalRaw = req.query.get('sucursal')
     const pedida = sucursalRaw ? parseInt(sucursalRaw, 10) : undefined

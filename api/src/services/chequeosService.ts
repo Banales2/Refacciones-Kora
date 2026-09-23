@@ -165,8 +165,8 @@ export async function getDelDia(vehiculoId: number, fecha?: string) {
   return repo.findDelDia(vehiculoId, fecha ?? fechaMexico())
 }
 
-export async function getDeclarantes() {
-  return repo.findDeclarantes()
+export async function getDeclarantes(alcance: Alcance) {
+  return repo.findDeclarantes(alcance)
 }
 
 /**

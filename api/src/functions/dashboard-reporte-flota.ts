@@ -6,7 +6,7 @@ import { parseRango } from '../shared/rangoReporte'
 
 export async function dashboardReporteFlota(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
+    requireRole(req, 'admin', 'editor', 'lector')
     const periodo = req.query.get('periodo') === 'semana' ? 'semana' : 'mes'
     const data = await service.getReporteFlota(periodo, parseRango(req.query))
     return { status: 200, jsonBody: { data } }

@@ -5,7 +5,7 @@ import * as service from '../services/agendaMantenimientoService'
 
 export async function dashboardAgendasCalendario(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
+    requireRole(req, 'admin', 'editor', 'lector')
     const data = await service.getAllConVehiculo()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

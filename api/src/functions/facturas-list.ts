@@ -9,7 +9,7 @@ export async function facturasList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'viewer', 'practicante')
+    requireRole(request, 'admin', 'editor', 'lector', 'practicante')
 
     const params = FacturaQuerySchema.parse({
       page: request.query.get('page') ?? undefined,

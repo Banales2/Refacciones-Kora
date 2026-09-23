@@ -5,7 +5,7 @@ import * as service from '../services/dashboardService'
 
 export async function dashboardIncidenciasAbiertas(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'viewer', 'lector')
+    requireRole(req, 'admin', 'editor', 'lector')
     const data = await service.getIncidenciasAbiertas()
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

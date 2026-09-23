@@ -390,11 +390,17 @@ export async function contarActivas(alcance: Alcance = SIN_ACOTAR): Promise<numb
   return r.recordset[0]?.total ?? 0
 }
 
-/** Los nombres con los que ya se ha declarado, para sugerirlos en el formulario. */
-export async function findDeclarantes(): Promise<string[]> {
+/**
+ * Los nombres con los que ya se ha declarado, para sugerirlos en el formulario.
+ * Acotado a una sucursal, sólo los de su patio, igual que los reportadores de
+ * incidencias.
+ */
+export async function findDeclarantes(alcance: Alcance = SIN_ACOTAR): Promise<string[]> {
   const pool = await getPool()
-  const r = await pool.request().query(`
-    SELECT DISTINCT declarado_por FROM chequeos ORDER BY declarado_por
+  const r = await conAlcance(pool.request(), alcance).query(`
+    SELECT DISTINCT declarado_por FROM chequeos
+    WHERE ${vehiculoEnAlcance('vehiculo_id')}
+    ORDER BY declarado_por
   `)
   return r.recordset.map((row: { declarado_por: string }) => row.declarado_por)
 }

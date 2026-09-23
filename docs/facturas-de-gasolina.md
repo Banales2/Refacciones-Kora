@@ -137,12 +137,12 @@ pegó.
 
 | Ruta | Rol | Qué hace |
 |---|---|---|
-| `GET /facturas-gasolina` | admin, editor, viewer | Lista, con `?por_conciliar=1` |
+| `GET /facturas-gasolina` | admin, editor, lector | Lista, con `?por_conciliar=1` |
 | `POST /facturas-gasolina` | admin, editor | Alta: cabecera y renglones |
-| `GET /facturas-gasolina/{id}/candidatas` | admin, editor, viewer | Renglones con su propuesta, y las recargas elegibles |
+| `GET /facturas-gasolina/{id}/candidatas` | admin, editor, lector | Renglones con su propuesta, y las recargas elegibles |
 | `POST /facturas-gasolina/{id}/conciliar` | **admin** | Guarda los emparejamientos y sella |
 | `POST /facturas-gasolina/{id}/reabrir` | **admin** | Suelta el sello |
-| `GET /facturas-gasolina/sin-facturar` | admin, editor, viewer | Las recargas que ninguna factura ha reclamado |
+| `GET /facturas-gasolina/sin-facturar` | admin, editor, lector | Las recargas que ninguna factura ha reclamado |
 
 Conciliar es solo admin, igual que revisar una factura de refacciones: es el
 segundo par de ojos sobre lo capturado.

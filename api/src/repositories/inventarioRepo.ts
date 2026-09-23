@@ -9,6 +9,7 @@ import * as sql from 'mssql'
 import { folioDelLote, fechaDelLote, joinFactura, joinProveedorDelLote } from './facturaSql'
 import * as unidadesRepo from './unidadesPiezaRepo'
 import { getPool } from '../shared/db'
+import { Alcance, SIN_ACOTAR, conAlcance } from '../shared/alcance'
 
 export interface ExistenciaEnSucursal {
   lote_id:        number
@@ -181,11 +182,13 @@ export async function findTraspasoById(id: number): Promise<Traspaso | null> {
 // Quienes ya han autorizado un traspaso, para ofrecerlos en el formulario. No
 // hay catálogo de jefes de almacén: el nombre es texto libre y las repeticiones
 // salen de lo ya capturado, igual que los reportadores de incidencias.
-export async function findAutorizadores(): Promise<string[]> {
+export async function findAutorizadores(alcance: Alcance = SIN_ACOTAR): Promise<string[]> {
   const pool = await getPool()
-  const r = await pool.request().query(`
+  // Acotado: sólo los traspasos que salieron de su sucursal o llegaron a ella.
+  const r = await conAlcance(pool.request(), alcance).query(`
     SELECT DISTINCT autorizado_por FROM traspasos_pieza
     WHERE autorizado_por IS NOT NULL AND LTRIM(RTRIM(autorizado_por)) <> ''
+      AND (@alcance IS NULL OR @alcance IN (origen_sucursal_id, destino_sucursal_id))
     ORDER BY autorizado_por
   `)
   return r.recordset.map((row: { autorizado_por: string }) => row.autorizado_por)
