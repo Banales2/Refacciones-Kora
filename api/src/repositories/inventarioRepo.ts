@@ -337,8 +337,12 @@ export async function resolverTraspaso(
 }
 
 // ---------------------------------------------------------------------------
-// Mínimos por sucursal
+// Mínimos y máximos por sucursal
 // ---------------------------------------------------------------------------
+//
+// La tabla se llama `minimos_sucursal` porque nació sólo con el mínimo; desde
+// la migración 050 cada fila lleva los dos límites y cualquiera de ellos puede
+// ir vacío. Renombrarla costaría más de lo que aclararía.
 
 export interface MinimoSucursal {
   id:            number
@@ -348,16 +352,19 @@ export interface MinimoSucursal {
   numero_serie:  string
   descripcion:   string
   tipo_pieza:    string | null
-  minimo:        number
+  /** Lo que siempre debe haber. `null` = esta refacción sólo vigila el techo. */
+  minimo:        number | null
+  /** Lo que no conviene rebasar. `null` = sin techo. */
+  maximo:        number | null
   observaciones: string | null
-  /** Lo que hay hoy en esa sucursal, para comparar contra el mínimo. */
+  /** Lo que hay hoy en esa sucursal, para comparar contra los límites. */
   existencia:    number
 }
 
 const SELECT_MINIMO = `
   SELECT m.id, m.sucursal_id, s.nombre AS sucursal,
          m.pieza_id, p.numero_serie, p.descripcion, t.nombre AS tipo_pieza,
-         m.minimo, m.observaciones,
+         m.minimo, m.maximo, m.observaciones,
          COALESCE((SELECT SUM(ex.cantidad)
                    FROM existencias_lote ex
                    JOIN lotes_pieza l ON l.id = ex.lote_id
@@ -391,32 +398,49 @@ export async function findMinimoById(id: number): Promise<MinimoSucursal | null>
 /** Solo los que están por debajo: es la lista que hay que salir a surtir. */
 export async function findFaltantes(sucursalId?: number): Promise<MinimoSucursal[]> {
   const todos = await findMinimos(sucursalId)
-  return todos.filter((m) => m.existencia < m.minimo)
+  return todos.filter((m) => m.minimo != null && m.existencia < m.minimo)
+}
+
+/**
+ * Solo los que están por encima del máximo: el reverso de los faltantes. Es
+ * mercancía parada, no una urgencia, pero es la lista de lo que conviene dejar
+ * de comprar o mandar a otra sucursal que sí lo necesita.
+ */
+export async function findExcedentes(sucursalId?: number): Promise<MinimoSucursal[]> {
+  const todos = await findMinimos(sucursalId)
+  return todos.filter((m) => m.maximo != null && m.existencia > m.maximo)
 }
 
 export async function createMinimo(
-  sucursalId: number, piezaId: number, minimo: number, observaciones?: string | null,
+  sucursalId: number, piezaId: number,
+  minimo: number | null, maximo: number | null, observaciones?: string | null,
 ): Promise<MinimoSucursal> {
   const pool = await getPool()
   const r = await pool.request()
     .input('suc', sql.Int,           sucursalId)
     .input('pza', sql.Int,           piezaId)
     .input('min', sql.Int,           minimo)
+    .input('max', sql.Int,           maximo)
     .input('obs', sql.NVarChar(300), observaciones ?? null)
     .query(`
-      INSERT INTO minimos_sucursal (sucursal_id, pieza_id, minimo, observaciones)
+      INSERT INTO minimos_sucursal (sucursal_id, pieza_id, minimo, maximo, observaciones)
       OUTPUT INSERTED.id
-      VALUES (@suc, @pza, @min, @obs)`)
+      VALUES (@suc, @pza, @min, @max, @obs)`)
   return (await findMinimoById(r.recordset[0].id))!
 }
 
+// `null` en un límite lo borra; `undefined` lo deja como está. Son dos cosas
+// distintas y por eso la comparación es contra `undefined` y no un `if (x)`:
+// quitarle el techo a una refacción es tan válido como cambiárselo.
 export async function updateMinimo(
-  id: number, minimo?: number, observaciones?: string | null,
+  id: number,
+  minimo?: number | null, maximo?: number | null, observaciones?: string | null,
 ): Promise<MinimoSucursal | null> {
   const pool = await getPool()
   const sets: string[] = []
   const req = pool.request().input('id', sql.Int, id)
-  if (minimo !== undefined)        { req.input('min', sql.Int, minimo); sets.push('minimo=@min') }
+  if (minimo !== undefined)        { req.input('min', sql.Int, minimo ?? null); sets.push('minimo=@min') }
+  if (maximo !== undefined)        { req.input('max', sql.Int, maximo ?? null); sets.push('maximo=@max') }
   if (observaciones !== undefined) { req.input('obs', sql.NVarChar(300), observaciones ?? null); sets.push('observaciones=@obs') }
   if (sets.length === 0) return findMinimoById(id)
 
@@ -433,7 +457,7 @@ export async function removeMinimo(id: number): Promise<boolean> {
   return r.recordset.length > 0
 }
 
-/** ¿Ya hay un mínimo para esta refacción en esta sucursal? Solo puede haber uno. */
+/** ¿Ya hay límites para esta refacción en esta sucursal? Solo puede haber una fila. */
 export async function findMinimoDe(sucursalId: number, piezaId: number): Promise<{ id: number } | null> {
   const pool = await getPool()
   const r = await pool.request()

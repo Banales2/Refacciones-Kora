@@ -136,7 +136,7 @@ export default function Inventario() {
         <Tabs defaultValue="existencias">
           <Tabs.List>
             <Tabs.Tab value="existencias">Existencias</Tabs.Tab>
-            <Tabs.Tab value="minimos">Mínimos</Tabs.Tab>
+            <Tabs.Tab value="minimos">Mínimos y máximos</Tabs.Tab>
             <Tabs.Tab value="traspasos">Traspasos</Tabs.Tab>
             <Tabs.Tab
               value="descuadres"
@@ -303,22 +303,28 @@ function PanelExistencias({
   )
 }
 
-// ─── Mínimos ─────────────────────────────────────────────────────────────────
+// ─── Mínimos y máximos ─────────────────────────────────────────────
 
-// Los mínimos van por refacción exacta, no por tipo: existen para tener lista
-// la pieza concreta que esa sucursal necesita en una emergencia, y "una del
-// mismo tipo" no siempre sirve.
+// Los límites van por refacción exacta, no por tipo: el mínimo existe para
+// tener lista la pieza concreta que esa sucursal necesita en una emergencia, y
+// "una del mismo tipo" no siempre sirve.
+//
+// Cada refacción tiene un solo renglón con sus dos límites, y cualquiera de los
+// dos puede ir vacío: hay piezas que no urge tener pero de las que tampoco
+// conviene acumular, y al revés. Lo que no puede es quedarse sin ninguno —eso
+// es quitar el renglón—, y de eso se encarga la API.
 function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: () => void }) {
   const { data, isLoading } = useMinimos(sucursalId)
   const updateMut = useUpdateMinimo()
   const deleteMut = useDeleteMinimo()
-  // Quitar el mínimo apaga el aviso de faltante de esa refacción en esta
-  // sucursal, y apagado no vuelve a pedir atención solo: se pregunta.
+  // Quitar el renglón apaga los avisos de esa refacción en esta sucursal, y
+  // apagado no vuelve a pedir atención solo: se pregunta.
   const [quitando, setQuitando] = useState<{ id: number; nombre: string } | null>(null)
   const { puedeDarDeAlta } = usePermisos()
 
   const filas = data?.data ?? []
-  const faltantes = filas.filter((m) => m.existencia < m.minimo)
+  const faltantes  = filas.filter((m) => m.minimo != null && m.existencia < m.minimo)
+  const excedentes = filas.filter((m) => m.maximo != null && m.existencia > m.maximo)
 
   if (isLoading) return <Center py="xl"><Loader /></Center>
 
@@ -326,11 +332,11 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
     <Stack gap="sm">
       <Group justify="space-between">
         <Text size="sm" c="dimmed">
-          Refacciones que esta sucursal debe tener siempre disponibles.
+          Cuánto debe haber de cada refacción en esta sucursal: lo que nunca debe faltar y lo que no conviene rebasar.
         </Text>
         {puedeDarDeAlta && (
           <Button size="xs" leftSection={<IconPlus size={14} />} onClick={onNuevo}>
-            Nuevo mínimo
+            Nuevo límite
           </Button>
         )}
       </Group>
@@ -341,19 +347,29 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
         </Alert>
       )}
 
+      {/* Sobrar no es una urgencia como faltar —nada se detiene por tener de
+          más— pero es dinero parado y espacio que otra refacción necesita. De
+          ahí que avise en ámbar y no en rojo. */}
+      {excedentes.length > 0 && (
+        <Alert color="orange" icon={<IconAlertTriangle size={16} />} title="Por encima del máximo">
+          {excedentes.length} refacción(es) con más existencia de la que esta sucursal necesita.
+        </Alert>
+      )}
+
       {updateMut.error && <Alert color="red">{(updateMut.error as Error).message}</Alert>}
       {deleteMut.error && <Alert color="red">{(deleteMut.error as Error).message}</Alert>}
 
       {filas.length === 0 ? (
-        <Text c="dimmed" py="lg">Esta sucursal no tiene mínimos configurados.</Text>
+        <Text c="dimmed" py="lg">Esta sucursal no tiene mínimos ni máximos configurados.</Text>
       ) : (
-        <Table.ScrollContainer minWidth={720}>
+        <Table.ScrollContainer minWidth={780}>
           <Table striped withTableBorder>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Refacción</Table.Th>
                 <Table.Th>Tipo</Table.Th>
                 <Table.Th ta="right" style={{ width: 110 }}>Mínimo</Table.Th>
+                <Table.Th ta="right" style={{ width: 110 }}>Máximo</Table.Th>
                 <Table.Th ta="right" style={{ width: 100 }}>Hay</Table.Th>
                 <Table.Th style={{ width: 120 }}>Estado</Table.Th>
                 <Table.Th style={{ width: 40 }} />
@@ -365,7 +381,7 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
                   key={m.id}
                   minimo={m}
                   soloConsulta={!puedeDarDeAlta}
-                  onGuardar={(valor) => updateMut.mutate({ id: m.id, minimo: valor })}
+                  onGuardar={(limites) => updateMut.mutate({ id: m.id, ...limites })}
                   onBorrar={() => {
                     deleteMut.reset()
                     setQuitando({ id: m.id, nombre: m.numero_serie })
@@ -381,11 +397,11 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
 
       <ConfirmarQuitar
         abierto={quitando !== null}
-        titulo="Quitar el mínimo"
-        mensaje={<>¿Dejar de vigilar el mínimo de <strong>{quitando?.nombre}</strong> en esta sucursal?</>}
+        titulo="Quitar los límites"
+        mensaje={<>¿Dejar de vigilar la existencia de <strong>{quitando?.nombre}</strong> en esta sucursal?</>}
         advertencia={
-          'El inventario no se toca: lo que se quita es el aviso de faltante. Puedes ' +
-          'volver a ponerlo cuando quieras.'
+          'El inventario no se toca: lo que se quita son los avisos de faltante y de ' +
+          'excedente. Puedes volver a ponerlos cuando quieras.'
         }
         error={deleteMut.error}
         cargando={deleteMut.isPending}
@@ -396,19 +412,45 @@ function PanelMinimos({ sucursalId, onNuevo }: { sucursalId: number; onNuevo: ()
   )
 }
 
+// Un límite tal como se edita en el renglón: vacío es "sin límite", y viaja
+// como null para que la API lo borre.
+type LimiteEditado = number | string
+
+function aPayload(v: LimiteEditado): number | null {
+  return v === '' ? null : Number(v)
+}
+
 function FilaMinimo({
   minimo, onGuardar, onBorrar, guardando, borrando, soloConsulta,
 }: {
   minimo: MinimoSucursal
   soloConsulta: boolean
-  onGuardar: (valor: number) => void
+  onGuardar: (limites: { minimo: number | null; maximo: number | null }) => void
   onBorrar: () => void
   guardando: boolean
   borrando: boolean
 }) {
-  const [valor, setValor] = useState<number | string>(minimo.minimo)
-  const falta = minimo.existencia < minimo.minimo
-  const cambiado = Number(valor) !== minimo.minimo && valor !== ''
+  const [min, setMin] = useState<LimiteEditado>(minimo.minimo ?? '')
+  const [max, setMax] = useState<LimiteEditado>(minimo.maximo ?? '')
+
+  const falta = minimo.minimo != null && minimo.existencia < minimo.minimo
+  const sobra = minimo.maximo != null && minimo.existencia > minimo.maximo
+  // Los dos se mandan juntos aunque sólo cambie uno: así el "OK" es uno solo y
+  // no hay que adivinar cuál de los dos campos se estaba editando.
+  const cambiado = aPayload(min) !== minimo.minimo || aPayload(max) !== minimo.maximo
+
+  const campo = (valor: LimiteEditado, set: (v: LimiteEditado) => void, etiqueta: string) => (
+    <NumberInput
+      size="xs" w={64} min={1} max={999} allowDecimal={false}
+      readOnly={soloConsulta} variant={soloConsulta ? 'unstyled' : undefined}
+      // Vacío es un valor con significado —sin ese límite—, y por eso el campo
+      // lo dice en vez de quedarse en blanco a secas.
+      placeholder="—"
+      value={valor}
+      onChange={(v) => set(v === '' ? '' : Number(v))}
+      aria-label={`${etiqueta} de ${minimo.numero_serie}`}
+    />
+  )
 
   return (
     <Table.Tr>
@@ -419,15 +461,17 @@ function FilaMinimo({
       <Table.Td><Text size="xs">{minimo.tipo_pieza ?? 'Sin tipo'}</Text></Table.Td>
       <Table.Td>
         <Group gap={4} wrap="nowrap" justify="flex-end">
-          <NumberInput
-            size="xs" w={60} min={1} max={999} allowDecimal={false}
-            readOnly={soloConsulta} variant={soloConsulta ? 'unstyled' : undefined}
-            value={valor}
-            onChange={(v) => setValor(v === '' ? '' : Number(v))}
-            aria-label={`Mínimo de ${minimo.numero_serie}`}
-          />
-          {cambiado && (
-            <Button size="compact-xs" loading={guardando} onClick={() => onGuardar(Number(valor))}>
+          {campo(min, setMin, 'Mínimo')}
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Group gap={4} wrap="nowrap" justify="flex-end">
+          {campo(max, setMax, 'Máximo')}
+          {cambiado && !soloConsulta && (
+            <Button
+              size="compact-xs" loading={guardando}
+              onClick={() => onGuardar({ minimo: aPayload(min), maximo: aPayload(max) })}
+            >
               OK
             </Button>
           )}
@@ -437,17 +481,23 @@ function FilaMinimo({
       <Table.Td>
         {falta ? (
           <Badge size="xs" color="red" variant="light">
-            Faltan {minimo.minimo - minimo.existencia}
+            Faltan {minimo.minimo! - minimo.existencia}
+          </Badge>
+        ) : sobra ? (
+          <Badge size="xs" color="orange" variant="light">
+            Sobran {minimo.existencia - minimo.maximo!}
           </Badge>
         ) : (
-          <Badge size="xs" color="green" variant="light">Cubierto</Badge>
+          <Badge size="xs" color="green" variant="light">
+            {minimo.minimo != null ? 'Cubierto' : 'En rango'}
+          </Badge>
         )}
       </Table.Td>
       <Table.Td>
         {!soloConsulta && (
           <ActionIcon
             variant="subtle" color="red" loading={borrando}
-            aria-label={`Quitar el mínimo de ${minimo.numero_serie}`}
+            aria-label={`Quitar los límites de ${minimo.numero_serie}`}
             onClick={onBorrar}
           >
             <IconTrash size={14} />
@@ -799,13 +849,17 @@ function TraspasoModal({
   )
 }
 
+// Alta de los límites de una refacción. Los dos campos empiezan vacíos: cuál
+// importa depende de la pieza, y precargar un mínimo de 1 hacía que quien sólo
+// quería poner un techo se llevara de regreso un faltante que nadie pidió.
 function MinimoModal({ sucursalId, onClose }: { sucursalId: number; onClose: () => void }) {
   const piezasQuery = useTodasLasPiezas()
   const piezasData = piezasQuery.data
   const crearMut = useCreateMinimo()
 
   const [piezaId, setPiezaId] = useState<string | null>(null)
-  const [minimo, setMinimo] = useState<number | string>(1)
+  const [minimo, setMinimo] = useState<number | string>('')
+  const [maximo, setMaximo] = useState<number | string>('')
   const [obs, setObs] = useState('')
 
   const opciones = (piezasData?.data ?? []).map((p) => ({
@@ -813,13 +867,21 @@ function MinimoModal({ sucursalId, onClose }: { sucursalId: number; onClose: () 
     label: `${p.numero_serie} — ${p.descripcion}`,
   }))
 
+  // Las dos reglas que la API rechaza, dichas antes de mandar el viaje: sin
+  // ningún límite no hay nada que vigilar, y un techo bajo el piso es una
+  // regla que ninguna existencia puede cumplir.
+  const sinLimites = minimo === '' && maximo === ''
+  const alReves =
+    minimo !== '' && maximo !== '' && Number(maximo) < Number(minimo)
+
   function confirmar() {
-    if (!piezaId) return
+    if (!piezaId || sinLimites || alReves) return
     crearMut.mutate(
       {
         sucursal_id:   sucursalId,
         pieza_id:      Number(piezaId),
-        minimo:        Number(minimo),
+        minimo:        minimo === '' ? null : Number(minimo),
+        maximo:        maximo === '' ? null : Number(maximo),
         observaciones: obs.trim() || null,
       },
       { onSuccess: onClose },
@@ -827,7 +889,7 @@ function MinimoModal({ sucursalId, onClose }: { sucursalId: number; onClose: () 
   }
 
   return (
-    <Modal opened onClose={onClose} title="Mínimo de una refacción" size="md">
+    <Modal opened onClose={onClose} title="Límites de una refacción" size="md">
       <Stack gap="sm">
         <SelectCatalogo
           estado={piezasQuery}
@@ -840,15 +902,34 @@ function MinimoModal({ sucursalId, onClose }: { sucursalId: number; onClose: () 
           onChange={setPiezaId}
           required
         />
-        <NumberInput
-          label="Mínimo"
-          min={1}
-          max={999}
-          clampBehavior="strict"
-          allowDecimal={false}
-          value={minimo}
-          onChange={(v) => setMinimo(v === '' ? '' : Number(v))}
-        />
+        <Group grow align="flex-start">
+          <NumberInput
+            label="Mínimo"
+            description="Lo que nunca debe faltar"
+            placeholder="Sin mínimo"
+            min={1}
+            max={999}
+            clampBehavior="strict"
+            allowDecimal={false}
+            value={minimo}
+            onChange={(v) => setMinimo(v === '' ? '' : Number(v))}
+          />
+          <NumberInput
+            label="Máximo"
+            description="Lo que no conviene rebasar"
+            placeholder="Sin máximo"
+            min={1}
+            max={999}
+            clampBehavior="strict"
+            allowDecimal={false}
+            value={maximo}
+            onChange={(v) => setMaximo(v === '' ? '' : Number(v))}
+            error={alReves ? 'No puede ser menor que el mínimo' : undefined}
+          />
+        </Group>
+        <Text size="xs" c="dimmed">
+          Puedes poner solo uno de los dos: el mínimo avisa cuando falta y el máximo cuando sobra.
+        </Text>
         <Textarea
           label="Observaciones"
           placeholder="Opcional: por qué esta sucursal la necesita"
@@ -862,7 +943,11 @@ function MinimoModal({ sucursalId, onClose }: { sucursalId: number; onClose: () 
 
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onClose} disabled={crearMut.isPending}>Cancelar</Button>
-          <Button onClick={confirmar} loading={crearMut.isPending} disabled={!piezaId}>
+          <Button
+            onClick={confirmar}
+            loading={crearMut.isPending}
+            disabled={!piezaId || sinLimites || alReves}
+          >
             Guardar
           </Button>
         </Group>

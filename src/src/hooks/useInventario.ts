@@ -74,7 +74,10 @@ export interface MinimoSucursal {
   numero_serie:  string
   descripcion:   string
   tipo_pieza:    string | null
-  minimo:        number
+  /** Lo que siempre debe haber. `null` = esta refacción sólo vigila el techo. */
+  minimo:        number | null
+  /** Lo que no conviene rebasar. `null` = sin techo. */
+  maximo:        number | null
   observaciones: string | null
   /** Lo que hay hoy de esa refacción en esa sucursal. */
   existencia:    number
@@ -189,10 +192,13 @@ export function useMinimos(sucursalId?: number, soloFaltantes = false) {
   })
 }
 
+// Al menos uno de los dos límites tiene que venir; la API rechaza el par
+// vacío y un máximo por debajo del mínimo.
 export interface MinimoPayload {
   sucursal_id:    number
   pieza_id:       number
-  minimo:         number
+  minimo?:        number | null
+  maximo?:        number | null
   observaciones?: string | null
 }
 
@@ -207,7 +213,13 @@ export function useCreateMinimo() {
 export function useUpdateMinimo() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...payload }: { id: number; minimo?: number; observaciones?: string | null }) =>
+    // `null` borra ese límite; omitirlo lo deja como está.
+    mutationFn: ({ id, ...payload }: {
+      id: number
+      minimo?: number | null
+      maximo?: number | null
+      observaciones?: string | null
+    }) =>
       api.put<{ data: MinimoSucursal }>(`/inventario/minimos/${id}`, payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['inventario-minimos'] }),
   })

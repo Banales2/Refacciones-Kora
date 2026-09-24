@@ -116,7 +116,7 @@ const ESTADO_TEXTO: Record<string, string> = {
 }
 
 // ---------------------------------------------------------------------------
-// Mínimos
+// Mínimos y máximos
 // ---------------------------------------------------------------------------
 
 export async function getMinimos(sucursalId?: number) {
@@ -129,32 +129,60 @@ export async function getFaltantes(sucursalId?: number) {
   return repo.findFaltantes(sucursalId)
 }
 
+export async function getExcedentes(sucursalId?: number) {
+  if (sucursalId !== undefined) await exigirSucursal(sucursalId)
+  return repo.findExcedentes(sucursalId)
+}
+
 export async function createMinimo(data: MinimoCreate) {
   const sucursal = await exigirSucursal(data.sucursal_id)
 
   const pieza = await refaccionesRepo.findById(data.pieza_id)
   if (!pieza) throw new NotFoundError('Refacción')
 
-  // El mínimo es por refacción exacta a propósito: sirve para tener lista la
-  // pieza concreta que esa sucursal necesita en una emergencia, y "una del
-  // mismo tipo" no siempre sirve. Por eso solo puede haber uno.
+  // Los límites van por refacción exacta a propósito: el mínimo sirve para
+  // tener lista la pieza concreta que esa sucursal necesita en una emergencia,
+  // y "una del mismo tipo" no siempre sirve. Por eso el mínimo y el máximo de
+  // una refacción viven en una sola fila.
   const existente = await repo.findMinimoDe(data.sucursal_id, data.pieza_id)
   if (existente) {
     throw new ConflictError(
-      `${sucursal.nombre} ya tiene un mínimo definido para ${pieza.numero_serie}. Edítalo en lugar de crear otro.`
+      `${sucursal.nombre} ya tiene límites definidos para ${pieza.numero_serie}. Edítalos en lugar de crear otros.`
     )
   }
 
-  return repo.createMinimo(data.sucursal_id, data.pieza_id, data.minimo, data.observaciones)
+  return repo.createMinimo(
+    data.sucursal_id, data.pieza_id, data.minimo ?? null, data.maximo ?? null, data.observaciones,
+  )
 }
 
 export async function updateMinimo(id: number, data: MinimoUpdate) {
-  const actualizado = await repo.updateMinimo(id, data.minimo, data.observaciones)
-  if (!actualizado) throw new NotFoundError('Mínimo')
+  const actual = await repo.findMinimoById(id)
+  if (!actual) throw new NotFoundError('Límites')
+
+  // Cómo queda la fila después de esta edición. Se arma aquí y no en el
+  // esquema porque las dos reglas miran los dos límites a la vez, y una
+  // edición puede traer sólo uno: quitar el mínimo de una fila sin máximo la
+  // dejaría sin vigilar nada, y bajar el máximo por debajo de un mínimo que no
+  // viene en el payload pasaría el esquema sin que nadie lo notara.
+  const minimo = data.minimo !== undefined ? data.minimo ?? null : actual.minimo
+  const maximo = data.maximo !== undefined ? data.maximo ?? null : actual.maximo
+
+  if (minimo == null && maximo == null) {
+    throw new ValidationError(
+      'Deja al menos un mínimo o un máximo. Para dejar de vigilar la refacción, quita el renglón.'
+    )
+  }
+  if (minimo != null && maximo != null && maximo < minimo) {
+    throw new ValidationError('El máximo no puede ser menor que el mínimo')
+  }
+
+  const actualizado = await repo.updateMinimo(id, data.minimo, data.maximo, data.observaciones)
+  if (!actualizado) throw new NotFoundError('Límites')
   return actualizado
 }
 
 export async function removeMinimo(id: number) {
   const ok = await repo.removeMinimo(id)
-  if (!ok) throw new NotFoundError('Mínimo')
+  if (!ok) throw new NotFoundError('Límites')
 }

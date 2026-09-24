@@ -41,17 +41,47 @@ export const TraspasoCreateSchema = z.object({
     path: ['destino_sucursal_id'],
   })
 
+// Los límites de una refacción en una sucursal: el mínimo que siempre debe
+// haber y el máximo que no conviene rebasar. Los dos son opcionales por
+// separado —se puede vigilar solo el piso, solo el techo o los dos— pero uno
+// tiene que venir: una regla sin ningún límite no vigila nada.
+//
+// Las mismas reglas están como CHECK en la tabla (migración 050); aquí se
+// repiten para contestar en español en vez de con un error del motor.
+const limite = z.coerce
+  .number()
+  .int()
+  .min(1, 'Mínimo 1 unidad')
+  .max(999, 'Máximo 999')
+  .nullish()
+
+const enOrden = (d: { minimo?: number | null; maximo?: number | null }) =>
+  d.minimo == null || d.maximo == null || d.maximo >= d.minimo
+
+const MSG_ORDEN = { message: 'El máximo no puede ser menor que el mínimo', path: ['maximo'] }
+
 export const MinimoCreateSchema = z.object({
   sucursal_id: z.coerce.number().int().min(1, 'Sucursal requerida'),
   pieza_id:    z.coerce.number().int().min(1, 'Refacción requerida'),
-  minimo:      z.coerce.number().int().min(1, 'Mínimo 1 unidad').max(999, 'Máximo 999'),
+  minimo:      limite,
+  maximo:      limite,
   observaciones,
 })
+  .refine((d) => d.minimo != null || d.maximo != null, {
+    message: 'Define al menos un mínimo o un máximo',
+    path: ['minimo'],
+  })
+  .refine(enOrden, MSG_ORDEN)
 
+// En la edición, `null` limpia el límite y omitirlo lo deja como está. Que
+// quede al menos uno no se puede saber aquí —depende de lo que ya tenga la
+// fila— y lo revisa el servicio; el orden sí, cuando vienen los dos.
 export const MinimoUpdateSchema = z.object({
-  minimo:       z.coerce.number().int().min(1, 'Mínimo 1 unidad').max(999, 'Máximo 999').optional(),
+  minimo:       limite,
+  maximo:       limite,
   observaciones,
 })
+  .refine(enOrden, MSG_ORDEN)
 
 export type TraspasoCreate = z.infer<typeof TraspasoCreateSchema>
 export type MinimoCreate   = z.infer<typeof MinimoCreateSchema>

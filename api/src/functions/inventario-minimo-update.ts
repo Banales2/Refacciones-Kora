@@ -19,7 +19,7 @@ export async function inventarioMinimoUpdate(req: HttpRequest, ctx: InvocationCo
       accion: 'EDITAR',
       tabla: 'minimos_sucursal',
       registroId: id,
-      detalles: { sucursal: updated.sucursal, pieza: updated.numero_serie, minimo: updated.minimo },
+      detalles: { sucursal: updated.sucursal, pieza: updated.numero_serie, minimo: updated.minimo, maximo: updated.maximo },
       ipAddress: getClientIp(req),
     })
 

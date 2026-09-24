@@ -16,7 +16,7 @@ export async function inventarioMinimoCreate(req: HttpRequest, ctx: InvocationCo
       accion: 'CREAR',
       tabla: 'minimos_sucursal',
       registroId: created.id,
-      detalles: { sucursal: created.sucursal, pieza: created.numero_serie, minimo: created.minimo },
+      detalles: { sucursal: created.sucursal, pieza: created.numero_serie, minimo: created.minimo, maximo: created.maximo },
       ipAddress: getClientIp(req),
     })
 
