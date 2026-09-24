@@ -126,13 +126,16 @@ export async function crearCompra(
         // la primera, y entonces un error no se le podría cargar a quien lo
         // cometió. Ver `db/migrations/040_revision_de_facturas.sql`.
         .input('capturado_por', sql.NVarChar(120), autorizadoPor)
+        // La misma para los N renglones: llega el camión, no cada pieza por su
+        // cuenta. NULL = ya está aquí. Ver la migración 051.
+        .input('fecha_llegada', sql.Date, data.fecha_llegada ?? null)
         .query(`
           INSERT INTO lotes_pieza
             (pieza_id, factura_id, sucursal_id, costo_unitario,
-             cantidad_inicial, cantidad_disponible, capturado_por)
+             cantidad_inicial, cantidad_disponible, capturado_por, fecha_llegada)
           OUTPUT INSERTED.id
           VALUES (@pieza_id, @factura_id, @sucursal_id, @costo_unitario,
-                  @cantidad_inicial, @cantidad_inicial, @capturado_por)`)
+                  @cantidad_inicial, @cantidad_inicial, @capturado_por, @fecha_llegada)`)
       const loteId = insLote.recordset[0].id as number
 
       await tx.request()

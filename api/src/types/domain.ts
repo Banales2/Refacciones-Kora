@@ -36,6 +36,13 @@ export interface LoteConProveedor {
   // columna: se calcula sobre `existencias_lote` (migración 002).
   cantidad_disponible: number
   num_factura: string | null
+  /**
+   * Cuándo llega la mercancía. `null` = ya está en el estante, que es el caso
+   * de todo lo capturado antes de la migración 051 y de toda compra que se
+   * registra con la caja enfrente. Mientras no llegue, el lote existe pero no
+   * es existencia: no se cuenta ni se puede consumir.
+   */
+  fecha_llegada: string | null
   /** `null` en el lote de recuperación, que no salió de ninguna compra. */
   proveedor: string | null
   // Sucursal que recibió la compra. Es donde entra todo el lote; repartirlo

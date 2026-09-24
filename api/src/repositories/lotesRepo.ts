@@ -14,6 +14,7 @@ import * as unidadesRepo from './unidadesPiezaRepo'
 // tenía en el lote: cambió dónde se guarda, no lo que se ve.
 const SELECT_LOTE = `
   SELECT l.id, l.pieza_id, l.costo_unitario, l.factura_id,
+         CONVERT(char(10), l.fecha_llegada, 23) AS fecha_llegada,
          l.cantidad_inicial, ${disponibleDelLote('l')} AS cantidad_disponible,
          l.sucursal_id,
          ${colsCabecera()},
@@ -74,13 +75,16 @@ export async function create(
       // Quién tecleó este renglón, para poder cargarle el error si la revisión
       // lo encuentra. Ver `db/migrations/040_revision_de_facturas.sql`.
       .input('capturado_por', sql.NVarChar(120), capturadoPor)
+      // Cuándo llega la mercancía. NULL = ya está aquí, que es el caso normal:
+      // se captura la factura con la caja enfrente. Ver la migración 051.
+      .input('fecha_llegada', sql.Date, data.fecha_llegada ?? null)
       .query(`
         INSERT INTO lotes_pieza
           (pieza_id, factura_id, sucursal_id, costo_unitario,
-           cantidad_inicial, cantidad_disponible, capturado_por)
+           cantidad_inicial, cantidad_disponible, capturado_por, fecha_llegada)
         OUTPUT INSERTED.id
         VALUES (@pieza_id, @factura_id, @sucursal_id, @costo_unitario,
-                @cantidad_inicial, @cantidad_inicial, @capturado_por)
+                @cantidad_inicial, @cantidad_inicial, @capturado_por, @fecha_llegada)
       `)
     const loteId = result.recordset[0].id as number
 
@@ -161,6 +165,12 @@ export async function update(
   if (data.costo_unitario !== undefined) {
     req.input('costo_unitario', sql.Decimal(18, 2), data.costo_unitario)
     sets.push('costo_unitario = @costo_unitario')
+  }
+  // Se comprueba la llave y no el valor: mandarla en null es como se corrige
+  // "ya llegó" cuando el camión se adelanta.
+  if ('fecha_llegada' in data) {
+    req.input('fecha_llegada', sql.Date, data.fecha_llegada ?? null)
+    sets.push('fecha_llegada = @fecha_llegada')
   }
   if (data.cantidad_inicial !== undefined) {
     req.input('cantidad_inicial', sql.Int, data.cantidad_inicial)

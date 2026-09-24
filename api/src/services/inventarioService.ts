@@ -5,6 +5,7 @@ import { TraspasoCreate, MinimoCreate, MinimoUpdate } from '../schemas/inventari
 import { NotFoundError, ValidationError, ConflictError } from '../shared/errors'
 import { type Alcance, sucursalPermitida } from '../shared/alcance'
 import { AuthError } from '../shared/auth'
+import { exigirLoteLlegado } from './lotesDisponibles'
 
 async function exigirSucursal(id: number) {
   const s = await sucursalesRepo.findById(id)
@@ -42,6 +43,11 @@ export async function createTraspaso(data: TraspasoCreate, usuarioEmail: string,
   sucursalPermitida(data.origen_sucursal_id, alcance)
   const origen  = await exigirSucursal(data.origen_sucursal_id)
   await exigirSucursal(data.destino_sucursal_id)
+
+  // Mandar a otra sucursal algo que todavía no llegó a esta es prometer
+  // mercancía que no se tiene. Va antes que la existencia porque `getExistencia`
+  // ya no cuenta lo que no ha llegado y diría "solo hay 0", que es engañoso.
+  await exigirLoteLlegado(data.lote_id)
 
   // Se valida contra la existencia real del lote en el origen. La base tiene su
   // propio CHECK de no-negativo por si dos capturas simultáneas pasan las dos

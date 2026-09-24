@@ -27,6 +27,10 @@ export type LoteFormValues = {
   // una corrección del lote.
   sucursal_id: string
   fecha_compra: string
+  // Vacío = la mercancía ya está en el almacén, que es el caso normal. Con
+  // fecha futura, el lote queda capturado pero fuera del inventario hasta ese
+  // día: no se puede consumir, montar ni traspasar. Ver la migración 051.
+  fecha_llegada: string
   costo_unitario: number | string
   cantidad_inicial: number | string
   num_factura: string
@@ -86,6 +90,7 @@ export function LoteForm({
       proveedor_id: '',
       sucursal_id: '',
       fecha_compra: '',
+      fecha_llegada: '',
       costo_unitario: '',
       cantidad_inicial: '',
       num_factura: '',
@@ -100,6 +105,15 @@ export function LoteForm({
       fecha_compra: (v) => {
         if (!v) return 'Fecha requerida'
         if (v > hoy) return 'No puede ser una fecha futura'
+        return null
+      },
+      // Puede ser futura —es justo para eso— pero no anterior a la compra: la
+      // mercancía no llega antes de pedirse, y esa fecha suele ser un dedazo.
+      fecha_llegada: (v, vals) => {
+        if (!v) return null
+        if (vals.fecha_compra && v < vals.fecha_compra) {
+          return 'No puede ser anterior a la compra'
+        }
         return null
       },
       costo_unitario: (v) => {
@@ -137,6 +151,11 @@ export function LoteForm({
       },
     },
   })
+
+  // Una fecha que todavía no llega cambia lo que este formulario significa, y
+  // conviene decirlo mientras se captura y no después, cuando la pieza no
+  // aparezca en el inventario y nadie se acuerde de por qué.
+  const enTransito = form.values.fecha_llegada > hoy
 
   const subtotalLote =
     (Number(form.values.cantidad_inicial) || 0) * (Number(form.values.costo_unitario) || 0)
@@ -188,6 +207,16 @@ export function LoteForm({
             value={form.values.fecha_compra}
             onChange={(d) => form.setFieldValue('fecha_compra', d)}
             error={form.errors.fecha_compra as string}
+          />
+          <FechaInput
+            label="Fecha de llegada"
+            minDate={form.values.fecha_compra || undefined}
+            description={enTransito
+              ? 'El lote se guarda, pero no entra al inventario ni se puede usar hasta ese día.'
+              : 'Déjala vacía si la mercancía ya está en el almacén.'}
+            value={form.values.fecha_llegada}
+            onChange={(d) => form.setFieldValue('fecha_llegada', d)}
+            error={form.errors.fecha_llegada as string}
           />
           <NumberInput
             label="Costo unitario"

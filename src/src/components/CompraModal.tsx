@@ -57,6 +57,10 @@ type CompraFormValues = {
   proveedor_id: string
   sucursal_id:  string
   fecha_compra: string
+  // Vacío = la mercancía ya está en el almacén, que es el caso normal. Con
+  // fecha futura, los lotes se guardan pero quedan fuera del inventario hasta
+  // ese día: no se pueden consumir, montar ni traspasar.
+  fecha_llegada: string
   num_factura:  string
   // Apagado —el caso normal— significa que los precios capturados ya traen IVA
   // y no hay nada que sumarles. Encendido, la tasa se guarda en cada lote de la
@@ -144,7 +148,8 @@ export default function CompraModal({
 
   const form = useForm<CompraFormValues>({
     initialValues: {
-      proveedor_id: '', sucursal_id: '', fecha_compra: '', num_factura: '', comprado_por: '',
+      proveedor_id: '', sucursal_id: '', fecha_compra: '', fecha_llegada: '',
+      num_factura: '', comprado_por: '',
       sumar_iva: false, tasa_iva: IVA_DEFAULT,
       aplicar_descuento: false, descuento_pct: DESCUENTO_DEFAULT,
       renglones: [{ nueva: false, ...RENGLON_VACIO }],
@@ -155,6 +160,12 @@ export default function CompraModal({
       fecha_compra: (v) =>
         !v ? 'Fecha requerida' :
         v > hoy ? 'No puede ser una fecha futura' : null,
+      // Puede ser futura —es justo para eso— pero no anterior a la compra: la
+      // mercancía no llega antes de pedirse.
+      fecha_llegada: (v, vals) =>
+        v && vals.fecha_compra && v < vals.fecha_compra
+          ? 'No puede ser anterior a la compra'
+          : null,
       // Se valida sobre el folio ya normalizado, que es lo que se manda y lo
       // que acaba en la base.
       num_factura: (v) => {
@@ -226,6 +237,10 @@ export default function CompraModal({
     },
   })
 
+  // Una compra que todavía no llega cambia lo que este modal entrega: los
+  // lotes se crean, pero no son piezas que se puedan tomar hoy.
+  const enTransito = form.values.fecha_llegada > hoy
+
   const renglones = form.values.renglones
   const subtotal = renglones.reduce(
     (s, r) => s + (Number(r.cantidad_inicial) || 0) * (Number(r.costo_unitario) || 0), 0
@@ -280,6 +295,8 @@ export default function CompraModal({
         proveedor_id: Number(vals.proveedor_id),
         sucursal_id:  Number(vals.sucursal_id),
         fecha_compra: vals.fecha_compra,
+        // Vacío es "ya está aquí", y viaja en null.
+        fecha_llegada: vals.fecha_llegada || null,
         num_factura:  normalizarFolio(vals.num_factura),
         // Sin la casilla no se guarda tasa: el precio ya la trae dentro.
         tasa_iva:     vals.sumar_iva ? Number(vals.tasa_iva) : null,
@@ -292,7 +309,12 @@ export default function CompraModal({
         onSuccess: ({ data }) => {
           // Se entregan armados para el selector: la lista de lotes disponibles
           // se acaba de invalidar y aún no trae los nuevos.
-          onCreated(data.lotes)
+          //
+          // Salvo que la compra venga en camino: esos lotes todavía no son
+          // consumibles y la API rechazaría el consumo. Ofrecerlos sería
+          // mandar al usuario a un error después de cerrar el modal, así que la
+          // compra se guarda y el selector se queda como estaba.
+          onCreated(enTransito ? [] : data.lotes)
           cerrar()
         },
       },
@@ -312,6 +334,16 @@ export default function CompraModal({
       >
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack gap="sm">
+            {/* Se avisa mientras se captura y no al final: si la compra no va a
+                servir para este mantenimiento, conviene saberlo antes de
+                teclear las partidas. */}
+            {enTransito && (
+              <Alert color="blue" title="Esta compra aún no llega">
+                La mercancía entra al inventario el {formatearFecha(form.values.fecha_llegada)}.
+                Hasta ese día no se puede consumir en este mantenimiento, montar en una
+                unidad ni traspasar. La compra y su factura se guardan igual.
+              </Alert>
+            )}
             <Text size="sm" c="dimmed">
               Una factura con todas las refacciones que traiga. Entran completas a la
               sucursal que las recibe y quedan disponibles para este mantenimiento.
@@ -354,6 +386,18 @@ export default function CompraModal({
                   value={form.values.fecha_compra}
                   onChange={(d) => form.setFieldValue('fecha_compra', d)}
                   error={form.errors.fecha_compra as string}
+                />
+              </Grid.Col>
+              <Grid.Col span={4}>
+                <FechaInput
+                  label="Fecha de llegada"
+                  minDate={form.values.fecha_compra || undefined}
+                  description={form.values.fecha_llegada > hoy
+                    ? 'La compra se guarda, pero no entra al inventario hasta ese día.'
+                    : 'Vacía si la mercancía ya está en el almacén.'}
+                  value={form.values.fecha_llegada}
+                  onChange={(d) => form.setFieldValue('fecha_llegada', d)}
+                  error={form.errors.fecha_llegada as string}
                 />
               </Grid.Col>
               <Grid.Col span={4}>

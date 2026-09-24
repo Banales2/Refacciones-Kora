@@ -4,6 +4,7 @@ import * as piezasVehiculoRepo from '../repositories/piezasVehiculoRepo'
 import * as piezasVehiculoService from './piezasVehiculoService'
 import { DetalleMttoPiezaCreate, DetalleMttoPiezaUpdate } from '../schemas/detalleMttoPiezaSchema'
 import { NotFoundError, ValidationError } from '../shared/errors'
+import { exigirLoteLlegado } from './lotesDisponibles'
 
 export async function getDetalle(mantenimientoId: number) {
   const mantenimiento = await mantenimientoRepo.findById(mantenimientoId)
@@ -21,6 +22,9 @@ export async function create(mantenimientoId: number, data: DetalleMttoPiezaCrea
   // que haya 10 piezas repartidas no significa que haya 10 en Vallarta.
   const lote = await repo.getLoteInfo(data.lote_id, data.sucursal_id)
   if (!lote) throw new NotFoundError('Lote')
+  // Antes que el stock: un lote en camino tiene su existencia capturada, así
+  // que la comprobación de abajo lo dejaría pasar contando piezas que no están.
+  await exigirLoteLlegado(data.lote_id)
   if (lote.cantidad_disponible < data.cantidad) {
     throw new ValidationError(
       `Stock insuficiente en esa sucursal: disponible ${lote.cantidad_disponible}, solicitado ${data.cantidad}`

@@ -7,6 +7,36 @@
 // sus existencias por sucursal. `lotes_pieza.cantidad_disponible` sigue en la
 // tabla pero está OBSOLETA: nadie la lee, y la migración 003 la dropea.
 import * as sql from 'mssql'
+import { getPool } from '../shared/db'
+
+/**
+ * Hoy en la zona horaria de la empresa.
+ *
+ * Azure SQL corre en UTC, y entre las 18:00 y la medianoche de México ahí ya es
+ * mañana: un `CAST(GETDATE() AS date)` daría por llegado desde la tarde
+ * anterior un lote que llega mañana. Es el mismo problema que resuelve
+ * `shared/fechaMexico` del lado de TypeScript, y la misma respuesta.
+ *
+ * Va como expresión y no como parámetro para poder pegarse en cualquier
+ * consulta sin obligarla a declarar un `@hoy` que casi todas olvidarían.
+ */
+export const HOY_MX =
+  "CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'Central Standard Time (Mexico)' AS date)"
+
+/**
+ * ¿Este lote ya está en el estante? `alias` es el alias de `lotes_pieza`.
+ *
+ * `fecha_llegada` NULL es todo lo capturado antes de la migración 051 y todo lo
+ * que se captura ya recibido: sin fecha que esperar, el lote está aquí.
+ *
+ * Esta es LA definición de "disponible de verdad", y por eso vive junto a las
+ * de existencia y no repetida en cada repositorio: lo que un lote en tránsito
+ * no puede es contarse ni consumirse, y las dos cosas se preguntan desde media
+ * docena de consultas distintas.
+ */
+export function loteLlegado(alias = 'l'): string {
+  return `(${alias}.fecha_llegada IS NULL OR ${alias}.fecha_llegada <= ${HOY_MX})`
+}
 
 /**
  * Lo que queda de un lote sumando todas las sucursales. `alias` es el alias que
@@ -15,6 +45,26 @@ import * as sql from 'mssql'
 export function disponibleDelLote(alias = 'l'): string {
   return `(SELECT COALESCE(SUM(ex.cantidad), 0)
            FROM existencias_lote ex WHERE ex.lote_id = ${alias}.id)`
+}
+
+/**
+ * Si el lote todavía no llega, la fecha en que llega; `null` si ya está aquí
+ * (o si el lote no existe, que lo contesta quien pregunta).
+ *
+ * Lo usan las tres puertas por las que una pieza sale del almacén —el consumo
+ * de un mantenimiento, el montaje en una unidad y el traspaso entre
+ * sucursales— para negarse con una fecha en vez de con un "no hay
+ * existencia", que sería mentira: la pieza existe, todavía no está.
+ */
+export async function llegadaPendiente(loteId: number): Promise<string | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, loteId)
+    .query(`
+      SELECT CONVERT(char(10), l.fecha_llegada, 23) AS fecha
+      FROM lotes_pieza l
+      WHERE l.id = @id AND NOT ${loteLlegado('l')}`)
+  return r.recordset[0]?.fecha ?? null
 }
 
 /**

@@ -17,10 +17,32 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function unAnioAdelante() {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() + 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export const fechaCompra = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato inválido (YYYY-MM-DD)')
   .refine((v) => v <= todayIso(), 'No puede ser una fecha futura')
+
+// Cuándo llega la mercancía al estante.
+//
+// Al revés que `fechaCompra`, esta SÍ puede ser futura —es el punto: el lote se
+// captura hoy y entra al inventario el día que llega—. Ausente o null significa
+// que ya está aquí, que es el caso normal y el de todo lo capturado antes de la
+// migración 051.
+//
+// El tope de un año no es burocracia: una fecha a cinco años es un dedazo en el
+// año, y el lote se quedaría invisible en el inventario sin que nadie entienda
+// por qué.
+export const fechaLlegada = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato inválido (YYYY-MM-DD)')
+  .refine((v) => v <= unAnioAdelante(), 'No puede pasar de un año')
+  .nullish()
 
 // El folio de la factura de compra. La diagonal es común en ellos
 // ("A-123/2026") y el espacio también ("FAC 1234"), así que van permitidos.
@@ -94,6 +116,7 @@ export const LoteCreateSchema = z.object({
   cantidad_inicial: cantidadInicial,
   num_factura: numFactura,
   tasa_iva: tasaIva,
+  fecha_llegada: fechaLlegada,
   comprado_por: compradoPor,
 })
 
@@ -104,6 +127,7 @@ export const LoteUpdateSchema = z.object({
   cantidad_inicial: cantidadInicial.optional(),
   num_factura: numFactura.optional(),
   tasa_iva: tasaIva,
+  fecha_llegada: fechaLlegada,
   comprado_por: compradoPor.optional(),
 })
 

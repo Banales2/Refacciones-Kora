@@ -205,6 +205,10 @@ function PanelExistencias({
   // entra en el total de piezas: el total dice lo que hay aquí, y esto es justo
   // lo que no está.
   const enCamino = filas.reduce((s, f) => s + f.en_camino, 0)
+  // Lo comprado que todavía no llega. Tampoco entra en el total por la misma
+  // razón, y se dice aparte para que nadie salga a comprar de nuevo algo que ya
+  // viene en camino.
+  const porLlegar = filas.reduce((s, f) => s + f.por_llegar, 0)
 
   return (
     <Stack gap="sm">
@@ -224,6 +228,12 @@ function PanelExistencias({
             <Stack gap={0}>
               <Text size="xs" c="dimmed">En camino</Text>
               <Text fw={600} c="orange">{enCamino.toLocaleString('es-MX')}</Text>
+            </Stack>
+          )}
+          {porLlegar > 0 && (
+            <Stack gap={0}>
+              <Text size="xs" c="dimmed">Por llegar</Text>
+              <Text fw={600} c="blue">{porLlegar.toLocaleString('es-MX')}</Text>
             </Stack>
           )}
         </Group>
@@ -270,6 +280,13 @@ function PanelExistencias({
                   {f.en_camino > 0 && (
                     <Text size="xs" c="orange">{f.en_camino} en camino</Text>
                   )}
+                  {/* Comprado y todavía sin llegar. Va con su fecha porque la
+                      pregunta que sigue siempre es cuándo. */}
+                  {f.por_llegar > 0 && f.fecha_llegada && (
+                    <Text size="xs" c="blue">
+                      {f.por_llegar} llegan el {formatearFecha(f.fecha_llegada)}
+                    </Text>
+                  )}
                 </Table.Td>
                 {puedeVerCompras && (
                   <Table.Td ta="right"><Text size="xs">{formatMXN(f.costo_unitario)}</Text></Table.Td>
@@ -278,7 +295,9 @@ function PanelExistencias({
                   {puedeTraspasar && <Tooltip
                     label={f.cantidad > 0
                       ? 'Traspasar a otra sucursal'
-                      : 'No queda nada en el estante: todo va en camino'}
+                      : f.por_llegar > 0
+                        ? 'Todavía no llega: no se puede traspasar'
+                        : 'No queda nada en el estante: todo va en camino'}
                   >
                     {/* El span es para que el tooltip siga apareciendo con el
                         botón deshabilitado, que es cuando hace falta. */}

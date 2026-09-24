@@ -9,6 +9,12 @@ export interface Lote {
   pieza_id: number
   proveedor_id: number
   fecha_compra: string
+  /**
+   * Cuándo llega la mercancía al almacén. `null` = ya está ahí, que es el caso
+   * de casi todo. Con una fecha que aún no pasa, el lote existe —el gasto ya
+   * ocurrió— pero no cuenta como existencia y no se puede usar.
+   */
+  fecha_llegada: string | null
   costo_unitario: number
   cantidad_inicial: number
   cantidad_disponible: number
@@ -42,6 +48,11 @@ export interface LotePayload {
   // mover piezas a otra sucursal es un traspaso, no un cambio del lote.
   sucursal_id?: number
   fecha_compra: string
+  // Cuándo llega la mercancía. `null` = ya está en el almacén. Mientras no
+  // llegue, el lote no cuenta como existencia y la API niega consumirlo,
+  // montarlo o traspasarlo. Va explícito en null para que el update sepa
+  // distinguir "ya llegó" de "no toques este campo".
+  fecha_llegada: string | null
   costo_unitario: number
   cantidad_inicial: number
   num_factura: string

@@ -8,6 +8,7 @@ import * as lotesRepo from '../repositories/lotesRepo'
 import * as tiposRepo from '../repositories/tiposPiezaRepo'
 import { NotFoundError, ValidationError } from '../shared/errors'
 import { fechaMexico } from '../shared/fechaMexico'
+import { exigirLoteLlegado } from './lotesDisponibles'
 
 export async function getByVehiculo(vehiculoId: number): Promise<PiezaDeVehiculo[]> {
   const vehiculo = await vehiculosRepo.findById(vehiculoId)
@@ -71,6 +72,9 @@ export async function setPieza(
         `El lote seleccionado no es de la refacción ${pieza.numero_serie}.`
       )
     }
+    // Da igual si se va a descontar o no: una pieza que todavía viene en camino
+    // no pudo montarse en la unidad, y registrarlo dejaría un historial falso.
+    await exigirLoteLlegado(datos.lote_id)
   }
 
   // De dónde sale la unidad que se monta. Son tres caminos excluyentes, y de

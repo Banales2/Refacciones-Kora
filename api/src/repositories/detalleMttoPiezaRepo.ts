@@ -2,7 +2,7 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { fechaDelLote, joinFactura } from './facturaSql'
 import { DetalleMttoPiezaCreate, DetalleMttoPiezaUpdate } from '../schemas/detalleMttoPiezaSchema'
-import { moverExistencia } from './inventarioSql'
+import { moverExistencia, loteLlegado } from './inventarioSql'
 
 export interface DetalleMttoPieza {
   id:               number
@@ -91,7 +91,9 @@ export async function findDisponibles(): Promise<LoteDisponible[]> {
     ${joinFactura()}
     JOIN piezas p      ON p.id = l.pieza_id
     JOIN sucursales s  ON s.id = ex.sucursal_id
-    WHERE ex.cantidad > 0
+    -- Los que no han llegado no son opciones: la API los rechaza al consumir,
+    -- así que ofrecerlos sería mandar al usuario a un error evitable.
+    WHERE ex.cantidad > 0 AND ${loteLlegado('l')}
     ORDER BY p.numero_serie, s.nombre, ${fechaDelLote()}
   `)
   return r.recordset

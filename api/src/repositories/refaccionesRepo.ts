@@ -130,6 +130,7 @@ export async function findLotesByPiezaId(piezaId: number): Promise<LoteConProvee
     .query(`
       SELECT
         l.id, l.pieza_id, l.costo_unitario, l.factura_id,
+        CONVERT(char(10), l.fecha_llegada, 23) AS fecha_llegada,
         l.cantidad_inicial, ${disponibleDelLote('l')} AS cantidad_disponible,
         l.sucursal_id,
         ${colsCabecera()},

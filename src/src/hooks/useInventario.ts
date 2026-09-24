@@ -27,6 +27,14 @@ export interface ExistenciaEnSucursal {
    * ha aceptado. No están contadas en `cantidad`: ya no están en el estante.
    */
   en_camino:      number
+  /**
+   * Piezas de este renglón que vienen en camino de la compra: el lote se
+   * capturó pero su fecha de llegada no ha pasado. No están en `cantidad` —no
+   * están en el estante— y no se pueden usar hasta ese día.
+   */
+  por_llegar:     number
+  /** Cuándo llega, si no ha llegado. `null` = ya está aquí. */
+  fecha_llegada:  string | null
 }
 
 export type EstadoTraspaso = 'pendiente' | 'aceptado' | 'rechazado' | 'cancelado'

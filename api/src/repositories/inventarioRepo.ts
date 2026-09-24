@@ -7,6 +7,7 @@
 // identificar la pieza una por una.
 import * as sql from 'mssql'
 import { folioDelLote, fechaDelLote, joinFactura, joinProveedorDelLote } from './facturaSql'
+import { loteLlegado } from './inventarioSql'
 import * as unidadesRepo from './unidadesPiezaRepo'
 import { getPool } from '../shared/db'
 import { Alcance, SIN_ACOTAR, conAlcance } from '../shared/alcance'
@@ -33,6 +34,15 @@ export interface ExistenciaEnSucursal {
    * va en camino se ve igual que una que se esfumó.
    */
   en_camino:      number
+  /**
+   * Cuántas piezas de este renglón vienen en camino de la compra: el lote se
+   * capturó pero su fecha de llegada no ha pasado (migración 051). No están en
+   * `cantidad` —no están en el estante— y por eso se dicen aparte, igual que
+   * lo que salió en un traspaso sin aceptar.
+   */
+  por_llegar:     number
+  /** Cuándo llega, si no ha llegado. `null` = ya está aquí. */
+  fecha_llegada:  string | null
 }
 
 /**
@@ -52,7 +62,13 @@ export async function findExistencias(sucursalId?: number): Promise<ExistenciaEn
     where += ' AND ex.sucursal_id = @suc'
   }
   const r = await req.query(`
-    SELECT ex.lote_id, ex.sucursal_id, s.nombre AS sucursal, ex.cantidad,
+    SELECT ex.lote_id, ex.sucursal_id, s.nombre AS sucursal,
+           -- Lo que de verdad está en el estante. Un lote que no ha llegado
+           -- tiene su existencia creada desde la captura de la compra, pero
+           -- contarla aquí sería decir que hay piezas que nadie puede tomar.
+           CASE WHEN ${loteLlegado('l')} THEN ex.cantidad ELSE 0 END AS cantidad,
+           CASE WHEN ${loteLlegado('l')} THEN 0 ELSE ex.cantidad END AS por_llegar,
+           CONVERT(char(10), l.fecha_llegada, 23) AS fecha_llegada,
            p.id AS pieza_id, p.numero_serie, p.descripcion,
            p.tipo_pieza_id, t.nombre AS tipo_pieza,
            pr.nombre AS proveedor, l.costo_unitario,
@@ -93,13 +109,17 @@ export async function findResumen(sucursalId: number): Promise<{
     .input('suc', sql.Int, sucursalId)
     .query(`
       SELECT p.id AS pieza_id, p.numero_serie, p.descripcion,
-             t.nombre AS tipo_pieza, SUM(ex.cantidad) AS cantidad
+             t.nombre AS tipo_pieza,
+             SUM(CASE WHEN ${loteLlegado('l')} THEN ex.cantidad ELSE 0 END) AS cantidad
       FROM existencias_lote ex
       JOIN lotes_pieza l      ON l.id = ex.lote_id
       JOIN piezas p           ON p.id = l.pieza_id
       LEFT JOIN tipos_pieza t ON t.id = p.tipo_pieza_id
       WHERE ex.sucursal_id = @suc AND ex.cantidad > 0
       GROUP BY p.id, p.numero_serie, p.descripcion, t.nombre
+      -- Una refaccion cuyo unico lote viene en camino suma cero: no esta, y el
+      -- renglon en cero solo estorbaria en un total por refaccion.
+      HAVING SUM(CASE WHEN ${loteLlegado('l')} THEN ex.cantidad ELSE 0 END) > 0
       ORDER BY p.numero_serie`)
   return r.recordset
 }
@@ -200,7 +220,11 @@ export async function getExistencia(loteId: number, sucursalId: number): Promise
   const r = await pool.request()
     .input('lid', sql.Int, loteId)
     .input('suc', sql.Int, sucursalId)
-    .query('SELECT cantidad FROM existencias_lote WHERE lote_id=@lid AND sucursal_id=@suc')
+    .query(`
+      SELECT ex.cantidad
+      FROM existencias_lote ex
+      JOIN lotes_pieza l ON l.id = ex.lote_id
+      WHERE ex.lote_id = @lid AND ex.sucursal_id = @suc AND ${loteLlegado('l')}`)
   return r.recordset[0]?.cantidad ?? 0
 }
 
@@ -365,10 +389,13 @@ const SELECT_MINIMO = `
   SELECT m.id, m.sucursal_id, s.nombre AS sucursal,
          m.pieza_id, p.numero_serie, p.descripcion, t.nombre AS tipo_pieza,
          m.minimo, m.maximo, m.observaciones,
+         -- Solo lo que ya llegó: un pedido en camino no tapa un faltante. Es
+         -- justo cuando el mínimo tiene que seguir avisando — la pieza no está.
          COALESCE((SELECT SUM(ex.cantidad)
                    FROM existencias_lote ex
                    JOIN lotes_pieza l ON l.id = ex.lote_id
-                   WHERE l.pieza_id = m.pieza_id AND ex.sucursal_id = m.sucursal_id), 0) AS existencia
+                   WHERE l.pieza_id = m.pieza_id AND ex.sucursal_id = m.sucursal_id
+                     AND ${loteLlegado('l')}), 0) AS existencia
   FROM minimos_sucursal m
   JOIN sucursales s       ON s.id = m.sucursal_id
   JOIN piezas p           ON p.id = m.pieza_id

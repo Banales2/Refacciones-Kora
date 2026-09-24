@@ -45,6 +45,18 @@ function toDateInputValue(iso: string) {
   return iso.substring(0, 10)
 }
 
+function todayIso() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Un lote comprado que todavía no llega. Existe —el gasto ya ocurrió y la
+// factura se cuadra igual— pero no está en el estante: no cuenta como stock y
+// la API niega consumirlo, montarlo o traspasarlo hasta ese día.
+function enTransito(l: Lote) {
+  return l.fecha_llegada != null && toDateInputValue(l.fecha_llegada) > todayIso()
+}
+
 // ─── Drawer principal ─────────────────────────────────────────────────────────
 
 interface Props {
@@ -76,6 +88,9 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
       // no la acepta en el update.
       sucursal_id: values.sucursal_id ? parseInt(values.sucursal_id) : undefined,
       fecha_compra: values.fecha_compra,
+      // Vacío es "ya está aquí", y viaja en null para que editar un lote que
+      // ya llegó le borre la fecha en vez de dejarla puesta.
+      fecha_llegada: values.fecha_llegada || null,
       costo_unitario: Number(values.costo_unitario),
       cantidad_inicial: Number(values.cantidad_inicial),
       num_factura: normalizarFolio(values.num_factura),
@@ -105,7 +120,16 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
     )
   }
 
-  const stockTotal = data?.lotes.reduce((s, l) => s + l.cantidad_disponible, 0) ?? 0
+  // El stock es lo que se puede tomar hoy; lo que viene en camino se dice
+  // aparte. Sumarlos daría un número que no cuadra con el estante y que tapa
+  // justo el caso en que hay que salir a conseguir la pieza.
+  const lotes = data?.lotes ?? []
+  const stockTotal = lotes
+    .filter((l) => !enTransito(l))
+    .reduce((s, l) => s + l.cantidad_disponible, 0)
+  const porLlegar = lotes
+    .filter(enTransito)
+    .reduce((s, l) => s + l.cantidad_disponible, 0)
   // Proveedores con precio comparable, que ya no son solo los que cotizan:
   // también cuenta aquel al que se le compra, con lo que se le paga de verdad.
   const conPrecio = comparativa?.data.fila?.precios.length ?? 0
@@ -157,6 +181,12 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                     {stockTotal}
                   </Badge>
                 </div>
+                {porLlegar > 0 && (
+                  <div>
+                    <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Por llegar</Text>
+                    <Badge color="blue" variant="light" size="lg">{porLlegar}</Badge>
+                  </div>
+                )}
               </Group>
               <Group gap="xs">
                 {puedeVerFichaProveedor && <Tooltip
@@ -217,7 +247,17 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
                   <Table.Tbody>
                     {data?.lotes.map((lote) => (
                       <Table.Tr key={lote.id}>
-                        <Table.Td>{formatDate(lote.fecha_compra)}</Table.Td>
+                        <Table.Td>
+                          {formatDate(lote.fecha_compra)}
+                          {/* Lo que no ha llegado sigue saliéndose en el
+                              historial de compras —el gasto es real— pero hay
+                              que decir por qué no aparece en el inventario. */}
+                          {enTransito(lote) && (
+                            <Badge size="xs" color="blue" variant="light" ml={6}>
+                              Llega {formatDate(lote.fecha_llegada!)}
+                            </Badge>
+                          )}
+                        </Table.Td>
                         {/* Sin proveedor solo puede ser el lote de
                             recuperación: piezas que volvieron al estante sin
                             haber salido de una compra. */}
@@ -294,6 +334,9 @@ export default function LotesDrawer({ piezaId, onClose }: Props) {
               // pide; se conserva el valor original.
               sucursal_id: editLote.sucursal_id != null ? String(editLote.sucursal_id) : '',
               fecha_compra: toDateInputValue(editLote.fecha_compra),
+              fecha_llegada: editLote.fecha_llegada
+                ? toDateInputValue(editLote.fecha_llegada)
+                : '',
               costo_unitario: editLote.costo_unitario,
               cantidad_inicial: editLote.cantidad_inicial,
               num_factura: editLote.num_factura ?? '',

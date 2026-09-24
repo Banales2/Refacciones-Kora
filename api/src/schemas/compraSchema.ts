@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import {
   cantidadInicial, compradoPor, costoUnitario, descuentoPct, fechaCompra,
-  numFactura, tasaIva,
+  fechaLlegada, numFactura, tasaIva,
 } from './loteSchema'
 import { RefaccionCreateSchema } from './refaccionSchema'
 
@@ -52,6 +52,9 @@ export const CompraCreateSchema = z.object({
   // del IVA. Como la tasa, es de la factura y se escribe igual en los N lotes;
   // los renglones se capturan a precio de lista. Ausente = sin descuento.
   descuento_pct: descuentoPct,
+  // Cuándo llega la mercancía. Es de la compra y no del renglón: lo que llega
+  // es el camión, con todo lo que trae. Ausente = ya está en el estante.
+  fecha_llegada: fechaLlegada,
   comprado_por: compradoPor,
   // El tope no es arbitrario: cada renglón es un INSERT dentro de la misma
   // transacción, y una factura de más de 50 partidas capturada a mano es más

@@ -39,6 +39,11 @@ export interface CompraPayload {
   proveedor_id:  number
   sucursal_id:   number
   fecha_compra:  string
+  // Cuándo llega la mercancía al almacén. Es de la compra y no del renglón: lo
+  // que llega es el camión, con todo lo que trae. `null` = ya está ahí, que es
+  // el caso normal; con fecha futura, los lotes se crean fuera del inventario
+  // y no se pueden usar hasta ese día.
+  fecha_llegada: string | null
   num_factura:   string
   // El IVA es de la factura, no del renglón: una sola tasa para todos. null =
   // los precios capturados ya lo incluyen.
