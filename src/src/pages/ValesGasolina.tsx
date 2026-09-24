@@ -5,10 +5,13 @@
 //
 // El vehículo del grupo y el chofer de cada renglón llevan a su ficha: al
 // detalle del vehículo y a la pestaña Conductores de Catálogos.
+//
+// La pestaña Recargas junta las recargas de toda la flota y permite registrar
+// una eligiendo el vehículo ahí mismo (ver components/RecargasFlota).
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert,
-  Button, ActionIcon, Modal, TextInput, Select, Accordion, Badge, Anchor,
+  Button, ActionIcon, Modal, TextInput, Select, Accordion, Badge, Anchor, Tabs,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
@@ -26,6 +29,7 @@ import { FechaInput } from '../components/FechaInput'
 import { CODIGO, limpiarCodigo } from '../lib/validaciones'
 import NuevoConductorModal from '../components/NuevoConductorModal'
 import SelectCatalogo from '../components/SelectCatalogo'
+import RecargasFlota from '../components/RecargasFlota'
 
 function todayIso() {
   const d = new Date()
@@ -398,14 +402,26 @@ export default function ValesGasolina({
   const personaVisible  = personaAbierta  ?? personas[0]?.key ?? null
   const vehiculoVisible = vehiculoAbierto ?? personas[0]?.vehiculos[0]?.key ?? null
 
+  // El practicante captura vales pero el listado de recargas no le responde.
+  const { esPracticante } = usePermisos()
+
   return (
     <>
       <Stack gap="md">
-        <Group justify="space-between" align="flex-end">
-          <div>
-            <Text size="xl" fw={600}>Vales de gasolina</Text>
-            <Text size="sm" c="dimmed">Vales entregados a los choferes</Text>
-          </div>
+        <div>
+          <Text size="xl" fw={600}>Vales de gasolina</Text>
+          <Text size="sm" c="dimmed">Vales entregados a los choferes y las recargas hechas con ellos</Text>
+        </div>
+
+        <Tabs defaultValue="vales" keepMounted={false}>
+          <Tabs.List>
+            <Tabs.Tab value="vales">Vales</Tabs.Tab>
+            {!esPracticante && <Tabs.Tab value="recargas">Recargas</Tabs.Tab>}
+          </Tabs.List>
+
+          <Tabs.Panel value="vales" pt="md">
+        <Stack gap="md">
+        <Group justify="flex-end" align="flex-end">
           <Group gap="sm" align="flex-end">
             {vales.length > 0 && (
               <Text size="sm" c="dimmed">{vales.length} vales</Text>
@@ -471,6 +487,15 @@ export default function ValesGasolina({
             ))}
           </Accordion>
         )}
+        </Stack>
+          </Tabs.Panel>
+
+          {!esPracticante && (
+            <Tabs.Panel value="recargas" pt="md">
+              <RecargasFlota onNavigateVehiculo={onNavigateVehiculo} />
+            </Tabs.Panel>
+          )}
+        </Tabs>
       </Stack>
 
       {/* Modal: nuevo vale */}

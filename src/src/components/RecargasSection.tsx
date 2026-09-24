@@ -7,6 +7,7 @@
 // costo por grupo. La API devuelve todas las recargas del vehículo en una sola
 // llamada, ya ordenadas por fecha descendente; el agrupado es en el cliente.
 import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   Stack, Group, Text, Table, Divider, Loader, Center, Alert, Button,
   ActionIcon, Modal, Tooltip, NumberInput, Badge, Accordion,
@@ -27,6 +28,7 @@ import ConfirmarAvanceKm from './ConfirmarAvanceKm'
 import { avanzaOdometro } from '../lib/odometro'
 import { formatLitros as fmtLitros } from '../lib/formato'
 import { usePermisos } from '../hooks/usePermisos'
+import { agrupar, calcularRendimientos } from '../lib/recargas'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -38,49 +40,6 @@ function formatLitros(n: number) {
 
 function formatKm(n: number) {
   return `${n.toLocaleString('es-MX')} km`
-}
-
-// Rendimiento por recarga: los km recorridos son el kilometraje de esta recarga
-// menos el de la recarga anterior (en orden cronológico). km/L = km recorridos
-// / litros.
-//
-// La primera carga capturada no tiene rendimiento, y no es lo mismo que tenerlo
-// en cero: los kilómetros que traía la unidad antes de esa carga los pagó
-// combustible que nadie registró aquí. Tomar el anterior como 0 le atribuía el
-// odómetro completo —30 000 km con un tanque en una unidad que se dio de alta
-// usada—. Es el mismo criterio de lib/reportes/vehiculo y del análisis de
-// costos de la flota: solo se mide de tanque a tanque.
-//
-// Devuelve un mapa id → km por litro (null si no se puede calcular: la primera
-// carga, una sin kilometraje, sin litros, o si el kilometraje bajó respecto al
-// anterior).
-function calcularRendimientos(items: Recarga[]): Map<number, number | null> {
-  const asc = [...items].sort((a, b) => {
-    const fa = a.fecha.split('T')[0]
-    const fb = b.fecha.split('T')[0]
-    return fa === fb ? a.id - b.id : fa.localeCompare(fb)
-  })
-
-  const rend = new Map<number, number | null>()
-  let kmAnterior: number | null = null
-  for (const r of asc) {
-    if (r.kilometraje == null) {
-      rend.set(r.id, null)
-      continue
-    }
-    if (kmAnterior == null) {
-      // La que abre el historial: deja la referencia para la siguiente, que sí
-      // cierra un tramo completo.
-      rend.set(r.id, null)
-      kmAnterior = r.kilometraje
-      continue
-    }
-    const kmRecorridos = r.kilometraje - kmAnterior
-    const litros = Number(r.litros)
-    rend.set(r.id, litros > 0 && kmRecorridos >= 0 ? kmRecorridos / litros : null)
-    kmAnterior = r.kilometraje
-  }
-  return rend
 }
 
 function formatRendimiento(n: number) {
@@ -105,62 +64,6 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-const MESES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-]
-
-// ── Agrupado año → mes ────────────────────────────────────────────────────────
-
-type Grupo = {
-  key:    string
-  label:  string
-  litros: number
-  costo:  number
-}
-
-type GrupoMes  = Grupo & { items: Recarga[] }
-type GrupoAnio = Grupo & { meses: GrupoMes[] }
-
-// La fecha llega como "YYYY-MM-DD" (o ISO con hora). Se parte el string en vez
-// de construir un Date para que el mes no se recorra por zona horaria.
-function agrupar(items: Recarga[]): GrupoAnio[] {
-  const anios = new Map<string, Map<string, Recarga[]>>()
-
-  for (const r of items) {
-    const [anio, mes] = r.fecha.split('T')[0].split('-')
-    if (!anios.has(anio)) anios.set(anio, new Map())
-    const meses = anios.get(anio)!
-    if (!meses.has(mes)) meses.set(mes, [])
-    meses.get(mes)!.push(r)
-  }
-
-  const sumar = (rs: Recarga[]) => ({
-    litros: rs.reduce((s, r) => s + Number(r.litros), 0),
-    costo:  rs.reduce((s, r) => s + Number(r.costo),  0),
-  })
-
-  return [...anios.entries()]
-    .sort((a, b) => b[0].localeCompare(a[0]))
-    .map(([anio, mesesMap]) => {
-      const meses: GrupoMes[] = [...mesesMap.entries()]
-        .sort((a, b) => b[0].localeCompare(a[0]))
-        .map(([mes, rs]) => ({
-          key:   `${anio}-${mes}`,
-          label: MESES[parseInt(mes, 10) - 1],
-          items: rs,
-          ...sumar(rs),
-        }))
-
-      return {
-        key:   anio,
-        label: anio,
-        meses,
-        ...sumar(meses.flatMap((m) => m.items)),
-      }
-    })
-}
-
 // ── Formulario ────────────────────────────────────────────────────────────────
 
 type RecargaFormValues = {
@@ -173,7 +76,7 @@ type RecargaFormValues = {
   kilometraje:   number | string
 }
 
-function RecargaForm({
+export function RecargaForm({
   vehiculoId, kmVehiculo, valesUsados, initial, isPending, error, onSubmit, onCancel,
 }: {
   vehiculoId: number
@@ -374,19 +277,25 @@ function RecargaForm({
 
 // ── Tabla de las recargas de un mes ───────────────────────────────────────────
 
-function RecargasTabla({
-  items, rendimientos, onEdit,
+export function RecargasTabla<T extends Recarga>({
+  items, rendimientos, onEdit, vehiculo,
 }: {
-  items: Recarga[]
+  items: T[]
   rendimientos: Map<number, number | null>
   /** Sin él la tabla es de consulta. */
-  onEdit?: (r: Recarga) => void
+  onEdit?: (r: T) => void
+  /**
+   * Celda del vehículo. En la ficha del vehículo sobra —ya se sabe cuál es—;
+   * en el listado de toda la flota es lo primero que se busca.
+   */
+  vehiculo?: (r: T) => ReactNode
 }) {
   return (
     <Table highlightOnHover verticalSpacing="xs">
       <Table.Thead>
         <Table.Tr>
           <Table.Th>Fecha</Table.Th>
+          {vehiculo && <Table.Th>Vehículo</Table.Th>}
           <Table.Th>Gasolinera</Table.Th>
           <Table.Th>Conductor</Table.Th>
           <Table.Th>Vale</Table.Th>
@@ -406,6 +315,7 @@ function RecargasTabla({
           return (
             <Table.Tr key={r.id}>
               <Table.Td>{formatDiaMes(r.fecha)}</Table.Td>
+              {vehiculo && <Table.Td>{vehiculo(r)}</Table.Td>}
               <Table.Td>
                 <Text size="sm">{r.gasolinera}</Text>
                 <Text size="xs" c="dimmed">{r.ubicacion}</Text>
@@ -456,7 +366,7 @@ function RecargasTabla({
 }
 
 // Encabezado de un grupo: etiqueta a la izquierda, subtotales a la derecha.
-function ResumenGrupo({
+export function ResumenGrupo({
   label, litros, costo, fw,
 }: {
   label:  string
@@ -506,8 +416,8 @@ export default function RecargasSection({
   const anioVisible = anioAbierto ?? anios[0]?.key ?? null
   const mesVisible  = mesAbierto  ?? anios[0]?.meses[0]?.key ?? null
 
-  const createMut = useCreateRecarga(vehiculoId)
-  const updateMut = useUpdateRecarga(vehiculoId)
+  const createMut = useCreateRecarga()
+  const updateMut = useUpdateRecarga()
   // El responsable de sucursal registra cargas pero no las corrige.
   const { puedeEditar } = usePermisos()
 
@@ -524,7 +434,7 @@ export default function RecargasSection({
       onError:   (e: Error) => setFormError(e.message),
     }
     if (editing) updateMut.mutate({ id: editing.id, payload }, opts)
-    else         createMut.mutate(payload, opts)
+    else         createMut.mutate({ vehiculoId, payload }, opts)
   }
 
   return (

@@ -1,6 +1,7 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { RecargaCreate, RecargaUpdate } from '../schemas/recargaSchema'
+import { Alcance, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 
 export interface RecargaConGasolinera {
   id:            number
@@ -39,6 +40,41 @@ export async function findByVehiculo(vehiculoId: number): Promise<RecargaConGaso
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
     .query(`${SELECT_RECARGA} WHERE r.vehiculo_id = @vid ORDER BY r.fecha DESC, r.id DESC`)
+  return r.recordset
+}
+
+/** Recarga del listado general: trae además qué vehículo se recargó. */
+export interface RecargaConVehiculo extends RecargaConGasolinera {
+  marca:  string
+  modelo: string
+  serie:  string
+  placas: string | null
+}
+
+// Las recargas de toda la flota, para la pestaña Recargas de Vales de gasolina.
+// El alcance se aplica aquí y no con `soloVisibles`: a diferencia de los vales,
+// las recargas se acumulan con cada carga y no tiene caso traerlas todas para
+// tirar la mayoría en memoria.
+export async function findAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
+  const pool = await getPool()
+  const r = await conAlcance(pool.request(), alcance)
+    .query(`
+      SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.vale_id,
+             CONVERT(char(10), r.fecha, 23) AS fecha,
+             r.litros, r.costo, r.kilometraje,
+             g.nombre AS gasolinera, g.ubicacion,
+             c.nombre AS conductor,
+             vg.folio AS vale_folio,
+             CONVERT(char(10), vg.fecha, 23) AS vale_fecha,
+             m.marca, m.nombre AS modelo, v.numero_serie AS serie, v.placas
+      FROM recargas_combustible r
+      JOIN gasolineras g       ON g.id = r.gasolinera_id
+      JOIN conductores c       ON c.id = r.conductor_id
+      JOIN vehiculos   v       ON v.id = r.vehiculo_id
+      JOIN modelos     m       ON m.id = v.modelo_id
+      LEFT JOIN vales_gasolina vg ON vg.id = r.vale_id
+      WHERE ${vehiculoEnAlcance('r.vehiculo_id')}
+      ORDER BY r.fecha DESC, r.id DESC`)
   return r.recordset
 }
 

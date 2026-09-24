@@ -1,6 +1,7 @@
 import * as repo from '../repositories/recargasRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
-import type { RecargaConGasolinera } from '../repositories/recargasRepo'
+import type { RecargaConGasolinera, RecargaConVehiculo } from '../repositories/recargasRepo'
+import type { Alcance } from '../shared/alcance'
 import type { RecargaCreate, RecargaUpdate } from '../schemas/recargaSchema'
 import { NotFoundError, ValidationError, ConflictError } from '../shared/errors'
 
@@ -18,6 +19,10 @@ async function validarVale(
   if (await repo.valeUsado(valeId, recargaId)) {
     throw new ConflictError('Ese vale ya se usó en otra recarga')
   }
+}
+
+export async function getAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
+  return repo.findAll(alcance)
 }
 
 export async function getByVehiculo(vehiculoId: number): Promise<RecargaConGasolinera[]> {

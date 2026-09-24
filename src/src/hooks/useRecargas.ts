@@ -32,6 +32,23 @@ export interface RecargaPayload {
   kilometraje:   number
 }
 
+/** Renglón del listado de toda la flota: trae además el vehículo recargado. */
+export interface RecargaConVehiculo extends Recarga {
+  marca:  string
+  modelo: string
+  serie:  string
+  placas: string | null
+}
+
+// Las recargas de todos los vehículos que alcanza a ver quien está conectado:
+// al responsable la API le manda sólo las de su sucursal.
+export function useRecargasTodas() {
+  return useQuery({
+    queryKey: ['recargas', 'todas'],
+    queryFn: () => api.get<{ data: RecargaConVehiculo[] }>('/recargas'),
+  })
+}
+
 export function useRecargas(vehiculoId: number) {
   return useQuery({
     queryKey: ['recargas', vehiculoId],
@@ -40,13 +57,16 @@ export function useRecargas(vehiculoId: number) {
   })
 }
 
-export function useCreateRecarga(vehiculoId: number) {
+// El vehículo viaja con cada alta y no al crear el hook: en la pestaña Recargas
+// de Vales de gasolina se elige en el mismo formulario.
+export function useCreateRecarga() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (payload: RecargaPayload) =>
+    mutationFn: ({ vehiculoId, payload }: { vehiculoId: number; payload: RecargaPayload }) =>
       api.post<{ data: Recarga }>(`/vehiculos/${vehiculoId}/recargas`, payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['recargas', vehiculoId] })
+      // Todas: la del vehículo y el listado de la flota.
+      qc.invalidateQueries({ queryKey: ['recargas'] })
       // Registrar la recarga avanza el odómetro del vehículo (solo si el km
       // capturado es mayor al que ya tenía).
       qc.invalidateQueries({ queryKey: ['vehiculos'] })
@@ -55,12 +75,12 @@ export function useCreateRecarga(vehiculoId: number) {
   })
 }
 
-export function useUpdateRecarga(vehiculoId: number) {
+export function useUpdateRecarga() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: Partial<RecargaPayload> }) =>
       api.put<{ data: Recarga }>(`/recargas/${id}`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['recargas', vehiculoId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['recargas'] }),
   })
 }
 
