@@ -23,6 +23,7 @@ import ProveedorForm from './ProveedorForm'
 import TipoPiezaSelect from './TipoPiezaSelect'
 import SelectCatalogo from './SelectCatalogo'
 import { formatMXN } from '../lib/formato'
+import { formatearFecha } from '../lib/fechas'
 import { IVA_DEFAULT, DESCUENTO_DEFAULT, totalesFactura } from '../lib/totales'
 import {
   TEXTO_SIMPLE, TEXTO_LIBRE, FOLIO,

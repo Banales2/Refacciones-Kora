@@ -227,6 +227,9 @@ export default function MontajePiezaModal({
         proveedor_id:     Number(v.proveedor_id),
         sucursal_id:      Number(v.sucursal_id),
         fecha_compra:     v.fecha_compra,
+        // Vacía es "ya está aquí": una pieza que se está montando en este
+        // momento llegó, por definición.
+        fecha_llegada:    v.fecha_llegada || null,
         costo_unitario:   Number(v.costo_unitario),
         cantidad_inicial: Number(v.cantidad_inicial),
         num_factura:      normalizarFolio(v.num_factura),
