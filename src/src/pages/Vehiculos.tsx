@@ -1319,7 +1319,7 @@ function VehiculoDetalle({
   // El responsable de sucursal no ve lo de mantenimiento (servicios, programa,
   // garantías, piezas montadas) y la API se lo niega: esas consultas ni se
   // lanzan, para no llenar la ficha de 403.
-  const { puedeVerMantenimiento: conMtto } = usePermisos()
+  const { puedeVerMantenimiento: conMtto, esAdmin } = usePermisos()
 
   const { data: mantData } = useMantenimientos(vehiculo.id, conMtto)
   // Las secciones de abajo ya piden estas tres listas; React Query las comparte
@@ -1639,9 +1639,10 @@ function VehiculoDetalle({
             )}
             {/* Reiniciar el odómetro vive junto a editar y no dentro del
                 kilometraje editable a propósito: no es corregir un número, es
-                registrar que el tablero se puso en cero. Solo en las unidades
-                que llevan odómetro. */}
-            {onEdit && vehiculo.kilometraje !== null && (
+                registrar que el tablero se puso en cero.
+                Solo admin, y solo en las unidades que llevan odómetro: reescribe
+                la vida de la unidad en todos los módulos a la vez. */}
+            {esAdmin && vehiculo.kilometraje !== null && (
               <Tooltip label="Reiniciar el odómetro">
                 <ActionIcon
                   variant="light" color="orange" size="lg"

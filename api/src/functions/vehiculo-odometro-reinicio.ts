@@ -16,9 +16,16 @@ import * as service from '../services/vehiculosService'
  * la unidad llevaba deja de contarse en el tablero y pasa a acumularse. Ver la
  * migración 053.
  *
- * Lo registran admin y editor, no el responsable de sucursal: cambia cómo se
- * calcula la vida de la unidad en todos los módulos, y no es una captura de
- * patio.
+ * SOLO ADMIN. No es una captura de patio ni una corrección de rutina: reescribe
+ * la vida de la unidad en todos los módulos a la vez —cuándo vencen sus
+ * servicios, si su garantía sigue viva, cuánto lleva rodada cada llanta— y un
+ * número mal tecleado aquí se queda inflado para siempre sin forma evidente de
+ * notarlo. Quien esté en el patio el día que cambian un tablero lo reporta;
+ * capturarlo es de oficina.
+ *
+ * Leer el historial sí lo puede cualquiera: es lo que explica por qué el
+ * kilometraje de una unidad dio un salto, y esconderlo dejaría el salto sin
+ * explicación justo a quien lo está viendo.
  */
 const Schema = z.object({
   fecha: z
@@ -41,7 +48,7 @@ export async function vehiculoOdometroReinicio(
   req: HttpRequest, ctx: InvocationContext,
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor')
+    const user = requireRole(req, 'admin')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
 
