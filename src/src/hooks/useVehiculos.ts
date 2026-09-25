@@ -25,7 +25,16 @@ export interface VehiculoRow {
    */
   categoria:    string | null
   status:       string | null
+  /**
+   * Lo que marca el tablero hoy. NO es la vida de la unidad: si el odómetro se
+   * reinició, lo anterior al reinicio no está aquí. Es el número contra el que
+   * compara quien captura un chequeo o una recarga.
+   */
   kilometraje:  number | null
+  /** Los kilómetros de verdad: el tablero más lo acumulado en los reinicios. */
+  kilometraje_total: number | null
+  /** Lo acumulado en reinicios anteriores. 0 si nunca se reinició. */
+  km_reiniciado: number
   combustible:  string | null
   ubicacion:    string | null
   sucursal_id:  number | null
@@ -147,6 +156,54 @@ export function useUpdateVehiculo() {
 
 // Categorías de carrocería ya usadas en la flota, para sugerirlas al capturar.
 // No hay catálogo: el vocabulario se arma con lo que se escribe.
+/** Un reinicio de odómetro ya registrado. */
+export interface ReinicioOdometro {
+  id:              number
+  vehiculo_id:     number
+  fecha:           string
+  km_al_reiniciar: number
+  motivo:          string | null
+  registrado_por:  string
+  created_at:      string
+}
+
+export function useReiniciosOdometro(vehiculoId: number | null) {
+  return useQuery({
+    queryKey: ['odometro-reinicios', vehiculoId],
+    queryFn: () => api.get<{ data: ReinicioOdometro[] }>(
+      `/vehiculos/${vehiculoId}/odometro/reinicios`),
+    enabled: vehiculoId !== null,
+  })
+}
+
+/**
+ * Registra que el tablero se puso en cero.
+ *
+ * Invalida medio mundo a propósito: el kilometraje de vida cambia, y con él lo
+ * que se calcula a partir de él —el programa de mantenimiento, las garantías
+ * por límite de km y los kilómetros de cada pieza montada—.
+ */
+export function useReiniciarOdometro(vehiculoId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: {
+      fecha?: string
+      km_al_reiniciar?: number
+      km_nuevo?: number
+      motivo?: string | null
+    }) => api.post<{ data: ReinicioOdometro }>(
+      `/vehiculos/${vehiculoId}/odometro/reinicio`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['odometro-reinicios', vehiculoId] })
+      qc.invalidateQueries({ queryKey: ['vehiculos'] })
+      qc.invalidateQueries({ queryKey: ['programa-vehiculo'] })
+      qc.invalidateQueries({ queryKey: ['garantias-vehiculo'] })
+      qc.invalidateQueries({ queryKey: ['unidades-pieza'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
 export function useCategoriasVehiculo() {
   return useQuery({
     queryKey: ['vehiculos-categorias'],

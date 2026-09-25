@@ -25,7 +25,26 @@ export interface VehiculoRow {
    */
   categoria:    string | null
   status:       string | null
+  /**
+   * Lo que marca el tablero hoy. NO es la vida de la unidad: si el odómetro se
+   * reinició alguna vez, lo anterior al reinicio no está aquí.
+   *
+   * Sigue siendo este el número contra el que compara quien captura un chequeo
+   * o una recarga parado frente al velocímetro, y por eso no se toca.
+   */
   kilometraje:  number | null
+  /**
+   * Los kilómetros que la unidad lleva de verdad: lo que marca el tablero más
+   * todo lo que quedó atrás en cada reinicio. Igual a `kilometraje` en las
+   * unidades que nunca se reiniciaron, que son casi todas.
+   *
+   * Es un derivado —se suma al leerlo— por lo mismo que el importe del IVA no
+   * se guarda: una columna se desalinearía en cuanto se corrija el kilometraje
+   * con el que se registró un reinicio. Ver la migración 053.
+   */
+  kilometraje_total: number | null
+  /** Lo acumulado en reinicios anteriores. 0 —no null— si nunca se reinició. */
+  km_reiniciado: number
   combustible:  string | null
   ubicacion:    string | null
   sucursal_id:  number | null
@@ -77,6 +96,12 @@ function conAlertas(row: VehiculoRowSql): VehiculoRow {
 
 // ── Shared SQL fragments ──────────────────────────────────────────────────────
 
+// Lo que la unidad acumuló antes de sus reinicios de odómetro. Suma, no
+// columna: ver la cabecera de la migración 053.
+const KM_REINICIADO = `
+  COALESCE((SELECT SUM(orr.km_al_reiniciar)
+            FROM odometro_reinicios orr WHERE orr.vehiculo_id = v.id), 0)`
+
 const SELECT_COLS = `
   v.id, v.tipo, v.modelo_id, v.fecha_compra,
   v.numero_serie AS serie, v.placas, v.categoria,
@@ -86,6 +111,13 @@ const SELECT_COLS = `
        WHEN v.tipo='montacargas'  THEN mc.status      END AS status,
   CASE WHEN v.tipo='camion'       THEN c.kilometraje   WHEN v.tipo='tractocamion' THEN t.kilometraje
        WHEN v.tipo='utilitario'   THEN u.kilometraje   ELSE NULL END AS kilometraje,
+  -- Lo que se quedó atrás en los reinicios, y la vida completa de la unidad.
+  -- El total es NULL cuando el tipo no lleva odómetro (una caja de tráiler):
+  -- ahí no hay nada que sumar, y un 0 diría "recién comprada".
+  ${KM_REINICIADO} AS km_reiniciado,
+  CASE WHEN v.tipo='camion'       THEN c.kilometraje   WHEN v.tipo='tractocamion' THEN t.kilometraje
+       WHEN v.tipo='utilitario'   THEN u.kilometraje   ELSE NULL END
+    + ${KM_REINICIADO} AS kilometraje_total,
   CASE WHEN v.tipo='camion'       THEN c.combustible   WHEN v.tipo='tractocamion' THEN t.combustible
        WHEN v.tipo='utilitario'   THEN u.combustible   WHEN v.tipo='montacargas'  THEN mc.combustible
        ELSE NULL END AS combustible,
@@ -330,6 +362,89 @@ export async function fijarKilometraje(vehiculoId: number, km: number): Promise<
     .input('vid', sql.Int, vehiculoId)
     .input('km',  sql.Int, km)
     .query(`UPDATE ${tabla} SET kilometraje=@km WHERE vehiculo_id=@vid`)
+}
+
+// ---------------------------------------------------------------------------
+// Reinicios de odómetro
+// ---------------------------------------------------------------------------
+//
+// El tablero se reemplaza o da la vuelta, y la unidad que traía 310,000 km
+// amanece marcando 0. Lo que se guarda es el hecho —qué día y con cuántos
+// kilómetros—; la vida acumulada es la suma de esos hechos. Ver la migración
+// 053.
+
+export interface ReinicioOdometro {
+  id:              number
+  vehiculo_id:     number
+  fecha:           string
+  km_al_reiniciar: number
+  motivo:          string | null
+  registrado_por:  string
+  created_at:      string
+}
+
+export async function findReinicios(vehiculoId: number): Promise<ReinicioOdometro[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('vid', sql.Int, vehiculoId)
+    .query(`
+      SELECT id, vehiculo_id, CONVERT(char(10), fecha, 23) AS fecha,
+             km_al_reiniciar, motivo, registrado_por, created_at
+      FROM odometro_reinicios
+      WHERE vehiculo_id = @vid
+      ORDER BY fecha DESC, id DESC`)
+  return r.recordset
+}
+
+/**
+ * Registra que el odómetro se puso en cero, en una sola transacción con el
+ * tablero que se deja en su nueva lectura.
+ *
+ * Las dos cosas van juntas o no van: guardar el tramo sin poner el tablero en
+ * cero contaría esos kilómetros dos veces —una en el acumulado y otra en la
+ * lectura que sigue ahí—, y ponerlo en cero sin guardar el tramo borraría de
+ * golpe la vida de la unidad. Es el mismo criterio que el lote y su existencia.
+ */
+export async function registrarReinicio(
+  vehiculoId: number, tabla: string,
+  datos: { fecha: string; kmAlReiniciar: number; kmNuevo: number; motivo: string | null },
+  registradoPor: string,
+): Promise<ReinicioOdometro> {
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    const r = await tx.request()
+      .input('vid',    sql.Int,           vehiculoId)
+      .input('fecha',  sql.Date,          datos.fecha)
+      .input('km',     sql.Int,           datos.kmAlReiniciar)
+      .input('motivo', sql.NVarChar(200), datos.motivo)
+      .input('quien',  sql.NVarChar(120), registradoPor)
+      .query(`
+        INSERT INTO odometro_reinicios
+          (vehiculo_id, fecha, km_al_reiniciar, motivo, registrado_por)
+        OUTPUT INSERTED.id
+        VALUES (@vid, @fecha, @km, @motivo, @quien)`)
+
+    // El tablero queda en lo que marque ahora, que casi siempre es 0 pero no
+    // tiene por qué: entre el reinicio y la captura la unidad pudo rodar.
+    await tx.request()
+      .input('vid', sql.Int, vehiculoId)
+      .input('km',  sql.Int, datos.kmNuevo)
+      .query(`UPDATE ${tabla} SET kilometraje = @km WHERE vehiculo_id = @vid`)
+
+    await tx.commit()
+    const creado = (await findReinicios(vehiculoId)).find((x) => x.id === r.recordset[0].id)
+    return creado!
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+}
+
+/** La tabla donde vive el odómetro de este vehículo, o undefined si no lleva. */
+export async function tablaKmDeVehiculo(vehiculoId: number): Promise<string | undefined> {
+  return tablaKmDe(vehiculoId)
 }
 
 async function tablaKmDe(vehiculoId: number): Promise<string | undefined> {

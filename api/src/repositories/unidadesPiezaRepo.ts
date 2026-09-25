@@ -1,6 +1,7 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { loteLlegado } from './inventarioSql'
+import { kmAbsoluto, kmDeVida } from './vehiculosSql'
 
 // Piezas físicas identificadas una por una. Solo existen para los tipos con
 // `rastreo_individual` (migración 025); lo que se cuenta a granel no las tiene.
@@ -80,8 +81,15 @@ const ESTADO = `
 
 // Los kilómetros de los tramos ya cerrados. Los que no capturaron kilometraje
 // no suman: es preferible quedarse corto que inventar.
+//
+// Las dos lecturas se llevan a kilómetros absolutos antes de restarse: si el
+// odómetro de esa unidad se reinició entre el montaje y el retiro, el crudo
+// daría un tramo negativo y la pieza aparecería con menos vida de la que tiene.
 const KM_CERRADOS = `
-  (SELECT COALESCE(SUM(i.km_retiro - i.km_instalacion), 0)
+  (SELECT COALESCE(SUM(
+            ${kmAbsoluto('i.km_retiro', 'i.fecha_retiro', 'i.vehiculo_id')}
+            - ${kmAbsoluto('i.km_instalacion', 'i.fecha_instalacion', 'i.vehiculo_id')}
+          ), 0)
    FROM instalaciones_pieza i
    WHERE i.unidad_id = u.id
      AND i.km_retiro IS NOT NULL AND i.km_instalacion IS NOT NULL)`
@@ -90,10 +98,8 @@ const KM_CERRADOS = `
 // odómetro vive en la tabla hija según el tipo de vehículo.
 const KM_ABIERTO = `
   (SELECT COALESCE(
-     CASE WHEN veh.tipo = 'camion'       THEN c.kilometraje
-          WHEN veh.tipo = 'tractocamion' THEN t.kilometraje
-          WHEN veh.tipo = 'utilitario'   THEN utl.kilometraje END
-     - ult.km_instalacion, 0)
+     ${kmDeVida('veh', { utilitario: 'utl' })}
+     - ${kmAbsoluto('ult.km_instalacion', 'ult.fecha_instalacion', 'veh.id')}, 0)
    FROM vehiculos veh
    LEFT JOIN camiones      c   ON c.vehiculo_id   = veh.id
    LEFT JOIN tractocamiones t  ON t.vehiculo_id   = veh.id

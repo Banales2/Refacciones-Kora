@@ -10,6 +10,7 @@ import {
 } from '../schemas/vehiculoSchema'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
 import { Alcance, SIN_ACOTAR, exigirVehiculo } from '../shared/alcance'
+import { fechaMexico } from '../shared/fechaMexico'
 
 function requireField(value: unknown, label: string) {
   if (value == null || value === '') throw new ValidationError(`${label} es requerido`)
@@ -145,6 +146,70 @@ export async function update(id: number, data: VehiculoUpdate) {
   const updated = await repo.update(id, current.tipo as TipoVehiculo, data)
   if (!updated) throw new NotFoundError('Vehículo')
   return updated
+}
+
+// ---------------------------------------------------------------------------
+// Reinicio de odómetro
+// ---------------------------------------------------------------------------
+
+export async function getReinicios(id: number, alcance: Alcance = SIN_ACOTAR) {
+  await exigirVehiculo(id, alcance)
+  return repo.findReinicios(id)
+}
+
+/**
+ * El tablero se puso en cero: se guarda el tramo que deja de contar y la
+ * lectura nueva.
+ *
+ * Lo que se captura es cuánto marcaba ANTES de reiniciarse, y por omisión es
+ * lo que el sistema ya tenía. Casi siempre son el mismo número; cuando no
+ * —porque la unidad rodó unos días sin que nadie capturara— manda lo que diga
+ * quien vio el tablero, igual que en el chequeo.
+ */
+export async function registrarReinicio(
+  id: number,
+  data: { fecha?: string; km_al_reiniciar?: number; km_nuevo?: number; motivo?: string | null },
+  registradoPor: string,
+  alcance: Alcance = SIN_ACOTAR,
+) {
+  await exigirVehiculo(id, alcance)
+  const vehiculo = await repo.findById(id)
+  if (!vehiculo) throw new NotFoundError('Vehículo')
+
+  // Una caja de tráiler no tiene odómetro que reiniciar. Aceptarlo guardaría
+  // un acumulado que ninguna lectura va a usar nunca.
+  const tabla = await repo.tablaKmDeVehiculo(id)
+  if (!tabla) {
+    throw new ValidationError('Este tipo de unidad no lleva odómetro')
+  }
+
+  const kmAlReiniciar = data.km_al_reiniciar ?? vehiculo.kilometraje ?? 0
+  if (kmAlReiniciar <= 0) {
+    throw new ValidationError(
+      'Un odómetro que marcaba cero no se reinicia: no hay kilómetros que acumular.'
+    )
+  }
+  // Bajar el número por debajo de lo registrado no es un reinicio, es una
+  // corrección —y esa se hace con el chequeo, que sí deja fijar la lectura—.
+  // Sin esto, un dedazo aquí inflaría la vida de la unidad para siempre y sin
+  // dejar forma evidente de notarlo.
+  if (vehiculo.kilometraje != null && kmAlReiniciar < vehiculo.kilometraje) {
+    throw new ValidationError(
+      `El sistema tiene ${vehiculo.kilometraje.toLocaleString('es-MX')} km en esta unidad. ` +
+      'Para reiniciar, el último kilometraje no puede ser menor; si lo que quieres es ' +
+      'corregir la lectura, hazlo desde el chequeo diario.'
+    )
+  }
+
+  const kmNuevo = data.km_nuevo ?? 0
+  if (kmNuevo < 0) throw new ValidationError('La lectura nueva no puede ser negativa')
+
+  return repo.registrarReinicio(id, tabla, {
+    fecha:  data.fecha ?? fechaMexico(),
+    kmAlReiniciar,
+    kmNuevo,
+    motivo: data.motivo?.trim() || null,
+  }, registradoPor)
 }
 
 export async function getModelos() {

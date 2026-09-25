@@ -12,6 +12,7 @@
 // El estado (vigente/vencida) no vive aquí: se calcula en `shared/garantias`.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { kmDeVida } from './vehiculosSql'
 
 export type TriggerMode = 'km' | 'meses' | 'ambos'
 
@@ -302,10 +303,9 @@ const SELECT_GARANTIA = `
          g.folio, g.observaciones,
          CONVERT(char(10), g.cancelada_en, 23) AS cancelada_en, g.motivo_cancelacion,
          g.created_at, g.updated_at,
-         CASE WHEN v.tipo='camion'       THEN c.kilometraje
-              WHEN v.tipo='tractocamion' THEN t.kilometraje
-              WHEN v.tipo='utilitario'   THEN u.kilometraje
-              ELSE NULL END AS kilometraje
+         -- Vida acumulada: una garantía de 100,000 km no se renueva porque
+         -- al tablero le hayan puesto uno nuevo.
+         ${kmDeVida('v')} AS kilometraje
   FROM garantias_vehiculo g
   JOIN vehiculos v ON v.id = g.vehiculo_id
   LEFT JOIN camiones              c ON c.vehiculo_id = v.id

@@ -16,6 +16,7 @@
 // en el servicio.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { kmDeVida } from './vehiculosSql'
 import type { TipoPrograma } from './programaRepo'
 
 /** La etapa se llama igual que el tipo de programa que se sigue en ella. */
@@ -357,10 +358,12 @@ export async function findDatosVehiculo(vehiculoId: number): Promise<DatosVehicu
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
     .query(`
-      SELECT CASE WHEN v.tipo='camion'       THEN c.kilometraje
-                  WHEN v.tipo='tractocamion' THEN t.kilometraje
-                  WHEN v.tipo='utilitario'   THEN u.kilometraje
-                  ELSE NULL END AS kilometraje,
+      -- La vida de la unidad y no lo que marca el tablero: un odómetro
+      -- reiniciado dejaria el recorrido en negativo contra un km_inicio de
+      -- la escala anterior, y entonces ningún servicio volvería a vencer.
+      -- Este mismo numero es el que ancla un km_inicio nuevo, asi que los
+      -- dos lados de la resta quedan siempre en la misma escala.
+      SELECT ${kmDeVida('v')} AS kilometraje,
              v.fecha_compra, v.modelo_id
       FROM vehiculos v
       LEFT JOIN camiones              c ON c.vehiculo_id = v.id

@@ -22,6 +22,55 @@ export const TABLA_POR_TIPO: Record<TipoVehiculo, string> = {
   montacargas:  'montacargas',
 }
 
+/**
+ * Los kilómetros que la unidad lleva de verdad: lo que marca el tablero más
+ * todo lo que quedó atrás en cada reinicio de odómetro (migración 053).
+ *
+ * HAY DOS NÚMEROS Y NO SON EL MISMO. El del tablero es contra el que compara
+ * quien está parado frente al velocímetro capturando un chequeo o una recarga;
+ * éste es la vida de la unidad, y es el que vale para todo lo que se mide en
+ * kilómetros acumulados: cuándo toca el próximo servicio, si la garantía ya se
+ * pasó, cuánto lleva rodada una llanta.
+ *
+ * En una unidad que nunca se reinició —que son casi todas— los dos son el
+ * mismo número, y por eso esto se puede meter en cualquier consulta sin
+ * cambiarle el resultado a nadie.
+ *
+ * `alias` es el alias de `vehiculos`; `hijas`, el de cada tabla hija, porque
+ * no todas las consultas las llaman igual y un alias equivocado aquí no lo
+ * atrapa el compilador: revienta en la base, en tiempo de ejecución.
+ */
+export function kmDeVida(
+  alias = 'v',
+  hijas: { camion?: string; tracto?: string; utilitario?: string } = {},
+): string {
+  const c = hijas.camion     ?? 'c'
+  const t = hijas.tracto     ?? 't'
+  const u = hijas.utilitario ?? 'u'
+  return `(
+    CASE WHEN ${alias}.tipo='camion'       THEN ${c}.kilometraje
+         WHEN ${alias}.tipo='tractocamion' THEN ${t}.kilometraje
+         WHEN ${alias}.tipo='utilitario'   THEN ${u}.kilometraje
+         ELSE NULL END
+    + COALESCE((SELECT SUM(orr.km_al_reiniciar) FROM odometro_reinicios orr
+                WHERE orr.vehiculo_id = ${alias}.id), 0))`
+}
+
+/**
+ * Una lectura fechada, llevada a kilómetros absolutos.
+ *
+ * Una lectura guardada está en la escala del tablero del día en que se tomó:
+ * "5,000 km" de la semana pasada puede ser el kilómetro 315,000 de la unidad si
+ * el odómetro se reinició antes. Para compararla con otra hay que sumarle los
+ * reinicios que ya habían ocurrido cuando se tomó —los posteriores no, porque
+ * esa lectura ya los contaba—.
+ */
+export function kmAbsoluto(lectura: string, fecha: string, vehiculo: string): string {
+  return `(${lectura} + COALESCE((SELECT SUM(orr.km_al_reiniciar)
+           FROM odometro_reinicios orr
+           WHERE orr.vehiculo_id = ${vehiculo} AND orr.fecha <= ${fecha}), 0))`
+}
+
 export const TABLAS_CON_SEGURO  = TIPOS_CON_SEGURO.map((t) => TABLA_POR_TIPO[t])
 export const TABLAS_CON_PERMISO = TIPOS_CON_PERMISO.map((t) => TABLA_POR_TIPO[t])
 

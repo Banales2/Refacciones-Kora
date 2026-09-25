@@ -17,6 +17,7 @@ import { usePermisos } from '../hooks/usePermisos'
 import {
   IconPencil, IconTrash, IconPlus, IconArrowLeft, IconChevronRight, IconAlertTriangle,
   IconFileTypePdf, IconReportAnalytics, IconTool, IconExternalLink, IconClipboardList,
+  IconRotateClockwise,
 } from '@tabler/icons-react'
 import {
   useVehiculos, useVehiculo, useCreateVehiculo, useUpdateVehiculo, vehiculoLabel,
@@ -53,6 +54,7 @@ import { llevaPermiso, llevaSeguro } from '../lib/tipoVehiculo'
 import { VehiculoForm } from '../components/VehiculoForm'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import RecargasSection from '../components/RecargasSection'
+import ReiniciarOdometroModal from '../components/ReiniciarOdometroModal'
 import {
   usePiezasVehiculo, useSetPiezaVehiculo, useRemovePiezaVehiculo, useHistorialPiezas,
 } from '../hooks/usePiezasVehiculo'
@@ -1337,6 +1339,7 @@ function VehiculoDetalle({
   const updateKmMut = useUpdateVehiculo()
   const [editingKm, setEditingKm] = useState(false)
   const [kmDraft, setKmDraft]     = useState<number | ''>(vehiculo.kilometraje ?? '')
+  const [reiniciandoKm, setReiniciandoKm] = useState(false)
 
   function startEditKm() {
     setKmDraft(vehiculo.kilometraje ?? '')
@@ -1538,6 +1541,14 @@ function VehiculoDetalle({
                     <Tooltip label="Doble clic para editar" openDelay={400} disabled={!onEdit}>
                       <div onDoubleClick={onEdit ? startEditKm : undefined} style={{ cursor: onEdit ? 'pointer' : undefined }}>
                         <InfoItem label="Kilometraje" value={`${vehiculo.kilometraje.toLocaleString('es-MX')} km`} />
+                        {/* Solo si el odómetro se reinició alguna vez: en todas
+                            las demás unidades los dos números son el mismo y
+                            enseñar los dos haría dudar de cuál es cuál. */}
+                        {vehiculo.km_reiniciado > 0 && (
+                          <Text size="xs" c="dimmed">
+                            {vehiculo.kilometraje_total?.toLocaleString('es-MX')} km de vida
+                          </Text>
+                        )}
                       </div>
                     </Tooltip>
                   )}
@@ -1626,6 +1637,21 @@ function VehiculoDetalle({
                 />
               </>
             )}
+            {/* Reiniciar el odómetro vive junto a editar y no dentro del
+                kilometraje editable a propósito: no es corregir un número, es
+                registrar que el tablero se puso en cero. Solo en las unidades
+                que llevan odómetro. */}
+            {onEdit && vehiculo.kilometraje !== null && (
+              <Tooltip label="Reiniciar el odómetro">
+                <ActionIcon
+                  variant="light" color="orange" size="lg"
+                  aria-label="Reiniciar el odómetro"
+                  onClick={() => setReiniciandoKm(true)}
+                >
+                  <IconRotateClockwise size={16} />
+                </ActionIcon>
+              </Tooltip>
+            )}
             {onEdit && (
               <Tooltip label="Editar vehículo">
                 <ActionIcon variant="light" color="blue" size="lg" onClick={() => onEdit(vehiculo)}>
@@ -1676,6 +1702,14 @@ function VehiculoDetalle({
 
       {/* Recargas de combustible */}
       <RecargasSection vehiculoId={vehiculo.id} kmVehiculo={vehiculo.kilometraje} />
+
+      {reiniciandoKm && (
+        <ReiniciarOdometroModal
+          vehiculoId={vehiculo.id}
+          kilometraje={vehiculo.kilometraje}
+          onClose={() => setReiniciandoKm(false)}
+        />
+      )}
     </Stack>
   )
 }
