@@ -1,4 +1,5 @@
 import * as repo from '../repositories/dashboardRepo'
+import * as solicitudesService from './solicitudesService'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import * as pendientesRepo from '../repositories/pendientesRepo'
 import * as programaVehiculoService from './programaVehiculoService'
@@ -539,10 +540,14 @@ export async function getReporteFlota(
 export async function getPendientesAlmacen(): Promise<{
   traspasos: repo.TraspasoPendienteDash[]
   refacciones_sin_marca: number
+  solicitudes: number
 }> {
-  const [traspasos, refaccionesSinMarca] = await Promise.all([
+  const [traspasos, refaccionesSinMarca, solicitudes] = await Promise.all([
     repo.findTraspasosPendientes(),
     repo.contarRefaccionesSinMarca(),
+    // Lo que una sucursal pidió y nadie ha contestado. Sin acotar: este
+    // tablero es de oficina, y quien lo ve resuelve las de toda la flota.
+    solicitudesService.contarPendientes(),
   ])
-  return { traspasos, refacciones_sin_marca: refaccionesSinMarca }
+  return { traspasos, refacciones_sin_marca: refaccionesSinMarca, solicitudes }
 }

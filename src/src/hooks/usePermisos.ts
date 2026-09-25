@@ -15,6 +15,7 @@ export type Seccion =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
   | 'mantenimientos' | 'sitios' | 'vales' | 'registros' | 'chequeos'
   | 'errores-captura' | 'facturas' | 'facturas-gasolina' | 'facturas-mantenimientos'
+  | 'solicitudes'
 
 // Lo único que el practicante puede abrir sin chocar contra un 403. Es la lista
 // corta a propósito: el dashboard queda fuera porque sus doce endpoints piden
@@ -31,6 +32,9 @@ const SECCIONES_PRACTICANTE: readonly Seccion[] = [
 // `usuarios.sucursal_id` (ver api/src/shared/alcance.ts).
 const SECCIONES_RESPONSABLE: readonly Seccion[] = [
   'chequeos', 'vehiculos', 'incidencias', 'vales', 'inventario', 'sitios',
+  // Ve las de su sucursal, y esa es la mitad del valor del módulo: es lo que
+  // le permite no volver a pedir lo que su compañero ya pidió.
+  'solicitudes',
 ]
 
 const CATALOGOS_RESPONSABLE: readonly string[] = ['conductores', 'permisos']

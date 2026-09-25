@@ -421,6 +421,8 @@ export interface TraspasoPendienteDash {
 export interface PendientesAlmacen {
   traspasos:             TraspasoPendienteDash[]
   refacciones_sin_marca: number
+  /** Solicitudes de refacción que ninguna sucursal ha visto contestadas. */
+  solicitudes:           number
 }
 
 /**

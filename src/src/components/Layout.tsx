@@ -22,6 +22,7 @@ import {
   IconRefresh, IconLayoutDashboard, IconTruck, IconCar, IconTool,
   IconAlertTriangle, IconGasStation, IconBox, IconBuildingStore, IconSettings,
   IconClipboardCheck,
+  IconClipboardList,
   IconHistory,
   IconReceipt,
   IconReceipt2,
@@ -39,6 +40,7 @@ import ChequeoPatio from '../pages/ChequeoPatio'
 import Modelos from '../pages/Modelos'
 import SitiosYRutas from '../pages/SitiosYRutas'
 import ValesGasolina from '../pages/ValesGasolina'
+import Solicitudes from '../pages/Solicitudes'
 import RegistrosCambios from '../pages/RegistrosCambios'
 import ErroresCaptura from '../pages/ErroresCaptura'
 import Facturas from '../pages/Facturas'
@@ -52,6 +54,7 @@ type Section =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
   | 'mantenimientos' | 'sitios' | 'vales' | 'registros' | 'chequeos'
   | 'errores-captura' | 'facturas' | 'facturas-gasolina' | 'facturas-mantenimientos'
+  | 'solicitudes'
 
 const SECTION_LABELS: Record<Section, string> = {
   dashboard:      'Dashboard',
@@ -68,6 +71,7 @@ const SECTION_LABELS: Record<Section, string> = {
   facturas:       'Facturas de compra',
   'facturas-gasolina': 'Facturas de gasolinera',
   'facturas-mantenimientos': 'Facturas de mantenimientos',
+  solicitudes:    'Solicitudes de refacción',
   chequeos:       'Chequeo de flotilla',
 }
 
@@ -107,6 +111,7 @@ const NAV_GROUPS: {
     items: [
       { section: 'piezas',     label: 'Refacciones', description: 'Catálogo de refacciones y sus compras',      icon: IconBox            },
       { section: 'inventario', label: 'Inventario',  description: 'Qué hay en cada sucursal, mínimos y traspasos', icon: IconBuildingStore },
+      { section: 'solicitudes', label: 'Solicitudes', description: 'Lo que las sucursales piden a oficina', icon: IconClipboardList },
       { section: 'sitios', label: 'Catálogos',   description: 'Proveedores, sucursales, translados y más', icon: IconSettings },
     ],
   },
@@ -556,6 +561,7 @@ export default function Layout() {
             onNavigateVehiculo={navigateToVehiculoId}
             onNavigatePieza={navigateToPiezaId}
             onNavigateDocumento={navigateToDocumento}
+            onNavigateSolicitudes={() => setSection('solicitudes')}
           />
         )}
         {section === 'piezas'    && puedeVerSeccion('piezas') && <Piezas initialPiezaId={pendingPiezaId ?? undefined} />}
@@ -602,6 +608,7 @@ export default function Layout() {
             onNavigateConductor={navigateToConductor}
           />
         )}
+        {section === 'solicitudes' && puedeVerSeccion('solicitudes') && <Solicitudes />}
         {section === 'registros' && esAdmin && <RegistrosCambios />}
         {section === 'errores-captura' && esAdmin && <ErroresCaptura />}
         {section === 'facturas'  && puedeVerSeccion('facturas') && <Facturas />}

@@ -304,11 +304,15 @@ function TraspasosPendientesTable({ items }: { items: TraspasoPendienteDash[] })
   )
 }
 
-export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavigateDocumento }: {
+export default function Dashboard({
+  onNavigateVehiculo, onNavigatePieza, onNavigateDocumento, onNavigateSolicitudes,
+}: {
   onNavigateVehiculo?: (vehiculoId: number) => void
   onNavigatePieza?:    (piezaId: number) => void
   /** Lleva al catálogo donde se renueva el documento del renglón. */
   onNavigateDocumento?: (destino: DestinoDocumento) => void
+  /** Lleva a la bandeja de solicitudes, que es donde se contestan. */
+  onNavigateSolicitudes?: () => void
 }) {
   const { data: resumen, isLoading: loadingResumen } = useResumenMes()
   const { data: vencidosData, isLoading: loadingVencidos } = usePreventivosVencidos()
@@ -329,6 +333,7 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
 
   const traspasosPendientes = almacenData?.data.traspasos ?? []
   const sinMarca            = almacenData?.data.refacciones_sin_marca ?? 0
+  const solicitudes         = almacenData?.data.solicitudes ?? 0
 
   const vencidos = vencidosData?.data ?? []
   const porVencer = porVencerData?.data ?? []
@@ -364,7 +369,9 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
   // Los traspasos cuentan aquí: mientras nadie los acepte, esa mercancía no
   // está en ningún inventario. Las refacciones sin marca no, porque son una
   // deuda de captura que no crece sola y taparía a lo que sí urge.
-  const nPendientes   = vencidos.length + incidencias.length + traspasosPendientes.length
+  // Las solicitudes cuentan por lo mismo que los traspasos: hay alguien del
+  // otro lado esperando una respuesta que solo puede dar quien mira esto.
+  const nPendientes   = vencidos.length + incidencias.length + traspasosPendientes.length + solicitudes
 
   const vehiculosChartData = (resumen?.data.mantenimientos.por_vehiculo ?? []).map(v => ({
     vehiculo: v.vehiculo_nombre,
@@ -533,6 +540,14 @@ export default function Dashboard({ onNavigateVehiculo, onNavigatePieza, onNavig
                 color="yellow" icon={IconArrowsExchange}
                 onClick={() => setTab('pendientes')}
                 ayuda="Mercancía que salió de una sucursal y espera que la de destino la acepte. Mientras tanto no aparece en ningún inventario."
+              />
+              <StatCard
+                label="Solicitudes por contestar"
+                value={loadingAlmacen ? '—' : String(solicitudes)}
+                sub={solicitudes > 0 ? 'Una sucursal espera respuesta' : 'Nada por contestar'}
+                color="grape" icon={IconClipboardList}
+                onClick={onNavigateSolicitudes}
+                ayuda="Refacciones que una sucursal pidió y nadie ha aprobado ni rechazado. Mientras nadie conteste, quien pidió no sabe si tiene que conseguirlas por otro lado."
               />
               <StatCard
                 label="Refacciones sin marca"
