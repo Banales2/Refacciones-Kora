@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { TEXTO_SIMPLE, TEXTO_LIBRE, KM_MAX } from './common'
 import { RESULTADOS } from '../shared/chequeoItems'
+import { EtiquetaPiezaSchema } from './tipoPiezaSchema'
 
 // "HH:MM" o "HH:MM:SS". Misma regla que en incidencias: la hora es opcional
 // porque quien captura no siempre la sabe.
@@ -36,6 +37,29 @@ export const ChequeoItemSchema = z.object({
   // (hoy los golpes). El servicio rechaza el resto: dejar que cualquier renglón
   // mande severidad sería dejar que el formulario decida la gravedad de todo.
   severidad: z.enum(['superficial', 'moderada', 'grave']).optional(),
+})
+
+/**
+ * Una lectura de profundímetro: qué posición y cuántos milímetros.
+ *
+ * No viaja la unidad: quién estaba puesto ahí lo resuelve el servidor desde la
+ * bitácora. Si lo mandara el teléfono, una PWA con el formulario abierto desde
+ * antes de un cambio de llanta atribuiría la medición a la pieza que ya se
+ * quitó —y esa es justo la liga que este módulo existe para cuidar—.
+ *
+ * Solo viene lo que se midió. Una posición ausente es "no se midió", que es el
+ * caso normal: nadie mide veintidós ruedas con profundímetro todos los días.
+ */
+export const DesgasteSchema = z.object({
+  tipo_pieza_id: z.coerce.number().int().positive(),
+  etiqueta: EtiquetaPiezaSchema,
+  milimetros: z.coerce
+    .number()
+    .positive('Debe ser mayor a 0')
+    .max(100, 'Máximo 100 mm')
+    // Un decimal: el profundímetro del patio no da más, y aceptar tres
+    // invitaría a capturar una precisión que nadie leyó.
+    .refine((v) => Number.isInteger(v * 10), 'Un decimal como máximo'),
 })
 
 export const ChequeoBase = {
@@ -138,6 +162,8 @@ function aplicarReglas<T extends z.ZodTypeAny>(schema: T): T {
 export const ChequeoCreateSchema = aplicarReglas(z.object({
   ...ChequeoBase,
   items: z.array(ChequeoItemSchema).max(40),
+  // Tope alto a propósito: un tractocamion con remolque pasa de veinte ruedas.
+  desgaste: z.array(DesgasteSchema).max(40).optional(),
 }))
 
 // Corregir el chequeo del día. No se borra ni se captura otro (el índice único
@@ -160,6 +186,9 @@ export const ChequeoUpdateSchema = z.object({
   // default lo convertiría en "había chofer" en cada corrección parcial.
   sin_chofer:    z.boolean().optional(),
   items:         z.array(ChequeoItemSchema).max(40).optional(),
+  // Ausente = no se tocan las lecturas guardadas; un arreglo vacío sí las
+  // borra, que es como se deshace una medición capturada por error.
+  desgaste:      z.array(DesgasteSchema).max(40).optional(),
   // La fecha no se corrige: es la mitad de la llave única, y moverla
   // convertiría una corrección en "este chequeo era de otro día", que choca
   // contra el chequeo que ya exista ahí. Se rechaza en vez de ignorarse en
@@ -216,4 +245,5 @@ export type ChequeoCreate  = z.infer<typeof ChequeoCreateSchema>
 export type ChequeoUpdate  = z.infer<typeof ChequeoUpdateSchema>
 export type ChequeoRevisar = z.infer<typeof ChequeoRevisarSchema>
 export type ChequeoQuery   = z.infer<typeof ChequeoQuerySchema>
+export type DesgasteIn = z.infer<typeof DesgasteSchema>
 export type ChequeoItemIn  = z.infer<typeof ChequeoItemSchema>

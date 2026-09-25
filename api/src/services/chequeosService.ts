@@ -18,8 +18,9 @@ import {
 import { revisarDeclaracion } from '../schemas/chequeoSchema'
 import type {
   ChequeoCreate, ChequeoUpdate, ChequeoRevisar, ChequeoQuery, ChequeoItemIn,
+  DesgasteIn,
 } from '../schemas/chequeoSchema'
-import type { ItemAGuardar } from '../repositories/chequeosRepo'
+import type { ItemAGuardar, DesgasteAGuardar } from '../repositories/chequeosRepo'
 import type { TipoVehiculo } from '../schemas/vehiculoSchema'
 
 export interface ResultadoChequeo {
@@ -174,15 +175,116 @@ export async function getDeclarantes(alcance: Alcance) {
  * vez de deducirlas: así una pregunta nueva aparece en los teléfonos sin
  * esperar a que cada uno actualice la aplicación instalada.
  */
+// ---------------------------------------------------------------------------
+// Desgaste
+// ---------------------------------------------------------------------------
+
+/**
+ * Convierte las lecturas del formulario en filas guardables y, de paso, en el
+ * renglón del checklist que las resume.
+ *
+ * Tres cosas pasan aquí, y las tres son deliberadas:
+ *
+ * 1. SE VALIDA LA POSICIÓN contra las que el vehículo de verdad tiene, igual
+ *    que `prepararItems` valida la clave contra el catálogo. Medir "la trasera
+ *    derecha" de una unidad que no la pide es un formulario armado para otro
+ *    camión.
+ * 2. LA UNIDAD LA PONE EL SERVIDOR, no el teléfono. Es la pieza que la
+ *    bitácora dice que está puesta ahí ahora, y es lo que hace que la lectura
+ *    siga a la llanta cuando la roten a otro eje o a otro camión.
+ * 3. EL RESULTADO LO DECIDE EL MÍNIMO, como en una `fraccion`: si una lectura
+ *    queda en el mínimo del tipo o por debajo, el renglón es falla. El
+ *    teléfono no opina, porque una PWA vieja no conoce el umbral y el umbral
+ *    se cambia desde el catálogo de tipos sin desplegar nada.
+ */
+async function prepararDesgaste(
+  vehiculoId: number, entrada: DesgasteIn[] | undefined, fecha: string,
+): Promise<{ filas: DesgasteAGuardar[]; item: ItemAGuardar | null }> {
+  if (!entrada || entrada.length === 0) return { filas: [], item: null }
+
+  const posiciones = await repo.posicionesDesgaste(vehiculoId)
+  const porClave = new Map(posiciones.map((p) => [`${p.tipo_pieza_id}|${p.etiqueta}`, p]))
+  const vistas = new Set<string>()
+
+  const filas: DesgasteAGuardar[] = []
+  // La peor lectura de todas: es la que decide el renglón y la que se nombra
+  // en la incidencia. "Una llanta al límite" sin decir cuál manda a revisar
+  // las veintidós.
+  let peor: { pos: typeof posiciones[number]; mm: number } | null = null
+
+  for (const lectura of entrada) {
+    const clave = `${lectura.tipo_pieza_id}|${lectura.etiqueta}`
+    const pos = porClave.get(clave)
+    if (!pos) {
+      throw new ValidationError(
+        `Esta unidad no tiene una posición "${lectura.etiqueta || 'sin etiqueta'}" que se mida`
+      )
+    }
+    if (vistas.has(clave)) {
+      throw new ValidationError(
+        `La posición "${pos.etiqueta || pos.tipo_nombre}" viene medida dos veces`
+      )
+    }
+    vistas.add(clave)
+
+    filas.push({
+      tipo_pieza_id: pos.tipo_pieza_id,
+      etiqueta:      pos.etiqueta,
+      unidad_id:     pos.unidad_id,
+      milimetros:    lectura.milimetros,
+    })
+
+    if (pos.minimo_mm != null && lectura.milimetros <= pos.minimo_mm &&
+        (peor === null || lectura.milimetros < peor.mm)) {
+      peor = { pos, mm: lectura.milimetros }
+    }
+  }
+
+  const def = itemPorClave('llantas_desgaste')!
+  const item: ItemAGuardar = peor
+    ? {
+        clave:      def.clave,
+        resultado:  'falla',
+        valor:      null,
+        nota:       null,
+        incidencia: {
+          nombre:      (def.incidencia!.nombre ?? def.label).slice(0, 40),
+          descripcion: `${nombrePosicion(peor.pos)} en ${peor.mm} mm ` +
+                       `(mínimo ${peor.pos.minimo_mm}) al chequeo del ${fecha}`,
+          categoria:   def.incidencia!.categoria,
+          severidad:   def.incidencia!.severidad,
+        },
+      }
+    : { clave: def.clave, resultado: 'ok', valor: null, nota: null, incidencia: null }
+
+  return { filas, item }
+}
+
+// "Llanta delantera izquierda". La etiqueta vacía es el caso de un tipo que va
+// una sola vez, y entonces el nombre del tipo basta.
+function nombrePosicion(p: { tipo_nombre: string; etiqueta: string }): string {
+  return p.etiqueta ? `${p.tipo_nombre} ${p.etiqueta}` : p.tipo_nombre
+}
+
 export async function getFormulario(vehiculoId: number) {
   const vehiculo = await vehiculosRepo.findById(vehiculoId)
   if (!vehiculo) throw new NotFoundError('Vehículo')
+
+  // Las posiciones que se miden con profundímetro. Puede no haber ninguna: un
+  // tipo sin `mide_desgaste`, o un modelo al que nadie le ha dado de alta sus
+  // ruedas una por una. Entonces la pregunta del dibujo tampoco se hace —no
+  // hay dónde anotar la respuesta— y el formulario ni la muestra.
+  const posiciones = await repo.posicionesDesgaste(vehiculo.id)
+
   return {
     vehiculo_id: vehiculo.id,
     tipo:        vehiculo.tipo,
     kilometraje: vehiculo.kilometraje,
     lectura:     lecturaDe(vehiculo.tipo),
-    items:       itemsDe(vehiculo.tipo),
+    items:       itemsDe(vehiculo.tipo).filter(
+      (i) => i.captura !== 'desgaste' || posiciones.length > 0
+    ),
+    posiciones,
     // Lo que esta unidad ya trae reportado y sin atender. El formulario lo usa
     // para preguntar "¿esto sigue así?" en vez de preguntar a secas: quien
     // revisa merece saber que el stop que va a reportar lleva reportado desde
@@ -342,7 +444,18 @@ export async function create(
     )
   }
 
-  const items = prepararItems(vehiculo.tipo, data.items, { fecha })
+  // El renglón del dibujo no lo contesta el formulario: sale de las lecturas.
+  // Si el teléfono lo manda igual —una PWA vieja, o uno armado a mano— se
+  // descarta, porque dejaría pasar un "las llantas están bien" sin un solo
+  // milímetro que lo sostenga.
+  const { filas: desgaste, item: itemDesgaste } =
+    await prepararDesgaste(vehiculoId, data.desgaste, fecha)
+
+  const items = prepararItems(
+    vehiculo.tipo, data.items.filter((i) => i.clave !== 'llantas_desgaste'), { fecha }
+  )
+  if (itemDesgaste) items.push(itemDesgaste)
+
   validarLectura(vehiculo.tipo, data.lectura ?? null)
   validarBaja(vehiculo.tipo, data.lectura ?? null, vehiculo.kilometraje, data.confirmar_baja)
 
@@ -364,7 +477,7 @@ export async function create(
     // no se puede saber qué traía.
     lectura_anterior: vehiculo.kilometraje,
     nota:          data.nota ?? null,
-  }, items, revisadoPor)
+  }, items, revisadoPor, desgaste)
 
   const { avisos } = await aplicarLectura(
     vehiculoId, vehiculo.tipo, data.lectura ?? null, vehiculo.kilometraje
@@ -422,8 +535,22 @@ export async function update(
   const vehiculo = await vehiculosRepo.findById(actual.vehiculo_id)
   if (!vehiculo) throw new NotFoundError('Vehículo')
 
+  // Al corregir, las lecturas y su renglón viajan juntos o no viajan: rehacer
+  // uno sin el otro dejaría la falla sin los milímetros o al revés.
+  const { filas: desgaste, item: itemDesgaste } = data.desgaste !== undefined
+    ? await prepararDesgaste(actual.vehiculo_id, data.desgaste, actual.fecha)
+    : { filas: undefined as DesgasteAGuardar[] | undefined, item: null }
+
   const items = data.items
-    ? prepararItems(vehiculo.tipo, data.items, { fecha: actual.fecha })
+    ? (() => {
+        const base = prepararItems(
+          vehiculo.tipo,
+          data.items.filter((i) => i.clave !== 'llantas_desgaste'),
+          { fecha: actual.fecha },
+        )
+        if (itemDesgaste) base.push(itemDesgaste)
+        return base
+      })()
     : undefined
 
   if (data.lectura !== undefined) {
@@ -469,7 +596,7 @@ export async function update(
     declaracion,
     lectura:       data.lectura,
     nota:          data.nota,
-  }, items, revisadoPor)
+  }, items, revisadoPor, desgaste)
   if (!chequeo) throw new NotFoundError('Chequeo')
 
   const avisos: string[] = []

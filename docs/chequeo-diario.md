@@ -362,6 +362,67 @@ que encuentra a las visitantes (`findVisitantes`) cruza `chequeos.ubicacion`
 contra ese nombre, y basta que alguien teclee "Patio norte" en vez de "Sucursal
 Norte" para que esa caja desaparezca de la lista.
 
+## El dibujo de las llantas se mide, no se opina
+
+"¿Las llantas están bien?" no distingue una nueva de una que ya va a la mitad,
+y esa es justo la diferencia entre rotarla a tiempo y quedarse tirado en
+carretera. Por eso, además de la pregunta, se capturan los **milímetros de
+dibujo** de cada rueda. Ver `db/migrations/052_desgaste_en_el_chequeo.sql`.
+
+**La medición cuelga de la posición, pero guarda la unidad.** Quien recorre el
+patio ve un eje y una rueda —"la delantera izquierda"—, no el folio de la
+llanta, así que se captura por posición. Lo que se guarda además es qué pieza
+física estaba puesta ahí ese día, resuelta por el servidor desde la instalación
+abierta. Esa columna es todo el punto: cuando la llanta se rota a otro eje —o
+se pasa a otro camión— su curva de desgaste se va con ella. Si las lecturas
+colgaran del vehículo, rotar llantas borraría la historia de cada una y solo
+quedaría la del camión, que es la que no sirve para decidir.
+
+La unidad **no la manda el teléfono**. Un formulario abierto desde antes de un
+cambio de llanta atribuiría la medición a la pieza que ya se quitó, y esa liga
+es justo lo que hay que cuidar.
+
+**Va en su propia tabla y no en `chequeo_items`.** La llave de los renglones es
+(chequeo, clave): una fila por pregunta, y seis llantas no caben. Claves fijas
+tipo `llanta_di_mm` atarían el catálogo a una configuración de ejes, y un
+tractocamión no tiene las mismas ruedas que una camioneta. Lo que sí vive en
+`chequeo_items` es **el renglón que resume el día** (`llantas_desgaste`): de él
+cuelga la incidencia y por él el historial lo pinta como cualquier otra falla.
+El detalle —qué rueda, cuántos milímetros— está al lado.
+
+**El resultado lo decide el servidor**, igual que en una `fraccion`: si una
+lectura queda en el mínimo del tipo o por debajo, el renglón es falla y abre
+incidencia —enganchándose a la que ya estuviera abierta, como todo lo demás—.
+El teléfono no opina: una PWA vieja no conoce el umbral.
+
+**El mínimo vive en el tipo de pieza, no en el código.** Es un número que
+cambia por política de la empresa o por lo que exija la ley, y no debería
+necesitar un despliegue. Se enciende y se fija en Refacciones → Tipos de pieza,
+junto al rastreo individual. Sin mínimo, la lectura se guarda y no abre nada:
+es como conviene empezar mientras se junta historia.
+
+**Medir es opcional, y tiene que serlo.** Nadie va a medir veintidós ruedas con
+profundímetro en treinta unidades todos los días, y un campo obligatorio que no
+se puede cumplir se llena con números inventados —que es peor que no tener el
+dato—. Una posición sin fila es "no se midió"; no hay ceros ni NULLs que
+interpretar. Lo que sí hace el formulario es enseñar debajo de cada casilla la
+última lectura de esa posición y de cuándo es: sin eso, quien mide no sabe si 5
+mm es medio milímetro en un mes o cuatro en una semana, que es toda la
+diferencia. Ahí está el empujón a medir, no en una validación.
+
+**Nada derivado se guarda.** Lo gastado, los kilómetros del tramo y los
+milímetros por cada diez mil km salen de las lecturas más el odómetro del
+chequeo, y se calculan al mostrarlos. Es el mismo criterio que el kilometraje de
+una unidad en `docs/piezas-identificadas.md`: un acumulado se desalinea en
+cuanto alguien corrige una lectura.
+
+**Si el modelo no tiene sus ruedas dadas de alta una por una, la pregunta no se
+hace.** Las posiciones salen de lo mismo que el resto de las piezas del
+vehículo —los renglones (tipo, etiqueta) de su modelo más los suyos propios—,
+así que un modelo con "Llanta" una sola vez no tiene dónde anotar seis
+lecturas. El formulario no muestra la sección en vez de ofrecer una casilla que
+no se puede guardar.
+
 ## Lo que este módulo todavía no resuelve
 
 **Sin señal en el patio.** `api.ts` reintenta, pero no encola: si no hay red, el

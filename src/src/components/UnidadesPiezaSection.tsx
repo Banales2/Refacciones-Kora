@@ -15,12 +15,13 @@ import {
   Stack, Group, Text, Table, Badge, Loader, Center, Alert, ActionIcon,
   TextInput, Tooltip, Divider, Button,
 } from '@mantine/core'
-import { IconPencil, IconCheck, IconX, IconTag } from '@tabler/icons-react'
+import { IconPencil, IconCheck, IconX, IconTag, IconRuler2 } from '@tabler/icons-react'
 import {
   useUnidadesPieza, useSetEtiquetaUnidad, useSinIdentificar, ESTADO_UNIDAD,
 } from '../hooks/useUnidadesPieza'
 import type { UnidadPieza } from '../hooks/useUnidadesPieza'
 import IdentificarExistentesModal from './IdentificarExistentesModal'
+import DesgasteUnidadModal from './DesgasteUnidadModal'
 import { usePermisos } from '../hooks/usePermisos'
 
 function fmtKm(km: number | null) {
@@ -96,6 +97,8 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
   // rastreo. La existencia las cuenta, pero no se pueden seguir.
   const { data: pendientes } = useSinIdentificar({ piezaId })
   const [identificando, setIdentificando] = useState(false)
+  // La pieza cuyo historial de desgaste se está mirando.
+  const [midiendo, setMidiendo] = useState<UnidadPieza | null>(null)
   const { puedeDarDeAlta } = usePermisos()
   const unidades = data?.data ?? []
 
@@ -166,6 +169,7 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
               <Table.Th>Compra</Table.Th>
               <Table.Th style={{ textAlign: 'center' }}>Montajes</Table.Th>
               <Table.Th style={{ textAlign: 'right' }}>Recorrido</Table.Th>
+              <Table.Th style={{ width: 40 }} />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -202,6 +206,21 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
                   <Table.Td style={{ textAlign: 'right' }}>
                     <Text size="sm">{fmtKm(u.km_recorridos)}</Text>
                   </Table.Td>
+                  <Table.Td>
+                    {/* El desgaste se mide en el chequeo diario de la unidad
+                        donde esté montada; aquí solo se lee. La historia es de
+                        la pieza, no del camión: la llanta que rotaron de eje
+                        llega con su curva completa. */}
+                    <Tooltip label="Ver cómo se ha gastado">
+                      <ActionIcon
+                        variant="subtle" color="gray" size="sm"
+                        aria-label={`Desgaste de la unidad ${u.id}`}
+                        onClick={() => setMidiendo(u)}
+                      >
+                        <IconRuler2 size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Table.Td>
                 </Table.Tr>
               )
             })}
@@ -215,6 +234,10 @@ export default function UnidadesPiezaSection({ piezaId }: { piezaId: number }) {
         onClose={() => setIdentificando(false)}
         piezaId={piezaId}
       />
+
+      {midiendo && (
+        <DesgasteUnidadModal unidad={midiendo} onClose={() => setMidiendo(null)} />
+      )}
     </Stack>
   )
 }

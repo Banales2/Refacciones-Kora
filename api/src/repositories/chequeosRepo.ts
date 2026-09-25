@@ -30,6 +30,41 @@ export interface ChequeoItem {
   incidencia_desde: string | null
 }
 
+/**
+ * Una posición que se mide con profundímetro y lo que estaba puesto en ella.
+ *
+ * Sale de los renglones que el vehículo pide —su modelo más los suyos
+ * propios— filtrados a los tipos con `mide_desgaste`. No es una lista de
+ * llantas: es la lista de huecos donde va una llanta, que es lo que quien
+ * recorre el patio tiene enfrente aunque la pieza no esté capturada.
+ */
+export interface PosicionDesgaste {
+  tipo_pieza_id: number
+  tipo_nombre:   string
+  etiqueta:      string
+  /** Los milímetros a partir de los cuales es falla. `null` = sin mínimo. */
+  minimo_mm:     number | null
+  /** La pieza física puesta ahí ahora. `null` si el tipo no se rastrea o nadie la capturró. */
+  unidad_id:     number | null
+  /** El folio pegado a esa pieza, para que quien mide sepa cuál es. */
+  unidad_etiqueta: string | null
+  /** La última lectura de esta posición, para comparar sin salir del formulario. */
+  ultima_mm:     number | null
+  ultima_fecha:  string | null
+}
+
+/** Una lectura guardada. */
+export interface DesgasteMedido {
+  tipo_pieza_id: number
+  tipo_nombre:   string
+  etiqueta:      string
+  unidad_id:     number | null
+  unidad_etiqueta: string | null
+  milimetros:    number
+  /** Copiado del tipo al leer, para pintar la lectura en rojo sin otra consulta. */
+  minimo_mm:     number | null
+}
+
 export interface Chequeo {
   id:            number
   vehiculo_id:   number
@@ -57,6 +92,8 @@ export interface Chequeo {
   revisada_por:  string | null
   revision_nota: string | null
   declaracion_pendiente_id: number | null
+  /** Lo que se midió ese día. Vacío cuando no se midió nada, que es lo normal. */
+  desgaste:      DesgasteMedido[]
   created_at:    string
   updated_at:    string
   items:         ChequeoItem[]
@@ -144,12 +181,148 @@ async function itemsDe(
   return porChequeo
 }
 
+// Las lecturas de profundímetro de un conjunto de chequeos, en una consulta.
+// Mismo trato que los renglones: no hay pantalla que quiera un chequeo sin
+// ellas, y pedirlas chequeo por chequeo volvía el historial N consultas.
+async function desgasteDe(
+  exec: sql.ConnectionPool | sql.Transaction, ids: number[]
+): Promise<Map<number, DesgasteMedido[]>> {
+  const porChequeo = new Map<number, DesgasteMedido[]>()
+  if (ids.length === 0) return porChequeo
+
+  const req = exec.request()
+  const params = ids.map((id, i) => { req.input(`c${i}`, sql.Int, id); return `@c${i}` }).join(',')
+  const r = await req.query(`
+    SELECT cd.chequeo_id, cd.tipo_pieza_id, t.nombre AS tipo_nombre, cd.etiqueta,
+           cd.unidad_id, u.etiqueta AS unidad_etiqueta,
+           cd.milimetros, t.desgaste_minimo_mm AS minimo_mm
+    FROM chequeo_desgaste cd
+    JOIN tipos_pieza t          ON t.id = cd.tipo_pieza_id
+    LEFT JOIN unidades_pieza u  ON u.id = cd.unidad_id
+    WHERE cd.chequeo_id IN (${params})
+    ORDER BY cd.chequeo_id, t.nombre, cd.etiqueta
+  `)
+  for (const row of r.recordset) {
+    const lista = porChequeo.get(row.chequeo_id) ?? []
+    lista.push({
+      tipo_pieza_id: row.tipo_pieza_id,
+      tipo_nombre:   row.tipo_nombre,
+      etiqueta:      row.etiqueta,
+      unidad_id:     row.unidad_id,
+      unidad_etiqueta: row.unidad_etiqueta,
+      // DECIMAL llega como string del driver: se normaliza en la frontera.
+      milimetros:    Number(row.milimetros),
+      minimo_mm:     row.minimo_mm == null ? null : Number(row.minimo_mm),
+    })
+    porChequeo.set(row.chequeo_id, lista)
+  }
+  return porChequeo
+}
+
 async function conItems<T extends { id: number }>(
   filas: T[]
-): Promise<(T & { items: ChequeoItem[] })[]> {
+): Promise<(T & { items: ChequeoItem[]; desgaste: DesgasteMedido[] })[]> {
   const pool = await getPool()
-  const mapa = await itemsDe(pool, filas.map((f) => f.id))
-  return filas.map((f) => ({ ...f, items: mapa.get(f.id) ?? [] }))
+  const ids = filas.map((f) => f.id)
+  const [items, desgaste] = await Promise.all([itemsDe(pool, ids), desgasteDe(pool, ids)])
+  return filas.map((f) => ({
+    ...f,
+    items:    items.get(f.id) ?? [],
+    desgaste: desgaste.get(f.id) ?? [],
+  }))
+}
+
+/**
+ * Las posiciones de este vehículo que se miden con profundímetro, con lo que
+ * trae puesto y su última lectura.
+ *
+ * Los renglones salen de lo mismo que `piezasVehiculoRepo.findByVehiculo`: lo
+ * que pide el modelo más lo propio del vehículo, empatado por (tipo,
+ * etiqueta). Aquí se filtran a los tipos con `mide_desgaste`, que hoy son las
+ * llantas.
+ *
+ * La posición aparece aunque no tenga pieza capturada: el hueco existe en el
+ * camión y la rueda se puede medir igual. Lo único que se pierde sin unidad es
+ * poder seguirle la pista a esa llanta cuando la roten.
+ */
+export async function posicionesDesgaste(vehiculoId: number): Promise<PosicionDesgaste[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('vid', sql.Int, vehiculoId)
+    .query(`
+      WITH requeridos AS (
+        SELECT tpm.tipo_pieza_id, tpm.etiqueta
+        FROM vehiculos v
+        JOIN tipos_pieza_modelo tpm ON tpm.modelo_id = v.modelo_id
+        WHERE v.id = @vid
+        UNION
+        SELECT tpv.tipo_pieza_id, tpv.etiqueta
+        FROM tipos_pieza_vehiculo tpv
+        WHERE tpv.vehiculo_id = @vid
+      )
+      SELECT t.id AS tipo_pieza_id, t.nombre AS tipo_nombre, r.etiqueta,
+             t.desgaste_minimo_mm AS minimo_mm,
+             i.unidad_id, u.etiqueta AS unidad_etiqueta,
+             ult.milimetros AS ultima_mm, ult.fecha AS ultima_fecha
+      FROM requeridos r
+      JOIN tipos_pieza t ON t.id = r.tipo_pieza_id AND t.mide_desgaste = 1
+      -- El renglón vigente de la bitácora dice qué pieza está puesta ahí hoy.
+      LEFT JOIN instalaciones_pieza i
+             ON i.vehiculo_id = @vid AND i.tipo_pieza_id = t.id
+            AND i.etiqueta = r.etiqueta AND i.fecha_retiro IS NULL
+      LEFT JOIN unidades_pieza u ON u.id = i.unidad_id
+      -- La última vez que se midió ESTA POSICIÓN de ESTE vehículo, venga de la
+      -- llanta que venga: es contra lo que quien mide compara para ver si bajó.
+      OUTER APPLY (
+        SELECT TOP 1 cd.milimetros, CONVERT(char(10), ch.fecha, 23) AS fecha
+        FROM chequeo_desgaste cd
+        JOIN chequeos ch ON ch.id = cd.chequeo_id
+        WHERE ch.vehiculo_id = @vid
+          AND cd.tipo_pieza_id = t.id AND cd.etiqueta = r.etiqueta
+        ORDER BY ch.fecha DESC, ch.id DESC
+      ) ult
+      ORDER BY t.nombre, r.etiqueta`)
+  return r.recordset.map((row) => ({
+    ...row,
+    minimo_mm: row.minimo_mm == null ? null : Number(row.minimo_mm),
+    ultima_mm: row.ultima_mm == null ? null : Number(row.ultima_mm),
+  }))
+}
+
+/**
+ * La historia de desgaste de UNA pieza física, en orden cronológico.
+ *
+ * Es lo que justifica que la lectura guarde `unidad_id`: la llanta puede haber
+ * pasado por tres ejes y dos camiones, y su curva es una sola. Trae el
+ * kilometraje del vehículo en cada lectura —del odómetro del chequeo— para
+ * poder ver cuánto dibujo se gasta por cada diez mil kilómetros.
+ */
+export interface LecturaUnidad {
+  chequeo_id:  number
+  fecha:       string
+  milimetros:  number
+  vehiculo_id: number
+  vehiculo:    string
+  etiqueta:    string
+  /** Odómetro de la unidad ese día. `null` si el chequeo no lo capturó. */
+  lectura:     number | null
+}
+
+export async function historialDesgasteUnidad(unidadId: number): Promise<LecturaUnidad[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('uid', sql.Int, unidadId)
+    .query(`
+      SELECT cd.chequeo_id, CONVERT(char(10), ch.fecha, 23) AS fecha,
+             cd.milimetros, ch.vehiculo_id,
+             COALESCE(NULLIF(v.placas, ''), v.numero_serie) AS vehiculo,
+             cd.etiqueta, ch.lectura
+      FROM chequeo_desgaste cd
+      JOIN chequeos  ch ON ch.id = cd.chequeo_id
+      JOIN vehiculos v  ON v.id = ch.vehiculo_id
+      WHERE cd.unidad_id = @uid
+      ORDER BY ch.fecha, ch.id`)
+  return r.recordset.map((row) => ({ ...row, milimetros: Number(row.milimetros) }))
 }
 
 export async function findById(id: number): Promise<Chequeo | null> {
@@ -541,8 +714,39 @@ async function insertarItems(
   }
 }
 
+/** Una lectura lista para guardar: el servicio ya resolvió de qué unidad es. */
+export interface DesgasteAGuardar {
+  tipo_pieza_id: number
+  etiqueta:      string
+  unidad_id:     number | null
+  milimetros:    number
+}
+
+// Se reemplazan completas, igual que los renglones: mandarlas por diferencia
+// obligaría a adivinar si una posición ausente es "no se midió" o "bórrala".
+async function guardarDesgaste(
+  tx: sql.Transaction, chequeoId: number, filas: DesgasteAGuardar[],
+): Promise<void> {
+  await tx.request()
+    .input('ch', sql.Int, chequeoId)
+    .query('DELETE FROM chequeo_desgaste WHERE chequeo_id = @ch')
+
+  for (const f of filas) {
+    await tx.request()
+      .input('ch',     sql.Int,          chequeoId)
+      .input('tipo',   sql.Int,          f.tipo_pieza_id)
+      .input('etiq',   sql.NVarChar(40), f.etiqueta)
+      .input('unidad', sql.Int,          f.unidad_id)
+      .input('mm',     sql.Decimal(4, 1), f.milimetros)
+      .query(`
+        INSERT INTO chequeo_desgaste (chequeo_id, tipo_pieza_id, etiqueta, unidad_id, milimetros)
+        VALUES (@ch, @tipo, @etiq, @unidad, @mm)`)
+  }
+}
+
 export async function create(
-  cabecera: ChequeoCabecera, items: ItemAGuardar[], revisadoPor: string
+  cabecera: ChequeoCabecera, items: ItemAGuardar[], revisadoPor: string,
+  desgaste: DesgasteAGuardar[] = [],
 ): Promise<Chequeo> {
   const pool = await getPool()
   const tx = pool.transaction()
@@ -578,6 +782,10 @@ export async function create(
       `)
     id = r.recordset[0].id
     await insertarItems(tx, id, cabecera.vehiculo_id, items, cabecera, revisadoPor)
+    // En la misma transacción que los renglones: la falla de dibujo es uno de
+    // ellos, y un chequeo con la falla pero sin los milímetros que la
+    // sustentan no se podría ni discutir.
+    if (desgaste.length > 0) await guardarDesgaste(tx, id, desgaste)
     await tx.commit()
   } catch (err) {
     await tx.rollback()
@@ -602,6 +810,7 @@ export async function update(
   cabecera: Partial<ChequeoCabecera>,
   items: ItemAGuardar[] | undefined,
   revisadoPor: string,
+  desgaste?: DesgasteAGuardar[],
 ): Promise<Chequeo | null> {
   const actual = await findById(id)
   if (!actual) return null
@@ -657,6 +866,10 @@ export async function update(
         { ...actual, ...presentes } as ChequeoCabecera, revisadoPor
       )
     }
+
+    // Undefined es "no toques las lecturas"; un arreglo vacío sí las borra,
+    // que es como se deshace una medición capturada en la unidad equivocada.
+    if (desgaste !== undefined) await guardarDesgaste(tx, id, desgaste)
 
     await tx.commit()
   } catch (err) {

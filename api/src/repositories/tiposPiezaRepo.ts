@@ -12,18 +12,38 @@ export interface TipoPieza extends CamposArchivado {
    * granel. Decide cómo se lleva su existencia. Ver `docs/piezas-identificadas.md`.
    */
   rastreo_individual: boolean
+  /**
+   * Las piezas de este tipo se miden con profundímetro en el chequeo diario:
+   * llantas, balatas. Ver `db/migrations/052_desgaste_en_el_chequeo.sql`.
+   */
+  mide_desgaste: boolean
+  /**
+   * Los milímetros en los que la lectura ya cuenta como falla, y de ahí para
+   * abajo. `null` = se mide pero no hay mínimo definido: se guarda la lectura
+   * y no se abre ninguna incidencia.
+   */
+  desgaste_minimo_mm: number | null
 }
 
 // Las tres consultas devuelven lo mismo, y el flag llega del driver como 0/1.
-const COLS = `id, nombre, rastreo_individual, ${COLS_ARCHIVADO}`
+const COLS = `id, nombre, rastreo_individual, mide_desgaste, desgaste_minimo_mm, ${COLS_ARCHIVADO}`
 const OUT  = 'INSERTED.id, INSERTED.nombre, INSERTED.rastreo_individual, ' +
+             'INSERTED.mide_desgaste, INSERTED.desgaste_minimo_mm, ' +
              'INSERTED.archivado_en, INSERTED.archivado_motivo'
 
 // `bit` no es booleano en JS: sin esto, `rastreo_individual` viajaría como 0 o 1
 // y cualquier `if` del cliente trataría el 0 como falso por accidente, no por
 // diseño. Se normaliza en la frontera, una sola vez.
 function aTipo(r: Record<string, unknown>): TipoPieza {
-  return { ...r, rastreo_individual: !!r.rastreo_individual } as TipoPieza
+  return {
+    ...r,
+    rastreo_individual: !!r.rastreo_individual,
+    mide_desgaste:      !!r.mide_desgaste,
+    // DECIMAL llega como string del driver cuando no cabe en un number seguro;
+    // aquí siempre cabe, pero se normaliza para no dejar al cliente comparando
+    // "4.0" contra 4.
+    desgaste_minimo_mm: r.desgaste_minimo_mm == null ? null : Number(r.desgaste_minimo_mm),
+  } as TipoPieza
 }
 
 // Por defecto solo lo que está en uso; `incluirArchivados` es para la pantalla
@@ -63,16 +83,24 @@ export async function create(nombre: string, rastreo = false): Promise<TipoPieza
  */
 export async function update(
   id: number, nombre?: string, rastreo?: boolean,
+  desgaste?: { mide: boolean; minimo: number | null },
 ): Promise<TipoPieza | null> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id',      sql.Int,          id)
     .input('nombre',  sql.NVarChar(80), nombre ?? null)
     .input('rastreo', sql.Bit,          rastreo ?? null)
+    .input('mide',    sql.Bit,          desgaste?.mide ?? null)
+    // El mínimo se manda junto con el flag y no por su cuenta: así apagar la
+    // medición limpia el número en la misma operación, y un COALESCE no puede
+    // impedir que se borre un mínimo a propósito.
+    .input('minimo',  sql.Decimal(4, 1), desgaste ? desgaste.minimo : null)
     .query(`
       UPDATE tipos_pieza SET
         nombre             = COALESCE(@nombre, nombre),
-        rastreo_individual = COALESCE(@rastreo, rastreo_individual)
+        rastreo_individual = COALESCE(@rastreo, rastreo_individual),
+        mide_desgaste      = COALESCE(@mide, mide_desgaste),
+        desgaste_minimo_mm = CASE WHEN @mide IS NULL THEN desgaste_minimo_mm ELSE @minimo END
       OUTPUT ${OUT}
       WHERE id = @id`)
   return r.recordset[0] ? aTipo(r.recordset[0]) : null

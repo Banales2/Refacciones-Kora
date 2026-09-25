@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const TipoPiezaCreateSchema = z.object({
+const TipoPiezaBase = z.object({
   nombre: z
     .string()
     .trim()
@@ -19,9 +19,34 @@ export const TipoPiezaCreateSchema = z.object({
    * `db/migrations/025_tipo_pieza_rastreo_individual.sql`.
    */
   rastreo_individual: z.boolean().optional().default(false),
+  /**
+   * Si las piezas de este tipo se miden con profundímetro en el chequeo diario
+   * —llantas, balatas— y a partir de cuántos milímetros la lectura cuenta
+   * como falla.
+   *
+   * El mínimo es opcional aunque la medición esté encendida: se puede querer
+   * el dato sin que abra pendientes todavía, que es como conviene empezar
+   * mientras se junta historia. Ver la migración 052.
+   */
+  mide_desgaste: z.boolean().optional().default(false),
+  desgaste_minimo_mm: z.coerce
+    .number()
+    .positive('El mínimo debe ser mayor a 0')
+    .max(100, 'El mínimo no puede pasar de 100 mm')
+    .nullish(),
 })
 
-export const TipoPiezaUpdateSchema = TipoPiezaCreateSchema.partial()
+// Un mínimo sin medición es un número que nadie va a comparar contra nada.
+export const TipoPiezaCreateSchema = TipoPiezaBase.refine(
+  (d) => !d.desgaste_minimo_mm || d.mide_desgaste,
+  { message: 'Para fijar un mínimo hay que activar la medición de desgaste',
+    path: ['desgaste_minimo_mm'] },
+)
+
+// Sale del objeto base y no del de alta: en una edición los dos campos del
+// desgaste pueden venir por separado, y que no se contradigan lo resuelve el
+// servicio con lo que ya tiene la fila —apagar la medición borra el mínimo—.
+export const TipoPiezaUpdateSchema = TipoPiezaBase.partial()
 
 // Posición que ocupa una pieza dentro de la unidad ("delantero", "trasero",
 // "izquierdo"): lo que distingue dos renglones del mismo tipo. Cadena vacía —el

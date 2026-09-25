@@ -14,6 +14,17 @@ export interface TipoPieza extends CamposArchivado {
    * Ver `docs/piezas-identificadas.md`.
    */
   rastreo_individual: boolean
+  /**
+   * Las piezas de este tipo se miden con profundímetro en el chequeo diario:
+   * llantas, balatas. Ver la migración 052.
+   */
+  mide_desgaste: boolean
+  /**
+   * Los milímetros en los que la lectura ya cuenta como falla, y de ahí para
+   * abajo. `null` = se mide pero sin mínimo: se guarda el dato y no se abre
+   * ningún pendiente.
+   */
+  desgaste_minimo_mm: number | null
 }
 
 // Por defecto solo lo que está en uso. `incluirArchivados` es para la pantalla
@@ -42,8 +53,15 @@ export function useCreateTipoPieza() {
 export function useUpdateTipoPieza() {
   const qc = useQueryClient()
   return useMutation({
+    // `mide_desgaste` y su mínimo viajan juntos: apagar la medición limpia el
+    // umbral, y mandarlos por separado dejaría un número huérfano que nadie
+    // compara contra nada.
     mutationFn: ({ id, ...campos }: {
-      id: number; nombre?: string; rastreo_individual?: boolean
+      id: number
+      nombre?: string
+      rastreo_individual?: boolean
+      mide_desgaste?: boolean
+      desgaste_minimo_mm?: number | null
     }) => api.put<{ data: TipoPieza }>(`/tipos-pieza/${id}`, campos),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tipos-pieza'] }),
   })

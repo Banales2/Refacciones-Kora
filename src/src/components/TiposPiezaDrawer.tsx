@@ -12,7 +12,7 @@
 import { useState } from 'react'
 import {
   Drawer, Stack, Group, Text, TextInput, Switch, Button, Alert, Loader, Center,
-  Paper, ActionIcon, Tooltip, Badge,
+  Paper, ActionIcon, Tooltip, Badge, NumberInput,
 } from '@mantine/core'
 import {
   IconPencil, IconCheck, IconX, IconTag, IconArchive, IconArchiveOff,
@@ -34,6 +34,8 @@ function TipoRow({ tipo, onArchivar }: { tipo: TipoPieza; onArchivar: () => void
   // decir nada dejaría todo el stock existente sin poder identificarse, y nadie
   // volvería a acordarse.
   const [identificando, setIdentificando] = useState(false)
+  // El mínimo se teclea, así que vive en estado hasta que se pulsa Guardar.
+  const [minimo, setMinimo] = useState<number | ''>(tipo.desgaste_minimo_mm ?? '')
   const mut = useUpdateTipoPieza()
 
   const limpio = nombre.trim()
@@ -86,6 +88,12 @@ function TipoRow({ tipo, onArchivar }: { tipo: TipoPieza; onArchivar: () => void
                 {tipo.rastreo_individual && (
                   <Badge size="xs" variant="light" color="teal">Rastreo individual</Badge>
                 )}
+                {tipo.mide_desgaste && (
+                  <Badge size="xs" variant="light" color="indigo">
+                    Desgaste
+                    {tipo.desgaste_minimo_mm != null && ` · mín ${tipo.desgaste_minimo_mm} mm`}
+                  </Badge>
+                )}
               </Group>
               <Group gap={2} wrap="nowrap">
                 <Tooltip label="Renombrar">
@@ -128,6 +136,59 @@ function TipoRow({ tipo, onArchivar }: { tipo: TipoPieza; onArchivar: () => void
             )
           }}
         />
+
+        {/* Medir el desgaste es otra decisión y va aparte: una llanta se mide
+            y se rastrea, una balata se mide y quizá no se rastrea, y un filtro
+            no se mide aunque se rastree. */}
+        <Switch
+          size="xs"
+          label="Medir el desgaste en el chequeo diario"
+          description="Para lo que se gasta y se mide con profundímetro: llantas, balatas. Se captura por posición en el chequeo de la unidad."
+          checked={tipo.mide_desgaste}
+          disabled={mut.isPending}
+          onChange={(e) => mut.mutate({
+            id: tipo.id,
+            mide_desgaste: e.currentTarget.checked,
+            // Al encender se manda el mínimo que ya tenía para no perderlo; al
+            // apagar, la API lo limpia sola.
+            desgaste_minimo_mm: e.currentTarget.checked ? tipo.desgaste_minimo_mm : null,
+          })}
+        />
+
+        {tipo.mide_desgaste && (
+          <Group gap="xs" align="flex-end" wrap="nowrap">
+            <NumberInput
+              size="xs"
+              w={130}
+              label="Mínimo"
+              description="Abre pendiente"
+              placeholder="Sin mínimo"
+              min={0.1}
+              max={100}
+              step={0.5}
+              decimalScale={1}
+              suffix=" mm"
+              value={minimo}
+              onChange={(v) => setMinimo(typeof v === 'number' ? v : '')}
+            />
+            {/* El mínimo sí lleva botón, al revés que los interruptores: es un
+                número que se teclea, y guardar en cada pulsación mandaría un
+                "4" a medio escribir mientras alguien escribe "4.5". */}
+            {Number(minimo || 0) !== (tipo.desgaste_minimo_mm ?? 0) && (
+              <Button
+                size="compact-xs"
+                loading={mut.isPending}
+                onClick={() => mut.mutate({
+                  id: tipo.id,
+                  mide_desgaste: true,
+                  desgaste_minimo_mm: minimo === '' ? null : Number(minimo),
+                })}
+              >
+                Guardar
+              </Button>
+            )}
+          </Group>
+        )}
 
         {/* Ya está encendido: se puede volver a abrir la captura para lo que
             haya quedado pendiente, o para el stock que entró por otra vía. */}

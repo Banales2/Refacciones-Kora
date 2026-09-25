@@ -33,8 +33,13 @@ export interface ItemChequeo {
    *   'ok_falla'  los dos botones grandes. Es el caso normal.
    *   'lectura'   un número; va a `chequeos.lectura`, no a un renglón.
    *   'fraccion'  el nivel de combustible en cuartos de tanque.
+   *   'desgaste'  los milímetros de cada posición que se mide con
+   *               profundímetro. El renglón no lo contesta el formulario: lo
+   *               sintetiza el servidor a partir de las lecturas, que viven en
+   *               su propia tabla porque son varias por chequeo y ésta solo
+   *               admite una por clave. Ver la migración 052.
    */
-  captura: 'ok_falla' | 'lectura' | 'fraccion'
+  captura: 'ok_falla' | 'lectura' | 'fraccion' | 'desgaste'
   /** Vacío = aplica a todos los tipos. */
   tipos: TipoVehiculo[]
   /**
@@ -233,6 +238,20 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'ok_falla',
     tipos: TODOS,
     incidencia: { severidad: 'moderada', categoria: 'Llantas', nombre: 'Llantas en mal estado' },
+  },
+  {
+    // El renglón que resume la medición del día. Existe para colgar de él la
+    // incidencia y para que el historial lo pinte como cualquier otra falla;
+    // el detalle —qué rueda, cuántos milímetros— está en `chequeo_desgaste`.
+    //
+    // No lo contesta el teléfono. El servidor lo arma de las lecturas y del
+    // mínimo del tipo, por lo mismo que en una `fraccion`: una PWA vieja no
+    // conoce el umbral, y el umbral puede cambiar sin desplegar nada.
+    clave: 'llantas_desgaste',
+    label: '¿Las llantas tienen dibujo suficiente?',
+    captura: 'desgaste',
+    tipos: TODOS,
+    incidencia: { severidad: 'grave', categoria: 'Llantas', nombre: 'Llantas al límite de dibujo' },
   },
   {
     clave: 'golpes',

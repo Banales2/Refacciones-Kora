@@ -50,6 +50,21 @@ export interface Chequeo {
   created_at:    string
   updated_at:    string
   items:         ChequeoItem[]
+  /** Lo que se midió con profundímetro ese día. Vacío si no se midió nada. */
+  desgaste:      DesgasteMedido[]
+}
+
+/** Una lectura de profundímetro ya guardada. */
+export interface DesgasteMedido {
+  tipo_pieza_id:   number
+  tipo_nombre:     string
+  etiqueta:        string
+  /** La pieza física que estaba puesta ahí ese día, si la posición tenía una. */
+  unidad_id:       number | null
+  unidad_etiqueta: string | null
+  milimetros:      number
+  /** El mínimo de su tipo, para pintar en rojo la que ya no da. */
+  minimo_mm:       number | null
 }
 
 export interface ChequeoConVehiculo extends Chequeo {
@@ -84,6 +99,15 @@ export interface ChequeoPayload {
   hora?:         string | null
   nota?:         string | null
   items:         ItemPayload[]
+  /**
+   * Las lecturas de profundímetro. Solo viaja lo que se midió: una posición
+   * ausente es "no se midió", que es el caso normal.
+   *
+   * No lleva la unidad: quién estaba puesto ahí lo resuelve la API desde la
+   * bitácora. Si lo mandara el teléfono, un formulario abierto desde antes de
+   * un cambio de llanta atribuiría la medición a la pieza que ya se quitó.
+   */
+  desgaste?:     { tipo_pieza_id: number; etiqueta: string; milimetros: number }[]
 }
 
 /** Lo que el formulario necesita para armarse, servido por la API. */
@@ -100,8 +124,28 @@ export interface FormularioChequeo {
    * como si fuera la primera vez.
    */
   arrastradas: { clave: string; desde: string }[]
+  /**
+   * Las posiciones de esta unidad que se miden con profundímetro, con la pieza
+   * que traen puesta y su última lectura. Vacío cuando el modelo no tiene sus
+   * ruedas dadas de alta una por una, o cuando ningún tipo se mide: entonces
+   * la pregunta del dibujo tampoco viene en `items`.
+   */
+  posiciones:  PosicionDesgaste[]
   /** El chequeo de hoy, si ya lo hicieron. */
   hoy:         Chequeo | null
+}
+
+export interface PosicionDesgaste {
+  tipo_pieza_id:   number
+  tipo_nombre:     string
+  etiqueta:        string
+  /** Los milímetros a partir de los cuales es falla. `null` = sin mínimo. */
+  minimo_mm:       number | null
+  unidad_id:       number | null
+  unidad_etiqueta: string | null
+  /** La última lectura de esta posición, para ver de un vistazo si bajó. */
+  ultima_mm:       number | null
+  ultima_fecha:    string | null
 }
 
 export interface UnidadSinChequeo {

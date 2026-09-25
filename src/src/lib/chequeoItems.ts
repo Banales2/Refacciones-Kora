@@ -13,7 +13,7 @@ export type Resultado = 'ok' | 'falla' | 'na'
 export interface ItemChequeo {
   clave:   string
   label:   string
-  captura: 'ok_falla' | 'lectura' | 'fraccion'
+  captura: 'ok_falla' | 'lectura' | 'fraccion' | 'desgaste'
   tipos:   string[]
   // `nombre` (cómo se llama el pendiente que abre la falla) vive solo en el
   // catálogo del backend: es quien crea la incidencia, y aquí nunca se lee.
@@ -35,6 +35,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
   { clave: 'nivel_limpiaparabrisas',  label: 'Líquido limpiaparabrisas',               captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'superficial', categoria: 'Niveles' }, umbralFalla: '1/4' },
   { clave: 'llantas_marca',  label: '¿La marca de las llantas es la registrada?', captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Llantas' } },
   { clave: 'llantas_estado', label: '¿Las llantas están bien?',    captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Llantas' } },
+  { clave: 'llantas_desgaste', label: '¿Las llantas tienen dibujo suficiente?', captura: 'desgaste', tipos: [], incidencia: { severidad: 'grave', categoria: 'Llantas' } },
   { clave: 'golpes',         label: '¿Está sin golpes nuevos?',                                captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Carrocería', preguntarSeveridad: true } },
   { clave: 'fugas',          label: '¿Está sin manchas debajo?',                  captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Fugas' } },
   { clave: 'luces_faros',        label: '¿Los faros funcionan?',          captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Luces' } },

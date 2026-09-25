@@ -125,6 +125,29 @@ function ResumenChequeo({ chequeo, onRevisar }: { chequeo: Chequeo; onRevisar: (
             Sin revisar: {noSePudo.map((n) => labelDeItem(n.clave)).join(', ')}
           </Text>
         )}
+
+        {/* Lo que se midió con profundímetro. Va en una sola línea por rueda:
+            el detalle importa cuando se compara contra la medición anterior, y
+            para eso está la ficha de la llanta. Aquí lo que se busca es la que
+            ya no da, y por eso esa va en rojo. */}
+        {chequeo.desgaste.length > 0 && (
+          <Group gap={6} wrap="wrap">
+            <Text size="xs" c="dimmed">Dibujo:</Text>
+            {chequeo.desgaste.map((d) => {
+              const baja = d.minimo_mm != null && d.milimetros <= d.minimo_mm
+              return (
+                <Badge
+                  key={`${d.tipo_pieza_id}|${d.etiqueta}`}
+                  size="xs"
+                  variant="light"
+                  color={baja ? 'red' : 'gray'}
+                >
+                  {d.etiqueta || d.tipo_nombre} {d.milimetros} mm
+                </Badge>
+              )
+            })}
+          </Group>
+        )}
       </Stack>
     </Card>
   )

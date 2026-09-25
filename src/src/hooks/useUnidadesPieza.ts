@@ -39,6 +39,30 @@ export interface UnidadPieza {
   km_recorridos:  number | null
 }
 
+/** Una medición de profundímetro de esta pieza, venga del camión que venga. */
+export interface LecturaDesgaste {
+  chequeo_id:  number
+  fecha:       string
+  milimetros:  number
+  vehiculo_id: number
+  vehiculo:    string
+  /** La posición que ocupaba ese día: una llanta rota de eje. */
+  etiqueta:    string
+  /** Odómetro de la unidad ese día, para poder medir el ritmo de desgaste. */
+  lectura:     number | null
+}
+
+// La historia completa de una pieza: no se acota por vehículo porque la gracia
+// es seguirla cuando se va a otro, y cortarla escodería la mitad que explica
+// cómo llegó así.
+export function useDesgasteUnidad(unidadId: number | null) {
+  return useQuery({
+    queryKey: ['unidad-desgaste', unidadId],
+    queryFn: () => api.get<{ data: LecturaDesgaste[] }>(`/unidades/${unidadId}/desgaste`),
+    enabled: unidadId !== null,
+  })
+}
+
 export const ESTADO_UNIDAD: Record<EstadoUnidad, { label: string; color: string }> = {
   almacen:        { label: 'En almacén',      color: 'green'  },
   en_traspaso:    { label: 'En traspaso',     color: 'cyan'   },

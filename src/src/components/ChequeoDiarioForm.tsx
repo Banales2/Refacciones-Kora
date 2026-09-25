@@ -45,6 +45,12 @@ interface Respuesta {
 
 const VACIA: Respuesta = { resultado: null, valor: null, nota: '', severidad: 'moderada' }
 
+// La llave de una posición medible: el par (tipo, etiqueta), que es lo que
+// distingue una rueda de la siguiente. La misma que usa la tabla.
+function clavePos(p: { tipo_pieza_id: number; etiqueta: string }) {
+  return `${p.tipo_pieza_id}|${p.etiqueta}`
+}
+
 // A nivel de módulo: `useOpcionesTexto` la trae en las dependencias de su
 // useMemo, y una función nueva en cada render recalcularía las opciones cada vez.
 const etiquetaNueva = (v: string) => `+ Usar "${v}"`
@@ -117,6 +123,16 @@ export default function ChequeoDiarioForm({
     }
     return inicial
   })
+  // Los milímetros medidos, por posición. Vacío es "no se midió": son
+  // opcionales, así que no hay forma de distinguirlo de un cero salvo no
+  // mandando la fila.
+  const [medidas, setMedidas] = useState<Record<string, number | ''>>(() => {
+    const inicial: Record<string, number | ''> = {}
+    for (const d of existente?.desgaste ?? []) {
+      inicial[`${d.tipo_pieza_id}|${d.etiqueta}`] = d.milimetros
+    }
+    return inicial
+  })
   // El comentario final: la cabecera del chequeo ya tenía la columna (`nota`),
   // pero nadie la llenaba. Es lo que no cabe en ningún renglón —"la dejaron con
   // la caja sucia", "le falta la calcomanía"— y por eso es libre y opcional.
@@ -153,6 +169,14 @@ export default function ChequeoDiarioForm({
     (formulario.arrastradas ?? []).map((a) => [a.clave, a.desde])
   )
 
+  const posiciones = formulario.posiciones ?? []
+  // Las que ya no dan el mínimo. Se calcula para avisar mientras se captura;
+  // la regla de verdad la vuelve a aplicar el servidor con el mismo umbral.
+  const alLimite = posiciones.filter((p) => {
+    const v = medidas[clavePos(p)]
+    return p.minimo_mm != null && v !== '' && v !== undefined && Number(v) <= p.minimo_mm
+  })
+
   const responder = (clave: string, cambio: Partial<Respuesta>) => {
     setRespuestas((prev) => ({ ...prev, [clave]: { ...VACIA, ...prev[clave], ...cambio } }))
   }
@@ -164,6 +188,9 @@ export default function ChequeoDiarioForm({
   // sin esto el formulario lo daría por completo y la API lo rechazaría al
   // guardar. 'na' es la excepción: ahí no hay nivel que capturar.
   const faltantes = formulario.items.filter((i) => {
+    // El dibujo no se contesta: se mide, y medir es opcional. Exigirlo sería
+    // pedir el profundímetro en cada vuelta al patio.
+    if (i.captura === 'desgaste') return false
     const r = respuestas[i.clave]
     if (!r?.resultado) return true
     return i.captura === 'fraccion' && r.resultado !== 'na' && !r.valor
@@ -190,7 +217,7 @@ export default function ChequeoDiarioForm({
     // No se le pide a una `fraccion`: ahí la falla es el nivel, y el nivel ya
     // quedó capturado. Pedir además que lo escriban es pedir que tecleen "1/4".
     const sinNota = formulario.items.find(
-      (i) => i.captura !== 'fraccion' &&
+      (i) => i.captura !== 'fraccion' && i.captura !== 'desgaste' &&
         respuestas[i.clave]?.resultado === 'falla' && !respuestas[i.clave]?.nota.trim()
     )
     if (sinNota) return `Describe qué pasa con: ${sinNota.label}`
@@ -201,7 +228,11 @@ export default function ChequeoDiarioForm({
   }
 
   const armarPayload = (confirmarBajaLectura: boolean): ChequeoPayload => {
-    const items: ItemPayload[] = formulario.items.map((i) => {
+    // El renglón del dibujo no lo manda el formulario: lo sintetiza la API de
+    // las lecturas y del mínimo del tipo, igual que hace con las fracciones.
+    const items: ItemPayload[] = formulario.items
+      .filter((i) => i.captura !== 'desgaste')
+      .map((i) => {
       const r = respuestas[i.clave]
       return {
         clave:     i.clave,
@@ -227,6 +258,20 @@ export default function ChequeoDiarioForm({
       // de frenar la lectura mal tecleada, que es justo para lo que está.
       ...(confirmarBajaLectura ? { confirmar_baja: true } : {}),
       items,
+      // Solo lo que se midió. Se manda siempre que haya posiciones —aunque vaya
+      // vacío— para que al corregir un chequeo se puedan borrar las lecturas
+      // que se capturaron en la unidad equivocada.
+      ...(posiciones.length > 0
+        ? {
+            desgaste: posiciones
+              .filter((p) => medidas[clavePos(p)] !== '' && medidas[clavePos(p)] !== undefined)
+              .map((p) => ({
+                tipo_pieza_id: p.tipo_pieza_id,
+                etiqueta:      p.etiqueta,
+                milimetros:    Number(medidas[clavePos(p)]),
+              })),
+          }
+        : {}),
     }
   }
 
@@ -445,7 +490,66 @@ export default function ChequeoDiarioForm({
                       </Alert>
                     )}
 
-                    {item.captura === 'fraccion' ? (
+                    {item.captura === 'desgaste' ? (
+                      /* La medición con profundímetro, una casilla por rueda.
+                         Todas opcionales: nadie mide veintidós ruedas todos los
+                         días, y un campo obligatorio que no se puede cumplir se
+                         acaba llenando con números inventados, que es peor que
+                         no tener el dato.
+
+                         Debajo de cada una va la última lectura de esa misma
+                         posición: sin ella, quien mide no sabe si 5 mm es que
+                         se gastó medio milímetro en un mes o cuatro en una
+                         semana, que es toda la diferencia. */
+                      <Stack gap={6}>
+                        {posiciones.map((pos) => {
+                          const clave = clavePos(pos)
+                          const valor = medidas[clave] ?? ''
+                          const baja = pos.minimo_mm != null && valor !== '' &&
+                                       Number(valor) <= pos.minimo_mm
+                          return (
+                            <Group key={clave} gap="xs" wrap="nowrap" align="flex-start">
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <Text size="sm" fw={500}>
+                                  {pos.etiqueta || pos.tipo_nombre}
+                                </Text>
+                                <Text size="xs" c="dimmed">
+                                  {pos.unidad_etiqueta
+                                    ? `Llanta ${pos.unidad_etiqueta}`
+                                    : pos.unidad_id
+                                      ? 'Pieza sin etiqueta'
+                                      : 'Sin pieza asignada'}
+                                  {pos.ultima_mm != null &&
+                                    ` · última ${pos.ultima_mm} mm el ${diaMes(pos.ultima_fecha!)}`}
+                                </Text>
+                              </div>
+                              <NumberInput
+                                w={110}
+                                size="md"
+                                placeholder="mm"
+                                min={0.1}
+                                max={100}
+                                step={0.5}
+                                decimalScale={1}
+                                suffix=" mm"
+                                error={baja}
+                                value={valor}
+                                onChange={(v) => setMedidas((prev) => ({
+                                  ...prev, [clave]: typeof v === 'number' ? v : '',
+                                }))}
+                              />
+                            </Group>
+                          )
+                        })}
+                        {alLimite.length > 0 && (
+                          <Text size="xs" c="red">
+                            {alLimite.length === 1
+                              ? `${alLimite[0].etiqueta || alLimite[0].tipo_nombre} está en el mínimo o por debajo.`
+                              : `${alLimite.length} posiciones están en el mínimo o por debajo.`}
+                          </Text>
+                        )}
+                      </Stack>
+                    ) : item.captura === 'fraccion' ? (
                       <Stack gap={4}>
                         {/* Rejilla y no SegmentedControl: en un teléfono los
                             cuatro segmentos dan ~85px cada uno, donde "Lleno"
