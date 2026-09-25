@@ -158,6 +158,20 @@ export async function valeUsado(valeId: number, exceptId?: number): Promise<bool
   return r.recordset.length > 0
 }
 
+/**
+ * ¿El vale se dio por perdido? Un vale archivado no se puede gastar: alguien ya
+ * decidió que ese papel no iba a aparecer, y aceptarlo ahora dejaría una
+ * recarga colgando de un folio que el sistema da por muerto. Si de verdad
+ * apareció, se restaura y entonces sí. Ver la migración 055.
+ */
+export async function valeArchivado(id: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query('SELECT TOP 1 1 AS si FROM vales_gasolina WHERE id = @id AND archivado_en IS NOT NULL')
+  return r.recordset.length > 0
+}
+
 // Vehículo al que pertenece un vale, o null si el vale no existe. Sirve para
 // rechazar un vale emitido para otra unidad.
 export async function valeVehiculo(id: number): Promise<number | null> {

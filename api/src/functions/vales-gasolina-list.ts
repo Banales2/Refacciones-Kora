@@ -10,7 +10,13 @@ export async function valesGasolinaList(
 ): Promise<HttpResponseInit> {
   try {
     const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante', 'responsable')
-    const data = await soloVisibles(await service.getAll(), await alcanceDe(user))
+    // Los archivados solo cuando se piden: un vale que se dio por perdido ya no
+    // es trabajo de nadie, y dejarlo en la lista de todos los dias hace que la
+    // lista deje de mirarse.
+    const incluirArchivados = request.query.get('archivados') === '1'
+    const data = await soloVisibles(
+      await service.getAll(incluirArchivados), await alcanceDe(user),
+    )
     return { status: 200, jsonBody: { data } }
   } catch (err) {
     return handleError(err, context)

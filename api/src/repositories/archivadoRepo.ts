@@ -20,6 +20,13 @@ import { getPool } from '../shared/db'
 export const TABLAS_ARCHIVABLES = [
   'sucursales', 'rutas', 'gasolineras', 'conductores',
   'tecnicos', 'proveedores', 'piezas', 'tipos_pieza',
+  // No es un catálogo: es un papel que se dio por perdido (migración 055). Se
+  // sube aquí porque la operación es exactamente la misma —el renglón se
+  // queda, deja de ofrecerse— y repetirla aparte era garantizar que una de las
+  // dos se quedara sin arreglar. Lo que NO comparte es la puerta: archivar un
+  // catálogo es de admin, y dar por perdido un vale es de todos los días, así
+  // que tiene su propio endpoint.
+  'vales_gasolina',
 ] as const
 
 export type TablaArchivable = typeof TABLAS_ARCHIVABLES[number]

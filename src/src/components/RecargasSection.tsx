@@ -118,7 +118,11 @@ export function RecargaForm({
     .filter((v) => !valesUsados.has(v.id) || String(v.id) === initial?.vale_id)
     .map((v) => ({
       value: String(v.id),
-      label: `Vale ${v.folio} — ${formatFecha(v.fecha)} — ${v.conductor}`,
+      // El "perdido" se dice aquí: si el papel aparece y se gasta, quien lo
+      // captura merece ver que el sistema lo daba por extraviado —puede que
+      // esté agarrando el folio equivocado—. Los archivados ni se listan.
+      label: `Vale ${v.folio} — ${formatFecha(v.fecha)} — ${v.conductor}` +
+             (v.estado === 'perdido' ? ' · dado por perdido' : ''),
     }))
 
   const form = useForm<RecargaFormValues>({

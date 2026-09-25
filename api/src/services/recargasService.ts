@@ -19,6 +19,12 @@ async function validarVale(
   if (await repo.valeUsado(valeId, recargaId)) {
     throw new ConflictError('Ese vale ya se usó en otra recarga')
   }
+  if (await repo.valeArchivado(valeId)) {
+    throw new ConflictError(
+      'Ese vale se dio por perdido y está archivado. Si apareció, restáuralo en ' +
+      'Vales de gasolina y vuelve a intentarlo.'
+    )
+  }
 }
 
 export async function getAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {

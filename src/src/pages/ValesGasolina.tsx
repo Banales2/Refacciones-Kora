@@ -12,12 +12,14 @@ import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert,
   Button, ActionIcon, Modal, TextInput, Select, Accordion, Badge, Anchor, Tabs,
+  Tooltip, Textarea, Switch,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconPlus } from '@tabler/icons-react'
+import { IconPencil, IconPlus, IconArchive, IconArchiveOff } from '@tabler/icons-react'
 import {
   useValesGasolina, useCreateValeGasolina, useUpdateValeGasolina,
+  useArchivarVale, ESTADO_VALE,
 } from '../hooks/useValesGasolina'
 import type { ValeGasolina, ValeGasolinaPayload } from '../hooks/useValesGasolina'
 import { usePermisos } from '../hooks/usePermisos'
@@ -294,14 +296,18 @@ function ValeForm({
 // Ni la persona ni el vehículo se repiten como columnas: ya los dice el
 // encabezado del grupo que contiene esta tabla.
 function ValesTabla({
-  items, onEdit, onNavigateConductor,
+  items, onEdit, onArchivar, onNavigateConductor,
 }: {
   items: ValeGasolina[]
   onEdit: (v: ValeGasolina) => void
+  onArchivar: (v: ValeGasolina) => void
   onNavigateConductor?: (id: number) => void
 }) {
-  // El vale se captura una vez; corregirlo es cosa de un editor.
+  // El vale se captura una vez; corregirlo —y darlo por perdido— es cosa de un
+  // editor.
   const { puedeEditar } = usePermisos()
+  const restaurarMut = useArchivarVale()
+
   return (
     <Table highlightOnHover verticalSpacing="xs">
       <Table.Thead>
@@ -309,36 +315,86 @@ function ValesTabla({
           <Table.Th>Folio</Table.Th>
           <Table.Th>Fecha</Table.Th>
           <Table.Th>Chofer</Table.Th>
-          <Table.Th style={{ width: 48 }} />
+          <Table.Th>Qué pasó</Table.Th>
+          <Table.Th style={{ width: 80 }} />
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
-        {items.map((v) => (
-          <Table.Tr key={v.id}>
-            <Table.Td fw={500}>{v.folio}</Table.Td>
-            <Table.Td>{formatFecha(v.fecha)}</Table.Td>
-            <Table.Td fw={500}>
-              {onNavigateConductor ? (
-                // Botón y no <a>: la navegación es por estado, no hay URL a la
-                // que apuntar, y así entra en el orden de tabulación.
-                <Anchor component="button" type="button" size="sm" fw={500}
-                  onClick={() => onNavigateConductor(v.conductor_id)}>
-                  {v.conductor}
-                </Anchor>
-              ) : v.conductor}
-            </Table.Td>
-            <Table.Td>
-              <Group gap={4} justify="flex-end" wrap="nowrap">
-                {puedeEditar && (
-                  <ActionIcon variant="subtle" color="blue" size="sm"
-                    aria-label="Editar" onClick={() => onEdit(v)}>
-                    <IconPencil size={14} />
-                  </ActionIcon>
+        {items.map((v) => {
+          const est = ESTADO_VALE[v.estado]
+          return (
+            <Table.Tr key={v.id}>
+              <Table.Td fw={500}>{v.folio}</Table.Td>
+              <Table.Td>{formatFecha(v.fecha)}</Table.Td>
+              <Table.Td fw={500}>
+                {onNavigateConductor ? (
+                  // Botón y no <a>: la navegación es por estado, no hay URL a la
+                  // que apuntar, y así entra en el orden de tabulación.
+                  <Anchor component="button" type="button" size="sm" fw={500}
+                    onClick={() => onNavigateConductor(v.conductor_id)}>
+                    {v.conductor}
+                  </Anchor>
+                ) : v.conductor}
+              </Table.Td>
+              <Table.Td>
+                <Badge size="xs" variant="light" color={est.color}>{est.label}</Badge>
+                {/* Debajo, lo que la etiqueta no alcanza a decir: dónde se gastó,
+                    cuánto lleva esperando, o por qué se dio por perdido. */}
+                {v.estado === 'usado' && v.recarga_fecha && (
+                  <Text size="xs" c="dimmed">
+                    {formatFecha(v.recarga_fecha)}
+                    {v.recarga_gasolinera ? ` · ${v.recarga_gasolinera}` : ''}
+                    {v.recarga_litros != null ? ` · ${v.recarga_litros} L` : ''}
+                  </Text>
                 )}
-              </Group>
-            </Table.Td>
-          </Table.Tr>
-        ))}
+                {(v.estado === 'perdido' || v.estado === 'creado') && v.dias_sin_usar != null && (
+                  <Text size="xs" c={v.estado === 'perdido' ? 'red' : 'dimmed'}>
+                    {v.dias_sin_usar === 0
+                      ? 'Entregado hoy'
+                      : `${v.dias_sin_usar} día${v.dias_sin_usar === 1 ? '' : 's'} sin usarse`}
+                  </Text>
+                )}
+                {v.estado === 'archivado' && (
+                  <Text size="xs" c="dimmed">
+                    {v.archivado_motivo ?? 'Sin motivo'}
+                  </Text>
+                )}
+              </Table.Td>
+              <Table.Td>
+                <Group gap={4} justify="flex-end" wrap="nowrap">
+                  {puedeEditar && v.estado !== 'archivado' && (
+                    <ActionIcon variant="subtle" color="blue" size="sm"
+                      aria-label="Editar" onClick={() => onEdit(v)}>
+                      <IconPencil size={14} />
+                    </ActionIcon>
+                  )}
+                  {/* Archivar solo tiene sentido en lo que se perdió: un vale
+                      usado no se perdió, se gastó, y uno de hoy todavía puede
+                      aparecer esta tarde. */}
+                  {puedeEditar && v.estado === 'perdido' && (
+                    <Tooltip label="Darlo por perdido">
+                      <ActionIcon variant="subtle" color="gray" size="sm"
+                        aria-label={`Archivar el vale ${v.folio}`}
+                        onClick={() => onArchivar(v)}>
+                        <IconArchive size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                  {puedeEditar && v.estado === 'archivado' && (
+                    <Tooltip label="Apareció: devolverlo a la lista">
+                      <ActionIcon variant="subtle" color="teal" size="sm"
+                        aria-label={`Restaurar el vale ${v.folio}`}
+                        loading={restaurarMut.isPending && restaurarMut.variables?.id === v.id}
+                        onClick={() => restaurarMut.mutate({ id: v.id, accion: 'restaurar' })}>
+                        <IconArchiveOff size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </Group>
+              </Table.Td>
+            </Table.Tr>
+          )
+        })}
       </Table.Tbody>
     </Table>
   )
@@ -387,13 +443,23 @@ export default function ValesGasolina({
 }) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editVale, setEditVale]     = useState<ValeGasolina | null>(null)
+  // El vale que se está dando por perdido. Se pregunta el motivo: dentro de un
+  // mes, "archivado" a secas no le dice nada a nadie.
+  const [archivando, setArchivando] = useState<ValeGasolina | null>(null)
+  const [motivoArchivo, setMotivoArchivo] = useState('')
+  // Los archivados se piden aparte, y por omisión no: son los que ya no hay
+  // que perseguir, y dejarlos en la lista hace que la lista deje de mirarse.
+  const [verArchivados, setVerArchivados] = useState(false)
 
-  const { data, isLoading, isError } = useValesGasolina()
+  const { data, isLoading, isError } = useValesGasolina(verArchivados)
+  const archivarMut = useArchivarVale()
   const createMut = useCreateValeGasolina()
   const updateMut = useUpdateValeGasolina()
 
   const vales = useMemo(() => data?.data ?? [], [data])
   const personas = useMemo(() => agrupar(vales), [vales])
+  const perdidos = vales.filter((v) => v.estado === 'perdido').length
+  const sinUsar  = vales.filter((v) => v.estado === 'creado').length
 
   // Al entrar viene abierta la primera persona y su primer vehículo, para no
   // dejar la pantalla en puros encabezados cerrados.
@@ -421,11 +487,29 @@ export default function ValesGasolina({
 
           <Tabs.Panel value="vales" pt="md">
         <Stack gap="md">
-        <Group justify="flex-end" align="flex-end">
-          <Group gap="sm" align="flex-end">
-            {vales.length > 0 && (
-              <Text size="sm" c="dimmed">{vales.length} vales</Text>
+        <Group justify="space-between" align="flex-end">
+          {/* Lo perdido primero y en rojo: es lo único de esta pantalla que
+              alguien tiene que salir a preguntar hoy. */}
+          <Group gap="xs">
+            {perdidos > 0 && (
+              <Badge color="red" variant="filled" size="sm">
+                {perdidos} perdido{perdidos === 1 ? '' : 's'}
+              </Badge>
             )}
+            {sinUsar > 0 && (
+              <Badge color="blue" variant="light" size="sm">{sinUsar} sin usar</Badge>
+            )}
+            {vales.length > 0 && (
+              <Text size="sm" c="dimmed">{vales.length} en total</Text>
+            )}
+          </Group>
+          <Group gap="sm" align="flex-end">
+            <Switch
+              size="xs"
+              label="Ver archivados"
+              checked={verArchivados}
+              onChange={(e) => setVerArchivados(e.currentTarget.checked)}
+            />
             <Button
               leftSection={<IconPlus size={16} />}
               onClick={() => setCreateOpen(true)}
@@ -476,6 +560,11 @@ export default function ValesGasolina({
                           <ValesTabla
                             items={g.items}
                             onEdit={setEditVale}
+                            onArchivar={(v) => {
+                              setMotivoArchivo('')
+                              archivarMut.reset()
+                              setArchivando(v)
+                            }}
                             onNavigateConductor={onNavigateConductor}
                           />
                         </Accordion.Panel>
@@ -497,6 +586,59 @@ export default function ValesGasolina({
           )}
         </Tabs>
       </Stack>
+
+      {/* Dar por perdido. Se pregunta el motivo porque es una decisión, no un
+          hecho: dentro de un mes, quien lea "archivado" a secas no va a saber
+          si el papel se extravió, se mojó o el chofer lo tiró. */}
+      <Modal
+        opened={archivando !== null}
+        onClose={() => setArchivando(null)}
+        title="Dar el vale por perdido"
+        centered
+      >
+        {archivando && (
+          <Stack gap="sm">
+            <Text size="sm">
+              El vale <Text component="span" fw={600}>{archivando.folio}</Text> lleva{' '}
+              {archivando.dias_sin_usar} días sin usarse.
+            </Text>
+            <Text size="xs" c="dimmed">
+              No se borra: el folio se sigue resolviendo y la decisión queda firmada.
+              Sale de la lista y deja de ofrecerse al capturar una recarga. Si aparece,
+              se restaura.
+            </Text>
+            <Textarea
+              label="¿Qué pasó?"
+              placeholder="Se extravió en la unidad, el chofer lo perdió…"
+              data-autofocus
+              rows={2}
+              maxLength={200}
+              value={motivoArchivo}
+              onChange={(e) => setMotivoArchivo(e.currentTarget.value)}
+            />
+            {archivarMut.error && (
+              <Alert color="red" title="Error">{(archivarMut.error as Error).message}</Alert>
+            )}
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setArchivando(null)}>Cancelar</Button>
+              <Button
+                color="orange"
+                loading={archivarMut.isPending}
+                onClick={() => archivarMut.mutate(
+                  {
+                    id: archivando.id,
+                    accion: 'archivar',
+                    ...(motivoArchivo.trim() ? { motivo: motivoArchivo.trim() } : {}),
+                  },
+                  { onSuccess: () => setArchivando(null) },
+                )}
+              >
+                Darlo por perdido
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
 
       {/* Modal: nuevo vale */}
       <Modal
