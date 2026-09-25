@@ -12,16 +12,24 @@ import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert,
   Button, ActionIcon, Modal, TextInput, Select, Accordion, Badge, Anchor, Tabs,
-  Tooltip, Textarea, Switch,
+  Tooltip, Textarea, Chip,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPencil, IconPlus, IconArchive, IconArchiveOff } from '@tabler/icons-react'
+import {
+  IconPencil, IconPlus, IconArchive, IconArchiveOff, IconSearch,
+} from '@tabler/icons-react'
 import {
   useValesGasolina, useCreateValeGasolina, useUpdateValeGasolina,
   useArchivarVale, ESTADO_VALE,
 } from '../hooks/useValesGasolina'
-import type { ValeGasolina, ValeGasolinaPayload } from '../hooks/useValesGasolina'
+import type {
+  ValeGasolina, ValeGasolinaPayload, EstadoVale,
+} from '../hooks/useValesGasolina'
+
+// El orden en que se ofrecen los filtros, que no es el de la definición: va de
+// lo que hay que perseguir a lo que ya se cerró.
+const ESTADOS_FILTRO: EstadoVale[] = ['perdido', 'creado', 'usado', 'archivado']
 import { usePermisos } from '../hooks/usePermisos'
 import { useConductores } from '../hooks/useConductores'
 import type { Conductor } from '../hooks/useConductores'
@@ -447,26 +455,58 @@ export default function ValesGasolina({
   // mes, "archivado" a secas no le dice nada a nadie.
   const [archivando, setArchivando] = useState<ValeGasolina | null>(null)
   const [motivoArchivo, setMotivoArchivo] = useState('')
-  // Los archivados se piden aparte, y por omisión no: son los que ya no hay
-  // que perseguir, y dejarlos en la lista hace que la lista deje de mirarse.
-  const [verArchivados, setVerArchivados] = useState(false)
+  const [busqueda, setBusqueda] = useState('')
+  // Qué estados mostrar. Vacío = todos los vigentes, que es como se entra.
+  //
+  // Los archivados no se filtran, se PIDEN: la API no los manda salvo que se
+  // le digan, porque son los que ya no hay que perseguir y dejarlos en la
+  // lista de todos los días hace que la lista deje de mirarse. Por eso marcar
+  // ese chip cambia la consulta y no solo el filtro.
+  const [estados, setEstados] = useState<string[]>([])
+  const verArchivados = estados.includes('archivado')
 
   const { data, isLoading, isError } = useValesGasolina(verArchivados)
   const archivarMut = useArchivarVale()
   const createMut = useCreateValeGasolina()
   const updateMut = useUpdateValeGasolina()
 
-  const vales = useMemo(() => data?.data ?? [], [data])
+  const todos = useMemo(() => data?.data ?? [], [data])
+
+  // El filtro se aplica ANTES de agrupar: si se aplicara después quedarían
+  // personas y vehículos con cero vales dentro, que es un encabezado que no
+  // lleva a ninguna parte.
+  const vales = useMemo(() => {
+    const q = busqueda.trim().toLowerCase()
+    return todos.filter((v) => {
+      if (estados.length > 0 && !estados.includes(v.estado)) return false
+      if (!q) return true
+      return [
+        v.folio, v.conductor, v.creado_por, v.placas,
+        `${v.marca} ${v.modelo}`, v.serie,
+      ].some((t) => t?.toLowerCase().includes(q))
+    })
+  }, [todos, busqueda, estados])
+
   const personas = useMemo(() => agrupar(vales), [vales])
-  const perdidos = vales.filter((v) => v.estado === 'perdido').length
-  const sinUsar  = vales.filter((v) => v.estado === 'creado').length
+  // Los contadores cuentan sobre TODO lo traído y no sobre lo filtrado: son
+  // para decidir qué filtrar, así que moverse con el filtro los volvería un
+  // espejo de lo que ya se está viendo.
+  const perdidos = todos.filter((v) => v.estado === 'perdido').length
+  const sinUsar  = todos.filter((v) => v.estado === 'creado').length
 
   // Al entrar viene abierta la primera persona y su primer vehículo, para no
   // dejar la pantalla en puros encabezados cerrados.
   const [personaAbierta, setPersonaAbierta] = useState<string | null>(null)
   const [vehiculoAbierto, setVehiculoAbierto] = useState<string | null>(null)
-  const personaVisible  = personaAbierta  ?? personas[0]?.key ?? null
-  const vehiculoVisible = vehiculoAbierto ?? personas[0]?.vehiculos[0]?.key ?? null
+  // Si lo que estaba abierto se cae del filtro, se abre lo primero que sí
+  // quedó: sin esto, filtrar dejaba la pantalla en puros encabezados cerrados
+  // justo después de que alguien buscó algo.
+  const persona = personas.find((p) => p.key === personaAbierta) ?? personas[0]
+  const personaVisible = persona?.key ?? null
+  const vehiculoVisible =
+    persona?.vehiculos.find((g) => g.key === vehiculoAbierto)?.key
+    ?? persona?.vehiculos[0]?.key
+    ?? null
 
   // El practicante captura vales pero el listado de recargas no le responde.
   const { esPracticante } = usePermisos()
@@ -503,20 +543,44 @@ export default function ValesGasolina({
               <Text size="sm" c="dimmed">{vales.length} en total</Text>
             )}
           </Group>
-          <Group gap="sm" align="flex-end">
-            <Switch
-              size="xs"
-              label="Ver archivados"
-              checked={verArchivados}
-              onChange={(e) => setVerArchivados(e.currentTarget.checked)}
-            />
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={() => setCreateOpen(true)}
+          >
+            Nuevo vale
+          </Button>
+        </Group>
+
+        <Group gap="sm" align="center" wrap="wrap">
+          <TextInput
+            placeholder="Busca folio, chofer, vehículo o placas"
+            leftSection={<IconSearch size={14} />}
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.currentTarget.value)}
+            style={{ flex: 1, minWidth: 240, maxWidth: 380 }}
+          />
+          {/* Chips y no un Select: son cuatro, caben, y así se ve de un vistazo
+              qué está filtrado sin desplegar nada. Múltiple porque "sin usar y
+              perdidos" —todo lo que sigue debiendo gasolina— es una pregunta
+              real. */}
+          <Chip.Group multiple value={estados} onChange={setEstados}>
+            <Group gap={6}>
+              {ESTADOS_FILTRO.map((e) => (
+                <Chip key={e} value={e} size="xs" variant="light"
+                  color={ESTADO_VALE[e].color}>
+                  {ESTADO_VALE[e].label}
+                </Chip>
+              ))}
+            </Group>
+          </Chip.Group>
+          {(busqueda || estados.length > 0) && (
             <Button
-              leftSection={<IconPlus size={16} />}
-              onClick={() => setCreateOpen(true)}
+              variant="subtle" size="compact-xs"
+              onClick={() => { setBusqueda(''); setEstados([]) }}
             >
-              Nuevo vale
+              Limpiar
             </Button>
-          </Group>
+          )}
         </Group>
 
         {isLoading ? (
@@ -527,7 +591,11 @@ export default function ValesGasolina({
           </Alert>
         ) : vales.length === 0 ? (
           <Center py="xl">
-            <Text c="dimmed">No hay vales registrados.</Text>
+            <Text c="dimmed">
+              {todos.length === 0
+                ? 'No hay vales registrados.'
+                : 'Ningún vale coincide con la búsqueda.'}
+            </Text>
           </Center>
         ) : (
           <Accordion variant="separated" value={personaVisible} onChange={setPersonaAbierta}>
