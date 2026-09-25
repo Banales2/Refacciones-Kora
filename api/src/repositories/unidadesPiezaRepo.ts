@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { loteLlegado } from './inventarioSql'
 
 // Piezas físicas identificadas una por una. Solo existen para los tipos con
 // `rastreo_individual` (migración 025); lo que se cuenta a granel no las tiene.
@@ -317,6 +318,13 @@ export async function crearIdentificadas(grupos: GrupoAIdentificar[]): Promise<n
  * un vehículo y montarla otra vez sería la misma pieza en dos lados. Devuelve
  * `null` si no hay ninguna libre, y entonces el montaje sigue adelante sin
  * unidad — el consumo es válido igual, y la ficha lo dirá.
+ *
+ * Tampoco cuentan las de un lote que todavía no llega (migración 051). El
+ * montaje ya rechaza el lote en tránsito que se elige a mano, pero aquí no se
+ * elige: si el lote del consumo no tiene unidades libres, se cae en "cualquiera
+ * de esa refacción", y sin este filtro esa cualquiera podía ser una que sigue
+ * en el camión. Quedaría montada en una unidad una pieza que nadie ha tocado,
+ * y la de verdad montada seguiría figurando libre en el estante.
  */
 export async function tomarDisponible(
   tx: sql.Transaction, piezaId: number, loteId: number | null, sucursalId: number | null,
@@ -328,11 +336,16 @@ export async function tomarDisponible(
     .query(`
       SELECT TOP 1 u.id
       FROM unidades_pieza u
+      -- LEFT: la unidad que vino con el vehículo no salió de ninguna compra
+      -- (lote_id NULL) y está en el estante como cualquier otra.
+      LEFT JOIN lotes_pieza l ON l.id = u.lote_id
       WHERE u.pieza_id = @piezaId
         -- Reservada a un traspaso que va en camino (035): su existencia ya se
         -- descontó del origen y todavía no llega al destino, así que no hay nada
         -- que montar con ella.
         AND u.traspaso_id IS NULL
+        -- Comprada pero todavía en camino: existe, no está.
+        AND (u.lote_id IS NULL OR ${loteLlegado('l')})
         AND NOT EXISTS (
           SELECT 1 FROM instalaciones_pieza i
           WHERE i.unidad_id = u.id AND i.fecha_retiro IS NULL)
