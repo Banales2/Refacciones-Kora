@@ -883,8 +883,8 @@ function CeldaDocumento({ numero, vigencia }: { numero: string | null; vigencia:
 }
 
 function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
-  // El responsable de sucursal consulta los choferes, no los da de alta.
-  const { puedeEditar, puedeDarDeAlta } = usePermisos()
+  // El responsable de sucursal da de alta choferes pero no los corrige.
+  const { puedeEditar } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Conductor | null>(null)
   const [archivando, setArchivando] = useState<Conductor | null>(null)
@@ -948,9 +948,7 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
                 onChange={(e) => setVerArchivados(e.currentTarget.checked)}
               />
             )}
-            {puedeDarDeAlta && (
-              <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo conductor</Button>
-            )}
+            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo conductor</Button>
           </Group>
         </Group>
 

@@ -45,8 +45,8 @@ el usuario. Con guiones. Roles válidos: `admin`, `editor`, `lector`,
 `responsable` es el responsable de una sucursal. Ve la flota de su sucursal y
 las unidades de translado, hace el chequeo diario, reporta incidencias (sin
 editarlas ni atenderlas: atender es registrar el mantenimiento), entrega vales,
-registra cargas de gasolina y consulta el inventario de su sucursal, choferes y
-permisos. Sí mueve inventario: envía traspasos desde su sucursal, acepta o
+registra cargas de gasolina, da de alta choferes (sin editarlos) y consulta el
+inventario de su sucursal, choferes y permisos. Sí mueve inventario: envía traspasos desde su sucursal, acepta o
 rechaza los que llegan a ella y cancela los que salieron de ella; la otra punta
 de cada traspaso no la puede resolver (`resolverTraspaso` en
 `inventarioService`). No ve el catálogo de refacciones (piezas, lotes, unidades

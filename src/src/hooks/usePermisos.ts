@@ -64,7 +64,9 @@ export interface Permisos {
   /**
    * Si puede dar de alta en refacciones, inventario y catálogos. El
    * responsable sólo los consulta: lo que captura es lo de su patio (chequeos,
-   * incidencias, vales y recargas), que tiene sus propios botones.
+   * incidencias, vales y recargas), que tiene sus propios botones. La
+   * excepción son los choferes: los registra porque sin ellos no puede
+   * entregar un vale, así que su botón no pasa por aquí.
    */
   puedeDarDeAlta: boolean
   /**
