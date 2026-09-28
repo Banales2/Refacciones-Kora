@@ -50,7 +50,8 @@ inventario de su sucursal, choferes y permisos. Sí mueve inventario: envía tra
 rechaza los que llegan a ella y cancela los que salieron de ella; la otra punta
 de cada traspaso no la puede resolver (`resolverTraspaso` en
 `inventarioService`). No ve el catálogo de refacciones (piezas, lotes, unidades
-identificadas, tipos de pieza), mantenimientos, modelos, facturas, proveedores
+identificadas, tipos de pieza) —salvo el listado `GET /refacciones`, que el
+alta de solicitudes usa como selector y no lleva datos de compra—, mantenimientos, modelos, facturas, proveedores
 ni el tablero. De lo que hay en su inventario tampoco ve de qué compra salió
 —costo, IVA, factura, proveedor, quién compró y autorizó—:
 `api/src/shared/datosDeCompra.ts` quita esos campos de la respuesta, no sólo de

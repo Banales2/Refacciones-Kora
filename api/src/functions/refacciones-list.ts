@@ -11,7 +11,10 @@ export async function refaccionesList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante')
+    // El responsable no ve el catálogo como sección, pero sí lo necesita para
+    // elegir qué pedir en una solicitud de refacción. No hay datos de compra en
+    // esta respuesta, y la existencia sale acotada a su sucursal (`alcanceDe`).
+    const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante', 'responsable')
 
     const params = RefaccionQuerySchema.parse({
       page: request.query.get('page') ?? undefined,
