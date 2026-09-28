@@ -7,7 +7,7 @@ import * as service from '../services/programaService'
 
 export async function programaAcciones(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector')
+    requireRole(req, 'admin', 'editor', 'lector', 'practicante')
     return { status: 200, jsonBody: { data: await service.getAcciones() } }
   } catch (err) { return handleError(err, ctx) }
 }

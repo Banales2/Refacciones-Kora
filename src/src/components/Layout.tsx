@@ -568,7 +568,9 @@ export default function Layout() {
         {section === 'inventario' && puedeVerSeccion('inventario') && <Inventario />}
         {section === 'modelos'   && puedeVerSeccion('modelos') && (
           <Modelos
-            onNavigateVehiculo={navigateToVehiculo}
+            // Al practicante no se le enseña Vehículos: el renglón no se hace
+            // clicable en vez de llevar a una pantalla que no puede abrir.
+            onNavigateVehiculo={puedeVerSeccion('vehiculos') ? navigateToVehiculo : undefined}
             openId={modeloDetalleId}
             onOpenIdChange={setModeloDetalleId}
           />

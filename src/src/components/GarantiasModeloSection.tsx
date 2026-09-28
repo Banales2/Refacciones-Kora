@@ -17,6 +17,7 @@ import {
 } from '../hooks/useGarantias'
 import type { GarantiaModelo, GarantiaModeloPayload } from '../hooks/useGarantias'
 import GarantiaForm from './GarantiaForm'
+import { usePermisos } from '../hooks/usePermisos'
 
 const TRIGGER_LABEL: Record<string, string> = {
   km:    'Por kilometraje',
@@ -31,6 +32,9 @@ export default function GarantiasModeloSection({
   /** Un modelo que solo genera cajas de trailer o montacargas no lleva odómetro. */
   soportaKm: boolean
 }) {
+  // Al practicante se le enseñan porque explican qué programa sigue cada
+  // unidad, pero las garantías las da de alta y las corrige un editor.
+  const { puedeEditar } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<GarantiaModelo | null>(null)
   const [deleting, setDeleting]   = useState<GarantiaModelo | null>(null)
@@ -62,11 +66,13 @@ export default function GarantiasModeloSection({
           <Group gap="xs">
             <IconShieldCheck size={14} />
             <Text size="sm" fw={500}>Garantías del modelo ({items.length})</Text>
-            <Tooltip label="Agregar garantía">
-              <ActionIcon variant="light" color="blue" size="xs" onClick={openCreate}>
-                <IconPlus size={12} />
-              </ActionIcon>
-            </Tooltip>
+            {puedeEditar && (
+              <Tooltip label="Agregar garantía">
+                <ActionIcon variant="light" color="blue" size="xs" onClick={openCreate}>
+                  <IconPlus size={12} />
+                </ActionIcon>
+              </Tooltip>
+            )}
           </Group>
         }
         labelPosition="left"
@@ -81,9 +87,11 @@ export default function GarantiasModeloSection({
               Este modelo no tiene garantías definidas. Al agregarlas se copian a todas sus
               unidades, contando desde la fecha de compra de cada una.
             </Text>
-            <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={openCreate}>
-              Agregar garantía
-            </Button>
+            {puedeEditar && (
+              <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={openCreate}>
+                Agregar garantía
+              </Button>
+            )}
           </Stack>
         </Center>
       ) : (
@@ -95,7 +103,7 @@ export default function GarantiasModeloSection({
                 <Table.Th>Se pierde</Table.Th>
                 <Table.Th>Cobertura</Table.Th>
                 <Table.Th style={{ textAlign: 'center' }}>Activa</Table.Th>
-                <Table.Th style={{ width: 80 }} />
+                {puedeEditar && <Table.Th style={{ width: 80 }} />}
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -127,20 +135,22 @@ export default function GarantiasModeloSection({
                       {g.activo ? 'Sí' : 'No'}
                     </Badge>
                   </Table.Td>
-                  <Table.Td>
-                    <Group gap={4} justify="flex-end" wrap="nowrap">
-                      <Tooltip label="Editar">
-                        <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(g)}>
-                          <IconPencil size={14} />
-                        </ActionIcon>
-                      </Tooltip>
-                      <Tooltip label="Eliminar">
-                        <ActionIcon variant="subtle" color="red" size="sm" onClick={() => setDeleting(g)}>
-                          <IconTrash size={14} />
-                        </ActionIcon>
-                      </Tooltip>
-                    </Group>
-                  </Table.Td>
+                  {puedeEditar && (
+                    <Table.Td>
+                      <Group gap={4} justify="flex-end" wrap="nowrap">
+                        <Tooltip label="Editar">
+                          <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(g)}>
+                            <IconPencil size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label="Eliminar">
+                          <ActionIcon variant="subtle" color="red" size="sm" onClick={() => setDeleting(g)}>
+                            <IconTrash size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </Group>
+                    </Table.Td>
+                  )}
                 </Table.Tr>
               ))}
             </Table.Tbody>

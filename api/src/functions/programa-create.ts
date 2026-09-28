@@ -10,7 +10,10 @@ import { ProgramaCreateSchema } from '../schemas/programaSchema'
 
 export async function programaCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor')
+    // El practicante captura programas: da de alta, define las columnas, agrega
+    // renglones y marca la cuadrícula, que es transcribir el manual. Renombrar,
+    // editar o quitar un renglón y borrar el programa se quedan con el editor.
+    const user = requireRole(req, 'admin', 'editor', 'practicante')
     const modeloId = parseInt(req.params.modeloId, 10)
     if (isNaN(modeloId)) return { status: 400, jsonBody: { error: 'ID de modelo inválido' } }
     const body = ProgramaCreateSchema.parse(await req.json())

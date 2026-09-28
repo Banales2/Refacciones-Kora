@@ -87,6 +87,13 @@ distintos; mezclarlos obligaría a inventar un `lector_sucursal` y un
 `practicante` es el más acotado: da de alta refacciones, lotes,
 pólizas, licencias de chofer, proveedores y vales de gasolina, y puede mirar las
 facturas sin tocarlas. No edita nada de lo que crea (migración 047).
+También captura programas de mantenimiento, y por eso ve Modelos (sin dar de
+alta, editar ni descontinuar modelos, ni tocar sus garantías o tipos de pieza):
+crea el programa o lo copia a otro modelo, define sus columnas, agrega renglones
+y marca la cuadrícula. Renombrar el programa, editar o quitar un renglón y
+borrar el programa siguen siendo del editor. Las columnas y la cuadrícula sí
+las puede rehacer, porque son la captura misma y se guardan por el mismo
+endpoint con el que se corrigen.
 
 Tres sitios definen cada rol y los tres tienen que estar de acuerdo: el `CHECK`
 de la tabla, los `allowedRoles` de `staticwebapp.config.json` y la lista de cada

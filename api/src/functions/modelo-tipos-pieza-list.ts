@@ -8,7 +8,7 @@ export async function modeloTiposPiezaList(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    requireRole(request, 'admin', 'editor', 'lector')
+    requireRole(request, 'admin', 'editor', 'lector', 'practicante')
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const data = await service.getByModelo(id)

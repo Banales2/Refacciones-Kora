@@ -5,7 +5,9 @@ import * as service from '../services/modelosService'
 
 export async function modelosList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    requireRole(req, 'admin', 'editor', 'lector')
+    // El practicante lo necesita para capturar programas, que cuelgan del
+    // modelo. Sólo mira: dar de alta o editar modelos sigue siendo del editor.
+    requireRole(req, 'admin', 'editor', 'lector', 'practicante')
     // ?descontinuados=1 los incluye. Solo lo pide la pantalla de modelos, para
     // poder verlos y revivirlos; los selectores del alta usan la lista normal,
     // que ya los deja fuera.

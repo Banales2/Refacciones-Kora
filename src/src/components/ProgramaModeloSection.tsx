@@ -32,6 +32,7 @@ import {
   TIPO_PROGRAMA_LABEL, TIPO_PROGRAMA_DETALLE,
 } from '../hooks/usePrograma'
 import { useModelos } from '../hooks/useModelos'
+import { usePermisos } from '../hooks/usePermisos'
 import SelectCatalogo from './SelectCatalogo'
 import type {
   Programa, OperacionPrograma, OperacionPayload, FasePayload, AccionPrograma,
@@ -237,6 +238,10 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
   programa: Programa | null
   acciones: AccionPrograma[]
 }) {
+  // El practicante captura el programa —alta, columnas, renglones nuevos y la
+  // cuadrícula— pero no lo corrige: renombrarlo, editar o quitar un renglón y
+  // borrarlo se quedan con el editor, igual que en la API.
+  const { puedeEditar } = usePermisos()
   const createMut    = useCreatePrograma(modeloId)
   const updateMut    = useUpdatePrograma(modeloId)
   const deleteMut    = useDeletePrograma(modeloId)
@@ -281,7 +286,9 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
     if (consume && op.tipo_pieza_id == null) {
       setCeldaError(
         `«${op.nombre}» manda reemplazar, así que primero hay que decir qué tipo de pieza ` +
-        `se cambia. Edita el renglón y ponle su tipo de pieza.`
+        (puedeEditar
+          ? `se cambia. Edita el renglón y ponle su tipo de pieza.`
+          : `se cambia. Pídele a un editor que le ponga su tipo de pieza al renglón.`)
       )
       return
     }
@@ -385,16 +392,20 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
                 <IconColumns size={16} />
               </ActionIcon>
             </Tooltip>
-            <Tooltip label="Editar nombre y notas">
-              <ActionIcon variant="light" color="blue" onClick={() => { setFormError(null); setProgramaFormOpen(true) }}>
-                <IconPencil size={16} />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Eliminar programa">
-              <ActionIcon variant="light" color="red" onClick={() => setBorrandoPrograma(true)}>
-                <IconTrash size={16} />
-              </ActionIcon>
-            </Tooltip>
+            {puedeEditar && (
+              <>
+                <Tooltip label="Editar nombre y notas">
+                  <ActionIcon variant="light" color="blue" onClick={() => { setFormError(null); setProgramaFormOpen(true) }}>
+                    <IconPencil size={16} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Eliminar programa">
+                  <ActionIcon variant="light" color="red" onClick={() => setBorrandoPrograma(true)}>
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              </>
+            )}
           </Group>
         </Group>
       </Paper>
@@ -472,7 +483,7 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
                       </Table.Th>
                     ))}
                     <Table.Th style={{ textAlign: 'center', width: 90 }}>Límite</Table.Th>
-                    <Table.Th style={{ width: 70 }} />
+                    {puedeEditar && <Table.Th style={{ width: 70 }} />}
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -515,26 +526,28 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
                             ? <Text size="xs">{op.limite_meses} {op.limite_meses === 1 ? 'mes' : 'meses'}</Text>
                             : <Text size="xs" c="dimmed">—</Text>}
                         </Table.Td>
-                        <Table.Td>
-                          <Group gap={2} wrap="nowrap">
-                            <Tooltip label="Editar">
-                              <ActionIcon
-                                variant="subtle" color="blue" size="sm"
-                                onClick={() => { setEditandoOp(op); setFormError(null); setOpFormOpen(true) }}
-                              >
-                                <IconPencil size={14} />
-                              </ActionIcon>
-                            </Tooltip>
-                            <Tooltip label="Eliminar">
-                              <ActionIcon
-                                variant="subtle" color="red" size="sm"
-                                onClick={() => setBorrandoOp(op)}
-                              >
-                                <IconTrash size={14} />
-                              </ActionIcon>
-                            </Tooltip>
-                          </Group>
-                        </Table.Td>
+                        {puedeEditar && (
+                          <Table.Td>
+                            <Group gap={2} wrap="nowrap">
+                              <Tooltip label="Editar">
+                                <ActionIcon
+                                  variant="subtle" color="blue" size="sm"
+                                  onClick={() => { setEditandoOp(op); setFormError(null); setOpFormOpen(true) }}
+                                >
+                                  <IconPencil size={14} />
+                                </ActionIcon>
+                              </Tooltip>
+                              <Tooltip label="Eliminar">
+                                <ActionIcon
+                                  variant="subtle" color="red" size="sm"
+                                  onClick={() => setBorrandoOp(op)}
+                                >
+                                  <IconTrash size={14} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </Group>
+                          </Table.Td>
+                        )}
                       </Table.Tr>
                     )
                   })}

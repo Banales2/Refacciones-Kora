@@ -31,6 +31,7 @@ import type {
   TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload,
 } from '../hooks/useVehiculos'
 import { VehiculoForm } from '../components/VehiculoForm'
+import { usePermisos } from '../hooks/usePermisos'
 import {
   TEXTO_SIMPLE, ANIO_MODELO, limpiarTextoSimple, limpiarAnioModelo,
 } from '../lib/validaciones'
@@ -205,6 +206,7 @@ function ModeloForm({
 const CREAR_TIPO = '__crear__'
 
 function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
+  const { puedeEditar } = usePermisos()
   const [seleccion, setSeleccion] = useState<string[]>([])
   const [busqueda, setBusqueda]   = useState('')
   const [etiqueta, setEtiqueta]   = useState('')
@@ -293,7 +295,7 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
         (delantero / trasero): cada renglón lleva su propia refacción e historial en cada unidad.
       </Text>
 
-      <Group align="flex-end" gap="sm" wrap="nowrap">
+      {puedeEditar && <Group align="flex-end" gap="sm" wrap="nowrap">
         <MultiSelect
           flex={1}
           searchable clearable
@@ -322,7 +324,7 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
         >
           Agregar
         </Button>
-      </Group>
+      </Group>}
       {choque && <Alert color="yellow" variant="light">{choque}</Alert>}
       {crearMut.error && <Alert color="red">{(crearMut.error as Error).message}</Alert>}
       {addMut.error   && <Alert color="red">{(addMut.error   as Error).message}</Alert>}
@@ -340,7 +342,7 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
               <Table.Tr>
                 <Table.Th>Tipo de pieza</Table.Th>
                 <Table.Th style={{ width: 180 }}>Etiqueta</Table.Th>
-                <Table.Th style={{ width: 48 }} />
+                {puedeEditar && <Table.Th style={{ width: 48 }} />}
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -352,6 +354,7 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
                   <Table.Td>
                     <EtiquetaEditable
                       etiqueta={t.etiqueta}
+                      motivoBloqueo={puedeEditar ? undefined : 'Solo un editor puede cambiarla'}
                       isPending={
                         renameMut.isPending &&
                         renameMut.variables?.tipoId === t.id &&
@@ -362,7 +365,7 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
                       })}
                     />
                   </Table.Td>
-                  <Table.Td>
+                  {puedeEditar && <Table.Td>
                     <Tooltip label="Quitar del modelo (borra la refacción que sus vehículos tenían elegida para este renglón)">
                       <ActionIcon
                         variant="subtle" color="red" size="sm"
@@ -379,7 +382,7 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
                         <IconTrash size={14} />
                       </ActionIcon>
                     </Tooltip>
-                  </Table.Td>
+                  </Table.Td>}
                 </Table.Tr>
               ))}
             </Table.Tbody>
@@ -419,6 +422,7 @@ function ModeloDetalle({
   onDescontinuar: (m: Modelo) => void
   onNavigateVehiculo?: (v: VehiculoRow) => void
 }) {
+  const { puedeEditar } = usePermisos()
   const { data, isLoading, isError } = useVehiculos(1, '', undefined, modelo.id)
   const vehiculos = data?.data ?? []
 
@@ -495,7 +499,7 @@ function ModeloDetalle({
               </Grid.Col>
             </Grid>
           </Stack>
-          <Group gap="xs" wrap="nowrap">
+          {puedeEditar && <Group gap="xs" wrap="nowrap">
             <Tooltip label="Editar modelo">
               <ActionIcon variant="light" color="blue" size="lg" onClick={() => onEdit(modelo)}>
                 <IconPencil size={16} />
@@ -510,7 +514,7 @@ function ModeloDetalle({
                 {modelo.descontinuado_en ? <IconArchiveOff size={16} /> : <IconArchive size={16} />}
               </ActionIcon>
             </Tooltip>
-          </Group>
+          </Group>}
         </Group>
       </Paper>
 
@@ -532,11 +536,13 @@ function ModeloDetalle({
         label={
           <Group gap="xs">
             <Text size="sm" fw={500}>Vehículos asignados ({vehiculos.length})</Text>
-            <Tooltip label="Agregar vehículo de este modelo">
-              <ActionIcon variant="light" color="blue" size="xs" onClick={openCreateVehiculo}>
-                <IconPlus size={12} />
-              </ActionIcon>
-            </Tooltip>
+            {puedeEditar && (
+              <Tooltip label="Agregar vehículo de este modelo">
+                <ActionIcon variant="light" color="blue" size="xs" onClick={openCreateVehiculo}>
+                  <IconPlus size={12} />
+                </ActionIcon>
+              </Tooltip>
+            )}
           </Group>
         }
         labelPosition="left"
@@ -709,6 +715,9 @@ export default function Modelos({
   openId?:         number | null
   onOpenIdChange?: (id: number | null) => void
 }) {
+  // El practicante entra a Modelos a capturar programas, no a mantener el
+  // catálogo: alta, edición y descontinuar son del editor.
+  const { puedeEditar } = usePermisos()
   const [search, setSearch]       = useState('')
   const [debounced]               = useDebouncedValue(search, 300)
   const [formOpen, setFormOpen]   = useState(false)
@@ -819,9 +828,11 @@ export default function Modelos({
               {marcas.length > 0 && ` · ${marcas.length} marca${marcas.length !== 1 ? 's' : ''}`}
             </Text>
           )}
-          <Button leftSection={<IconPlus size={16} />} onClick={openCreate}>
-            Nuevo modelo
-          </Button>
+          {puedeEditar && (
+            <Button leftSection={<IconPlus size={16} />} onClick={openCreate}>
+              Nuevo modelo
+            </Button>
+          )}
         </Group>
       </Group>
 
@@ -911,20 +922,22 @@ export default function Modelos({
                   </Table.Td>
                   <Table.Td>
                     <Group gap={4} justify="flex-end" wrap="nowrap">
-                      <Tooltip label="Editar">
-                        <ActionIcon variant="subtle" color="blue" size="sm" onClick={(e) => openEdit(m, e)}>
-                          <IconPencil size={14} />
-                        </ActionIcon>
-                      </Tooltip>
-                      <Tooltip label={m.descontinuado_en ? 'Volver a usar' : 'Descontinuar'}>
-                        <ActionIcon
-                          variant="subtle" color={m.descontinuado_en ? 'teal' : 'orange'} size="sm"
-                          aria-label={m.descontinuado_en ? 'Volver a usar el modelo' : 'Descontinuar el modelo'}
-                          onClick={(e) => openDescontinuar(m, e)}
-                        >
-                          {m.descontinuado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
-                        </ActionIcon>
-                      </Tooltip>
+                      {puedeEditar && <>
+                        <Tooltip label="Editar">
+                          <ActionIcon variant="subtle" color="blue" size="sm" onClick={(e) => openEdit(m, e)}>
+                            <IconPencil size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label={m.descontinuado_en ? 'Volver a usar' : 'Descontinuar'}>
+                          <ActionIcon
+                            variant="subtle" color={m.descontinuado_en ? 'teal' : 'orange'} size="sm"
+                            aria-label={m.descontinuado_en ? 'Volver a usar el modelo' : 'Descontinuar el modelo'}
+                            onClick={(e) => openDescontinuar(m, e)}
+                          >
+                            {m.descontinuado_en ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                          </ActionIcon>
+                        </Tooltip>
+                      </>}
                       <IconChevronRight size={14} color="var(--mantine-color-dimmed)" />
                     </Group>
                   </Table.Td>

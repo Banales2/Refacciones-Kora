@@ -19,9 +19,11 @@ export type Seccion =
 
 // Lo único que el practicante puede abrir sin chocar contra un 403. Es la lista
 // corta a propósito: el dashboard queda fuera porque sus doce endpoints piden
-// `lector`, así que la pantalla de inicio se llenaría de errores.
+// `lector`, así que la pantalla de inicio se llenaría de errores. Modelos entra
+// porque es donde se capturan los programas de mantenimiento; el modelo en sí
+// sólo lo mira.
 const SECCIONES_PRACTICANTE: readonly Seccion[] = [
-  'piezas', 'sitios', 'vales', 'facturas', 'facturas-gasolina',
+  'piezas', 'modelos', 'sitios', 'vales', 'facturas', 'facturas-gasolina',
 ]
 
 // El responsable de sucursal: la flota de su sucursal y la de translado, el
