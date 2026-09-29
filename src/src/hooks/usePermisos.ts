@@ -43,12 +43,6 @@ const SECCIONES_RESPONSABLE: readonly Seccion[] = [
 
 const CATALOGOS_RESPONSABLE: readonly string[] = ['conductores', 'permisos']
 
-// Pestañas de Catálogos cuyo listado responde al practicante. Faltan Translados,
-// Técnicos y Permisos: sus `-list` no admiten al practicante.
-const CATALOGOS_PRACTICANTE: readonly string[] = [
-  'proveedores', 'sucursales', 'gasolineras', 'conductores', 'seguros',
-]
-
 export interface Permisos {
   /** Rol efectivo, sin los que Static Web Apps le pone a todo el mundo. */
   rol: string | undefined
@@ -138,7 +132,10 @@ export function usePermisos(): Permisos {
       return true
     },
     puedeVerCatalogo: (tab) => {
-      if (esPracticante) return CATALOGOS_PRACTICANTE.includes(tab)
+      // El practicante los ve todos. Dar de alta y corregir es otra cosa: cada
+      // panel lo decide con `puedeEditar`, y la ficha del técnico —lo que ha
+      // cobrado— se le cierra como la del proveedor.
+      if (esPracticante) return true
       if (esResponsable) return CATALOGOS_RESPONSABLE.includes(tab)
       return true
     },

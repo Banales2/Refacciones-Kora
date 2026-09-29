@@ -291,7 +291,10 @@ function RutasPanel() {
                 onChange={(e) => setVerArchivados(e.currentTarget.checked)}
               />
             )}
-            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo translado</Button>
+            {/* `rutas-create` es de admin y editor. */}
+            {puedeEditar && (
+              <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo translado</Button>
+            )}
           </Group>
         </Group>
 
@@ -1062,7 +1065,9 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
 // también lo abren para dar de alta un técnico sin salir de su formulario.
 
 function TecnicosPanel() {
-  const { puedeEditar } = usePermisos()
+  // La ficha del taller es lo que se le ha pagado: igual que la del proveedor,
+  // no es del practicante (sus endpoints se la niegan).
+  const { puedeEditar, puedeVerFichaProveedor: puedeVerFichaTaller } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Tecnico | null>(null)
   const [archivando, setArchivando] = useState<Tecnico | null>(null)
@@ -1112,7 +1117,10 @@ function TecnicosPanel() {
                 onChange={(e) => setVerArchivados(e.currentTarget.checked)}
               />
             )}
-            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo técnico</Button>
+            {/* `tecnicos-create` es de admin y editor. */}
+            {puedeEditar && (
+              <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo técnico</Button>
+            )}
           </Group>
         </Group>
 
@@ -1143,15 +1151,17 @@ function TecnicosPanel() {
                     <Table.Td c="dimmed">{t.contacto ?? '—'}</Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <Tooltip label="Ver sus facturas y mantenimientos">
-                          <ActionIcon
-                            variant="subtle" color="grape" size="sm"
-                            aria-label="Ver sus facturas y mantenimientos"
-                            onClick={() => setViendoTaller(t)}
-                          >
-                            <IconReceipt size={14} />
-                          </ActionIcon>
-                        </Tooltip>
+                        {puedeVerFichaTaller && (
+                          <Tooltip label="Ver sus facturas y mantenimientos">
+                            <ActionIcon
+                              variant="subtle" color="grape" size="sm"
+                              aria-label="Ver sus facturas y mantenimientos"
+                              onClick={() => setViendoTaller(t)}
+                            >
+                              <IconReceipt size={14} />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
                         {puedeEditar && (
                           <>
                           <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(t)}><IconPencil size={14} /></ActionIcon></Tooltip>
@@ -1794,7 +1804,7 @@ function PermisosPanel({
   destacadoId?:    number | null
 }) {
   // El responsable de sucursal consulta los permisos: ni altas ni cambios.
-  const { puedeEditar, puedeDarDeAlta } = usePermisos()
+  const { puedeEditar } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<PermisoCirculacion | null>(null)
   const [terminando, setTerminando] = useState<PermisoCirculacion | null>(null)
@@ -1852,7 +1862,10 @@ function PermisosPanel({
                 onChange={(e) => setVerTerminados(e.currentTarget.checked)}
               />
             )}
-            {puedeDarDeAlta && (
+            {/* `puedeEditar` y no `puedeDarDeAlta`: `permisos-circulacion-create`
+                es de admin y editor, y el practicante sí da de alta en otros
+                catálogos. */}
+            {puedeEditar && (
               <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreate}>Nuevo permiso</Button>
             )}
           </Group>

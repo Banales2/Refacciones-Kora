@@ -100,6 +100,10 @@ faltan) y los reportes de cualquier día (`chequeos-patio`, `chequeos-list` y
 decide qué hacer con el reporte de un chofer. En la interfaz lo dice
 `puedeCapturarChequeo`, que también le quita el formulario al `lector`: los dos
 chocaban con el 403 de `chequeos-create`.
+Ve todas las pestañas de Catálogos. En Translados, Técnicos y Permisos solo
+consulta (sus `-list` lo admiten; sus altas siguen siendo de admin y editor), y
+la ficha del técnico —lo que se le ha facturado y pagado— se le cierra igual
+que la del proveedor.
 
 Tres sitios definen cada rol y los tres tienen que estar de acuerdo: el `CHECK`
 de la tabla, los `allowedRoles` de `staticwebapp.config.json` y la lista de cada
