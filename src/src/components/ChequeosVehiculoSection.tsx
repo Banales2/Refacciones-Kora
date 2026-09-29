@@ -15,6 +15,7 @@ import {
 } from '@tabler/icons-react'
 import ChequeoDiarioForm from './ChequeoDiarioForm'
 import RevisarReporteChequeo from './RevisarReporteChequeo'
+import NivelesChequeo from './NivelesChequeo'
 import { labelDeItem, arrastra, diaMes } from '../lib/chequeoItems'
 import { useChequeosVehiculo, type Chequeo } from '../hooks/useChequeos'
 
@@ -119,6 +120,10 @@ function ResumenChequeo({ chequeo, onRevisar }: { chequeo: Chequeo; onRevisar: (
             })}
           </Stack>
         )}
+
+        {/* Los niveles van aunque no sean falla: día tras día, en la ficha de
+            la unidad es donde se ve si algo viene bajando. */}
+        <NivelesChequeo items={chequeo.items} />
 
         {noSePudo.length > 0 && (
           <Text size="xs" c="dimmed">

@@ -195,7 +195,7 @@ export default function ChequeoPatio() {
               ? <Badge size="xs" color="orange" circle>{sinLeer}</Badge>
               : null}
           >
-            Reportes de hoy
+            Reportes
           </Tabs.Tab>
         </Tabs.List>
 

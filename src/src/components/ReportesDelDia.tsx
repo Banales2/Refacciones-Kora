@@ -1,4 +1,12 @@
-// Lo que salió de los chequeos de hoy, de toda la flota y de un jalón.
+// Lo que salió de los chequeos de un día —hoy, por omisión—, de toda la flota
+// y de un jalón.
+//
+// LOS DÍAS PASADOS TAMBIÉN SE CONSULTAN. Hoy es la bandeja; un día anterior es
+// el antecedente: el aceite en 1/2 de ayer no amerita incidencia, pero si hoy
+// sale en 1/4 es lo primero que se quiere ver. Por eso cada renglón enseña los
+// niveles leídos aunque no sean falla, y por eso al elegir otro día el filtro de
+// "solo lo que necesita atención" arranca apagado: ahí no se viene a vaciar
+// nada, se viene a leer el día completo.
 //
 // POR QUÉ NO BASTABA CON LA FICHA DE CADA UNIDAD. Ahí los reportes se leen de
 // uno en uno: entrar al vehículo, abrir el historial, encontrar el de hoy. Para
@@ -24,12 +32,16 @@
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Card, Badge, Button, Alert, Loader, Center, Modal,
-  Switch, ThemeIcon, Divider,
+  Switch, ThemeIcon, Divider, ActionIcon, Tooltip,
 } from '@mantine/core'
 import {
-  IconAlertTriangle, IconCheck, IconEye, IconMessageReport, IconTruck,
+  IconAlertTriangle, IconCheck, IconChevronLeft, IconChevronRight, IconEye,
+  IconMessageReport, IconTruck,
 } from '@tabler/icons-react'
 import RevisarReporteChequeo from './RevisarReporteChequeo'
+import NivelesChequeo from './NivelesChequeo'
+import { FechaInput } from './FechaInput'
+import { hoyIso, formatearFecha } from '../lib/fechas'
 import { labelDeItem, arrastra, diaMes } from '../lib/chequeoItems'
 import { useChequeosRango, type ChequeoConVehiculo } from '../hooks/useChequeos'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
@@ -172,6 +184,8 @@ function Renglon({
           </Stack>
         )}
 
+        <NivelesChequeo items={chequeo.items} />
+
         {chequeo.nota && (
           <Text size="xs" c="dimmed" fs="italic">“{chequeo.nota}”</Text>
         )}
@@ -180,12 +194,60 @@ function Renglon({
   )
 }
 
+/** Un día antes o después de una fecha ISO, sin pasar por la zona horaria. */
+function moverDia(iso: string, dias: number): string {
+  const [a, m, d] = iso.split('-').map(Number)
+  return new Date(Date.UTC(a, m - 1, d + dias)).toISOString().slice(0, 10)
+}
+
 export default function ReportesDelDia() {
-  // Sin parámetros: la API responde el día de hoy en hora de México, que no es
-  // lo mismo que el día del teléfono de quien mira.
-  const { data, isLoading, isError, refetch } = useChequeosRango({})
+  const hoy = hoyIso()
+  const [fecha, setFecha] = useState(hoy)
+  const esHoy = fecha === hoy
+
+  return (
+    <Stack gap="md">
+      <Group gap="xs" wrap="nowrap" align="flex-end">
+        <Tooltip label="Día anterior">
+          <ActionIcon variant="default" size="lg" aria-label="Día anterior"
+            onClick={() => setFecha(moverDia(fecha, -1))}>
+            <IconChevronLeft size={16} />
+          </ActionIcon>
+        </Tooltip>
+        <FechaInput
+          value={fecha}
+          maxDate={hoy}
+          onChange={(d) => setFecha(d || hoy)}
+          style={{ flex: 1, maxWidth: 200 }}
+        />
+        <Tooltip label="Día siguiente">
+          <ActionIcon variant="default" size="lg" aria-label="Día siguiente"
+            disabled={esHoy} onClick={() => setFecha(moverDia(fecha, 1))}>
+            <IconChevronRight size={16} />
+          </ActionIcon>
+        </Tooltip>
+        {!esHoy && (
+          <Button variant="subtle" size="compact-sm" onClick={() => setFecha(hoy)}>
+            Hoy
+          </Button>
+        )}
+      </Group>
+
+      {/* `key`: cada día arranca con su filtro por omisión (ver arriba). */}
+      <ReportesDe key={fecha} fecha={fecha} esHoy={esHoy} />
+    </Stack>
+  )
+}
+
+function ReportesDe({ fecha, esHoy }: { fecha: string; esHoy: boolean }) {
+  // Hoy va sin parámetros: la API responde el día de hoy en hora de México, que
+  // no es lo mismo que el día del teléfono de quien mira.
+  const { data, isLoading, isError, refetch } = useChequeosRango(
+    esHoy ? {} : { desde: fecha, hasta: fecha }
+  )
   const [revisando, setRevisando] = useState<ChequeoConVehiculo | null>(null)
-  const [soloPendientes, setSoloPendientes] = useState(true)
+  const [soloPendientes, setSoloPendientes] = useState(esHoy)
+  const cuando = esHoy ? 'hoy' : `el ${formatearFecha(fecha)}`
 
   const chequeos = useMemo(() => data?.data ?? [], [data])
 
@@ -210,7 +272,7 @@ export default function ReportesDelDia() {
   if (isLoading) return <Center py="xl"><Loader /></Center>
   if (isError) {
     return (
-      <Alert color="red" title="No se pudieron cargar los reportes de hoy">
+      <Alert color="red" title={`No se pudieron cargar los reportes de ${esHoy ? 'hoy' : 'ese día'}`}>
         <Button size="xs" variant="light" onClick={() => refetch()}>Reintentar</Button>
       </Alert>
     )
@@ -224,7 +286,7 @@ export default function ReportesDelDia() {
             <Group gap="xs">
               <IconTruck size={18} />
               <Text fw={600}>
-                {chequeos.length} {chequeos.length === 1 ? 'chequeo' : 'chequeos'} hoy
+                {chequeos.length} {chequeos.length === 1 ? 'chequeo' : 'chequeos'} {cuando}
               </Text>
             </Group>
             <Group gap={6}>
@@ -255,11 +317,11 @@ export default function ReportesDelDia() {
 
       {chequeos.length === 0 ? (
         <Alert color="blue" variant="light">
-          Todavía no se ha capturado ningún chequeo hoy.
+          {esHoy ? 'Todavía no se ha capturado ningún chequeo hoy.' : `No se capturó ningún chequeo ${cuando}.`}
         </Alert>
       ) : visibles.length === 0 ? (
         <Alert color="teal" variant="light" icon={<IconCheck size={16} />}>
-          Ningún chequeo de hoy tiene fallas ni reportes sin leer. Apaga el filtro
+          Ningún chequeo {esHoy ? 'de hoy' : `del ${formatearFecha(fecha)}`} tiene fallas ni reportes sin leer. Apaga el filtro
           para ver los {chequeos.length} completos.
         </Alert>
       ) : (

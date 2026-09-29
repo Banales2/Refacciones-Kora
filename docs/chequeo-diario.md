@@ -146,7 +146,7 @@ atendiéndolo.
 ## Las dos pestañas de la pantalla
 
 "Chequeo de flotilla" tiene dos mitades del mismo día: **Recorrido**, que es
-capturar, y **Reportes de hoy**, que es leer lo que salió. Son pestañas y no dos
+capturar, y **Reportes**, que es leer lo que salió. Son pestañas y no dos
 secciones del menú porque las hace la misma persona con el mismo teléfono y una
 detrás de la otra: al terminar el patio, lo siguiente es ver qué reportó la
 gente. Mandarla a otro lado del menú para eso la pierde a medio camino.
@@ -160,6 +160,16 @@ que atender quedaría repartido entre lo que no.
 El panel de revisión (`RevisarReporteChequeo`) es el mismo que usa la ficha de
 la unidad. Ahí se lee de una en una; aquí se vacía la bandeja del día sin entrar
 a treinta fichas, que es la razón de que la pestaña exista.
+
+Reportes abre en hoy, pero se puede ir a cualquier día anterior. Hoy es la
+bandeja; un día pasado es el antecedente: el aceite en 1/2 de ayer no amerita
+incidencia, pero si hoy sale en 1/4 es lo primero que se quiere ver. Por eso
+cada chequeo —aquí y en la ficha de la unidad— enseña los niveles que se
+leyeron aunque ninguno sea falla, con el que queda un cuarto arriba del umbral
+en amarillo. Y por eso en un día pasado el filtro de "solo lo que necesita
+atención" arranca apagado: no se viene a vaciar nada, se viene a leer el día
+completo. Consultar no es corregir: un chequeo solo se corrige el mismo día
+(ver "Uno por unidad por día").
 
 ## La pregunta y el pendiente son dos textos
 
