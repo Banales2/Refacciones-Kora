@@ -18,7 +18,8 @@ import { useDebouncedValue } from '@mantine/hooks'
 import { IconPlus, IconSearch } from '@tabler/icons-react'
 import { useRecargasTodas, useCreateRecarga } from '../hooks/useRecargas'
 import type { RecargaConVehiculo, RecargaPayload } from '../hooks/useRecargas'
-import { useVehiculos, vehiculoLabel, vehiculoLabelConPlacas, sinFiltroLocal } from '../hooks/useVehiculos'
+import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
+import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCorto } from './OpcionVehiculo'
 import { RecargaForm, RecargasTabla, ResumenGrupo } from './RecargasSection'
 import { agrupar, calcularRendimientos } from '../lib/recargas'
 
@@ -59,7 +60,7 @@ function NuevaRecarga({
   // El elegido se conserva en las opciones aunque la búsqueda activa —que
   // Mantine llena con su etiqueta al seleccionarlo— ya no lo devuelva.
   const opciones = useMemo(() => {
-    const opts = (vehData?.data ?? []).map((v) => ({ value: String(v.id), label: vehiculoLabelConPlacas(v) }))
+    const opts = (vehData?.data ?? []).map(opcionVehiculo)
     if (elegido && !opts.some((o) => o.value === String(elegido.id))) {
       opts.unshift({ value: String(elegido.id), label: elegido.label })
     }
@@ -70,7 +71,7 @@ function NuevaRecarga({
     if (!id) { setElegido(null); return }
     if (elegido && String(elegido.id) === id) return
     const v = (vehData?.data ?? []).find((x) => String(x.id) === id)
-    if (v) setElegido({ id: v.id, label: vehiculoLabelConPlacas(v), km: v.kilometraje })
+    if (v) setElegido({ id: v.id, label: vehiculoLabelCorto(v), km: v.kilometraje })
   }
 
   return (
@@ -81,6 +82,7 @@ function NuevaRecarga({
         data={opciones}
         searchable
         filter={sinFiltroLocal}
+        renderOption={renderOpcionVehiculo}
         required
         value={elegido ? String(elegido.id) : null}
         onChange={seleccionar}

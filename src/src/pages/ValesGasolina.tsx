@@ -33,7 +33,8 @@ const ESTADOS_FILTRO: EstadoVale[] = ['perdido', 'creado', 'usado', 'archivado']
 import { usePermisos } from '../hooks/usePermisos'
 import { useConductores } from '../hooks/useConductores'
 import type { Conductor } from '../hooks/useConductores'
-import { useVehiculos, vehiculoLabelConPlacas, sinFiltroLocal } from '../hooks/useVehiculos'
+import { useVehiculos } from '../hooks/useVehiculos'
+import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCorto } from '../components/OpcionVehiculo'
 import { useAuth } from '../hooks/useAuth'
 import { FechaInput } from '../components/FechaInput'
 import { CODIGO, limpiarCodigo } from '../lib/validaciones'
@@ -182,10 +183,7 @@ function ValeForm({
   // El vehículo seleccionado se conserva en las opciones aunque la búsqueda
   // activa ya no lo devuelva; si no, el Select se quedaría en blanco.
   const vehiculos = useMemo(() => {
-    const opts = (vehData?.data ?? []).map((v) => ({
-      value: String(v.id),
-      label: vehiculoLabelConPlacas(v),
-    }))
+    const opts = (vehData?.data ?? []).map(opcionVehiculo)
     const seleccionado = form.values.vehiculo_id
     if (seleccionado && !opts.some((o) => o.value === seleccionado)) {
       opts.unshift({ value: seleccionado, label: etiquetaSeleccionado })
@@ -196,7 +194,7 @@ function ValeForm({
   function seleccionarVehiculo(id: string | null) {
     form.setFieldValue('vehiculo_id', id ?? '')
     const elegido = (vehData?.data ?? []).find((v) => String(v.id) === id)
-    setEtiquetaSeleccionado(elegido ? vehiculoLabelConPlacas(elegido) : '')
+    setEtiquetaSeleccionado(elegido ? vehiculoLabelCorto(elegido) : '')
   }
 
   // El chofer recién dado de alta queda seleccionado, que es para lo que se
@@ -259,6 +257,7 @@ function ValeForm({
             data={vehiculos}
             searchable
             filter={sinFiltroLocal}
+            renderOption={renderOpcionVehiculo}
             required
             searchValue={vehiculoSearch}
             onSearchChange={setVehiculoSearch}
@@ -740,7 +739,7 @@ export default function ValesGasolina({
               conductor_id:   String(editVale.conductor_id),
               vehiculo_id:    String(editVale.vehiculo_id),
               fecha:          editVale.fecha.split('T')[0],
-              vehiculo_label: valeVehiculoLabel(editVale),
+              vehiculo_label: vehiculoLabelCorto(editVale),
             }}
             isPending={updateMut.isPending}
             error={updateMut.error ? (updateMut.error as Error).message : null}
