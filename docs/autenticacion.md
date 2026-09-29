@@ -94,6 +94,12 @@ y marca la cuadrícula. Renombrar el programa, editar o quitar un renglón y
 borrar el programa siguen siendo del editor. Las columnas y la cuadrícula sí
 las puede rehacer, porque son la captura misma y se guardan por el mismo
 endpoint con el que se corrigen.
+El chequeo de flotilla lo consulta sin capturar: ve el recorrido (qué unidades
+faltan) y los reportes de cualquier día (`chequeos-patio`, `chequeos-list` y
+`dashboard-chequeos-hoy` lo admiten), pero no hace el chequeo, no lo corrige ni
+decide qué hacer con el reporte de un chofer. En la interfaz lo dice
+`puedeCapturarChequeo`, que también le quita el formulario al `lector`: los dos
+chocaban con el 403 de `chequeos-create`.
 
 Tres sitios definen cada rol y los tres tienen que estar de acuerdo: el `CHECK`
 de la tabla, los `allowedRoles` de `staticwebapp.config.json` y la lista de cada

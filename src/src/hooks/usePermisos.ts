@@ -21,9 +21,11 @@ export type Seccion =
 // corta a propósito: el dashboard queda fuera porque sus doce endpoints piden
 // `lector`, así que la pantalla de inicio se llenaría de errores. Modelos entra
 // porque es donde se capturan los programas de mantenimiento; el modelo en sí
-// sólo lo mira.
+// sólo lo mira. El chequeo de flotilla lo consulta sin capturar: ve qué
+// unidades faltan y lo que salió cada día, pero no recorre ni decide qué hacer
+// con el reporte de un chofer (ver `puedeCapturarChequeo`).
 const SECCIONES_PRACTICANTE: readonly Seccion[] = [
-  'piezas', 'modelos', 'sitios', 'vales', 'facturas', 'facturas-gasolina',
+  'piezas', 'modelos', 'sitios', 'vales', 'facturas', 'facturas-gasolina', 'chequeos',
 ]
 
 // El responsable de sucursal: la flota de su sucursal y la de translado, el
@@ -88,6 +90,13 @@ export interface Permisos {
    * API lo acota a su lado de cada traspaso.
    */
   puedeTraspasar: boolean
+  /**
+   * Si captura, corrige y revisa chequeos de flotilla. El practicante y el
+   * lector los consultan nada más: `chequeos-create`, `-update` y `-revisar`
+   * no los admiten, así que no se les abre un formulario que no van a poder
+   * guardar.
+   */
+  puedeCapturarChequeo: boolean
   /** Si la sección debe aparecer en el menú y poder abrirse. */
   puedeVerSeccion: (s: Seccion) => boolean
   /** Si la pestaña de Catálogos debe aparecer. */
@@ -121,6 +130,7 @@ export function usePermisos(): Permisos {
     puedeVerMantenimiento: !esResponsable,
     puedeVerCompras: !esResponsable,
     puedeTraspasar: !esPracticante,
+    puedeCapturarChequeo: !esPracticante && rol !== 'lector',
     puedeVerSeccion: (s) => {
       if (s === 'registros' || s === 'errores-captura') return esAdmin
       if (esPracticante) return SECCIONES_PRACTICANTE.includes(s)

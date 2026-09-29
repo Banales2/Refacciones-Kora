@@ -38,13 +38,15 @@ import { useSucursales } from '../hooks/useSucursales'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { useVehiculos } from '../hooks/useVehiculos'
 import { usePatio, useResumenChequeos, type UnidadPatio } from '../hooks/useChequeos'
+import { usePermisos } from '../hooks/usePermisos'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
 
 function Renglon({
   unidad, onAbrir,
 }: {
   unidad: UnidadPatio
-  onAbrir: () => void
+  /** Sin él, el renglón es de consulta: quien no captura no abre el formulario. */
+  onAbrir?: () => void
 }) {
   const hecho = unidad.chequeo_id != null
   return (
@@ -53,7 +55,7 @@ function Renglon({
       radius="md"
       padding="sm"
       onClick={onAbrir}
-      style={{ cursor: 'pointer', opacity: hecho ? 0.7 : 1 }}
+      style={{ cursor: onAbrir ? 'pointer' : undefined, opacity: hecho ? 0.7 : 1 }}
     >
       <Group justify="space-between" wrap="nowrap" gap="xs">
         <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
@@ -110,6 +112,11 @@ export default function ChequeoPatio() {
   // unidad. Son dos personas distintas y cambian a distinto ritmo: quien
   // recorre es una sola en todo el patio, el chofer es uno por unidad.
   const { data: usuario } = useUsuarioActual()
+
+  // El practicante y el lector consultan el recorrido sin hacerlo: ven qué
+  // falta y lo que salió, pero la unidad no se abre ni se agregan tráilers.
+  const { puedeCapturarChequeo } = usePermisos()
+  const abrir = (u: UnidadPatio) => puedeCapturarChequeo ? () => setAbierta(u) : undefined
 
   // Las dos mitades del día son dos pestañas y no dos pantallas: quien recorre
   // termina con el teléfono en la mano y lo siguiente que hace es ver qué salió.
@@ -170,10 +177,13 @@ export default function ChequeoPatio() {
             <IconClipboardCheck size={22} />
             <Text fw={700} size="lg">Chequeo de flotilla</Text>
           </Group>
-          {usuario && (
+          {usuario && puedeCapturarChequeo && (
             <Text size="xs" c="dimmed">
               Recorre {usuario.data.nombre}
             </Text>
+          )}
+          {!puedeCapturarChequeo && (
+            <Text size="xs" c="dimmed">Solo consulta</Text>
           )}
         </Stack>
       </Group>
@@ -257,7 +267,7 @@ export default function ChequeoPatio() {
 
               <Stack gap="xs">
                 {patio.base.map((u) => (
-                  <Renglon key={u.vehiculo_id} unidad={u} onAbrir={() => setAbierta(u)} />
+                  <Renglon key={u.vehiculo_id} unidad={u} onAbrir={abrir(u)} />
                 ))}
                 {patio.base.length === 0 && (
                   <Text size="sm" c="dimmed">Esta sucursal no tiene unidades con base aquí.</Text>
@@ -269,21 +279,28 @@ export default function ChequeoPatio() {
             labelPosition="center"
           />
           <Text size="xs" c="dimmed" ta="center" mt={-8}>
-            Los tráilers cambian de sucursal, así que no aparecen solos: búscalos y agrégalos.
+            {puedeCapturarChequeo
+              ? 'Los tráilers cambian de sucursal, así que no aparecen solos: búscalos y agrégalos.'
+              : 'Los tráilers que ya se revisaron aquí hoy.'}
           </Text>
 
           <Stack gap="xs">
             {patio.visitantes.map((u) => (
-              <Renglon key={u.vehiculo_id} unidad={u} onAbrir={() => setAbierta(u)} />
+              <Renglon key={u.vehiculo_id} unidad={u} onAbrir={abrir(u)} />
             ))}
+            {!puedeCapturarChequeo && patio.visitantes.length === 0 && (
+              <Text size="sm" c="dimmed" ta="center">Ninguno.</Text>
+            )}
 
+            {puedeCapturarChequeo && (
             <TextInput
               placeholder="Buscar por serie, placas o modelo"
               leftSection={<IconSearch size={16} />}
               value={busqueda}
               onChange={(e) => setBusqueda(e.currentTarget.value)}
             />
-            {busqueda.trim().length >= 2 && (
+            )}
+            {puedeCapturarChequeo && busqueda.trim().length >= 2 && (
               <ScrollArea.Autosize mah={240}>
                 <Stack gap={4}>
                   {(buscador.data?.data ?? [])

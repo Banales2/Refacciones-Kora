@@ -45,6 +45,7 @@ import { hoyIso, formatearFecha } from '../lib/fechas'
 import { labelDeItem, arrastra, diaMes } from '../lib/chequeoItems'
 import { useChequeosRango, type ChequeoConVehiculo } from '../hooks/useChequeos'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
+import { usePermisos } from '../hooks/usePermisos'
 
 /** "14:30:00" → "14:30". La hora es opcional: quien captura no siempre la sabe. */
 function horaCorta(hora: string | null): string | null {
@@ -55,7 +56,8 @@ function Renglon({
   chequeo, onRevisar,
 }: {
   chequeo:   ChequeoConVehiculo
-  onRevisar: () => void
+  /** Sin él, el reporte se lee pero no se decide: el practicante solo consulta. */
+  onRevisar?: () => void
 }) {
   const fallas     = chequeo.items.filter((i) => i.resultado === 'falla')
   const sinRevisar = chequeo.hay_novedad && !chequeo.revisada_en
@@ -143,7 +145,7 @@ function Renglon({
                 {chequeo.revision_nota ? `: ${chequeo.revision_nota}` : ''}
                 {chequeo.declaracion_pendiente_id != null ? ' · abrió incidencia' : ''}
               </Text>
-            ) : (
+            ) : onRevisar ? (
               <Button
                 size="compact-xs"
                 variant="light"
@@ -154,6 +156,8 @@ function Renglon({
               >
                 Revisar y decidir
               </Button>
+            ) : (
+              <Text size="xs" c="orange" mt={4}>Sin leer todavía</Text>
             )}
           </Alert>
         )}
@@ -247,6 +251,7 @@ function ReportesDe({ fecha, esHoy }: { fecha: string; esHoy: boolean }) {
   )
   const [revisando, setRevisando] = useState<ChequeoConVehiculo | null>(null)
   const [soloPendientes, setSoloPendientes] = useState(esHoy)
+  const { puedeCapturarChequeo } = usePermisos()
   const cuando = esHoy ? 'hoy' : `el ${formatearFecha(fecha)}`
 
   const chequeos = useMemo(() => data?.data ?? [], [data])
@@ -334,7 +339,10 @@ function ReportesDe({ fecha, esHoy }: { fecha: string; esHoy: boolean }) {
                 esPendiente(visibles[i - 1]) && !esPendiente(c) && (
                   <Divider my="sm" label="Sin novedad" labelPosition="center" />
                 )}
-              <Renglon chequeo={c} onRevisar={() => setRevisando(c)} />
+              <Renglon
+                chequeo={c}
+                onRevisar={puedeCapturarChequeo ? () => setRevisando(c) : undefined}
+              />
             </div>
           ))}
         </Stack>

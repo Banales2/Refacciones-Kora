@@ -9,7 +9,7 @@ import { ChequeoQuerySchema } from '../schemas/chequeoSchema'
 // hoy: una tabla que crece un renglón por unidad por día no se lista completa.
 export async function chequeosList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'practicante', 'responsable')
     const params = ChequeoQuerySchema.parse({
       desde:       req.query.get('desde')       ?? undefined,
       hasta:       req.query.get('hasta')       ?? undefined,
