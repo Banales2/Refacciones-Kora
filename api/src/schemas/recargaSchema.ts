@@ -33,6 +33,16 @@ export const RecargaCreateSchema = z.object({
   kilometraje: z.coerce.number().int().min(0, 'No puede ser negativo').max(KM_MAX, 'Máximo 9,999,999 km'),
 })
 
+// El chofer cargó de su bolsa porque no le alcanzaba para ir por el vale: no hay
+// vale, la gasolinera fue la que estaba a mano y nadie leyó el odómetro. Ver la
+// migración 056.
+export const RecargaEmergenciaSchema = z.object({
+  conductor_id: z.coerce.number().int().min(1, 'Conductor requerido'),
+  fecha,
+  litros,
+  costo: z.coerce.number().min(0, 'No puede ser negativo'),
+})
+
 export const RecargaUpdateSchema = z.object({
   gasolinera_id: z.coerce.number().int().min(1).optional(),
   conductor_id:  z.coerce.number().int().min(1).optional(),
@@ -45,3 +55,4 @@ export const RecargaUpdateSchema = z.object({
 
 export type RecargaCreate = z.infer<typeof RecargaCreateSchema>
 export type RecargaUpdate = z.infer<typeof RecargaUpdateSchema>
+export type RecargaEmergencia = z.infer<typeof RecargaEmergenciaSchema>

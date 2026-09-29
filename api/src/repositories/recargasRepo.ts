@@ -1,20 +1,22 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { RecargaCreate, RecargaUpdate } from '../schemas/recargaSchema'
+import { RecargaCreate, RecargaEmergencia, RecargaUpdate } from '../schemas/recargaSchema'
 import { Alcance, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 
 export interface RecargaConGasolinera {
   id:            number
   vehiculo_id:   number
-  gasolinera_id: number
+  // Null solo en las recargas de emergencia (migración 056).
+  gasolinera_id: number | null
   conductor_id:  number
   vale_id:       number | null
+  emergencia:    boolean
   fecha:         string
   litros:        number
   costo:         number
   kilometraje:   number | null
-  gasolinera:    string
-  ubicacion:     string
+  gasolinera:    string | null
+  ubicacion:     string | null
   conductor:     string
   vale_folio:    string | null
   vale_fecha:    string | null
@@ -22,15 +24,16 @@ export interface RecargaConGasolinera {
 
 // El vale entra con LEFT JOIN: las recargas registradas antes de que el vale
 // fuera obligatorio no tienen ninguno y deben seguir apareciendo en el listado.
+// La gasolinera también: las de emergencia no la llevan.
 const SELECT_RECARGA = `
   SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.vale_id, r.fecha,
-         r.litros, r.costo, r.kilometraje,
+         r.litros, r.costo, r.kilometraje, r.emergencia,
          g.nombre AS gasolinera, g.ubicacion,
          c.nombre AS conductor,
          vg.folio AS vale_folio,
          CONVERT(char(10), vg.fecha, 23) AS vale_fecha
   FROM recargas_combustible r
-  JOIN gasolineras g       ON g.id = r.gasolinera_id
+  LEFT JOIN gasolineras g  ON g.id = r.gasolinera_id
   JOIN conductores c       ON c.id = r.conductor_id
   LEFT JOIN vales_gasolina vg ON vg.id = r.vale_id
 `
@@ -61,14 +64,14 @@ export async function findAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
     .query(`
       SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.vale_id,
              CONVERT(char(10), r.fecha, 23) AS fecha,
-             r.litros, r.costo, r.kilometraje,
+             r.litros, r.costo, r.kilometraje, r.emergencia,
              g.nombre AS gasolinera, g.ubicacion,
              c.nombre AS conductor,
              vg.folio AS vale_folio,
              CONVERT(char(10), vg.fecha, 23) AS vale_fecha,
              m.marca, m.nombre AS modelo, v.numero_serie AS serie, v.placas
       FROM recargas_combustible r
-      JOIN gasolineras g       ON g.id = r.gasolinera_id
+      LEFT JOIN gasolineras g  ON g.id = r.gasolinera_id
       JOIN conductores c       ON c.id = r.conductor_id
       JOIN vehiculos   v       ON v.id = r.vehiculo_id
       JOIN modelos     m       ON m.id = v.modelo_id
@@ -101,6 +104,27 @@ export async function create(vehiculoId: number, data: RecargaCreate): Promise<R
       INSERT INTO recargas_combustible (vehiculo_id, gasolinera_id, conductor_id, vale_id, fecha, litros, costo, kilometraje)
       OUTPUT INSERTED.id
       VALUES (@vehiculo_id, @gasolinera_id, @conductor_id, @vale_id, @fecha, @litros, @costo, @kilometraje)
+    `)
+  return findById(r.recordset[0].id) as Promise<RecargaConGasolinera>
+}
+
+// Sin gasolinera ni vale, que es lo único que el CHECK CK_recargas_emergencia
+// acepta en una recarga marcada como emergencia. El kilometraje queda NULL:
+// nadie lo leyó.
+export async function createEmergencia(
+  vehiculoId: number, data: RecargaEmergencia
+): Promise<RecargaConGasolinera> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('vehiculo_id',  sql.Int, vehiculoId)
+    .input('conductor_id', sql.Int, data.conductor_id)
+    .input('fecha',        sql.Date, data.fecha)
+    .input('litros',       sql.Decimal(10, 3), data.litros)
+    .input('costo',        sql.Decimal(18, 2), data.costo)
+    .query(`
+      INSERT INTO recargas_combustible (vehiculo_id, conductor_id, fecha, litros, costo, emergencia)
+      OUTPUT INSERTED.id
+      VALUES (@vehiculo_id, @conductor_id, @fecha, @litros, @costo, 1)
     `)
   return findById(r.recordset[0].id) as Promise<RecargaConGasolinera>
 }

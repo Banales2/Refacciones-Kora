@@ -48,7 +48,7 @@ export async function recargaUpdate(
     }
 
     const antes = await capturar('recargas_combustible', id)
-    const updated = await service.update(id, data)
+    const updated = await service.update(id, data, user.userRoles.includes('admin'))
 
     await audit({
       user,

@@ -15,12 +15,13 @@ import {
   TextInput, Accordion, Anchor,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconPlus, IconSearch } from '@tabler/icons-react'
-import { useRecargasTodas, useCreateRecarga } from '../hooks/useRecargas'
-import type { RecargaConVehiculo, RecargaPayload } from '../hooks/useRecargas'
+import { IconAlertTriangle, IconPlus, IconSearch } from '@tabler/icons-react'
+import { useRecargasTodas, useCreateRecarga, useCreateRecargaEmergencia } from '../hooks/useRecargas'
+import type { RecargaConVehiculo, RecargaEmergenciaPayload, RecargaPayload } from '../hooks/useRecargas'
+import { usePermisos } from '../hooks/usePermisos'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCorto } from './OpcionVehiculo'
-import { RecargaForm, RecargasTabla, ResumenGrupo } from './RecargasSection'
+import { RecargaEmergenciaForm, RecargaForm, RecargasTabla, ResumenGrupo } from './RecargasSection'
 import { agrupar, calcularRendimientos } from '../lib/recargas'
 
 // Rendimientos de todas las unidades en un solo mapa id de recarga → km/L.
@@ -41,13 +42,16 @@ function rendimientosPorVehiculo(items: RecargaConVehiculo[]): Map<number, numbe
 
 type VehiculoElegido = { id: number; label: string; km: number | null }
 
+// Con `onSubmitEmergencia` el alta es de emergencia: mismo selector de
+// vehículo, formulario sin gasolinera, vale ni kilometraje.
 function NuevaRecarga({
-  valesUsados, isPending, error, onSubmit, onCancel,
+  valesUsados, isPending, error, onSubmit, onSubmitEmergencia, onCancel,
 }: {
   valesUsados: Set<number>
   isPending: boolean
   error: string | null
   onSubmit: (vehiculoId: number, payload: RecargaPayload) => void
+  onSubmitEmergencia?: (vehiculoId: number, payload: RecargaEmergenciaPayload) => void
   onCancel: () => void
 }) {
   // La flota puede pasar de una página de vehículos, así que el Select busca
@@ -91,7 +95,15 @@ function NuevaRecarga({
         rightSection={isLoading ? <Loader size="xs" /> : undefined}
         nothingFoundMessage={isLoading ? 'Buscando…' : 'Sin resultados'}
       />
-      {elegido ? (
+      {elegido && onSubmitEmergencia ? (
+        <RecargaEmergenciaForm
+          key={elegido.id}
+          isPending={isPending}
+          error={error}
+          onSubmit={(payload) => onSubmitEmergencia(elegido.id, payload)}
+          onCancel={onCancel}
+        />
+      ) : elegido ? (
         // `key`: al cambiar de vehículo el formulario empieza de cero, porque
         // el vale elegido era del vehículo anterior y la API lo rechazaría.
         <RecargaForm
@@ -121,11 +133,15 @@ export default function RecargasFlota({
   onNavigateVehiculo?: (id: number) => void
 }) {
   const [formOpen, setFormOpen]   = useState(false)
+  const [emergencia, setEmergencia] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [busqueda, setBusqueda]   = useState('')
 
   const { data, isLoading, error } = useRecargasTodas()
   const createMut = useCreateRecarga()
+  const emergenciaMut = useCreateRecargaEmergencia()
+  // Registrar una recarga de emergencia es solo del admin (la API lo impone).
+  const { esAdmin } = usePermisos()
 
   const items = useMemo(() => data?.data ?? [], [data])
   const rendimientos = useMemo(() => rendimientosPorVehiculo(items), [items])
@@ -140,7 +156,8 @@ export default function RecargasFlota({
     const q = busqueda.trim().toLowerCase()
     if (!q) return items
     return items.filter((r) =>
-      [vehiculoLabel(r), r.placas, r.conductor, r.gasolinera, r.vale_folio]
+      [vehiculoLabel(r), r.placas, r.conductor, r.gasolinera, r.vale_folio,
+       r.emergencia ? 'emergencia' : null]
         .some((t) => t?.toLowerCase().includes(q))
     )
   }, [items, busqueda])
@@ -151,7 +168,17 @@ export default function RecargasFlota({
   const anioVisible = anioAbierto ?? anios[0]?.key ?? null
   const mesVisible  = mesAbierto  ?? anios[0]?.meses[0]?.key ?? null
 
-  function abrir() { setFormError(null); setFormOpen(true) }
+  function abrir(deEmergencia: boolean) {
+    setFormError(null); setEmergencia(deEmergencia); setFormOpen(true)
+  }
+
+  function registrarEmergencia(vehiculoId: number, payload: RecargaEmergenciaPayload) {
+    setFormError(null)
+    emergenciaMut.mutate({ vehiculoId, payload }, {
+      onSuccess: () => setFormOpen(false),
+      onError:   (e: Error) => setFormError(e.message),
+    })
+  }
 
   function registrar(vehiculoId: number, payload: RecargaPayload) {
     setFormError(null)
@@ -190,7 +217,16 @@ export default function RecargasFlota({
             {items.length > 0 && (
               <Text size="sm" c="dimmed">{filtradas.length} recargas</Text>
             )}
-            <Button leftSection={<IconPlus size={16} />} onClick={abrir}>
+            {esAdmin && (
+              <Button
+                variant="light" color="orange"
+                leftSection={<IconAlertTriangle size={16} />}
+                onClick={() => abrir(true)}
+              >
+                Recarga de emergencia
+              </Button>
+            )}
+            <Button leftSection={<IconPlus size={16} />} onClick={() => abrir(false)}>
               Registrar recarga
             </Button>
           </Group>
@@ -239,14 +275,16 @@ export default function RecargasFlota({
 
       <Modal
         opened={formOpen} onClose={() => setFormOpen(false)}
-        title="Registrar recarga" centered size="md"
+        title={emergencia ? 'Registrar recarga de emergencia' : 'Registrar recarga'}
+        centered size="md"
       >
         {formOpen && (
           <NuevaRecarga
             valesUsados={valesUsados}
-            isPending={createMut.isPending}
+            isPending={createMut.isPending || emergenciaMut.isPending}
             error={formError}
             onSubmit={registrar}
+            onSubmitEmergencia={emergencia ? registrarEmergencia : undefined}
             onCancel={() => setFormOpen(false)}
           />
         )}

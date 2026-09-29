@@ -21,12 +21,14 @@ export interface RecargaDia {
   vehiculo_id:     number
   vehiculo_nombre: string
   vehiculo_tipo:   string
-  gasolinera:      string
-  ubicacion:       string
+  // Null en las recargas de emergencia, que no llevan gasolinera.
+  gasolinera:      string | null
+  ubicacion:       string | null
   conductor:       string
   litros:          number
   costo:           number
   kilometraje:     number | null
+  emergencia:      boolean
   vale_folio:      string | null
 }
 

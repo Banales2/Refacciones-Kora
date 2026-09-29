@@ -14,6 +14,11 @@ import type { Recarga } from '../hooks/useRecargas'
 // usada—. Es el mismo criterio de lib/reportes/vehiculo y del análisis de
 // costos de la flota: solo se mide de tanque a tanque.
 //
+// Las recargas de emergencia no llevan kilometraje, pero sus litros se
+// quemaron en el tramo que cierra la siguiente carga con lectura: se le suman,
+// o ese tramo saldría con un rendimiento inflado (el tanque llegó con esos
+// litros de más y la carga normal fue más chica).
+//
 // Devuelve un mapa id → km por litro (null si no se puede calcular: la primera
 // carga, una sin kilometraje, sin litros, o si el kilometraje bajó respecto al
 // anterior).
@@ -26,11 +31,19 @@ export function calcularRendimientos(items: Recarga[]): Map<number, number | nul
 
   const rend = new Map<number, number | null>()
   let kmAnterior: number | null = null
+  let litrosEmergencia = 0
   for (const r of asc) {
+    if (r.emergencia) {
+      litrosEmergencia += Number(r.litros)
+      rend.set(r.id, null)
+      continue
+    }
     if (r.kilometraje == null) {
       rend.set(r.id, null)
       continue
     }
+    const extra = litrosEmergencia
+    litrosEmergencia = 0
     if (kmAnterior == null) {
       // La que abre el historial: deja la referencia para la siguiente, que sí
       // cierra un tramo completo.
@@ -39,7 +52,7 @@ export function calcularRendimientos(items: Recarga[]): Map<number, number | nul
       continue
     }
     const kmRecorridos = r.kilometraje - kmAnterior
-    const litros = Number(r.litros)
+    const litros = Number(r.litros) + extra
     rend.set(r.id, litros > 0 && kmRecorridos >= 0 ? kmRecorridos / litros : null)
     kmAnterior = r.kilometraje
   }

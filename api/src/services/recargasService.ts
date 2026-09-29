@@ -2,8 +2,8 @@ import * as repo from '../repositories/recargasRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import type { RecargaConGasolinera, RecargaConVehiculo } from '../repositories/recargasRepo'
 import type { Alcance } from '../shared/alcance'
-import type { RecargaCreate, RecargaUpdate } from '../schemas/recargaSchema'
-import { NotFoundError, ValidationError, ConflictError } from '../shared/errors'
+import type { RecargaCreate, RecargaEmergencia, RecargaUpdate } from '../schemas/recargaSchema'
+import { AppError, NotFoundError, ValidationError, ConflictError } from '../shared/errors'
 
 // El vale tiene que existir, haber sido emitido para el mismo vehículo que se
 // está recargando (si no, la recarga quedaría amarrada al vale de otra unidad)
@@ -50,10 +50,36 @@ export async function create(vehiculoId: number, data: RecargaCreate): Promise<R
   return recarga
 }
 
-export async function update(id: number, data: RecargaUpdate): Promise<RecargaConGasolinera> {
+// La recarga de emergencia no lleva vale ni avanza el odómetro: no hay
+// kilometraje que tomar.
+export async function createEmergencia(
+  vehiculoId: number, data: RecargaEmergencia
+): Promise<RecargaConGasolinera> {
+  if (!(await repo.vehiculoExists(vehiculoId))) throw new NotFoundError('Vehículo')
+  return repo.createEmergencia(vehiculoId, data)
+}
+
+// `esAdmin`: las de emergencia solo las registra el admin, y corregirlas
+// también es suyo; si no, un editor podría inflar después el costo de una
+// carga que nadie respalda con vale.
+export async function update(
+  id: number, data: RecargaUpdate, esAdmin: boolean
+): Promise<RecargaConGasolinera> {
+  const actual = await repo.findById(id)
+  if (!actual) throw new NotFoundError('Recarga')
+
+  if (actual.emergencia) {
+    if (!esAdmin) {
+      throw new AppError('Solo un admin puede corregir una recarga de emergencia', 403, 'FORBIDDEN')
+    }
+    // Ponerle gasolinera o vale la volvería una recarga normal a medias; el
+    // CHECK de la tabla lo rechazaría con un error ilegible.
+    if (data.gasolinera_id !== undefined || data.vale_id !== undefined || data.kilometraje !== undefined) {
+      throw new ValidationError('Una recarga de emergencia no lleva gasolinera, vale ni kilometraje')
+    }
+  }
+
   if (data.vale_id !== undefined) {
-    const actual = await repo.findById(id)
-    if (!actual) throw new NotFoundError('Recarga')
     await validarVale(data.vale_id, actual.vehiculo_id, id)
   }
   const result = await repo.update(id, data)

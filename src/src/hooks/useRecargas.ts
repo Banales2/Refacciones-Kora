@@ -6,7 +6,8 @@ import { api } from '../lib/api'
 export interface Recarga {
   id:            number
   vehiculo_id:   number
-  gasolinera_id: number
+  // Null solo en las de emergencia.
+  gasolinera_id: number | null
   conductor_id:  number
   // Null solo en las recargas anteriores a que el vale fuera obligatorio.
   vale_id:       number | null
@@ -14,8 +15,11 @@ export interface Recarga {
   litros:        number
   costo:         number
   kilometraje:   number | null
-  gasolinera:    string
-  ubicacion:     string
+  // La carga que el chofer hizo de su bolsa porque no le alcanzaba para ir por
+  // el vale: sin gasolinera, sin vale y sin kilometraje. Solo la registra el admin.
+  emergencia:    boolean
+  gasolinera:    string | null
+  ubicacion:     string | null
   conductor:     string
   // Folio impreso del vale. Null solo en las recargas que se quedaron sin vale.
   vale_folio:    string | null
@@ -30,6 +34,13 @@ export interface RecargaPayload {
   litros:        number
   costo:         number
   kilometraje:   number
+}
+
+export interface RecargaEmergenciaPayload {
+  conductor_id: number
+  fecha:        string
+  litros:       number
+  costo:        number
 }
 
 /** Renglón del listado de toda la flota: trae además el vehículo recargado. */
@@ -70,6 +81,19 @@ export function useCreateRecarga() {
       // Registrar la recarga avanza el odómetro del vehículo (solo si el km
       // capturado es mayor al que ya tenía).
       qc.invalidateQueries({ queryKey: ['vehiculos'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+// No avanza el odómetro: la de emergencia no lleva kilometraje.
+export function useCreateRecargaEmergencia() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ vehiculoId, payload }: { vehiculoId: number; payload: RecargaEmergenciaPayload }) =>
+      api.post<{ data: Recarga }>(`/vehiculos/${vehiculoId}/recargas/emergencia`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recargas'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })

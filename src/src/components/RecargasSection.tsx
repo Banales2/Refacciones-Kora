@@ -13,11 +13,11 @@ import {
   ActionIcon, Modal, Tooltip, NumberInput, Badge, Accordion,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
-import { IconPencil, IconPlus } from '@tabler/icons-react'
+import { IconAlertTriangle, IconPencil, IconPlus } from '@tabler/icons-react'
 import {
-  useRecargas, useCreateRecarga, useUpdateRecarga,
+  useRecargas, useCreateRecarga, useCreateRecargaEmergencia, useUpdateRecarga,
 } from '../hooks/useRecargas'
-import type { Recarga, RecargaPayload } from '../hooks/useRecargas'
+import type { Recarga, RecargaEmergenciaPayload, RecargaPayload } from '../hooks/useRecargas'
 import { useGasolineras } from '../hooks/useGasolineras'
 import { useConductores } from '../hooks/useConductores'
 import { useValesGasolina } from '../hooks/useValesGasolina'
@@ -279,15 +279,115 @@ export function RecargaForm({
   )
 }
 
+// ── Formulario de emergencia ──────────────────────────────────────────────────
+
+type EmergenciaFormValues = {
+  conductor_id: string
+  fecha:        string
+  litros:       number | string
+  costo:        number | string
+}
+
+// La carga que el chofer hizo de su bolsa porque no le alcanzaba para ir por el
+// vale. No lleva gasolinera, vale ni kilometraje: se cargó donde se pudo y nadie
+// leyó el odómetro. Solo el admin la registra (la API lo impone).
+export function RecargaEmergenciaForm({
+  initial, isPending, error, onSubmit, onCancel,
+}: {
+  initial?: EmergenciaFormValues
+  isPending: boolean
+  error: string | null
+  onSubmit: (payload: RecargaEmergenciaPayload) => void
+  onCancel: () => void
+}) {
+  const hoy = todayIso()
+  const conQuery = useConductores()
+  const conductores = (conQuery.data?.data ?? []).map((c) => ({
+    value: String(c.id),
+    label: c.nombre,
+  }))
+
+  const form = useForm<EmergenciaFormValues>({
+    initialValues: initial ?? { conductor_id: '', fecha: hoy, litros: '', costo: '' },
+    validate: {
+      conductor_id: (v) => (!v ? 'Conductor requerido' : null),
+      fecha: (v) => {
+        if (!v) return 'Fecha requerida'
+        if (v > hoy) return 'No puede ser una fecha futura'
+        return null
+      },
+      litros: (v) => (v === '' || Number(v) <= 0 ? 'Debe ser mayor a 0' : null),
+      costo:  (v) => (v === '' || Number(v) < 0 ? 'No puede ser negativo' : null),
+    },
+  })
+
+  const litros = Number(form.values.litros)
+  const costo  = Number(form.values.costo)
+  const precioLitro = litros > 0 && costo > 0 ? costo / litros : null
+
+  return (
+    <form onSubmit={form.onSubmit((v) => onSubmit({
+      conductor_id: parseInt(v.conductor_id, 10),
+      fecha:  v.fecha,
+      litros: Number(v.litros),
+      costo:  Number(v.costo),
+    }))}>
+      <Stack gap="sm">
+        <Text size="xs" c="dimmed">
+          Para cuando el chofer cargó por su cuenta porque no le alcanzaba para ir
+          por el vale. Se registra sin gasolinera, sin vale y sin kilometraje.
+        </Text>
+        <SelectCatalogo
+          estado={conQuery}
+          nombre="conductores"
+          label="Conductor"
+          placeholder={conductores.length ? 'Selecciona un conductor' : 'No hay conductores registrados'}
+          data={conductores}
+          required
+          {...form.getInputProps('conductor_id')}
+        />
+        <FechaInput
+          label="Fecha"
+          required
+          maxDate={hoy}
+          value={form.values.fecha}
+          onChange={(d) => form.setFieldValue('fecha', d)}
+          error={form.errors.fecha as string}
+        />
+        <NumberInput
+          label="Litros" placeholder="0.000" required
+          min={0} decimalScale={3} step={0.001} suffix=" L"
+          {...form.getInputProps('litros')}
+        />
+        <NumberInput
+          label="Costo total" placeholder="0.00" required
+          min={0} decimalScale={2} step={0.01} prefix="$" thousandSeparator=","
+          {...form.getInputProps('costo')}
+        />
+        {precioLitro !== null && (
+          <Text size="xs" c="dimmed">Precio por litro: {formatMXN(precioLitro)}</Text>
+        )}
+        {error && <Alert color="red" title="Error">{error}</Alert>}
+        <Group justify="flex-end" mt="xs">
+          <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
+          <Button type="submit" color="orange" loading={isPending}>Guardar</Button>
+        </Group>
+      </Stack>
+    </form>
+  )
+}
+
 // ── Tabla de las recargas de un mes ───────────────────────────────────────────
 
 export function RecargasTabla<T extends Recarga>({
-  items, rendimientos, onEdit, vehiculo,
+  items, rendimientos, onEdit, editable, vehiculo,
 }: {
   items: T[]
   rendimientos: Map<number, number | null>
   /** Sin él la tabla es de consulta. */
   onEdit?: (r: T) => void
+  /** Qué renglones se pueden editar; sin él, todos (si hay `onEdit`). */
+  editable?: (r: T) => boolean
   /**
    * Celda del vehículo. En la ficha del vehículo sobra —ya se sabe cuál es—;
    * en el listado de toda la flota es lo primero que se busca.
@@ -321,8 +421,16 @@ export function RecargasTabla<T extends Recarga>({
               <Table.Td>{formatDiaMes(r.fecha)}</Table.Td>
               {vehiculo && <Table.Td>{vehiculo(r)}</Table.Td>}
               <Table.Td>
-                <Text size="sm">{r.gasolinera}</Text>
-                <Text size="xs" c="dimmed">{r.ubicacion}</Text>
+                {r.emergencia ? (
+                  <Tooltip label="El chofer cargó por su cuenta: sin gasolinera, vale ni kilometraje">
+                    <Badge color="orange" variant="light" size="sm">Emergencia</Badge>
+                  </Tooltip>
+                ) : (
+                  <>
+                    <Text size="sm">{r.gasolinera}</Text>
+                    <Text size="xs" c="dimmed">{r.ubicacion}</Text>
+                  </>
+                )}
               </Table.Td>
               <Table.Td><Text size="sm">{r.conductor}</Text></Table.Td>
               <Table.Td>
@@ -352,7 +460,7 @@ export function RecargasTabla<T extends Recarga>({
               </Table.Td>
               <Table.Td>
                 <Group gap={4} justify="flex-end" wrap="nowrap">
-                  {onEdit && (
+                  {onEdit && (editable?.(r) ?? true) && (
                     <Tooltip label="Editar">
                       <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => onEdit(r)}>
                         <IconPencil size={14} />
@@ -398,6 +506,9 @@ export default function RecargasSection({
   kmVehiculo: number | null
 }) {
   const [formOpen, setFormOpen]   = useState(false)
+  // El alta de emergencia usa su propio formulario; al editar lo decide la
+  // recarga misma.
+  const [emergenciaOpen, setEmergenciaOpen] = useState(false)
   const [editing, setEditing]     = useState<Recarga | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -421,15 +532,32 @@ export default function RecargasSection({
   const mesVisible  = mesAbierto  ?? anios[0]?.meses[0]?.key ?? null
 
   const createMut = useCreateRecarga()
+  const emergenciaMut = useCreateRecargaEmergencia()
   const updateMut = useUpdateRecarga()
-  // El responsable de sucursal registra cargas pero no las corrige.
-  const { puedeEditar } = usePermisos()
+  // El responsable de sucursal registra cargas pero no las corrige. Las de
+  // emergencia solo el admin las registra y las corrige.
+  const { puedeEditar, esAdmin } = usePermisos()
 
   const totalLitros = items.reduce((s, r) => s + Number(r.litros), 0)
   const totalCosto  = items.reduce((s, r) => s + Number(r.costo), 0)
 
   function openCreate() { setEditing(null); setFormError(null); setFormOpen(true) }
-  function openEdit(r: Recarga) { setEditing(r); setFormError(null); setFormOpen(true) }
+  function openEmergencia() { setEditing(null); setFormError(null); setEmergenciaOpen(true) }
+  function openEdit(r: Recarga) {
+    setEditing(r); setFormError(null)
+    if (r.emergencia) setEmergenciaOpen(true)
+    else              setFormOpen(true)
+  }
+
+  function handleEmergencia(payload: RecargaEmergenciaPayload) {
+    setFormError(null)
+    const opts = {
+      onSuccess: () => setEmergenciaOpen(false),
+      onError:   (e: Error) => setFormError(e.message),
+    }
+    if (editing) updateMut.mutate({ id: editing.id, payload }, opts)
+    else         emergenciaMut.mutate({ vehiculoId, payload }, opts)
+  }
 
   function handleSubmit(payload: RecargaPayload) {
     setFormError(null)
@@ -452,6 +580,13 @@ export default function RecargasSection({
                 <IconPlus size={12} />
               </ActionIcon>
             </Tooltip>
+            {esAdmin && (
+              <Tooltip label="Registrar recarga de emergencia">
+                <ActionIcon variant="light" color="orange" size="xs" onClick={openEmergencia}>
+                  <IconAlertTriangle size={12} />
+                </ActionIcon>
+              </Tooltip>
+            )}
           </Group>
         }
         labelPosition="left"
@@ -486,7 +621,11 @@ export default function RecargasSection({
                           <ResumenGrupo label={m.label} litros={m.litros} costo={m.costo} fw={500} />
                         </Accordion.Control>
                         <Accordion.Panel>
-                          <RecargasTabla items={m.items} rendimientos={rendimientos} onEdit={puedeEditar ? openEdit : undefined} />
+                          <RecargasTabla
+                            items={m.items} rendimientos={rendimientos}
+                            onEdit={puedeEditar ? openEdit : undefined}
+                            editable={(r) => !r.emergencia || esAdmin}
+                          />
                         </Accordion.Panel>
                       </Accordion.Item>
                     ))}
@@ -516,7 +655,7 @@ export default function RecargasSection({
           kmVehiculo={kmVehiculo}
           valesUsados={valesUsados}
           initial={editing ? {
-            gasolinera_id: String(editing.gasolinera_id),
+            gasolinera_id: editing.gasolinera_id != null ? String(editing.gasolinera_id) : '',
             conductor_id:  String(editing.conductor_id),
             vale_id:       editing.vale_id != null ? String(editing.vale_id) : '',
             fecha:  editing.fecha.split('T')[0],
@@ -529,6 +668,27 @@ export default function RecargasSection({
           onSubmit={handleSubmit}
           onCancel={() => setFormOpen(false)}
         />
+      </Modal>
+
+      <Modal
+        opened={emergenciaOpen} onClose={() => setEmergenciaOpen(false)}
+        title={editing ? 'Editar recarga de emergencia' : 'Registrar recarga de emergencia'}
+        centered size="md"
+      >
+        {emergenciaOpen && (
+          <RecargaEmergenciaForm
+            initial={editing ? {
+              conductor_id: String(editing.conductor_id),
+              fecha:  editing.fecha.split('T')[0],
+              litros: Number(editing.litros),
+              costo:  Number(editing.costo),
+            } : undefined}
+            isPending={emergenciaMut.isPending || updateMut.isPending}
+            error={formError}
+            onSubmit={handleEmergencia}
+            onCancel={() => setEmergenciaOpen(false)}
+          />
+        )}
       </Modal>
     </>
   )

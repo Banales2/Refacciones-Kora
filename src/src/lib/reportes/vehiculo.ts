@@ -71,7 +71,9 @@ interface Consumo {
 
 // Rendimiento tanque a tanque: los kilómetros desde la carga anterior los pagó
 // esta carga. Es el mismo criterio del análisis de costos de la flota, para que
-// la ficha de la unidad y el tablero no digan cosas distintas.
+// la ficha de la unidad y el tablero no digan cosas distintas. Igual que allá,
+// la recarga de emergencia no cuenta como faltante (va sin vale ni odómetro a
+// propósito) y sus litros se suman al tramo que cierra la siguiente lectura.
 function calcularConsumo(recargas: Recarga[]): Consumo {
   const orden = [...recargas].sort(
     (a, b) => a.fecha.localeCompare(b.fecha) || a.id - b.id
@@ -81,16 +83,23 @@ function calcularConsumo(recargas: Recarga[]): Consumo {
     rendimiento: null, precioLitro: null, sinVale: 0, sinOdometro: 0,
   }
   let previa: Recarga | null = null
+  let litrosEmergencia = 0
   for (const r of orden) {
     c.litros += r.litros
     c.costo  += r.costo
+    if (r.emergencia) {
+      litrosEmergencia += r.litros
+      continue
+    }
+    const extra = litrosEmergencia
+    litrosEmergencia = 0
     if (r.vale_id == null) c.sinVale += 1
     if (r.kilometraje == null) c.sinOdometro += 1
     else if (previa?.kilometraje != null) {
       const delta = r.kilometraje - previa.kilometraje
       if (delta > 0 && delta <= KM_ENTRE_CARGAS_MAX && r.litros > 0) {
         c.kmMedidos    += delta
-        c.litrosMedidos += r.litros
+        c.litrosMedidos += r.litros + extra
       }
     }
     previa = r
@@ -243,7 +252,8 @@ export async function exportVehiculoPdf(d: DatosVehiculo) {
     pdf.tabla({
       head: ['Fecha', 'Gasolinera', 'Conductor', 'Vale', 'Litros', 'Costo', '$/L', 'Odómetro'],
       body: recientes.map((rc) => [
-        formatFecha(rc.fecha), rc.gasolinera, rc.conductor, rc.vale_folio ?? 'sin vale',
+        formatFecha(rc.fecha), rc.gasolinera ?? 'Emergencia', rc.conductor,
+        rc.emergencia ? '—' : rc.vale_folio ?? 'sin vale',
         formatLitros(rc.litros), formatMXN(rc.costo),
         rc.litros > 0 ? `$${(rc.costo / rc.litros).toFixed(2)}` : '—',
         rc.kilometraje != null ? formatNum(rc.kilometraje) : '—',
@@ -522,10 +532,10 @@ export async function exportVehiculoExcel(d: DatosVehiculo) {
 
   wb.hoja('Combustible', [
     { header: 'Fecha',      width: 13, formato: 'fecha',   valor: (rc) => new Date(`${rc.fecha.split('T')[0]}T12:00:00`) },
-    { header: 'Gasolinera', width: 28, valor: (rc) => rc.gasolinera },
-    { header: 'Ubicación',  width: 24, valor: (rc) => rc.ubicacion },
+    { header: 'Gasolinera', width: 28, valor: (rc) => rc.gasolinera ?? 'Emergencia' },
+    { header: 'Ubicación',  width: 24, valor: (rc) => rc.ubicacion ?? '' },
     { header: 'Conductor',  width: 26, valor: (rc) => rc.conductor },
-    { header: 'Vale',       width: 16, valor: (rc) => rc.vale_folio ?? 'sin vale' },
+    { header: 'Vale',       width: 16, valor: (rc) => rc.emergencia ? '' : rc.vale_folio ?? 'sin vale' },
     { header: 'Litros',     width: 11, formato: 'litros', valor: (rc) => rc.litros },
     { header: 'Costo',      width: 14, formato: 'moneda',  valor: (rc) => rc.costo },
     { header: 'Precio/litro', width: 13, formato: 'moneda', valor: (rc) => rc.litros > 0 ? rc.costo / rc.litros : 0 },

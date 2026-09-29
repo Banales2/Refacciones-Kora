@@ -422,7 +422,11 @@ export default function DiaDetalleDrawer({
                             onNavigate={onNavigateVehiculo}
                           />
                         </Table.Td>
-                        <Table.Td>{r.gasolinera}</Table.Td>
+                        <Table.Td>
+                          {r.emergencia
+                            ? <Badge color="orange" variant="light" size="sm">Emergencia</Badge>
+                            : r.gasolinera}
+                        </Table.Td>
                         <Table.Td>{r.conductor}</Table.Td>
                         <Table.Td ta="right">{formatLitros(r.litros)}</Table.Td>
                         <Table.Td ta="right">{formatMXN(r.costo)}</Table.Td>

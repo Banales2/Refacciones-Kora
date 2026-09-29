@@ -63,12 +63,14 @@ export interface RecargaDia {
   vehiculo_id:     number
   vehiculo_nombre: string
   vehiculo_tipo:   string
-  gasolinera:      string
-  ubicacion:       string
+  // Null en las recargas de emergencia, que no llevan gasolinera.
+  gasolinera:      string | null
+  ubicacion:       string | null
   conductor:       string
   litros:          number
   costo:           number
   kilometraje:     number | null
+  emergencia:      boolean
   vale_folio:      string | null
 }
 
@@ -80,11 +82,11 @@ export async function findRecargasDelDia(fecha: string): Promise<RecargaDia[]> {
       SELECT rc.id, rc.vehiculo_id, ${VEHICULO_NOMBRE} AS vehiculo_nombre,
              v.tipo AS vehiculo_tipo,
              g.nombre AS gasolinera, g.ubicacion, c.nombre AS conductor,
-             rc.litros, rc.costo, rc.kilometraje, vg.folio AS vale_folio
+             rc.litros, rc.costo, rc.kilometraje, rc.emergencia, vg.folio AS vale_folio
       FROM recargas_combustible rc
       JOIN vehiculos v   ON v.id = rc.vehiculo_id
       JOIN modelos mo    ON mo.id = v.modelo_id
-      JOIN gasolineras g ON g.id = rc.gasolinera_id
+      LEFT JOIN gasolineras g ON g.id = rc.gasolinera_id
       JOIN conductores c ON c.id = rc.conductor_id
       LEFT JOIN vales_gasolina vg ON vg.id = rc.vale_id
       WHERE rc.fecha = @fecha

@@ -27,8 +27,9 @@ export interface RecargaCosto {
   vehiculo_tipo:   string
   modelo_id:       number
   modelo_nombre:   string
-  gasolinera_id:   number
-  gasolinera:      string
+  /** Null en las recargas de emergencia (migración 056). */
+  gasolinera_id:   number | null
+  gasolinera:      string | null
   conductor_id:    number
   conductor:       string
   vale_id:         number | null
@@ -36,6 +37,7 @@ export interface RecargaCosto {
   litros:          number
   costo:           number
   kilometraje:     number | null
+  emergencia:      boolean
 }
 
 // Las recargas del rango, de la flota en operación, ordenadas por vehículo y
@@ -55,11 +57,11 @@ export async function findRecargasEnRango(start: string, end: string): Promise<R
              rc.conductor_id, co.nombre AS conductor,
              rc.vale_id,
              CONVERT(char(10), rc.fecha, 23) AS fecha,
-             rc.litros, rc.costo, rc.kilometraje
+             rc.litros, rc.costo, rc.kilometraje, rc.emergencia
       FROM recargas_combustible rc
       JOIN vehiculos   v  ON v.id  = rc.vehiculo_id
       JOIN modelos     mo ON mo.id = v.modelo_id
-      JOIN gasolineras gs ON gs.id = rc.gasolinera_id
+      LEFT JOIN gasolineras gs ON gs.id = rc.gasolinera_id
       JOIN conductores co ON co.id = rc.conductor_id
       ${JOINS_HIJAS}
       WHERE rc.fecha >= @start AND rc.fecha < @end

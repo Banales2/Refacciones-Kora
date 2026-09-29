@@ -231,6 +231,8 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   const precioLitroFlota = ratio(costoCombustible, litrosTotales)
 
   let previa: repo.RecargaCosto | null = null
+  // Litros de emergencia cargados desde la última carga normal de la unidad.
+  let emergencia = { vehiculo_id: 0, litros: 0 }
   for (const r of recargas) {
     const a = acum.get(r.vehiculo_id)
     if (a) {
@@ -239,6 +241,19 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       a.recargas    += 1
       if (r.kilometraje != null) a.lecturas.push(r.kilometraje)
     }
+
+    // La de emergencia va sin odómetro ni vale a propósito (migración 056), así
+    // que no es anomalía. Esos litros se quemaron en el tramo que cierra la
+    // siguiente carga con kilometraje: se le suman a ese tramo, o su
+    // rendimiento saldría inflado porque el tanque llegó con esos litros de más.
+    // Tampoco pasa a ser la `previa`: el tramo se mide desde la última lectura.
+    if (r.emergencia) {
+      if (emergencia.vehiculo_id !== r.vehiculo_id) emergencia = { vehiculo_id: r.vehiculo_id, litros: 0 }
+      emergencia.litros += r.litros
+      continue
+    }
+    const litrosEmergencia = emergencia.vehiculo_id === r.vehiculo_id ? emergencia.litros : 0
+    emergencia = { vehiculo_id: 0, litros: 0 }
 
     const mismaUnidad = previa != null && previa.vehiculo_id === r.vehiculo_id
 
@@ -263,7 +278,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       } else if (deltaKm > 0 && deltaKm <= KM_ENTRE_CARGAS_MAX && r.litros > 0 && a) {
         // Tramo válido: los kilómetros desde la carga anterior los pagó esta.
         a.tramoKm     += deltaKm
-        a.tramoLitros += r.litros
+        a.tramoLitros += r.litros + litrosEmergencia
         a.tramos      += 1
       }
     }
@@ -423,8 +438,11 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   // ── Gasolineras ──
   const porGasolinera = new Map<number, GasolineraCosto>()
   for (const r of recargas) {
+    // La de emergencia se cargó donde se pudo: no dice nada de a qué
+    // gasolinera conviene mandar a la flota.
+    if (r.gasolinera_id == null) continue
     const g = porGasolinera.get(r.gasolinera_id) ?? {
-      gasolinera_id: r.gasolinera_id, gasolinera: r.gasolinera,
+      gasolinera_id: r.gasolinera_id, gasolinera: r.gasolinera ?? '',
       recargas: 0, litros: 0, costo: 0, precio_litro: null, sobreprecio: 0,
     }
     g.recargas += 1
