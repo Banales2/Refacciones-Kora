@@ -3,6 +3,7 @@
 // (tractocamión, caja de trailer) o a una sucursal (camión, montacargas).
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { ComboboxParsedItem } from '@mantine/core'
 
 export type TipoVehiculo = 'camion' | 'tractocamion' | 'caja_trailer' | 'utilitario' | 'montacargas'
 
@@ -88,6 +89,18 @@ interface ListResponse {
 export function vehiculoLabel(v: Pick<VehiculoRow, 'marca' | 'modelo' | 'serie'>): string {
   return `${v.marca} ${v.modelo} — ${v.serie}`
 }
+
+// Para los Select que buscan contra la API: con las placas en la etiqueta, el
+// usuario ve por qué salió la opción cuando buscó por placas.
+export function vehiculoLabelConPlacas(
+  v: Pick<VehiculoRow, 'marca' | 'modelo' | 'serie' | 'placas'>
+): string {
+  return v.placas ? `${vehiculoLabel(v)} — ${v.placas}` : vehiculoLabel(v)
+}
+
+// La API ya filtra por marca, modelo, serie y placas; si Mantine vuelve a
+// filtrar por la etiqueta, descarta lo que coincidió en un campo que no se ve.
+export const sinFiltroLocal = ({ options }: { options: ComboboxParsedItem[] }) => options
 
 // Motivo por el que una unidad necesita atención, para listar justo esas. La
 // tenencia solo la pagan camiones de reparto y utilitarios, así que ese filtro

@@ -33,7 +33,7 @@ const ESTADOS_FILTRO: EstadoVale[] = ['perdido', 'creado', 'usado', 'archivado']
 import { usePermisos } from '../hooks/usePermisos'
 import { useConductores } from '../hooks/useConductores'
 import type { Conductor } from '../hooks/useConductores'
-import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
+import { useVehiculos, vehiculoLabelConPlacas, sinFiltroLocal } from '../hooks/useVehiculos'
 import { useAuth } from '../hooks/useAuth'
 import { FechaInput } from '../components/FechaInput'
 import { CODIGO, limpiarCodigo } from '../lib/validaciones'
@@ -184,7 +184,7 @@ function ValeForm({
   const vehiculos = useMemo(() => {
     const opts = (vehData?.data ?? []).map((v) => ({
       value: String(v.id),
-      label: vehiculoLabel(v),
+      label: vehiculoLabelConPlacas(v),
     }))
     const seleccionado = form.values.vehiculo_id
     if (seleccionado && !opts.some((o) => o.value === seleccionado)) {
@@ -196,7 +196,7 @@ function ValeForm({
   function seleccionarVehiculo(id: string | null) {
     form.setFieldValue('vehiculo_id', id ?? '')
     const elegido = (vehData?.data ?? []).find((v) => String(v.id) === id)
-    setEtiquetaSeleccionado(elegido ? vehiculoLabel(elegido) : '')
+    setEtiquetaSeleccionado(elegido ? vehiculoLabelConPlacas(elegido) : '')
   }
 
   // El chofer recién dado de alta queda seleccionado, que es para lo que se
@@ -258,6 +258,7 @@ function ValeForm({
             placeholder="Busca por marca, modelo, serie o placas"
             data={vehiculos}
             searchable
+            filter={sinFiltroLocal}
             required
             searchValue={vehiculoSearch}
             onSearchChange={setVehiculoSearch}
