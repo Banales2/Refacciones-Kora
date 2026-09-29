@@ -171,10 +171,11 @@ const CONSULTAS: Record<string, string> = {
 
   vales_gasolina: `
     SELECT vg.*, v.numero_serie AS vehiculo_serie, v.placas AS vehiculo_placas,
-           c.nombre AS conductor
+           c.nombre AS conductor, s.nombre AS sucursal
     FROM vales_gasolina vg
     LEFT JOIN vehiculos   v ON v.id = vg.vehiculo_id
     LEFT JOIN conductores c ON c.id = vg.conductor_id
+    LEFT JOIN sucursales  s ON s.id = vg.sucursal_id
     WHERE vg.id = @id`,
 
   piezas_vehiculo: `

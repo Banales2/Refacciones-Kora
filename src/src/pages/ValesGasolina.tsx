@@ -36,6 +36,8 @@ import type { Conductor } from '../hooks/useConductores'
 import { useVehiculos } from '../hooks/useVehiculos'
 import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCorto } from '../components/OpcionVehiculo'
 import { useAuth } from '../hooks/useAuth'
+import { useUsuarioActual } from '../hooks/useUsuarioActual'
+import { useSucursales } from '../hooks/useSucursales'
 import { FechaInput } from '../components/FechaInput'
 import { CODIGO, limpiarCodigo } from '../lib/validaciones'
 import NuevoConductorModal from '../components/NuevoConductorModal'
@@ -120,15 +122,20 @@ type ValeFormValues = {
   folio:        string
   conductor_id: string
   vehiculo_id:  string
+  // '' = sin sucursal: un vale ANTIGUO al editar, o todavía sin elegir.
+  sucursal_id:  string
   fecha:        string
 }
+
+// Los vales de antes de registrar la sucursal no la tienen (migración 057).
+const SIN_SUCURSAL = 'ANTIGUO'
 
 function ValeForm({
   initial, isPending, error, onSubmit, onCancel,
 }: {
   // Al editar, el vehículo ya elegido puede no venir en los resultados de la
   // búsqueda; su etiqueta se pasa aparte para poder mostrarlo en el Select.
-  initial?: ValeFormValues & { vehiculo_label: string }
+  initial?: ValeFormValues & { vehiculo_label: string; sucursal_label: string }
   isPending: boolean
   error: string | null
   onSubmit: (payload: ValeGasolinaPayload) => void
@@ -138,6 +145,22 @@ function ValeForm({
   const { user } = useAuth()
   const conQuery = useConductores()
   const conData = conQuery.data
+  const esAlta = initial === undefined
+
+  // Quien está acotado a una sucursal no la elige: el vale se entrega ahí y la
+  // API se la pone aunque el cliente mande otra. Al editar tampoco la cambia.
+  // Mientras no se sabe, el campo espera en vez de ofrecer una lista que
+  // luego se ignoraría.
+  const usuarioQuery = useUsuarioActual()
+  const sucursalPropia = usuarioQuery.data?.data.sucursal_id ?? null
+  const eligeSucursal = !usuarioQuery.isLoading && sucursalPropia == null
+  const sucQuery = useSucursales()
+  const sucursales = (sucQuery.data?.data ?? []).map((s) => ({
+    value: String(s.id),
+    label: s.nombre,
+  }))
+  const nombreSucursal = (id: number | null) =>
+    sucQuery.data?.data.find((s) => s.id === id)?.nombre ?? (sucQuery.isLoading ? 'Cargando…' : '—')
 
   // Alta de chofer sin salir de aquí: el catálogo está en otra pantalla y salir
   // a darlo de alta costaba perder el vale a medio capturar.
@@ -158,7 +181,9 @@ function ValeForm({
     useState(initial?.vehiculo_label ?? '')
 
   const form = useForm<ValeFormValues>({
-    initialValues: initial ?? { folio: '', conductor_id: '', vehiculo_id: '', fecha: hoy },
+    initialValues: initial ?? {
+      folio: '', conductor_id: '', vehiculo_id: '', sucursal_id: '', fecha: hoy,
+    },
     validate: {
       folio: (v) => {
         if (!v.trim()) return 'Folio requerido'
@@ -167,6 +192,9 @@ function ValeForm({
       },
       conductor_id: (v) => (!v ? 'Chofer requerido' : null),
       vehiculo_id:  (v) => (!v ? 'Vehículo requerido' : null),
+      // Al editar puede quedarse vacía: es un vale ANTIGUO al que nadie le
+      // sabe la sucursal.
+      sucursal_id:  (v) => (esAlta && eligeSucursal && !v ? 'Sucursal requerida' : null),
       fecha: (v) => {
         if (!v) return 'Fecha requerida'
         if (v > hoy) return 'No puede ser una fecha futura'
@@ -210,6 +238,7 @@ function ValeForm({
           folio:        v.folio.trim(),
           conductor_id: parseInt(v.conductor_id, 10),
           vehiculo_id:  parseInt(v.vehiculo_id, 10),
+          ...(eligeSucursal && v.sucursal_id ? { sucursal_id: parseInt(v.sucursal_id, 10) } : {}),
           fecha:        v.fecha,
         }))}
       >
@@ -266,6 +295,29 @@ function ValeForm({
             {...form.getInputProps('vehiculo_id')}
             onChange={seleccionarVehiculo}
           />
+          {eligeSucursal ? (
+            <SelectCatalogo
+              estado={sucQuery}
+              nombre="sucursales"
+              label="Sucursal"
+              placeholder={esAlta ? 'Selecciona la sucursal' : SIN_SUCURSAL}
+              data={sucursales}
+              required={esAlta}
+              clearable={!esAlta}
+              {...form.getInputProps('sucursal_id')}
+            />
+          ) : (
+            <TextInput
+              label="Sucursal"
+              disabled
+              value={
+                usuarioQuery.isLoading ? 'Cargando…'
+                  : esAlta ? nombreSucursal(sucursalPropia)
+                  : initial.sucursal_label
+              }
+              description={esAlta ? 'Se asigna automáticamente con tu sucursal' : undefined}
+            />
+          )}
           <FechaInput
             label="Fecha"
             required
@@ -321,6 +373,7 @@ function ValesTabla({
           <Table.Th>Folio</Table.Th>
           <Table.Th>Fecha</Table.Th>
           <Table.Th>Chofer</Table.Th>
+          <Table.Th>Sucursal</Table.Th>
           <Table.Th>Qué pasó</Table.Th>
           <Table.Th style={{ width: 80 }} />
         </Table.Tr>
@@ -341,6 +394,13 @@ function ValesTabla({
                     {v.conductor}
                   </Anchor>
                 ) : v.conductor}
+              </Table.Td>
+              <Table.Td>
+                {v.sucursal ?? (
+                  <Tooltip label="Registrado antes de que el vale llevara sucursal">
+                    <Badge size="xs" variant="outline" color="gray">{SIN_SUCURSAL}</Badge>
+                  </Tooltip>
+                )}
               </Table.Td>
               <Table.Td>
                 <Badge size="xs" variant="light" color={est.color}>{est.label}</Badge>
@@ -480,7 +540,7 @@ export default function ValesGasolina({
       if (!q) return true
       return [
         v.folio, v.conductor, v.creado_por, v.placas,
-        `${v.marca} ${v.modelo}`, v.serie,
+        `${v.marca} ${v.modelo}`, v.serie, v.sucursal ?? SIN_SUCURSAL,
       ].some((t) => t?.toLowerCase().includes(q))
     })
   }, [todos, busqueda, estados])
@@ -551,7 +611,7 @@ export default function ValesGasolina({
 
         <Group gap="sm" align="center" wrap="wrap">
           <TextInput
-            placeholder="Busca folio, chofer, vehículo o placas"
+            placeholder="Busca folio, chofer, vehículo, placas o sucursal"
             leftSection={<IconSearch size={14} />}
             value={busqueda}
             onChange={(e) => setBusqueda(e.currentTarget.value)}
@@ -738,8 +798,10 @@ export default function ValesGasolina({
               folio:          editVale.folio,
               conductor_id:   String(editVale.conductor_id),
               vehiculo_id:    String(editVale.vehiculo_id),
+              sucursal_id:    editVale.sucursal_id != null ? String(editVale.sucursal_id) : '',
               fecha:          editVale.fecha.split('T')[0],
               vehiculo_label: vehiculoLabelCorto(editVale),
+              sucursal_label: editVale.sucursal ?? SIN_SUCURSAL,
             }}
             isPending={updateMut.isPending}
             error={updateMut.error ? (updateMut.error as Error).message : null}

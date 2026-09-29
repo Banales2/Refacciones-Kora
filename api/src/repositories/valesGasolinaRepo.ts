@@ -9,6 +9,12 @@ export interface ValeGasolina {
   creado_por:   string
   conductor_id: number
   vehiculo_id:  number
+  /**
+   * Dónde se entregó. `null` en los vales anteriores a la migración 057, que
+   * la pantalla muestra como ANTIGUO.
+   */
+  sucursal_id:  number | null
+  sucursal:     string | null
   fecha:        string
   conductor:    string
   marca:        string
@@ -32,6 +38,7 @@ export interface ValeGasolina {
 
 const SELECT_VALE = `
   SELECT vg.id, vg.folio, vg.creado_por, vg.conductor_id, vg.vehiculo_id,
+         vg.sucursal_id, s.nombre AS sucursal,
          CONVERT(char(10), vg.fecha, 23) AS fecha,
          c.nombre AS conductor,
          m.marca, m.nombre AS modelo, v.numero_serie AS serie, v.placas,
@@ -54,6 +61,7 @@ const SELECT_VALE = `
   JOIN conductores c ON c.id = vg.conductor_id
   JOIN vehiculos   v ON v.id = vg.vehiculo_id
   JOIN modelos     m ON m.id = v.modelo_id
+  LEFT JOIN sucursales s ON s.id = vg.sucursal_id
   -- LEFT y no EXISTS porque además de saber si se usó hay que poder decir
   -- dónde. El índice único UQ_recargas_vale garantiza que hay a lo sumo una,
   -- así que este JOIN no puede multiplicar renglones.
@@ -100,18 +108,22 @@ export async function findById(id: number): Promise<ValeGasolina | null> {
   return r.recordset[0] ?? null
 }
 
-export async function create(data: ValeGasolinaCreate, creadoPor: string): Promise<ValeGasolina> {
+// `sucursalId` llega ya resuelta: la del usuario si está acotado, la elegida si no.
+export async function create(
+  data: ValeGasolinaCreate, creadoPor: string, sucursalId: number
+): Promise<ValeGasolina> {
   const pool = await getPool()
   const r = await pool.request()
     .input('folio',        sql.NVarChar(30),  data.folio)
     .input('creado_por',   sql.NVarChar(120), creadoPor)
     .input('conductor_id', sql.Int,  data.conductor_id)
     .input('vehiculo_id',  sql.Int,  data.vehiculo_id)
+    .input('sucursal_id',  sql.Int,  sucursalId)
     .input('fecha',        sql.Date, data.fecha)
     .query(`
-      INSERT INTO vales_gasolina (folio, creado_por, conductor_id, vehiculo_id, fecha)
+      INSERT INTO vales_gasolina (folio, creado_por, conductor_id, vehiculo_id, sucursal_id, fecha)
       OUTPUT INSERTED.id
-      VALUES (@folio, @creado_por, @conductor_id, @vehiculo_id, @fecha)
+      VALUES (@folio, @creado_por, @conductor_id, @vehiculo_id, @sucursal_id, @fecha)
     `)
   return findById(r.recordset[0].id) as Promise<ValeGasolina>
 }
@@ -133,6 +145,10 @@ export async function update(id: number, data: ValeGasolinaUpdate): Promise<Vale
   if (data.vehiculo_id !== undefined) {
     req.input('vehiculo_id', sql.Int, data.vehiculo_id)
     sets.push('vehiculo_id = @vehiculo_id')
+  }
+  if (data.sucursal_id !== undefined) {
+    req.input('sucursal_id', sql.Int, data.sucursal_id)
+    sets.push('sucursal_id = @sucursal_id')
   }
   if (data.fecha !== undefined) {
     req.input('fecha', sql.Date, data.fecha)
@@ -171,5 +187,13 @@ export async function vehiculoExists(id: number): Promise<boolean> {
   const r = await pool.request()
     .input('id', sql.Int, id)
     .query('SELECT TOP 1 id FROM vehiculos WHERE id = @id')
+  return r.recordset.length > 0
+}
+
+export async function sucursalExists(id: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query('SELECT TOP 1 id FROM sucursales WHERE id = @id')
   return r.recordset.length > 0
 }

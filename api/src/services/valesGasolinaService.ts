@@ -1,14 +1,17 @@
 import * as repo from '../repositories/valesGasolinaRepo'
 import type { ValeGasolina } from '../repositories/valesGasolinaRepo'
 import type { ValeGasolinaCreate, ValeGasolinaUpdate } from '../schemas/valeGasolinaSchema'
-import { NotFoundError, ConflictError } from '../shared/errors'
+import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
 import * as archivadoRepo from '../repositories/archivadoRepo'
 
 // Chofer y vehículo se validan aquí para devolver un 404 con mensaje claro en
 // vez de dejar que reviente la restricción de llave foránea con un 500.
 async function validarReferencias(
-  conductorId?: number, vehiculoId?: number
+  conductorId?: number, vehiculoId?: number, sucursalId?: number
 ): Promise<void> {
+  if (sucursalId !== undefined && !(await repo.sucursalExists(sucursalId))) {
+    throw new NotFoundError('Sucursal')
+  }
   if (conductorId !== undefined && !(await repo.conductorExists(conductorId))) {
     throw new NotFoundError('Chofer')
   }
@@ -54,18 +57,33 @@ export async function restaurar(id: number): Promise<void> {
   }
 }
 
-export async function create(data: ValeGasolinaCreate, creadoPor: string): Promise<ValeGasolina> {
-  await validarReferencias(data.conductor_id, data.vehiculo_id)
+/**
+ * `sucursalUsuario`: la sucursal a la que está acotado quien captura. Si tiene
+ * una, el vale se entrega ahí y no la elige —lo que mande el cliente se
+ * ignora—; si no la tiene (ve todas), tiene que decir cuál.
+ */
+export async function create(
+  data: ValeGasolinaCreate, creadoPor: string, sucursalUsuario: number | null
+): Promise<ValeGasolina> {
+  const sucursalId = sucursalUsuario ?? data.sucursal_id
+  if (sucursalId === undefined) throw new ValidationError('Sucursal requerida')
+  await validarReferencias(data.conductor_id, data.vehiculo_id, sucursalId)
   // El folio también lo protege un índice único; se revisa aquí para contestar
   // con un mensaje que diga qué pasó en vez de un error de base de datos.
   if (await repo.existsFolio(data.folio)) {
     throw new ConflictError(`Ya existe un vale con el folio ${data.folio}`)
   }
-  return repo.create(data, creadoPor)
+  return repo.create(data, creadoPor, sucursalId)
 }
 
-export async function update(id: number, data: ValeGasolinaUpdate): Promise<ValeGasolina> {
-  await validarReferencias(data.conductor_id, data.vehiculo_id)
+export async function update(
+  id: number, data: ValeGasolinaUpdate, sucursalUsuario: number | null
+): Promise<ValeGasolina> {
+  // Quien está acotado a una sucursal no puede mandar un vale a otra.
+  if (sucursalUsuario != null && data.sucursal_id !== undefined && data.sucursal_id !== sucursalUsuario) {
+    throw new ValidationError('Solo puedes asignar vales a tu sucursal')
+  }
+  await validarReferencias(data.conductor_id, data.vehiculo_id, data.sucursal_id)
   if (data.folio !== undefined && await repo.existsFolio(data.folio, id)) {
     throw new ConflictError(`Ya existe un vale con el folio ${data.folio}`)
   }

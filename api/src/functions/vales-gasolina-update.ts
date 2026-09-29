@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe } from '../shared/alcance'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { ValeGasolinaUpdateSchema } from '../schemas/valeGasolinaSchema'
@@ -17,7 +18,7 @@ export async function valesGasolinaUpdate(
 
     const data = ValeGasolinaUpdateSchema.parse(await request.json())
     const antes = await capturar('vales_gasolina', id)
-    const updated = await service.update(id, data)
+    const updated = await service.update(id, data, (await alcanceDe(user)).sucursalId)
 
     await audit({
       user,

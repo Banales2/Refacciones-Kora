@@ -30,6 +30,9 @@ export interface ValeGasolina {
   creado_por:   string
   conductor_id: number
   vehiculo_id:  number
+  /** Dónde se entregó. `null` en los vales de antes de registrarla: ANTIGUO. */
+  sucursal_id:  number | null
+  sucursal:     string | null
   fecha:        string
   conductor:    string
   marca:        string
@@ -52,6 +55,9 @@ export interface ValeGasolinaPayload {
   folio:        string
   conductor_id: number
   vehiculo_id:  number
+  // Si quien captura está acotado a una sucursal, la API pone la suya e ignora
+  // esta; si no, es obligatoria al crear.
+  sucursal_id?: number
   fecha:        string
 }
 

@@ -14,9 +14,11 @@ export async function valesGasolinaCreate(
   try {
     const user = requireRole(request, 'admin', 'editor', 'practicante', 'responsable')
     const data = ValeGasolinaCreateSchema.parse(await request.json())
-    await exigirVehiculo(data.vehiculo_id, await alcanceDe(user))
-    // Quien crea el vale es siempre el usuario de la sesión.
-    const created = await service.create(data, user.userDetails)
+    const alcance = await alcanceDe(user)
+    await exigirVehiculo(data.vehiculo_id, alcance)
+    // Quien crea el vale es siempre el usuario de la sesión, y si está acotado
+    // a una sucursal, el vale es de esa sucursal.
+    const created = await service.create(data, user.userDetails, alcance.sucursalId)
     await audit({
       user,
       accion: 'CREAR',
@@ -25,7 +27,7 @@ export async function valesGasolinaCreate(
       despues: await capturar('vales_gasolina', created.id),
       detalles: {
         folio: created.folio, conductor: created.conductor,
-        vehiculo: created.serie, fecha: created.fecha,
+        vehiculo: created.serie, sucursal: created.sucursal, fecha: created.fecha,
       },
       ipAddress: getClientIp(request),
     })

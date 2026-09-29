@@ -24,10 +24,13 @@ const folio = z
 
 // `creado_por` no se recibe del cliente: se toma del usuario de la sesión para
 // que el vale no pueda registrarse a nombre de otra persona.
+// `sucursal_id` es opcional aquí porque a quien está acotado a una sucursal se
+// la pone la API; a los demás se la exige la función (ver vales-gasolina-create).
 export const ValeGasolinaCreateSchema = z.object({
   folio,
   conductor_id: z.coerce.number().int().min(1, 'Chofer requerido'),
   vehiculo_id:  z.coerce.number().int().min(1, 'Vehículo requerido'),
+  sucursal_id:  z.coerce.number().int().min(1, 'Sucursal requerida').optional(),
   fecha,
 })
 
@@ -35,6 +38,8 @@ export const ValeGasolinaUpdateSchema = z.object({
   folio: folio.optional(),
   conductor_id: z.coerce.number().int().min(1, 'Chofer requerido').optional(),
   vehiculo_id:  z.coerce.number().int().min(1, 'Vehículo requerido').optional(),
+  // Sirve también para ponerle sucursal a un vale ANTIGUO.
+  sucursal_id:  z.coerce.number().int().min(1, 'Sucursal requerida').optional(),
   fecha: fecha.optional(),
 })
 
