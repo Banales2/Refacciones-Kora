@@ -61,7 +61,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
 
   // El responsable reporta pero no edita ni atiende: atender es registrar el
   // mantenimiento, que no es suyo.
-  const { puedeEditar } = usePermisos()
+  const { puedeEditar, puedeReportarIncidencia } = usePermisos()
   // El vehículo se elige al crear; al editar sale de la propia incidencia.
   const [createOpen, setCreateOpen]   = useState(false)
   const [vehiculoNueva, setVehiculoNueva] = useState<string | null>(null)
@@ -233,12 +233,14 @@ export default function Incidencias({ onNavigateVehiculo }: {
             <Text size="xl" fw={600}>Incidencias</Text>
             <Text size="sm" c="dimmed">Lo reportado en la flota y que está por atenderse</Text>
           </div>
-          <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={() => { setFormError(null); setVehiculoNueva(null); setCreateOpen(true) }}
-          >
-            Nueva incidencia
-          </Button>
+          {puedeReportarIncidencia && (
+            <Button
+              leftSection={<IconPlus size={16} />}
+              onClick={() => { setFormError(null); setVehiculoNueva(null); setCreateOpen(true) }}
+            >
+              Nueva incidencia
+            </Button>
+          )}
         </Group>
 
         {abiertas > 0 && (

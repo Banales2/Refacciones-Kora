@@ -104,6 +104,10 @@ Ve todas las pestañas de Catálogos. En Translados, Técnicos y Permisos solo
 consulta (sus `-list` lo admiten; sus altas siguen siendo de admin y editor), y
 la ficha del técnico —lo que se le ha facturado y pagado— se le cierra igual
 que la del proveedor.
+Ve Incidencias sin reportarlas, corregirlas ni atenderlas: solo `incidencias-list`
+lo admite. El botón de alta lo decide `puedeReportarIncidencia` (que también se
+lo quita al `lector`), y el vehículo de cada incidencia no es enlace porque no
+tiene Vehículos en el menú.
 
 Tres sitios definen cada rol y los tres tienen que estar de acuerdo: el `CHECK`
 de la tabla, los `allowedRoles` de `staticwebapp.config.json` y la lista de cada

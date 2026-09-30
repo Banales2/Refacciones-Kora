@@ -586,7 +586,11 @@ export default function Layout() {
             onNavigateModelo={puedeVerSeccion('modelos') ? navigateToModeloId : undefined}
           />
         )}
-        {section === 'incidencias' && puedeVerSeccion('incidencias') && <Incidencias onNavigateVehiculo={navigateToVehiculoId} />}
+        {section === 'incidencias' && puedeVerSeccion('incidencias') && (
+          // Sin Vehículos en el menú (el practicante), el enlace llevaría a una
+          // pantalla que no se le enseña.
+          <Incidencias onNavigateVehiculo={puedeVerSeccion('vehiculos') ? navigateToVehiculoId : undefined} />
+        )}
         {section === 'chequeos' && puedeVerSeccion('chequeos') && <ChequeoPatio />}
         {section === 'sitios'    && puedeVerSeccion('sitios') && (
           <SitiosYRutas

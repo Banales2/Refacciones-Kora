@@ -23,9 +23,11 @@ export type Seccion =
 // porque es donde se capturan los programas de mantenimiento; el modelo en sí
 // sólo lo mira. El chequeo de flotilla lo consulta sin capturar: ve qué
 // unidades faltan y lo que salió cada día, pero no recorre ni decide qué hacer
-// con el reporte de un chofer (ver `puedeCapturarChequeo`).
+// con el reporte de un chofer (ver `puedeCapturarChequeo`). Las incidencias,
+// igual: las lee, no las reporta ni las atiende (ver `puedeReportarIncidencia`).
 const SECCIONES_PRACTICANTE: readonly Seccion[] = [
   'piezas', 'modelos', 'sitios', 'vales', 'facturas', 'facturas-gasolina', 'chequeos',
+  'incidencias',
 ]
 
 // El responsable de sucursal: la flota de su sucursal y la de translado, el
@@ -91,6 +93,12 @@ export interface Permisos {
    * guardar.
    */
   puedeCapturarChequeo: boolean
+  /**
+   * Si da de alta incidencias. `incidencias-create` admite a admin, editor y
+   * responsable; el practicante y el lector solo las consultan. Atenderlas y
+   * corregirlas sigue siendo `puedeEditar`.
+   */
+  puedeReportarIncidencia: boolean
   /** Si la sección debe aparecer en el menú y poder abrirse. */
   puedeVerSeccion: (s: Seccion) => boolean
   /** Si la pestaña de Catálogos debe aparecer. */
@@ -125,6 +133,7 @@ export function usePermisos(): Permisos {
     puedeVerCompras: !esResponsable,
     puedeTraspasar: !esPracticante,
     puedeCapturarChequeo: !esPracticante && rol !== 'lector',
+    puedeReportarIncidencia: !esPracticante && rol !== 'lector',
     puedeVerSeccion: (s) => {
       if (s === 'registros' || s === 'errores-captura') return esAdmin
       if (esPracticante) return SECCIONES_PRACTICANTE.includes(s)
