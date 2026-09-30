@@ -180,10 +180,17 @@ export function useDocumentosPorVencer(activo = true) {
   })
 }
 
+// Un día de la tendencia, recalculado con las reglas actuales del programa.
 export interface HistorialDia {
-  fecha:      string
-  vencidos:   number
-  por_vencer: number
+  fecha:              string
+  vencidos:           number
+  por_vencer:         number
+  /** De los vencidos, los de unidades que ese día seguían en garantía. */
+  garantia_en_riesgo: number
+  /** Unidades distintas con al menos un vencido. */
+  unidades_atrasadas: number
+  /** Visitas al taller registradas ese día contra el programa. */
+  servicios:          number
 }
 
 export function useHistorialPreventivos(meses = 12) {

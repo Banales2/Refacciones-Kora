@@ -32,6 +32,7 @@ import type {
   ActaLinea, ResultadoRenglon,
 } from '../repositories/programaVehiculoRepo'
 import type { GarantiaPrincipal } from '../repositories/garantiasRepo'
+import type { VinculoFleet } from '../repositories/programaVehiculoRepo'
 
 // Fracción del intervalo que basta haber recorrido para avisar.
 const AVISO_KM = 0.75
@@ -818,14 +819,33 @@ export interface AlertaPrograma {
   urgencia:        number
 }
 
-// Todo lo que el programa tiene vencido o por vencer en la flota. Las fases
-// entran por kilometraje y las operaciones por su límite de meses, que corre
-// aparte: una unidad puede tener la visita lejos y aun así deberle el aceite.
-export async function clasificarFleet(): Promise<{
-  vencidos: AlertaPrograma[]; porVencer: AlertaPrograma[]
-}> {
+// Lo que el cálculo de la flota necesita leer de la base, de un jalón. Se
+// separa del cálculo para poder evaluarlo contra otra fecha —la tendencia del
+// tablero lo evalúa contra cada día del último año— sin volver a consultar.
+interface DatosFleet {
+  vinculos:    VinculoFleet[]
+  ids:         number[]
+  porVehiculo: Map<number, VinculoFleet[]>
+  visitas:     Map<number, Visita[]>
+  estados:     Map<number, EstadoOperacion[]>
+  garantias:   Map<number, GarantiaPrincipal>
+  excepciones: Map<number, Excepciones>
+  programas:   Map<number, ProgramaCompleto>
+}
+
+function agrupar<T extends { vehiculo_id: number }>(filas: T[]): Map<number, T[]> {
+  const salida = new Map<number, T[]>()
+  for (const f of filas) {
+    const lista = salida.get(f.vehiculo_id)
+    if (lista) lista.push(f)
+    else salida.set(f.vehiculo_id, [f])
+  }
+  return salida
+}
+
+async function cargarFleet(): Promise<DatosFleet | null> {
   const vinculos = await repo.findVinculosFleet()
-  if (!vinculos.length) return { vencidos: [], porVencer: [] }
+  if (!vinculos.length) return null
 
   const ids = [...new Set(vinculos.map((v) => v.vehiculo_id))]
   const [visitas, estados, garantias, excepciones] = await Promise.all([
@@ -844,48 +864,72 @@ export async function clasificarFleet(): Promise<{
 
   // Las filas llegan sueltas, una por etapa: se agrupan por unidad para poder
   // resolver cuál manda.
-  const porVehiculo = new Map<number, typeof vinculos>()
-  for (const v of vinculos) {
-    const lista = porVehiculo.get(v.vehiculo_id)
-    if (lista) lista.push(v)
-    else porVehiculo.set(v.vehiculo_id, [v])
+  return {
+    vinculos, ids,
+    porVehiculo: agrupar(vinculos),
+    visitas:     agrupar(visitas),
+    estados:     agrupar(estados),
+    garantias, excepciones, programas,
   }
-  const visitasPorVehiculo = new Map<number, Visita[]>()
-  for (const v of visitas) {
-    const lista = visitasPorVehiculo.get(v.vehiculo_id)
-    if (lista) lista.push(v)
-    else visitasPorVehiculo.set(v.vehiculo_id, [v])
-  }
-  const estadosPorVehiculo = new Map<number, EstadoOperacion[]>()
-  for (const e of estados) {
-    const lista = estadosPorVehiculo.get(e.vehiculo_id)
-    if (lista) lista.push(e)
-    else estadosPorVehiculo.set(e.vehiculo_id, [e])
-  }
+}
 
-  const hoy = fechaMexico()
+/**
+ * Lo que una unidad sabía de sí misma en una fecha: su odómetro, las visitas
+ * que llevaba y la última vez que se atendió cada renglón. Para hoy es lo
+ * guardado; para un día pasado lo arma `reconstruirHistorial`.
+ */
+interface VistaUnidad {
+  kilometraje: number | null
+  visitas:     Visita[]
+  estados:     EstadoOperacion[]
+}
+
+// Todo lo que el programa tiene vencido o por vencer en la flota. Las fases
+// entran por kilometraje y las operaciones por su límite de meses, que corre
+// aparte: una unidad puede tener la visita lejos y aun así deberle el aceite.
+export async function clasificarFleet(): Promise<{
+  vencidos: AlertaPrograma[]; porVencer: AlertaPrograma[]
+}> {
+  const datos = await cargarFleet()
+  if (!datos) return { vencidos: [], porVencer: [] }
+  return clasificarAl(datos, fechaMexico(), (vehiculoId, cabeza) => ({
+    kilometraje: cabeza.kilometraje,
+    visitas:     datos.visitas.get(vehiculoId) ?? [],
+    estados:     datos.estados.get(vehiculoId) ?? [],
+  }))
+}
+
+// El cálculo de `clasificarFleet` contra una fecha cualquiera. `vista` dice qué
+// sabía cada unidad ese día; si devuelve null, la unidad todavía no contaba.
+function clasificarAl(
+  datos: DatosFleet,
+  hoy:   string,
+  vista: (vehiculoId: number, cabeza: VinculoFleet) => VistaUnidad | null,
+): { vencidos: AlertaPrograma[]; porVencer: AlertaPrograma[] } {
   const vencidos: AlertaPrograma[] = []
   const porVencer: AlertaPrograma[] = []
 
-  for (const [vehiculoId, filas] of porVehiculo) {
-    const cabeza   = filas[0]
-    const garantia = evaluarPrincipal(garantias.get(vehiculoId) ?? null, cabeza.kilometraje, hoy)
+  for (const [vehiculoId, filas] of datos.porVehiculo) {
+    const cabeza = filas[0]
+    const unidad = vista(vehiculoId, cabeza)
+    if (!unidad) continue
+
+    const garantia = evaluarPrincipal(datos.garantias.get(vehiculoId) ?? null, unidad.kilometraje, hoy)
     const resuelta = resolverEtapa(filas, garantia)
     const vinculo  = filas.find((v) => v.etapa === resuelta.etapa)
     if (!vinculo) continue
 
-    const base = programas.get(vinculo.programa_id)
+    const base = datos.programas.get(vinculo.programa_id)
     if (!base) continue
     const programa = aplicarExcepciones(
-      base, excepciones.get(vehiculoId) ?? { fases: [], operaciones: [] }
+      base, datos.excepciones.get(vehiculoId) ?? { fases: [], operaciones: [] }
     )
 
-    const todasLasVisitas = visitasPorVehiculo.get(vehiculoId) ?? []
     const arranque = resolverArranque(
       resuelta.etapa, vinculo, filas.find((v) => v.etapa !== resuelta.etapa),
-      todasLasVisitas, garantia,
+      unidad.visitas, garantia,
     )
-    const hechas = todasLasVisitas.filter((v) => v.etapa === resuelta.etapa).length
+    const hechas = unidad.visitas.filter((v) => v.etapa === resuelta.etapa).length
 
     // Bajo el programa del fabricante y con la garantía viva, un atraso es un
     // riesgo de perderla: se marca y además sube por encima del resto.
@@ -904,7 +948,7 @@ export async function clasificarFleet(): Promise<{
         : urgenciaBase,
     })
 
-    const [proxima] = armarServicios(programa, hechas, arranque.km, cabeza.kilometraje, 1)
+    const [proxima] = armarServicios(programa, hechas, arranque.km, unidad.kilometraje, 1)
     if (proxima && (proxima.vencida || proxima.por_vencer)) {
       const a = alerta(
         'fase',
@@ -922,7 +966,7 @@ export async function clasificarFleet(): Promise<{
     const tiempo = armarOperacionesTiempo(
       programa,
       arranque.fecha ?? aFecha(cabeza.fecha_compra),
-      estadosPorVehiculo.get(vehiculoId) ?? [],
+      unidad.estados,
       hoy,
     )
     for (const t of tiempo) {
@@ -942,4 +986,152 @@ export async function clasificarFleet(): Promise<{
   vencidos.sort((a, b) => b.urgencia - a.urgencia)
   porVencer.sort((a, b) => b.urgencia - a.urgencia)
   return { vencidos, porVencer }
+}
+
+// ─── Tendencia, reconstruida ────────────────────────────────────────────────
+
+export interface PuntoTendencia {
+  fecha:              string
+  vencidos:           number
+  por_vencer:         number
+  /** De los vencidos, los de unidades que ese día seguían en garantía. */
+  garantia_en_riesgo: number
+  /** Unidades distintas con al menos un vencido. */
+  unidades_atrasadas: number
+  /** Visitas al taller registradas ese día contra el programa. */
+  servicios:          number
+}
+
+type Lectura = { fecha: string; km: number }
+
+// Odómetro de una unidad en `fecha`, interpolado entre las dos lecturas que la
+// rodean. Antes de la primera lectura no se sabe: se devuelve null y la unidad
+// se evalúa solo por lo que corre por tiempo —suponer la primera lectura hacia
+// atrás la haría deber servicios de kilómetros que todavía no había rodado—.
+function kmEn(lecturas: Lectura[], fecha: string): number | null {
+  if (!lecturas.length || fecha < lecturas[0].fecha) return null
+  let i = 0
+  while (i + 1 < lecturas.length && lecturas[i + 1].fecha <= fecha) i++
+  const a = lecturas[i]
+  const b = lecturas[i + 1]
+  if (!b || a.fecha === fecha) return a.km
+  const t = (Date.parse(fecha) - Date.parse(a.fecha)) / (Date.parse(b.fecha) - Date.parse(a.fecha))
+  return Math.round(a.km + (b.km - a.km) * t)
+}
+
+/**
+ * La tendencia del programa preventivo, recalculada día por día con las reglas
+ * de hoy.
+ *
+ * El snapshot diario solo guarda desde que existe, y guardó lo que calculaba la
+ * versión de entonces: por eso la gráfica salía como una raya. Aquí se vuelve a
+ * correr el mismo cálculo del tablero contra cada fecha, con lo que la unidad
+ * sabía ese día:
+ *
+ * - el odómetro, interpolado entre las lecturas del chequeo, la recarga y el
+ *   mantenimiento (ver `kmEn`);
+ * - las visitas registradas hasta esa fecha;
+ * - la última vez que se atendió cada renglón, sacada del acta de las visitas
+ *   y, para lo atendido por su cuenta, del estado guardado —que solo conoce la
+ *   última vez—.
+ *
+ * Lo que no tiene historia se toma como está hoy: el programa del modelo, las
+ * excepciones de la unidad y su etapa forzada.
+ */
+export async function reconstruirHistorial(desde: string, hasta: string): Promise<PuntoTendencia[]> {
+  const fechas: string[] = []
+  for (let d = new Date(`${desde}T12:00:00`); fechaMexico(d) <= hasta; d.setDate(d.getDate() + 1)) {
+    fechas.push(fechaMexico(d))
+  }
+
+  const datos = await cargarFleet()
+  if (!datos) {
+    return fechas.map((fecha) => ({
+      fecha, vencidos: 0, por_vencer: 0, garantia_en_riesgo: 0, unidades_atrasadas: 0, servicios: 0,
+    }))
+  }
+
+  const [lecturas, atenciones] = await Promise.all([
+    repo.findLecturasKmDeVehiculos(datos.ids),
+    repo.findAtencionesDeVehiculos(datos.ids),
+  ])
+
+  // Lecturas limpias por unidad: en orden, sin retrocesos (un dedazo hacia
+  // abajo) y sin pasar del odómetro de hoy (un dedazo hacia arriba), que
+  // interpolados dibujarían picos que la unidad nunca rodó. Hoy vale lo que
+  // marca la unidad y cierra el último tramo.
+  const hoy = fechaMexico()
+  const lecturasPorVehiculo = new Map<number, Lectura[]>()
+  const porLeer = agrupar(lecturas)
+  for (const [vehiculoId, filas] of datos.porVehiculo) {
+    const actual = filas[0].kilometraje
+    const limpias: Lectura[] = []
+    for (const l of porLeer.get(vehiculoId) ?? []) {
+      const km = Number(l.km)
+      if (actual != null && km > actual) continue
+      if (limpias.length && km < limpias[limpias.length - 1].km) continue
+      limpias.push({ fecha: aFecha(l.fecha)!, km })
+    }
+    if (actual != null && (!limpias.length || limpias[limpias.length - 1].fecha < hoy)) {
+      limpias.push({ fecha: hoy, km: actual })
+    }
+    lecturasPorVehiculo.set(vehiculoId, limpias)
+  }
+
+  // Cada atención con su fecha: las del acta y las que se hicieron por su cuenta.
+  const atencionesPorVehiculo = new Map<number, { operacion_id: number; fecha: string }[]>()
+  const anotar = (vehiculoId: number, operacion_id: number, fecha: string | null) => {
+    if (!fecha) return
+    const lista = atencionesPorVehiculo.get(vehiculoId)
+    if (lista) lista.push({ operacion_id, fecha })
+    else atencionesPorVehiculo.set(vehiculoId, [{ operacion_id, fecha }])
+  }
+  for (const a of atenciones) anotar(a.vehiculo_id, a.operacion_id, aFecha(a.fecha))
+  for (const [vehiculoId, estados] of datos.estados) {
+    for (const e of estados) {
+      if (e.mantenimiento_id == null) anotar(vehiculoId, e.operacion_id, aFecha(e.ultima_fecha))
+    }
+  }
+
+  const serviciosPorFecha = new Map<string, number>()
+  for (const lista of datos.visitas.values()) {
+    for (const v of lista) {
+      const f = aFecha(v.fecha)!
+      serviciosPorFecha.set(f, (serviciosPorFecha.get(f) ?? 0) + 1)
+    }
+  }
+
+  return fechas.map((fecha) => {
+    const { vencidos, porVencer } = clasificarAl(datos, fecha, (vehiculoId, cabeza) => {
+      // Una unidad no debía nada antes de entrar a la flota ni antes de que
+      // arrancara su programa.
+      const compra = aFecha(cabeza.fecha_compra)
+      if (compra && compra > fecha) return null
+      const arranques = (datos.porVehiculo.get(vehiculoId) ?? [])
+        .map((f) => aFecha(f.fecha_inicio))
+      if (arranques.every((f) => f != null && f > fecha)) return null
+
+      const ultimas = new Map<number, string>()
+      for (const a of atencionesPorVehiculo.get(vehiculoId) ?? []) {
+        if (a.fecha > fecha) continue
+        const previa = ultimas.get(a.operacion_id)
+        if (!previa || a.fecha > previa) ultimas.set(a.operacion_id, a.fecha)
+      }
+      return {
+        kilometraje: kmEn(lecturasPorVehiculo.get(vehiculoId) ?? [], fecha),
+        visitas:     (datos.visitas.get(vehiculoId) ?? []).filter((v) => aFecha(v.fecha)! <= fecha),
+        estados:     [...ultimas].map(([operacion_id, ultima_fecha]) => ({
+          operacion_id, ultima_fecha, ultimo_km: null, mantenimiento_id: null,
+        })),
+      }
+    })
+    return {
+      fecha,
+      vencidos:           vencidos.length,
+      por_vencer:         porVencer.length,
+      garantia_en_riesgo: vencidos.filter((a) => a.garantia_en_riesgo).length,
+      unidades_atrasadas: new Set(vencidos.map((a) => a.vehiculo_id)).size,
+      servicios:          serviciosPorFecha.get(fecha) ?? 0,
+    }
+  })
 }

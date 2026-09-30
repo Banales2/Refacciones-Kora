@@ -11,7 +11,7 @@ import {
   SimpleGrid, Card, Text, Group, Stack, Loader, Center, Table, Divider, Badge, ActionIcon,
   Collapse, Button, Alert, Tabs, Tooltip,
 } from '@mantine/core'
-import { BarChart, LineChart } from '@mantine/charts'
+import { BarChart, CompositeChart } from '@mantine/charts'
 import {
   IconChevronRight, IconAlertTriangle, IconTool,
   IconShoppingCart, IconClockExclamation, IconExclamationCircle, IconCashBanknote,
@@ -23,7 +23,7 @@ import {
   useResumenMes, usePreventivosVencidos, usePreventivosPorVencer, useHistorialPreventivos,
   useDocumentosPorVencer, useIncidenciasAbiertas, useAnalisisCostos,
   usePendientesAlmacen,
-  type ServicioPreventivo, type VentanaCostos, type TraspasoPendienteDash,
+  type ServicioPreventivo, type VentanaCostos, type TraspasoPendienteDash, type HistorialDia,
 } from '../hooks/useDashboard'
 import { useResumenChequeos } from '../hooks/useChequeos'
 import { SEVERIDAD_META } from '../lib/incidenciaMeta'
@@ -260,6 +260,27 @@ function PreventivosPorVehiculoTable({
 // por antigüedad —la manda así la API— porque el problema no es que exista un
 // traspaso pendiente, sino que lleve semanas siéndolo: esas piezas no están en
 // el inventario de nadie y nadie las echa de menos hasta que hacen falta.
+// La tendencia llega día por día; un año de puntos diarios no se lee en una
+// gráfica de 280 px. Se junta por semana (de lunes a domingo): los conteos son
+// los del último día de la semana —cómo cerró—, y las visitas, la suma.
+function tendenciaSemanal(dias: HistorialDia[]) {
+  const semanas: (Omit<HistorialDia, 'fecha'> & { semana: string })[] = []
+  let lunesActual: string | null = null
+  for (const d of dias) {
+    const fecha = new Date(`${d.fecha.split('T')[0]}T12:00:00`)
+    fecha.setDate(fecha.getDate() - ((fecha.getDay() + 6) % 7))
+    const lunes = fecha.toISOString().split('T')[0]
+    const ultima = semanas[semanas.length - 1]
+    if (lunes !== lunesActual || !ultima) {
+      lunesActual = lunes
+      semanas.push({ ...d, semana: formatFechaCorta(lunes) })
+    } else {
+      semanas[semanas.length - 1] = { ...d, servicios: ultima.servicios + d.servicios, semana: ultima.semana }
+    }
+  }
+  return semanas
+}
+
 function TraspasosPendientesTable({ items }: { items: TraspasoPendienteDash[] }) {
   if (items.length === 0) {
     return <Text c="dimmed" size="sm" py="md">No hay traspasos esperando aceptación.</Text>
@@ -354,7 +375,8 @@ export default function Dashboard({
   const totalSinSeguro   = documentosData?.data.sin_seguro.length   ?? 0
 
   const licenciasPorVencer = documentosData?.data.licencias ?? []
-  const historial = (historialData?.data ?? []).map(h => ({ ...h, fechaLabel: formatFechaCorta(h.fecha) }))
+  const historial = useMemo(() => tendenciaSemanal(historialData?.data ?? []), [historialData])
+  const ultimoDia = historialData?.data.at(-1)
 
   // Lo que el reporte de la pestaña Pendientes necesita, en un solo objeto. Sin
   // useMemo a propósito: las tres listas ya se rearman en cada render por el
@@ -874,27 +896,44 @@ export default function Dashboard({
 
             <Seccion
               titulo="Tendencia del programa preventivo sin atender"
-              descripcion="Se registra un punto por día — el historial se va construyendo con el tiempo. Una línea que sube es mantenimiento que se está acumulando, y el preventivo acumulado se cobra después como correctivo."
+              descripcion="Recalculada semana por semana con las reglas actuales del programa, a partir del odómetro de chequeos, recargas y mantenimientos y de las visitas registradas. Una línea que sube es mantenimiento que se está acumulando, y el preventivo acumulado se cobra después como correctivo. Las barras son las visitas al taller de esa semana."
             >
               {loadingHistorial ? (
                 <Center py="xl"><Loader size="sm" /></Center>
               ) : historial.length < 2 ? (
                 <Center py="xl">
-                  <Text c="dimmed" size="sm">Aún no hay suficiente historial acumulado para mostrar una tendencia.</Text>
+                  <Text c="dimmed" size="sm">Aún no hay suficiente historial para mostrar una tendencia.</Text>
                 </Center>
               ) : (
-                <LineChart
-                  h={260}
-                  data={historial}
-                  dataKey="fechaLabel"
-                  series={[
-                    { name: 'vencidos',   color: 'red.6',    label: 'Vencidos'   },
-                    { name: 'por_vencer', color: 'orange.6', label: 'Por vencer' },
-                  ]}
-                  withLegend
-                  curveType="linear"
-                  gridAxis="y"
-                />
+                <Stack gap="sm">
+                  {ultimoDia && (
+                    <Group gap="xs">
+                      <Badge variant="light" color="red">{ultimoDia.vencidos} vencidos hoy</Badge>
+                      <Badge variant="light" color="grape">{ultimoDia.garantia_en_riesgo} con garantía en riesgo</Badge>
+                      <Badge variant="light" color="gray">
+                        {ultimoDia.unidades_atrasadas} unidad{ultimoDia.unidades_atrasadas !== 1 ? 'es' : ''} atrasada{ultimoDia.unidades_atrasadas !== 1 ? 's' : ''}
+                      </Badge>
+                    </Group>
+                  )}
+                  <CompositeChart
+                    h={280}
+                    data={historial}
+                    dataKey="semana"
+                    series={[
+                      { name: 'servicios',          color: 'teal.4',   label: 'Visitas al taller', type: 'bar', yAxisId: 'right' },
+                      { name: 'vencidos',           color: 'red.6',    label: 'Vencidos',           type: 'line' },
+                      { name: 'por_vencer',         color: 'orange.6', label: 'Por vencer',         type: 'line' },
+                      { name: 'garantia_en_riesgo', color: 'grape.6',  label: 'Garantía en riesgo', type: 'line', strokeDasharray: '5 3' },
+                    ]}
+                    withLegend
+                    withRightYAxis
+                    rightYAxisProps={{ allowDecimals: false }}
+                    yAxisProps={{ allowDecimals: false }}
+                    curveType="monotone"
+                    withDots={false}
+                    gridAxis="y"
+                  />
+                </Stack>
               )}
             </Seccion>
 

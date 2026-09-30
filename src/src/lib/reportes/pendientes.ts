@@ -145,16 +145,23 @@ export async function exportPendientesPdf(d: DatosPendientes) {
   if (d.historial.length >= 2) {
     pdf.seccion(
       'Tendencia',
-      'Snapshot diario de lo acumulado. Una línea que sube es mantenimiento que se está posponiendo, ' +
+      'Recalculada día por día con las reglas actuales del programa. Una línea que sube es mantenimiento ' +
+      'que se está posponiendo, ' +
       'y el preventivo pospuesto se cobra después como correctivo.',
     )
     // Solo los últimos 30 puntos: la tabla completa de un año no cabe y lo que
     // interesa de la tendencia es hacia dónde va ahora.
     const recientes = d.historial.slice(-30)
     pdf.tabla({
-      head: ['Fecha', 'Vencidos', 'Por vencer'],
-      body: recientes.map((h) => [formatFechaCorta(h.fecha), String(h.vencidos), String(h.por_vencer)]),
-      columnStyles: { 1: { halign: 'center' }, 2: { halign: 'center' } },
+      head: ['Fecha', 'Vencidos', 'Por vencer', 'Garantía en riesgo', 'Unidades atrasadas', 'Visitas'],
+      body: recientes.map((h) => [
+        formatFechaCorta(h.fecha), String(h.vencidos), String(h.por_vencer),
+        String(h.garantia_en_riesgo), String(h.unidades_atrasadas), String(h.servicios),
+      ]),
+      columnStyles: {
+        1: { halign: 'center' }, 2: { halign: 'center' }, 3: { halign: 'center' },
+        4: { halign: 'center' }, 5: { halign: 'center' },
+      },
       fontSize: 9,
     })
   }
@@ -188,7 +195,10 @@ export async function exportPendientesExcel(d: DatosPendientes) {
     { header: 'Fecha',      width: 14, formato: 'fecha',  valor: (h) => new Date(`${h.fecha.split('T')[0]}T12:00:00`) },
     { header: 'Vencidos',   width: 12, formato: 'numero', valor: (h) => h.vencidos },
     { header: 'Por vencer', width: 12, formato: 'numero', valor: (h) => h.por_vencer },
-  ], d.historial, { vacio: 'Aún no hay historial acumulado.' })
+    { header: 'Garantía en riesgo', width: 18, formato: 'numero', valor: (h) => h.garantia_en_riesgo },
+    { header: 'Unidades atrasadas', width: 18, formato: 'numero', valor: (h) => h.unidades_atrasadas },
+    { header: 'Visitas',    width: 10, formato: 'numero', valor: (h) => h.servicios },
+  ], d.historial, { vacio: 'Aún no hay historial.' })
 
   await wb.guardar(nombreBase())
 }

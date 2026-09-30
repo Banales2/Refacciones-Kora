@@ -16,7 +16,7 @@
 // en el servicio.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { kmDeVida } from './vehiculosSql'
+import { kmDeVida, kmAbsoluto } from './vehiculosSql'
 import type { TipoPrograma } from './programaRepo'
 
 /** La etapa se llama igual que el tipo de programa que se sigue en ella. */
@@ -659,11 +659,11 @@ export async function findVinculosFleet(): Promise<VinculoFleet[]> {
     SELECT vp.vehiculo_id, vp.etapa, vp.programa_id, vp.km_inicio,
            CONVERT(char(10), vp.fecha_inicio, 23) AS fecha_inicio, vp.forzada,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
-           CASE WHEN v.tipo='camion'       THEN c.kilometraje
-                WHEN v.tipo='tractocamion' THEN t.kilometraje
-                WHEN v.tipo='utilitario'   THEN u.kilometraje
-                ELSE NULL END AS kilometraje,
-           v.fecha_compra, v.modelo_id
+           -- La vida de la unidad, igual que getEstado: con lo que marca el
+           -- tablero, una unidad con el odómetro reiniciado salía al día en el
+           -- tablero de la flota y atrasada en su propia ficha.
+           ${kmDeVida('v')} AS kilometraje,
+           CONVERT(char(10), v.fecha_compra, 23) AS fecha_compra, v.modelo_id
     FROM vehiculo_programa vp
     JOIN vehiculos v ON v.id = vp.vehiculo_id
     JOIN modelos mo  ON mo.id = v.modelo_id
@@ -685,6 +685,70 @@ export async function findVisitasDeVehiculos(ids: number[]): Promise<Visita[]> {
      ORDER BY mp.vehiculo_id, mp.etapa, mp.indice`
   )
   return r.recordset.map(mapVisita)
+}
+
+// ─── Historia, para la tendencia del tablero ────────────────────────────────
+
+/**
+ * Una lectura fechada del odómetro, ya en kilómetros de vida. Sale de los tres
+ * lugares donde alguien anota lo que marca el tablero: el chequeo diario, la
+ * recarga de combustible y el mantenimiento. Una por unidad y día —la mayor—,
+ * porque el mismo día se puede leer dos veces y basta con una.
+ */
+export interface LecturaKm {
+  vehiculo_id: number
+  fecha:       string
+  km:          number
+}
+
+export async function findLecturasKmDeVehiculos(ids: number[]): Promise<LecturaKm[]> {
+  if (!ids.length) return []
+  const pool = await getPool()
+  const req = pool.request()
+  const params = ids.map((id, i) => { req.input(`v${i}`, sql.Int, id); return `@v${i}` })
+  const r = await req.query(`
+    SELECT l.vehiculo_id, CONVERT(char(10), l.fecha, 23) AS fecha,
+           MAX(${kmAbsoluto('l.lectura', 'l.fecha', 'l.vehiculo_id')}) AS km
+    FROM (
+      SELECT vehiculo_id, CAST(fecha AS date) AS fecha, lectura
+        FROM chequeos WHERE lectura IS NOT NULL
+      UNION ALL
+      SELECT vehiculo_id, CAST(fecha AS date), kilometraje
+        FROM recargas_combustible WHERE kilometraje IS NOT NULL
+      UNION ALL
+      SELECT vehiculo_id, CAST(fecha AS date), km_actual
+        FROM mantenimiento WHERE km_actual IS NOT NULL
+    ) l
+    WHERE l.vehiculo_id IN (${params.join(',')})
+    GROUP BY l.vehiculo_id, l.fecha
+    ORDER BY l.vehiculo_id, l.fecha`)
+  return r.recordset
+}
+
+/**
+ * Los renglones que cada visita puso al día, con la fecha de la visita. Es la
+ * historia que `vehiculo_operacion_estado` no guarda: esa tabla solo sabe la
+ * última vez, y para saber qué estaba vencido hace tres meses hace falta la
+ * anterior. Lo omitido no entra: no puso nada al día.
+ */
+export interface AtencionFechada {
+  vehiculo_id:  number
+  operacion_id: number
+  fecha:        string
+}
+
+export async function findAtencionesDeVehiculos(ids: number[]): Promise<AtencionFechada[]> {
+  if (!ids.length) return []
+  const pool = await getPool()
+  const req = pool.request()
+  const params = ids.map((id, i) => { req.input(`v${i}`, sql.Int, id); return `@v${i}` })
+  const r = await req.query(`
+    SELECT mp.vehiculo_id, mo.operacion_id, CONVERT(char(10), m.fecha, 23) AS fecha
+    FROM mantenimiento_operacion mo
+    JOIN mantenimiento_programa mp ON mp.mantenimiento_id = mo.mantenimiento_id
+    JOIN mantenimiento m           ON m.id = mo.mantenimiento_id
+    WHERE mo.resultado <> 'omitida' AND mp.vehiculo_id IN (${params.join(',')})`)
+  return r.recordset
 }
 
 export interface EstadoFleet extends EstadoOperacion {

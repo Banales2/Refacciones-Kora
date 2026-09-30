@@ -370,25 +370,19 @@ export async function registrarSnapshotHistorial(): Promise<void> {
   await repo.upsertSnapshotHistorial(fechaMexico(), vencidos.length, porVencer.length)
 }
 
-export async function getHistorial(meses = 12): Promise<repo.HistorialDia[]> {
+// La tendencia ya no se lee de los snapshots guardados: se recalcula día por
+// día con las reglas actuales del programa (ver
+// programaVehiculoService.reconstruirHistorial). Los snapshots siguen
+// sirviendo para la comparación periodo contra periodo del reporte de flota.
+export async function getHistorial(meses = 12): Promise<programaVehiculoService.PuntoTendencia[]> {
   await ensureDailySync()
   const hoy = fechaMexico()
   const { year, month } = partesMexico()
   const pad = (n: number) => String(n).padStart(2, '0')
-  const ini = sumarMeses(year, month, -meses)
-  const sig = sumarMeses(year, month, 1)
-  const start = `${ini.year}-${pad(ini.month)}-01`
-  const end   = `${sig.year}-${pad(sig.month)}-01`
-
-  const dias = await repo.findHistorial(start, end)
-
-  // Si el snapshot diario aún no corrió hoy, agrega el conteo en vivo para no mostrar el día en blanco.
-  if (toDateStr(dias[dias.length - 1]?.fecha) !== hoy) {
-    const { vencidos, porVencer } = await programaVehiculoService.clasificarFleet()
-    dias.push({ fecha: hoy, vencidos: vencidos.length, por_vencer: porVencer.length })
-  }
-
-  return dias
+  // Cada día es una pasada por toda la flota: se acota para que un ?meses=
+  // mal escrito no ponga a la función a recalcular décadas.
+  const ini = sumarMeses(year, month, -Math.min(Math.max(meses, 1), 36))
+  return programaVehiculoService.reconstruirHistorial(`${ini.year}-${pad(ini.month)}-01`, hoy)
 }
 
 // ─── Reporte de flota (PDF) ────────────────────────────────────────────────────
