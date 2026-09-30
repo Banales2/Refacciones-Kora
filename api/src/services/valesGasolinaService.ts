@@ -20,6 +20,28 @@ async function validarReferencias(
   }
 }
 
+/** Cuentas a cuyo nombre puede registrar un vale quien captura. */
+export async function getCuentas(sucursalUsuario: number | null): Promise<repo.CuentaVale[]> {
+  return repo.findCuentas(sucursalUsuario)
+}
+
+// A nombre de quién queda el vale. Sin elegir, o eligiéndose a sí mismo, es
+// quien tiene la sesión. Si eligió a otra cuenta, tiene que ser una de las que
+// se le ofrecen: un texto libre dejaría registrar vales a nombre de cualquiera,
+// y el correo se toma tal como está en `usuarios` para que los vales de una
+// persona no queden repartidos entre dos grafías del mismo correo.
+async function resolverCreador(
+  elegido: string | undefined, usuarioSesion: string, sucursalUsuario: number | null,
+): Promise<string> {
+  if (!elegido || elegido.toLowerCase() === usuarioSesion.toLowerCase()) return usuarioSesion
+  const cuenta = (await repo.findCuentas(sucursalUsuario))
+    .find((c) => c.email.trim().toLowerCase() === elegido.toLowerCase())
+  if (!cuenta) {
+    throw new ValidationError('Esa cuenta no puede registrar vales, o no es de tu sucursal')
+  }
+  return cuenta.email.trim()
+}
+
 export async function getAll(incluirArchivados = false): Promise<ValeGasolina[]> {
   return repo.findAll(incluirArchivados)
 }
@@ -63,10 +85,11 @@ export async function restaurar(id: number): Promise<void> {
  * ignora—; si no la tiene (ve todas), tiene que decir cuál.
  */
 export async function create(
-  data: ValeGasolinaCreate, creadoPor: string, sucursalUsuario: number | null
+  data: ValeGasolinaCreate, usuarioSesion: string, sucursalUsuario: number | null
 ): Promise<ValeGasolina> {
   const sucursalId = sucursalUsuario ?? data.sucursal_id
   if (sucursalId === undefined) throw new ValidationError('Sucursal requerida')
+  const creadoPor = await resolverCreador(data.creado_por, usuarioSesion, sucursalUsuario)
   await validarReferencias(data.conductor_id, data.vehiculo_id, sucursalId)
   // El folio también lo protege un índice único; se revisa aquí para contestar
   // con un mensaje que diga qué pasó en vez de un error de base de datos.

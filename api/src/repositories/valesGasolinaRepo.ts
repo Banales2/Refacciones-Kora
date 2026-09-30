@@ -197,3 +197,29 @@ export async function sucursalExists(id: number): Promise<boolean> {
     .query('SELECT TOP 1 id FROM sucursales WHERE id = @id')
   return r.recordset.length > 0
 }
+
+/** Una cuenta a cuyo nombre se puede registrar un vale. */
+export interface CuentaVale {
+  email:  string
+  nombre: string | null
+}
+
+// Las cuentas que pueden entregar vales: los mismos roles que pueden
+// registrarlos (ver vales-gasolina-create). `creado_por` guarda el correo, que
+// es lo que la sesión trae y con lo que ya están agrupados los vales viejos.
+//
+// Acotado a una sucursal, solo las de esa sucursal: el vale se queda en la
+// suya, y ofrecerle las de otras sería registrar a nombre de gente de otro
+// patio.
+export async function findCuentas(sucursalId: number | null): Promise<CuentaVale[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('suc', sql.Int, sucursalId)
+    .query(`
+      SELECT email, nombre FROM usuarios
+      WHERE email IS NOT NULL AND LTRIM(RTRIM(email)) <> ''
+        AND rol IN ('admin', 'editor', 'practicante', 'responsable')
+        AND (@suc IS NULL OR sucursal_id = @suc)
+      ORDER BY COALESCE(nombre, email)`)
+  return r.recordset
+}

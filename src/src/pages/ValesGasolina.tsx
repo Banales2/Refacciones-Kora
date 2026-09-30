@@ -21,7 +21,7 @@ import {
 } from '@tabler/icons-react'
 import {
   useValesGasolina, useCreateValeGasolina, useUpdateValeGasolina,
-  useArchivarVale, ESTADO_VALE,
+  useArchivarVale, useCuentasVale, ESTADO_VALE,
 } from '../hooks/useValesGasolina'
 import type {
   ValeGasolina, ValeGasolinaPayload, EstadoVale,
@@ -135,7 +135,7 @@ function ValeForm({
 }: {
   // Al editar, el vehículo ya elegido puede no venir en los resultados de la
   // búsqueda; su etiqueta se pasa aparte para poder mostrarlo en el Select.
-  initial?: ValeFormValues & { vehiculo_label: string; sucursal_label: string }
+  initial?: ValeFormValues & { vehiculo_label: string; sucursal_label: string; creado_por: string }
   isPending: boolean
   error: string | null
   onSubmit: (payload: ValeGasolinaPayload) => void
@@ -146,6 +146,21 @@ function ValeForm({
   const conQuery = useConductores()
   const conData = conQuery.data
   const esAlta = initial === undefined
+
+  // A nombre de quién queda el vale. Por omisión, quien captura; pero a veces
+  // el papel lo entregó otra persona y se lo pasa para que lo registre, y
+  // entonces tiene que quedar a nombre de ella. Solo al dar de alta: después
+  // `creado_por` ya no se edita.
+  const cuentasQuery = useCuentasVale(esAlta)
+  const miCorreo = user?.userDetails ?? ''
+  const [creadoPor, setCreadoPor] = useState<string | null>(null)
+  const creadorElegido = creadoPor ?? miCorreo
+  const cuentas = useMemo(() => {
+    const opts = (cuentasQuery.data?.data ?? [])
+      .filter((c) => c.email.toLowerCase() !== miCorreo.toLowerCase())
+      .map((c) => ({ value: c.email, label: c.nombre ? `${c.nombre} · ${c.email}` : c.email }))
+    return miCorreo ? [{ value: miCorreo, label: `Yo · ${miCorreo}` }, ...opts] : opts
+  }, [cuentasQuery.data, miCorreo])
 
   // Quien está acotado a una sucursal no la elige: el vale se entrega ahí y la
   // API se la pone aunque el cliente mande otra. Al editar tampoco la cambia.
@@ -240,6 +255,7 @@ function ValeForm({
           vehiculo_id:  parseInt(v.vehiculo_id, 10),
           ...(eligeSucursal && v.sucursal_id ? { sucursal_id: parseInt(v.sucursal_id, 10) } : {}),
           fecha:        v.fecha,
+          ...(esAlta && creadorElegido && creadorElegido !== miCorreo ? { creado_por: creadorElegido } : {}),
         }))}
       >
         <Stack gap="sm">
@@ -253,12 +269,28 @@ function ValeForm({
             onChange={(e) => form.setFieldValue('folio', limpiarCodigo(e.currentTarget.value, FOLIO_MAX))}
             error={form.errors.folio as string}
           />
-          <TextInput
-            label="Creado por"
-            value={user?.userDetails ?? ''}
-            disabled
-            description="Se registra automáticamente con tu usuario"
-          />
+          {esAlta ? (
+            <Select
+              label="Creado por"
+              data={cuentas}
+              value={creadorElegido || null}
+              onChange={(v) => setCreadoPor(v ?? miCorreo)}
+              allowDeselect={false}
+              searchable
+              nothingFoundMessage="Sin cuentas"
+              disabled={cuentasQuery.isLoading}
+              description={creadorElegido && creadorElegido !== miCorreo
+                ? 'El vale queda a nombre de esa cuenta; la bitácora guarda que lo capturaste tú.'
+                : 'Si te pasaron el vale de otra persona, elige su cuenta.'}
+            />
+          ) : (
+            <TextInput
+              label="Creado por"
+              value={initial.creado_por}
+              disabled
+              description="Quien entregó el vale. No se edita."
+            />
+          )}
           <div>
             <SelectCatalogo
               estado={conQuery}
@@ -802,6 +834,7 @@ export default function ValesGasolina({
               fecha:          editVale.fecha.split('T')[0],
               vehiculo_label: vehiculoLabelCorto(editVale),
               sucursal_label: editVale.sucursal ?? SIN_SUCURSAL,
+              creado_por:     editVale.creado_por,
             }}
             isPending={updateMut.isPending}
             error={updateMut.error ? (updateMut.error as Error).message : null}

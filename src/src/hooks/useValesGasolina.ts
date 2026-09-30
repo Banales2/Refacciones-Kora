@@ -1,6 +1,6 @@
 // Vales de gasolina: cada vale registra su folio impreso, quién lo creó, el
-// chofer al que se le entregó, el vehículo y la fecha. `creado_por` lo asigna la API a partir del
-// usuario de la sesión, por eso no viaja en el payload.
+// chofer al que se le entregó, el vehículo y la fecha. `creado_por` es por omisión el usuario
+// de la sesión; se puede elegir otra cuenta cuando se registra el vale que entregó otra persona.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
@@ -59,6 +59,26 @@ export interface ValeGasolinaPayload {
   // esta; si no, es obligatoria al crear.
   sucursal_id?: number
   fecha:        string
+  /**
+   * Solo al crear. El correo de la cuenta a cuyo nombre queda el vale; sin él,
+   * el de la sesión. La API solo acepta las cuentas de `useCuentasVale`.
+   */
+  creado_por?:  string
+}
+
+/** Una cuenta a cuyo nombre se puede registrar un vale. */
+export interface CuentaVale {
+  email:  string
+  nombre: string | null
+}
+
+export function useCuentasVale(enabled = true) {
+  return useQuery({
+    queryKey: ['vales-gasolina', 'cuentas'],
+    queryFn: () => api.get<{ data: CuentaVale[] }>('/vales-gasolina/cuentas'),
+    enabled,
+    staleTime: 5 * 60_000,
+  })
 }
 
 // Sin los archivados por omisión: un vale que se dio por perdido ya no es
