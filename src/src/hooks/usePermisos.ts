@@ -21,9 +21,9 @@ export type Seccion =
 // corta a propósito: el dashboard queda fuera porque sus doce endpoints piden
 // `lector`, así que la pantalla de inicio se llenaría de errores. Modelos entra
 // porque es donde se capturan los programas de mantenimiento; el modelo en sí
-// sólo lo mira. El chequeo de flotilla lo consulta sin capturar: ve qué
-// unidades faltan y lo que salió cada día, pero no recorre ni decide qué hacer
-// con el reporte de un chofer (ver `puedeCapturarChequeo`). Las incidencias,
+// sólo lo mira. El chequeo de flotilla lo hace: recorre el patio y captura,
+// pero no decide qué hacer con el reporte de un chofer (ver
+// `puedeCapturarChequeo` y `puedeRevisarChequeo`). Las incidencias,
 // igual: las lee, no las reporta ni las atiende (ver `puedeReportarIncidencia`).
 const SECCIONES_PRACTICANTE: readonly Seccion[] = [
   'piezas', 'modelos', 'sitios', 'vales', 'facturas', 'facturas-gasolina', 'chequeos',
@@ -87,12 +87,18 @@ export interface Permisos {
    */
   puedeTraspasar: boolean
   /**
-   * Si captura, corrige y revisa chequeos de flotilla. El practicante y el
-   * lector los consultan nada más: `chequeos-create`, `-update` y `-revisar`
-   * no los admiten, así que no se les abre un formulario que no van a poder
-   * guardar.
+   * Si hace el chequeo de flotilla: lo captura y lo corrige. El practicante sí
+   * —recorrer el patio es parte de su día—; el lector solo consulta:
+   * `chequeos-create` y `-update` no lo admiten, así que no se le abre un
+   * formulario que no va a poder guardar.
    */
   puedeCapturarChequeo: boolean
+  /**
+   * Si decide qué hacer con el reporte de un chofer (`chequeos-revisar`). Es
+   * aparte de capturar: el practicante hace el recorrido, pero lo que sale del
+   * reporte —abrir incidencias, descartarlo— lo decide alguien más.
+   */
+  puedeRevisarChequeo: boolean
   /**
    * Si da de alta incidencias. `incidencias-create` admite a admin, editor y
    * responsable; el practicante y el lector solo las consultan. Atenderlas y
@@ -132,7 +138,8 @@ export function usePermisos(): Permisos {
     puedeVerMantenimiento: !esResponsable,
     puedeVerCompras: !esResponsable,
     puedeTraspasar: !esPracticante,
-    puedeCapturarChequeo: !esPracticante && rol !== 'lector',
+    puedeCapturarChequeo: rol !== 'lector',
+    puedeRevisarChequeo: !esPracticante && rol !== 'lector',
     puedeReportarIncidencia: !esPracticante && rol !== 'lector',
     puedeVerSeccion: (s) => {
       if (s === 'registros' || s === 'errores-captura') return esAdmin

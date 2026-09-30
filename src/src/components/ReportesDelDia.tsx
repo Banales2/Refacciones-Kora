@@ -251,7 +251,7 @@ function ReportesDe({ fecha, esHoy }: { fecha: string; esHoy: boolean }) {
   )
   const [revisando, setRevisando] = useState<ChequeoConVehiculo | null>(null)
   const [soloPendientes, setSoloPendientes] = useState(esHoy)
-  const { puedeCapturarChequeo } = usePermisos()
+  const { puedeRevisarChequeo } = usePermisos()
   const cuando = esHoy ? 'hoy' : `el ${formatearFecha(fecha)}`
 
   const chequeos = useMemo(() => data?.data ?? [], [data])
@@ -341,7 +341,7 @@ function ReportesDe({ fecha, esHoy }: { fecha: string; esHoy: boolean }) {
                 )}
               <Renglon
                 chequeo={c}
-                onRevisar={puedeCapturarChequeo ? () => setRevisando(c) : undefined}
+                onRevisar={puedeRevisarChequeo ? () => setRevisando(c) : undefined}
               />
             </div>
           ))}

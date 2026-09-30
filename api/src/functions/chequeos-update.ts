@@ -13,7 +13,7 @@ import { ChequeoUpdateSchema } from '../schemas/chequeoSchema'
 // y la bitácora guarda cómo estaba antes.
 export async function chequeosUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'practicante', 'responsable')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     await exigirFilaDeVehiculo('chequeos', id, await alcanceDe(user))

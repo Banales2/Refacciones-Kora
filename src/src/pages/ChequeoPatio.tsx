@@ -113,8 +113,8 @@ export default function ChequeoPatio() {
   // recorre es una sola en todo el patio, el chofer es uno por unidad.
   const { data: usuario } = useUsuarioActual()
 
-  // El practicante y el lector consultan el recorrido sin hacerlo: ven qué
-  // falta y lo que salió, pero la unidad no se abre ni se agregan tráilers.
+  // El lector consulta el recorrido sin hacerlo: ve qué falta y lo que salió,
+  // pero la unidad no se abre ni se agregan tráilers. El practicante sí lo hace.
   const { puedeCapturarChequeo } = usePermisos()
   const abrir = (u: UnidadPatio) => puedeCapturarChequeo ? () => setAbierta(u) : undefined
 

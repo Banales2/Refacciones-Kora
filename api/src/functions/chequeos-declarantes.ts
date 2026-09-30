@@ -9,7 +9,7 @@ import { alcanceDe } from '../shared/alcance'
 // la lista la misma persona termina escrita de cinco formas.
 export async function chequeosDeclarantes(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'practicante', 'responsable')
     const data = await service.getDeclarantes(await alcanceDe(user))
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }

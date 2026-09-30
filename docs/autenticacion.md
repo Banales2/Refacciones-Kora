@@ -94,12 +94,12 @@ y marca la cuadrícula. Renombrar el programa, editar o quitar un renglón y
 borrar el programa siguen siendo del editor. Las columnas y la cuadrícula sí
 las puede rehacer, porque son la captura misma y se guardan por el mismo
 endpoint con el que se corrigen.
-El chequeo de flotilla lo consulta sin capturar: ve el recorrido (qué unidades
-faltan) y los reportes de cualquier día (`chequeos-patio`, `chequeos-list` y
-`dashboard-chequeos-hoy` lo admiten), pero no hace el chequeo, no lo corrige ni
-decide qué hacer con el reporte de un chofer. En la interfaz lo dice
-`puedeCapturarChequeo`, que también le quita el formulario al `lector`: los dos
-chocaban con el 403 de `chequeos-create`.
+El chequeo de flotilla lo hace: recorre el patio, captura y corrige el chequeo
+de cada unidad (`chequeo-formulario`, `chequeos-create`, `chequeos-update` y
+`chequeos-declarantes` lo admiten) y ve los reportes de cualquier día. Lo que no
+hace es decidir qué hacer con el reporte de un chofer: `chequeos-revisar` sigue
+sin admitirlo. En la interfaz son dos permisos, `puedeCapturarChequeo` (el
+practicante sí, el `lector` no) y `puedeRevisarChequeo` (ninguno de los dos).
 Ve todas las pestañas de Catálogos. En Translados, Técnicos y Permisos solo
 consulta (sus `-list` lo admiten; sus altas siguen siendo de admin y editor), y
 la ficha del técnico —lo que se le ha facturado y pagado— se le cierra igual
