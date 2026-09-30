@@ -12,7 +12,12 @@ export function useOpcionesTexto(
   const [search, setSearch] = useState('')
 
   const options = useMemo(() => {
-    const existentes = new Set(existentesRemotas ?? [])
+    // Sin nulos ni vacíos: la columna de origen puede traerlos (un DISTINCT
+    // sobre una columna que admite NULL), y uno solo tumbaba el formulario
+    // entero en el `toLowerCase` de abajo.
+    const existentes = new Set(
+      (existentesRemotas ?? []).filter((c): c is string => typeof c === 'string' && c.trim() !== '')
+    )
     // La del registro que se edita, por si se dejó de usar en el resto.
     if (valorInicial) existentes.add(valorInicial)
     // Y el ya elegido. Esto no es un detalle: el Select busca la etiqueta del

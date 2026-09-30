@@ -572,7 +572,8 @@ export async function findDeclarantes(alcance: Alcance = SIN_ACOTAR): Promise<st
   const pool = await getPool()
   const r = await conAlcance(pool.request(), alcance).query(`
     SELECT DISTINCT declarado_por FROM chequeos
-    WHERE ${vehiculoEnAlcance('vehiculo_id')}
+    WHERE declarado_por IS NOT NULL AND LTRIM(RTRIM(declarado_por)) <> ''
+      AND ${vehiculoEnAlcance('vehiculo_id')}
     ORDER BY declarado_por
   `)
   return r.recordset.map((row: { declarado_por: string }) => row.declarado_por)
