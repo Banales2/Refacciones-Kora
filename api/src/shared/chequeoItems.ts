@@ -337,6 +337,17 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     incidencia: { severidad: 'superficial', categoria: 'Carrocería', nombre: 'Falta un espejo' },
   },
   {
+    // Detrás del asiento es donde se junta lo que nadie ve desde la puerta:
+    // botellas, bolsas, trapos con aceite. Se nombra el lugar en la pregunta
+    // porque "¿está limpia la cabina?" se contesta mirando el tablero. El
+    // montacargas no entra: no tiene espacio detrás del asiento.
+    clave: 'cab_basura',
+    label: '¿Está sin basura detrás del asiento?',
+    captura: 'ok_falla',
+    tipos: ['camion', 'tractocamion', 'utilitario'],
+    incidencia: { severidad: 'superficial', categoria: 'Limpieza', nombre: 'Basura en la cabina' },
+  },
+  {
     clave: 'doc_tarjeta',
     label: '¿Trae la tarjeta de circulación?',
     captura: 'ok_falla',
