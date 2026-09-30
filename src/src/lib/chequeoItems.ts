@@ -40,6 +40,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
   { clave: 'luces_faros',        label: '¿Los faros funcionan?',          captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
   { clave: 'luces_direccionales', label: '¿Las direccionales funcionan?',  captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
   { clave: 'luces_stops',        label: '¿Los stops funcionan?',          captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
+  { clave: 'luces_traseras',     label: '¿Las luces traseras funcionan?', captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
   { clave: 'luces_reversa',      label: '¿La reversa funciona?',        captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
   { clave: 'luces_cuartos',      label: '¿Los cuartos funcionan?',        captura: 'ok_falla', tipos: [], incidencia: { severidad: 'moderada', categoria: 'Luces' } },
   { clave: 'cab_parabrisas', label: '¿El parabrisas está sin estrellar?',  captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'superficial', categoria: 'Carrocería' } },

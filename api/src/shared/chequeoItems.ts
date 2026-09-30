@@ -291,6 +291,17 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     incidencia: { severidad: 'moderada', categoria: 'Luces', nombre: 'Stops fundidos' },
   },
   {
+    // Las calaveras: las que van prendidas atrás con las luces encendidas. No
+    // son los stops —esos prenden al frenar— y una fundida no se nota desde el
+    // volante, pero de noche es lo único que hace ver la unidad por detrás.
+    // Van a todos: la caja de tráiler también las lleva.
+    clave: 'luces_traseras',
+    label: '¿Las luces traseras funcionan?',
+    captura: 'ok_falla',
+    tipos: TODOS,
+    incidencia: { severidad: 'moderada', categoria: 'Luces', nombre: 'Luces traseras fundidas' },
+  },
+  {
     clave: 'luces_reversa',
     label: '¿La reversa funciona?',
     captura: 'ok_falla',
