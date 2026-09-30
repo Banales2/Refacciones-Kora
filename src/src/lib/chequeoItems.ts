@@ -28,7 +28,6 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
   { clave: 'lectura',        label: 'Horómetro',                                       captura: 'lectura',  tipos: ['montacargas'],                          incidencia: null },
   { clave: 'combustible',    label: 'Combustible al recibir',                 captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: null },
   { clave: 'nivel_aceite_motor',      label: 'Aceite de motor',                captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'grave', categoria: 'Niveles' }, umbralFalla: '1/4' },
-  { clave: 'nivel_aceite_hidraulico', label: 'Aceite hidráulico',              captura: 'fraccion', tipos: ['camion', 'tractocamion', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Niveles' }, umbralFalla: '1/4' },
   { clave: 'nivel_liquido_direccion', label: 'Líquido de dirección hidráulica', captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Niveles' }, umbralFalla: '1/4' },
   { clave: 'nivel_liquido_frenos',    label: 'Líquido de frenos',              captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'grave', categoria: 'Niveles' }, umbralFalla: '1/4' },
   { clave: 'nivel_anticongelante',    label: 'Anticongelante',                 captura: 'fraccion', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'grave', categoria: 'Niveles' }, umbralFalla: '1/4' },
@@ -61,6 +60,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
   { clave: 'accesorios',     label: 'Extintor, llanta de refacción y herramienta',      captura: 'ok_falla', tipos: [], incidencia: { severidad: 'superficial', categoria: 'Accesorios' }, retirado: true },
   { clave: 'parabrisas',     label: 'Parabrisas sin estrellar y espejos completos',     captura: 'ok_falla', tipos: ['camion', 'tractocamion', 'utilitario', 'montacargas'], incidencia: { severidad: 'superficial', categoria: 'Carrocería' }, retirado: true },
   { clave: 'sellos',         label: 'Puertas cierran y sellos puestos',                 captura: 'ok_falla', tipos: ['caja_trailer'], incidencia: { severidad: 'moderada', categoria: 'Carrocería' }, retirado: true },
+  { clave: 'nivel_aceite_hidraulico', label: 'Aceite hidráulico',              captura: 'fraccion', tipos: ['camion', 'tractocamion', 'montacargas'], incidencia: { severidad: 'moderada', categoria: 'Niveles' }, umbralFalla: '1/4', retirado: true },
 ]
 
 /**

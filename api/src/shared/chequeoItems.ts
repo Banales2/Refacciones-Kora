@@ -186,14 +186,6 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     umbralFalla: '1/4',
   },
   {
-    clave: 'nivel_aceite_hidraulico',
-    label: 'Aceite hidráulico',
-    captura: 'fraccion',
-    tipos: TIPOS_CON_HIDRAULICO,
-    incidencia: { severidad: 'moderada', categoria: 'Niveles', nombre: 'Aceite hidráulico bajo' },
-    umbralFalla: '1/4',
-  },
-  {
     clave: 'nivel_liquido_direccion',
     label: 'Líquido de dirección hidráulica',
     captura: 'fraccion',
@@ -432,6 +424,18 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'ok_falla',
     tipos: ['caja_trailer'],
     incidencia: { severidad: 'moderada', categoria: 'Carrocería' },
+    retirado: true,
+  },
+  // Se preguntaba junto a "Líquido de dirección hidráulica" y en el patio se
+  // contestaban como si fueran el mismo depósito: dos renglones para un solo
+  // nivel. Se queda la dirección, que es la que llevan todas las unidades.
+  {
+    clave: 'nivel_aceite_hidraulico',
+    label: 'Aceite hidráulico',
+    captura: 'fraccion',
+    tipos: TIPOS_CON_HIDRAULICO,
+    incidencia: { severidad: 'moderada', categoria: 'Niveles', nombre: 'Aceite hidráulico bajo' },
+    umbralFalla: '1/4',
     retirado: true,
   },
 ]

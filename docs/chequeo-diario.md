@@ -187,14 +187,14 @@ trae nombre, se cae al label, recortado a los 40 de la columna.
 
 ## Los niveles se capturan en cuartos, no con sí o no
 
-Aceite de motor, aceite hidráulico, dirección, frenos, anticongelante y
+Aceite de motor, dirección hidráulica, frenos, anticongelante y
 limpiaparabrisas usan la misma escala que el combustible (1/4, 1/2, 3/4,
 Lleno). "Está bien" no distingue un depósito lleno de uno a la mitad, y esa es
 justo la diferencia entre una unidad que aguanta la semana y una que hay que
 rellenar antes de que alguien se quede tirado.
 
 A diferencia del combustible, estos sí abren incidencia: `umbralFalla` en el
-catálogo dice en qué nivel un renglón cuenta como falla (hoy `1/4` en los seis).
+catálogo dice en qué nivel un renglón cuenta como falla (hoy `1/4` en los cinco).
 Un tanque de gasolina en un cuarto solo quiere decir que hay que cargar; un
 depósito de frenos en un cuarto es un pendiente.
 
