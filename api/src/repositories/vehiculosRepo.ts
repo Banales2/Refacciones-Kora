@@ -156,15 +156,33 @@ const JOINS = `
 // fases contra el odómetro y de los límites en meses de cada operación, y esa
 // clasificación ya vive en el servicio del tablero. Llega resuelta, como una
 // lista de ids separados por coma.
+// La búsqueda va por palabras, no por frase: "ELF 100 2018" junta marca,
+// modelo y año, que viven en columnas distintas, así que como frase no casaba
+// con ninguna. Cada palabra tiene que aparecer en alguno de los campos, en el
+// orden que sea. Se toman hasta MAX_TERMINOS; lo que sobre se ignora.
+const MAX_TERMINOS = 6
+
+function terminoBusqueda(i: number): string {
+  const t = `@t${i}`
+  return `(${t} IS NULL
+         OR m.marca LIKE ${t} OR m.nombre LIKE ${t} OR m.anio LIKE ${t}
+         OR v.numero_serie LIKE ${t} OR v.placas LIKE ${t}
+         -- La categoría es como se le dice a la unidad en el patio ("torton"),
+         -- así que es de las primeras cosas por las que se busca.
+         OR v.categoria LIKE ${t})`
+}
+
+/** Las palabras de la búsqueda, cada una lista para un LIKE. */
+export function terminos(search: string | undefined): (string | null)[] {
+  const palabras = (search ?? '').trim().split(/\s+/).filter(Boolean).slice(0, MAX_TERMINOS)
+  return Array.from({ length: MAX_TERMINOS }, (_, i) =>
+    palabras[i] ? `%${palabras[i].replace(/[[%_]/g, '[$&]')}%` : null)
+}
+
 const WHERE_FILTER = `
   WHERE (@tipo     IS NULL OR v.tipo      = @tipo)
     AND (@modeloId IS NULL OR v.modelo_id = @modeloId)
-    AND (@search IS NULL
-         OR m.marca LIKE @search OR m.nombre LIKE @search
-         OR v.numero_serie LIKE @search OR v.placas LIKE @search
-         -- La categoría es como se le dice a la unidad en el patio ("torton"),
-         -- así que es de las primeras cosas por las que se busca.
-         OR v.categoria LIKE @search)
+    AND ${Array.from({ length: MAX_TERMINOS }, (_, i) => terminoBusqueda(i)).join(' AND ')}
     AND (@alerta IS NULL
          OR (${NO_DADO_DE_BAJA}
              AND ((@alerta = 'sin_tenencia' AND ${SIN_TENENCIA})
@@ -188,7 +206,8 @@ export async function findAll(params: {
 }, alcance: Alcance = SIN_ACOTAR): Promise<{ data: VehiculoRow[]; total: number }> {
   const pool = await getPool()
   const req = conAlcance(conHoy(pool.request()), alcance)
-    .input('search',    sql.NVarChar(100), params.search ? `%${params.search}%` : null)
+  terminos(params.search).forEach((t, i) => req.input(`t${i}`, sql.NVarChar(100), t))
+  req
     .input('tipo',      sql.NVarChar(20),  params.tipo     ?? null)
     .input('modeloId',  sql.Int,           params.modelo_id ?? null)
     .input('alerta',    sql.NVarChar(30),  params.alerta   ?? null)

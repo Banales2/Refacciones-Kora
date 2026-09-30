@@ -807,9 +807,13 @@ export default function Modelos({
   const descont = todos.filter((m) => m.descontinuado_en).length
   const modelos = todos.filter((m) => {
     if (m.descontinuado_en && !verDesc) return false
-    if (!debounced) return true
-    const q = debounced.toLowerCase()
-    return m.marca.toLowerCase().includes(q) || m.nombre.toLowerCase().includes(q)
+    // Por palabras y con el año: "ELF 100 2018" junta marca, modelo y año, así
+    // que cada palabra tiene que aparecer en alguno de los tres, en cualquier
+    // orden. Igual que la búsqueda de vehículos en la API.
+    const palabras = debounced.toLowerCase().split(/\s+/).filter(Boolean)
+    if (!palabras.length) return true
+    const texto = `${m.marca} ${m.nombre} ${m.anio ?? ''}`.toLowerCase()
+    return palabras.every((p) => texto.includes(p))
   })
   const marcas = [...new Set(modelos.map((m) => m.marca))].sort()
   const isPending = createMut.isPending || updateMut.isPending
@@ -839,7 +843,7 @@ export default function Modelos({
       <Group justify="space-between" align="center" wrap="nowrap">
         <TextInput
           style={{ flex: 1 }}
-          placeholder="Buscar por marca o modelo…"
+          placeholder="Buscar por marca, modelo o año…"
           value={search}
           onChange={(e) => setSearch(e.currentTarget.value)}
           rightSection={

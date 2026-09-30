@@ -2210,7 +2210,7 @@ export default function Vehiculos({
       )}
 
       <TextInput
-        placeholder="Buscar por marca, modelo, categoría, serie o placas…"
+        placeholder="Buscar por marca, modelo, año, categoría, serie o placas…"
         value={search}
         onChange={(e) => setSearch(e.currentTarget.value)}
         rightSection={
