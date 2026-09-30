@@ -706,21 +706,28 @@ export async function findLecturasKmDeVehiculos(ids: number[]): Promise<LecturaK
   const pool = await getPool()
   const req = pool.request()
   const params = ids.map((id, i) => { req.input(`v${i}`, sql.Int, id); return `@v${i}` })
+  // Se agrupa primero y se lleva a kilómetros de vida después: SQL Server no
+  // deja meter en un MAX la subconsulta de `kmAbsoluto` (error 130). Las
+  // lecturas de un mismo día comparten los reinicios ya ocurridos, así que da
+  // lo mismo sumarlos antes o después del MAX.
   const r = await req.query(`
     SELECT l.vehiculo_id, CONVERT(char(10), l.fecha, 23) AS fecha,
-           MAX(${kmAbsoluto('l.lectura', 'l.fecha', 'l.vehiculo_id')}) AS km
+           ${kmAbsoluto('l.lectura', 'l.fecha', 'l.vehiculo_id')} AS km
     FROM (
-      SELECT vehiculo_id, CAST(fecha AS date) AS fecha, lectura
-        FROM chequeos WHERE lectura IS NOT NULL
-      UNION ALL
-      SELECT vehiculo_id, CAST(fecha AS date), kilometraje
-        FROM recargas_combustible WHERE kilometraje IS NOT NULL
-      UNION ALL
-      SELECT vehiculo_id, CAST(fecha AS date), km_actual
-        FROM mantenimiento WHERE km_actual IS NOT NULL
+      SELECT u.vehiculo_id, u.fecha, MAX(u.lectura) AS lectura
+      FROM (
+        SELECT vehiculo_id, CAST(fecha AS date) AS fecha, lectura
+          FROM chequeos WHERE lectura IS NOT NULL
+        UNION ALL
+        SELECT vehiculo_id, CAST(fecha AS date), kilometraje
+          FROM recargas_combustible WHERE kilometraje IS NOT NULL
+        UNION ALL
+        SELECT vehiculo_id, CAST(fecha AS date), km_actual
+          FROM mantenimiento WHERE km_actual IS NOT NULL
+      ) u
+      WHERE u.vehiculo_id IN (${params.join(',')})
+      GROUP BY u.vehiculo_id, u.fecha
     ) l
-    WHERE l.vehiculo_id IN (${params.join(',')})
-    GROUP BY l.vehiculo_id, l.fecha
     ORDER BY l.vehiculo_id, l.fecha`)
   return r.recordset
 }
