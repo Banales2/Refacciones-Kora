@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { TEXTO_SIMPLE, TEXTO_LIBRE, KM_MAX } from './common'
+import { TEXTO_SIMPLE, TEXTO_LIBRE, KM_MAX, lecturaKm } from './common'
 import { RESULTADOS } from '../shared/chequeoItems'
 import { EtiquetaPiezaSchema } from './tipoPiezaSchema'
 
@@ -89,10 +89,7 @@ export const ChequeoBase = {
       .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos')
       .nullable().optional()
   ),
-  lectura: z.coerce.number().int()
-    .min(0, 'No puede ser negativa')
-    .max(KM_MAX, 'Lectura fuera de rango')
-    .nullable().optional(),
+  lectura: lecturaKm('Lectura fuera de rango').nullable().optional(),
   // Acuse de que quien captura vio que la lectura BAJA el odómetro de la unidad
   // y aun así la sostiene. No se guarda en ningún lado: solo abre la puerta en
   // el servicio. Ausente = no confirmado, que es lo correcto para un cliente

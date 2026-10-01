@@ -5,6 +5,7 @@ import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import * as service from '../services/piezasVehiculoService'
 import { EtiquetaPiezaSchema } from '../schemas/tipoPiezaSchema'
+import { lecturaKm } from '../schemas/common'
 
 // Fecha calendario, sin hora: es el día en que se montó la pieza.
 const Fecha = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (AAAA-MM-DD)')
@@ -25,11 +26,11 @@ const Schema = z.object({
   // lo que evita descontarla dos veces.
   detalle_mtto_pieza_id: z.coerce.number().int().positive().nullish(),
   fecha_instalacion: Fecha.nullish(),
-  km_instalacion:    z.coerce.number().int().nonnegative().nullish(),
+  km_instalacion:    lecturaKm().nullish(),
   mantenimiento_id:  z.coerce.number().int().positive().nullish(),
   motivo_retiro:     z.enum(['desgaste', 'falla', 'robo', 'siniestro', 'preventivo', 'garantia']).nullish(),
   destino:           z.enum(['desecho', 'reacondicionar', 'devolucion_proveedor', 'venta', 'stock']).nullish(),
-  km_retiro:         z.coerce.number().int().nonnegative().nullish(),
+  km_retiro:         lecturaKm().nullish(),
 })
 
 export async function vehiculoPiezasSet(

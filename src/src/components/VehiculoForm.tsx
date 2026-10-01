@@ -434,11 +434,10 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
               </Grid.Col>
               <Grid.Col span={6}>
-                <NumberInput
+                <NumberInput decimalScale={1}
                   label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit}
                   description={isEdit ? undefined : 'Opcional. Si lo dejas vacío, la unidad arranca en 0.'}
-                  thousandSeparator=","
-                  allowDecimal={false} allowNegative={false} clampBehavior="strict"
+                  thousandSeparator="," allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
                 />
               </Grid.Col>
@@ -467,11 +466,10 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
               </Grid.Col>
               <Grid.Col span={6}>
-                <NumberInput
+                <NumberInput decimalScale={1}
                   label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit}
                   description={isEdit ? undefined : 'Opcional. Si lo dejas vacío, la unidad arranca en 0.'}
-                  thousandSeparator=","
-                  allowDecimal={false} allowNegative={false} clampBehavior="strict"
+                  thousandSeparator="," allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
                 />
               </Grid.Col>
@@ -533,11 +531,10 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
               </Grid.Col>
               <Grid.Col span={6}>
-                <NumberInput
+                <NumberInput decimalScale={1}
                   label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit}
                   description={isEdit ? undefined : 'Opcional. Si lo dejas vacío, la unidad arranca en 0.'}
-                  thousandSeparator=","
-                  allowDecimal={false} allowNegative={false} clampBehavior="strict"
+                  thousandSeparator="," allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
                 />
               </Grid.Col>

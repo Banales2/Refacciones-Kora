@@ -219,12 +219,11 @@ export default function GarantiaForm({
                 onChange={(d) => form.setFieldValue('fecha_inicio', d)}
                 error={form.errors.fecha_inicio as string}
               />
-              <NumberInput
+              <NumberInput decimalScale={1}
                 label="Kilometraje de arranque" min={0} max={KM_MAX}
                 placeholder="0"
                 suffix=" km" thousandSeparator=","
-                description="Vacío = desde cero. Solo cámbialo si la unidad se compró usada"
-                allowDecimal={false} allowNegative={false} clampBehavior="strict"
+                description="Vacío = desde cero. Solo cámbialo si la unidad se compró usada" allowNegative={false} clampBehavior="strict"
                 {...form.getInputProps('km_inicio')}
               />
             </Group>

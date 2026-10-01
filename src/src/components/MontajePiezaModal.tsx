@@ -468,7 +468,7 @@ export default function MontajePiezaModal({
           </>
         )}
 
-        <NumberInput
+        <NumberInput decimalScale={1}
           label={entra ? 'Kilometraje al montar' : 'Kilometraje al quitar'}
           description="Con esto se calcula cuánto duró la pieza."
           placeholder="Km de la unidad"

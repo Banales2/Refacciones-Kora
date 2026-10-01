@@ -16,6 +16,7 @@
 // en el servicio.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { SQL_KM } from '../shared/km'
 import { kmDeVida, kmAbsoluto } from './vehiculosSql'
 import type { TipoPrograma } from './programaRepo'
 
@@ -171,7 +172,7 @@ export async function setVinculo(v: VinculoPrograma): Promise<VinculoPrograma[]>
     .input('vid',     sql.Int,  v.vehiculo_id)
     .input('etapa',   sql.NVarChar(20), v.etapa)
     .input('pid',     sql.Int,  v.programa_id)
-    .input('km',      sql.Int,  v.km_inicio ?? null)
+    .input('km',      SQL_KM,  v.km_inicio ?? null)
     .input('fecha',   sql.Date, v.fecha_inicio ?? null)
     .input('forzada', sql.Bit,  v.forzada)
     .query(`
@@ -451,7 +452,7 @@ export async function crearVisita(data: VisitaCreate): Promise<Visita> {
         .input('vid',   sql.Int,  data.vehiculo_id)
         .input('oid',   sql.Int,  op.operacion_id)
         .input('fecha', sql.Date, data.fecha)
-        .input('km',    sql.Int,  data.km ?? null)
+        .input('km',    SQL_KM,  data.km ?? null)
         .input('mid',   sql.Int,  data.mantenimiento_id)
         .query(`
           MERGE INTO vehiculo_operacion_estado AS tgt
@@ -592,7 +593,7 @@ export async function atenderOperacion(
     .input('vid',   sql.Int,  vehiculoId)
     .input('oid',   sql.Int,  operacionId)
     .input('fecha', sql.Date, fecha)
-    .input('km',    sql.Int,  km ?? null)
+    .input('km',    SQL_KM,  km ?? null)
     .query(`
       MERGE INTO vehiculo_operacion_estado AS tgt
       USING (SELECT @vid AS vehiculo_id, @oid AS operacion_id) AS src

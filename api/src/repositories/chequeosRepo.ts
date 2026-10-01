@@ -7,6 +7,7 @@
 // devuelve la cabecera pelada.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { SQL_KM } from '../shared/km'
 import { Alcance, SIN_ACOTAR, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 import * as incidenciasRepo from './incidenciasRepo'
 import type { Severidad } from '../shared/chequeoItems'
@@ -765,8 +766,8 @@ export async function create(
       .input('novedad',   sql.Bit,           cabecera.hay_novedad)
       .input('sinchofer', sql.Bit,           cabecera.sin_chofer)
       .input('declarac',  sql.NVarChar(500), cabecera.declaracion)
-      .input('lectura',   sql.Int,           cabecera.lectura)
-      .input('anterior',  sql.Int,           cabecera.lectura_anterior)
+      .input('lectura',   SQL_KM,           cabecera.lectura)
+      .input('anterior',  SQL_KM,           cabecera.lectura_anterior)
       .input('nota',      sql.NVarChar(255), cabecera.nota)
       .query(`
         INSERT INTO chequeos (
@@ -832,7 +833,7 @@ export async function update(
     if (cabecera.hay_novedad   !== undefined) { req.input('novedad',  sql.Bit,           cabecera.hay_novedad);   sets.push('hay_novedad=@novedad')         }
     if (cabecera.sin_chofer    !== undefined) { req.input('sinchof',  sql.Bit,           cabecera.sin_chofer);    sets.push('sin_chofer=@sinchof')          }
     if (cabecera.declaracion   !== undefined) { req.input('declarac', sql.NVarChar(500), cabecera.declaracion);   sets.push('declaracion=@declarac')        }
-    if (cabecera.lectura       !== undefined) { req.input('lectura',  sql.Int,           cabecera.lectura);       sets.push('lectura=@lectura')             }
+    if (cabecera.lectura       !== undefined) { req.input('lectura',  SQL_KM,           cabecera.lectura);       sets.push('lectura=@lectura')             }
     if (cabecera.nota          !== undefined) { req.input('nota',     sql.NVarChar(255), cabecera.nota);          sets.push('nota=@nota')                   }
 
     await req.query(`UPDATE chequeos SET ${sets.join(',')} WHERE id=@id`)

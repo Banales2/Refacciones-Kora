@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { KM_MAX } from './common'
+import { KM_MAX, lecturaKm } from './common'
 
 export const EtapaSchema = z.enum(['fabricante', 'posgarantia'])
 
@@ -18,7 +18,7 @@ export const ResultadoSchema = z.enum(['atendida', 'revisada', 'omitida'])
 export const AsignarProgramaSchema = z.object({
   etapa:        EtapaSchema.default('fabricante'),
   programa_id:  z.coerce.number().int().positive().optional(),
-  km_inicio:    z.coerce.number().int().min(0).max(KM_MAX, 'Máximo 9,999,999 km').nullable().optional(),
+  km_inicio:    lecturaKm().nullable().optional(),
   fecha_inicio: z.string().date().nullable().optional(),
 })
 
@@ -69,5 +69,5 @@ export const VisitaSchema = z.object({
 
 export const AtenderOperacionSchema = z.object({
   fecha: z.string().date(),
-  km:    z.coerce.number().int().min(0).max(KM_MAX, 'Máximo 9,999,999 km').nullable().optional(),
+  km:    lecturaKm().nullable().optional(),
 })

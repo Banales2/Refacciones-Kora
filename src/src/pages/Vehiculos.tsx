@@ -1526,7 +1526,7 @@ function VehiculoDetalle({
               {vehiculo.kilometraje !== null && (
                 <Grid.Col span={{ base: 6, sm: 3 }}>
                   {editingKm ? (
-                    <NumberInput
+                    <NumberInput decimalScale={1}
                       label="Kilometraje" size="xs" autoFocus min={0} max={KM_MAX}
                       suffix=" km" thousandSeparator="," clampBehavior="strict"
                       value={kmDraft}
@@ -1815,7 +1815,7 @@ function VehiculosTable({
                   onDoubleClick={sinKilometraje(v.tipo) || !onEdit ? undefined : (e) => km.startEditKm(v, e)}
                 >
                   {km.editingKmId === v.id ? (
-                    <NumberInput
+                    <NumberInput decimalScale={1}
                       autoFocus size="xs" min={0} max={KM_MAX} thousandSeparator="," hideControls
                       clampBehavior="strict"
                       value={km.kmDraft}

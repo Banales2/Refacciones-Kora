@@ -142,7 +142,7 @@ export function RecargaForm({
       costo:  (v) => (v === '' || Number(v) < 0 ? 'No puede ser negativo' : null),
       kilometraje: (v) =>
         v === '' || Number(v) < 0 ? 'No puede ser negativo' :
-        !Number.isInteger(Number(v)) ? 'Solo números enteros' : validarKm(v),
+        validarKm(v),
     },
   })
 
@@ -242,10 +242,9 @@ export function RecargaForm({
           min={0} decimalScale={2} step={0.01} prefix="$" thousandSeparator=","
           {...form.getInputProps('costo')}
         />
-        <NumberInput
+        <NumberInput decimalScale={1}
           label="Kilometraje" placeholder="0" required
-          min={0} max={KM_MAX} step={1} suffix=" km" thousandSeparator=","
-          allowDecimal={false} allowNegative={false} clampBehavior="strict"
+          min={0} max={KM_MAX} suffix=" km" thousandSeparator="," allowNegative={false} clampBehavior="strict"
           description={kmVehiculo != null
             ? `Kilometraje al momento de la recarga. Actual: ${kmVehiculo.toLocaleString('es-MX')} km`
             : 'Kilometraje del vehículo al momento de la recarga'}

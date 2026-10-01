@@ -5,12 +5,13 @@ import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import * as service from '../services/piezasVehiculoService'
 import { EtiquetaPiezaSchema } from '../schemas/tipoPiezaSchema'
+import { lecturaKm } from '../schemas/common'
 
 // Con qué se cierra el renglón de la bitácora. Todo opcional: quitar una pieza
 // sin explicar por qué sigue siendo válido, solo pierde el motivo.
 const Retiro = z.object({
   fecha_retiro:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (AAAA-MM-DD)').optional(),
-  km_retiro:     z.coerce.number().int().nonnegative().optional(),
+  km_retiro:     lecturaKm().optional(),
   motivo_retiro: z.enum(['desgaste', 'falla', 'robo', 'siniestro', 'preventivo', 'garantia']).optional(),
   destino:       z.enum(['desecho', 'reacondicionar', 'devolucion_proveedor', 'venta', 'stock']).optional(),
 })

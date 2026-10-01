@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { KM_MAX } from './common'
+import { KM_MAX, lecturaKm } from './common'
 
 // Fecha local (no UTC) para no rechazar "hoy" en zonas horarias detrás de UTC.
 function todayIso() {
@@ -30,7 +30,7 @@ export const RecargaCreateSchema = z.object({
   fecha,
   litros,
   costo:  z.coerce.number().min(0, 'No puede ser negativo'),
-  kilometraje: z.coerce.number().int().min(0, 'No puede ser negativo').max(KM_MAX, 'Máximo 9,999,999 km'),
+  kilometraje: lecturaKm(),
 })
 
 // El chofer cargó de su bolsa porque no le alcanzaba para ir por el vale: no hay
@@ -50,7 +50,7 @@ export const RecargaUpdateSchema = z.object({
   fecha:  fecha.optional(),
   litros: litros.optional(),
   costo:  z.coerce.number().min(0, 'No puede ser negativo').optional(),
-  kilometraje: z.coerce.number().int().min(0, 'No puede ser negativo').max(KM_MAX, 'Máximo 9,999,999 km').optional(),
+  kilometraje: lecturaKm().optional(),
 })
 
 export type RecargaCreate = z.infer<typeof RecargaCreateSchema>

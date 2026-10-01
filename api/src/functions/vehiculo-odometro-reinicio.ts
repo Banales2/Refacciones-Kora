@@ -5,7 +5,7 @@ import { handleError } from '../shared/errors'
 import { alcanceDe } from '../shared/alcance'
 import { audit, getClientIp } from '../shared/audit'
 import { nombreOCorreo } from '../shared/usuario'
-import { TEXTO_LIBRE, KM_MAX } from '../schemas/common'
+import { TEXTO_LIBRE, KM_MAX, lecturaKm, lecturaKmPositiva } from '../schemas/common'
 import * as service from '../services/vehiculosService'
 
 /**
@@ -34,10 +34,10 @@ const Schema = z.object({
     .optional(),
   // Lo que marcaba antes de reiniciarse. Ausente = lo que el sistema ya tenía,
   // que es el caso normal.
-  km_al_reiniciar: z.coerce.number().int().positive().max(KM_MAX).optional(),
+  km_al_reiniciar: lecturaKmPositiva().optional(),
   // Lo que marca ahora. Casi siempre 0, pero entre el reinicio y la captura la
   // unidad pudo rodar unos días.
-  km_nuevo: z.coerce.number().int().min(0).max(KM_MAX).optional(),
+  km_nuevo: lecturaKm().optional(),
   motivo: z
     .string().trim().max(200, 'Máximo 200 caracteres')
     .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos')

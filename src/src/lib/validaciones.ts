@@ -81,7 +81,13 @@ export function limpiarTextoLibre(valor: string, max: number): string {
 // dedazo de teclear un cero de más. Espeja KM_MAX del backend.
 export const KM_MAX = 9_999_999
 
+// Las lecturas de odómetro llevan un decimal, como el tablero (migración 058).
+// El campo ya lo limita con `decimalScale={1}`; esto ataja lo que llegue por
+// otro lado. Espeja `conUnDecimal` del backend.
 export function validarKm(valor: number | string | null | undefined): string | null {
   if (valor === '' || valor === null || valor === undefined) return null
-  return Number(valor) > KM_MAX ? `Máximo ${KM_MAX.toLocaleString('es-MX')} km` : null
+  const n = Number(valor)
+  if (n > KM_MAX) return `Máximo ${KM_MAX.toLocaleString('es-MX')} km`
+  if (Math.abs(n * 10 - Math.round(n * 10)) > 1e-6) return 'Máximo un decimal'
+  return null
 }

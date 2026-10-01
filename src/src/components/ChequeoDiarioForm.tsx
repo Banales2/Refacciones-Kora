@@ -426,7 +426,7 @@ export default function ChequeoDiarioForm({
           </SimpleGrid>
 
           {formulario.lectura && (
-            <NumberInput
+            <NumberInput decimalScale={1}
               label={formulario.lectura.label}
               description={
                 formulario.kilometraje != null

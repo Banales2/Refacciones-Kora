@@ -150,7 +150,7 @@ export default function MontarConsumoModal({
             onChange={setFecha}
           />
 
-          <NumberInput
+          <NumberInput decimalScale={1}
             label="Kilometraje al montar"
             description="Con esto se calcula cuánto duró la pieza."
             placeholder="Km de la unidad"

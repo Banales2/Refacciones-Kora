@@ -83,7 +83,7 @@ export default function ReiniciarOdometroModal({
           </Text>
         </Alert>
 
-        <NumberInput
+        <NumberInput decimalScale={1}
           label="Último kilometraje antes de reiniciar"
           description="Lo que marcaba el tablero justo antes. Es lo que se va a acumular."
           required
@@ -99,7 +99,7 @@ export default function ReiniciarOdometroModal({
             : undefined}
         />
 
-        <NumberInput
+        <NumberInput decimalScale={1}
           label="Lectura actual del tablero"
           description="Casi siempre 0. Distinto si la unidad ya rodó desde que se reinició."
           min={0}

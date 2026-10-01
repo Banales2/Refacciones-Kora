@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { SQL_KM } from '../shared/km'
 import { RecargaCreate, RecargaEmergencia, RecargaUpdate } from '../schemas/recargaSchema'
 import { Alcance, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 
@@ -99,7 +100,7 @@ export async function create(vehiculoId: number, data: RecargaCreate): Promise<R
     .input('fecha',         sql.Date, data.fecha)
     .input('litros',        sql.Decimal(10, 3), data.litros)
     .input('costo',         sql.Decimal(18, 2), data.costo)
-    .input('kilometraje',   sql.Int, data.kilometraje)
+    .input('kilometraje',   SQL_KM, data.kilometraje)
     .query(`
       INSERT INTO recargas_combustible (vehiculo_id, gasolinera_id, conductor_id, vale_id, fecha, litros, costo, kilometraje)
       OUTPUT INSERTED.id
@@ -159,7 +160,7 @@ export async function update(id: number, data: RecargaUpdate): Promise<RecargaCo
     sets.push('costo = @costo')
   }
   if (data.kilometraje !== undefined) {
-    req.input('kilometraje', sql.Int, data.kilometraje)
+    req.input('kilometraje', SQL_KM, data.kilometraje)
     sets.push('kilometraje = @kilometraje')
   }
 

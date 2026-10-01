@@ -467,10 +467,9 @@ export default function MantenimientoForm({
           </Grid.Col>
           {tieneKilometraje && (
             <Grid.Col span={3}>
-              <NumberInput
+              <NumberInput decimalScale={1}
                 label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required
-                thousandSeparator=","
-                allowDecimal={false} allowNegative={false} clampBehavior="strict"
+                thousandSeparator="," allowNegative={false} clampBehavior="strict"
                 description={!isEdit && kmVehiculo != null
                   ? `Actual: ${kmVehiculo.toLocaleString('es-MX')} km`
                   : undefined}

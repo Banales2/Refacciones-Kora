@@ -5,7 +5,7 @@ import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { nombreOCorreo } from '../shared/usuario'
-import { TEXTO_LIBRE, KM_MAX } from '../schemas/common'
+import { TEXTO_LIBRE, KM_MAX, lecturaKm } from '../schemas/common'
 import * as service from '../services/mantenimientoService'
 
 const Schema = z.object({
@@ -13,7 +13,7 @@ const Schema = z.object({
   tipo:              z.enum(['Preventivo', 'Correctivo']),
   tecnico_id:        z.coerce.number({ error: 'Técnico requerido' }).int().positive('Técnico requerido'),
   costo:             z.coerce.number({ error: 'Costo requerido' }).min(0),
-  km_actual:         z.coerce.number({ error: 'Kilometraje requerido' }).int().min(0).max(KM_MAX, 'Máximo 9,999,999 km'),
+  km_actual:         lecturaKm(),
   observaciones:     z.string().trim().min(1, 'Observaciones requeridas').max(255, 'Máximo 255 caracteres')
                        .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos'),
   // TEMPORAL — mantenimiento sin origen. El vínculo era obligatorio (.min(1)) y

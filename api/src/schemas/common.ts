@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 // Allowlist para campos de texto corto capturados a mano (marcas, nombres de
 // modelo, tipos de pieza…). Solo lo que un catálogo real necesita: letras con
 // acentos y ñ, números, espacios y guiones. Deja fuera cualquier símbolo que
@@ -25,6 +27,25 @@ export const CODIGO = /^[A-Z0-9-]+$/
 // intervalos. Siete dígitos dan de sobra para la vida de una unidad y atajan el
 // dedazo de teclear un cero de más. Espeja KM_MAX del frontend.
 export const KM_MAX = 9_999_999
+
+// Una lectura de odómetro admite UN decimal: es lo que marca el tablero
+// ("123,456.7"). Los intervalos del programa y los límites de las garantías
+// siguen enteros —son números del manual, no lecturas—.
+//
+// Se compara multiplicado por diez y con tolerancia: 0.1 + 0.2 no es 0.3 en
+// punto flotante, y un `% 0.1` rechazaría lecturas válidas.
+export function conUnDecimal(v: number): boolean {
+  return Math.abs(v * 10 - Math.round(v * 10)) < 1e-6
+}
+const MSG_DECIMAL = 'Máximo un decimal'
+
+/** Lectura de odómetro (o horómetro): de 0 al tope, con un decimal. */
+export const lecturaKm = (msgMax = 'Máximo 9,999,999 km') =>
+  z.coerce.number().min(0, 'No puede ser negativo').max(KM_MAX, msgMax).refine(conUnDecimal, MSG_DECIMAL)
+
+/** Igual, pero mayor que cero (lo que marcaba el tablero al reiniciarse). */
+export const lecturaKmPositiva = (msgMax = 'Máximo 9,999,999 km') =>
+  z.coerce.number().positive('Debe ser mayor a 0').max(KM_MAX, msgMax).refine(conUnDecimal, MSG_DECIMAL)
 
 // Allowlist para texto libre (descripciones). Más amplia porque necesita
 // puntuación para leerse bien, pero sigue dejando fuera lo que sirve para

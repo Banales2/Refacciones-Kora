@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { SQL_KM } from '../shared/km'
 import { syncIncidenciaStatuses } from './pendientesRepo'
 
 export interface Mantenimiento {
@@ -96,7 +97,7 @@ async function linkPendientes(
       .input('mid',   sql.Int,  mantenimientoId)
       .input('pid',   sql.Int,  pid)
       .input('fecha', sql.Date, fecha)
-      .input('km',    sql.Int,  kmActual)
+      .input('km',    SQL_KM,  kmActual)
       .query(`
         INSERT INTO mantenimiento_pendientes (mantenimiento_id, pendiente_id, origen, fecha, km_actual)
         SELECT @mid, p.id, p.origen, @fecha, @km
@@ -265,7 +266,7 @@ export async function create(
       .input('tipo',          sql.NVarChar(80),      data.tipo          ?? null)
       .input('tecnicoId',     sql.Int,               data.tecnico_id    ?? null)
       .input('costo',         sql.Decimal(18, 2),    data.costo         ?? 0)
-      .input('kmActual',      sql.Int,               data.km_actual     ?? 0)
+      .input('kmActual',      SQL_KM,               data.km_actual     ?? 0)
       .input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null)
       .input('capturadoPor',  sql.NVarChar(120),     capturadoPor)
       .query(`
@@ -298,7 +299,7 @@ export async function update(id: number, data: MantenimientoUpdate): Promise<Man
     if ('tipo'         in data)           { req.input('tipo',          sql.NVarChar(80),      data.tipo          ?? null); sets.push('tipo=@tipo')                   }
     if ('tecnico_id'   in data)           { req.input('tecnicoId',     sql.Int,               data.tecnico_id    ?? null); sets.push('tecnico_id=@tecnicoId')        }
     if (data.costo         !== undefined) { req.input('costo',         sql.Decimal(18, 2),    data.costo);               sets.push('costo=@costo')                 }
-    if (data.km_actual     !== undefined) { req.input('kmActual',      sql.Int,               data.km_actual);           sets.push('km_actual=@kmActual')           }
+    if (data.km_actual     !== undefined) { req.input('kmActual',      SQL_KM,               data.km_actual);           sets.push('km_actual=@kmActual')           }
     if ('observaciones' in data)          { req.input('observaciones', sql.NVarChar(sql.MAX), data.observaciones ?? null); sets.push('observaciones=@observaciones') }
     if (sets.length) {
       await req.query(`UPDATE mantenimiento SET ${sets.join(',')} OUTPUT INSERTED.* WHERE id=@id`)

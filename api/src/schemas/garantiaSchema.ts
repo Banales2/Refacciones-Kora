@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { TEXTO_SIMPLE, TEXTO_LIBRE, CODIGO, KM_MAX } from './common'
+import { TEXTO_SIMPLE, TEXTO_LIBRE, CODIGO, KM_MAX, lecturaKm } from './common'
 
 // Una garantía se mide en meses, en kilómetros o en los dos, y con los dos gana
 // lo que ocurra primero ("3 años o 100,000 km"). El modo tiene que traer el
@@ -102,10 +102,7 @@ const observaciones = z.preprocess(
 // pero todavía no entregada), y ponerle "no futura" impediría capturarla.
 const fecha = z.string().date('Formato inválido (YYYY-MM-DD)').nullable().optional()
 
-const kmInicio = z.coerce.number().int()
-  .min(0, 'No puede ser negativo')
-  .max(KM_MAX, 'Máximo 9,999,999 km')
-  .nullable().optional()
+const kmInicio = lecturaKm().nullable().optional()
 
 export const GarantiaVehiculoCreateSchema = exigeLimites(z.object({
   nombre,

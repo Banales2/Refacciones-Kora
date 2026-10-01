@@ -867,12 +867,11 @@ export default function ProgramaVehiculoSection({
             onChange={(d) => setFechaTrabajo(d ?? hoyIso())}
             maxDate={hoyIso()}
           />
-          <NumberInput
+          <NumberInput decimalScale={1}
             label="Odómetro" min={0} max={KM_MAX}
-            suffix=" km" thousandSeparator=","
-            allowDecimal={false} allowNegative={false} clampBehavior="strict"
+            suffix=" km" thousandSeparator="," allowNegative={false} clampBehavior="strict"
             value={kmTrabajo ?? ''}
-            onChange={(v) => setKmTrabajo(typeof v === 'number' ? v : parseInt(String(v), 10) || null)}
+            onChange={(v) => setKmTrabajo(typeof v === 'number' ? v : parseFloat(String(v)) || null)}
           />
           {atenderMut.error && <Alert color="red" title="Error">{(atenderMut.error as Error).message}</Alert>}
           <Group justify="flex-end">
@@ -902,12 +901,11 @@ export default function ProgramaVehiculoSection({
             desde aquí, y los límites de meses también, mientras un renglón no se haya atendido
             nunca.
           </Text>
-          <NumberInput
+          <NumberInput decimalScale={1}
             label="Odómetro de arranque" min={0} max={KM_MAX}
-            suffix=" km" thousandSeparator=","
-            allowDecimal={false} allowNegative={false} clampBehavior="strict"
+            suffix=" km" thousandSeparator="," allowNegative={false} clampBehavior="strict"
             value={kmInicio ?? ''}
-            onChange={(v) => setKmInicio(typeof v === 'number' ? v : parseInt(String(v), 10) || 0)}
+            onChange={(v) => setKmInicio(typeof v === 'number' ? v : parseFloat(String(v)) || 0)}
           />
           <FechaInput
             label="Fecha de arranque" clearable

@@ -5,7 +5,7 @@ import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { assertManoObraEditable } from '../shared/revision'
-import { TEXTO_LIBRE, KM_MAX } from '../schemas/common'
+import { TEXTO_LIBRE, KM_MAX, lecturaKm } from '../schemas/common'
 import * as service from '../services/mantenimientoService'
 
 const Schema = z.object({
@@ -13,7 +13,7 @@ const Schema = z.object({
   tipo:              z.enum(['Preventivo', 'Correctivo']).optional(),
   tecnico_id:        z.coerce.number().int().positive('Técnico requerido').optional(),
   costo:             z.coerce.number().min(0).optional(),
-  km_actual:         z.coerce.number().int().min(0).max(KM_MAX, 'Máximo 9,999,999 km').optional(),
+  km_actual:         lecturaKm().optional(),
   observaciones:     z.string().trim().min(1, 'Observaciones requeridas').max(255, 'Máximo 255 caracteres')
                        .regex(TEXTO_LIBRE, 'Contiene caracteres no permitidos').optional(),
   // TEMPORAL — mantenimiento sin origen. Igual que en el alta: el .min(1) se

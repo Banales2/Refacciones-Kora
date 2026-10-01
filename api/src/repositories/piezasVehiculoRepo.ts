@@ -1,5 +1,6 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { SQL_KM } from '../shared/km'
 import { fechaDelLote, folioDelLote, joinFactura, joinProveedorDelLote } from './facturaSql'
 import { fechaMexico } from '../shared/fechaMexico'
 import { moverExistencia, loteDeRecuperacion } from './inventarioSql'
@@ -386,7 +387,7 @@ export async function setPieza(
         // guardaba antes de que el montaje moviera inventario.
         .input('sucId',      sql.Int,          datos.sucursal_id ?? null)
         .input('fecha',      sql.Date,         datos.fecha_instalacion ?? null)
-        .input('km',         sql.Int,          datos.km_instalacion ?? null)
+        .input('km',         SQL_KM,          datos.km_instalacion ?? null)
         .query(`
           INSERT INTO instalaciones_pieza
             (vehiculo_id, tipo_pieza_id, etiqueta, pieza_id, unidad_id, lote_id,
@@ -415,7 +416,7 @@ export async function setPieza(
         .input('mttoId',     sql.Int,  datos.mantenimiento_id ?? null)
         .input('detId',      sql.Int,  datos.detalle_mtto_pieza_id ?? null)
         .input('fecha',      sql.Date, datos.fecha_instalacion ?? null)
-        .input('km',         sql.Int,  datos.km_instalacion ?? null)
+        .input('km',         SQL_KM,  datos.km_instalacion ?? null)
         .query(`
           UPDATE instalaciones_pieza SET
             lote_id               = COALESCE(@loteId, lote_id),
@@ -512,7 +513,7 @@ async function montarRetroactivo(
     await tx.request()
       .input('id',      sql.Int, saliente.id)
       .input('fecha',   sql.Date, fechaMontaje)
-      .input('km',      sql.Int, datos.km_retiro ?? datos.km_instalacion ?? null)
+      .input('km',      SQL_KM, datos.km_retiro ?? datos.km_instalacion ?? null)
       .input('motivo',  sql.NVarChar(30), datos.motivo_retiro ?? null)
       .input('destino', sql.NVarChar(30), datos.destino ?? null)
       .query(`
@@ -539,7 +540,7 @@ async function montarRetroactivo(
     .input('detId',   sql.Int,  datos.detalle_mtto_pieza_id ?? null)
     .input('sucId',   sql.Int,  datos.sucursal_id ?? null)
     .input('fecha',   sql.Date, fechaMontaje)
-    .input('km',      sql.Int,  datos.km_instalacion ?? null)
+    .input('km',      SQL_KM,  datos.km_instalacion ?? null)
     .input('retiro',  sql.Date, fechaRetiro)
     .query(`
       INSERT INTO instalaciones_pieza
@@ -638,7 +639,7 @@ async function cerrarRenglon(
     .input('tipoId',     sql.Int,          tipoId)
     .input('etiqueta',   sql.NVarChar(40), etiqueta)
     .input('fecha',      sql.Date,         datos.fecha_retiro ?? null)
-    .input('km',         sql.Int,          datos.km_retiro ?? null)
+    .input('km',         SQL_KM,          datos.km_retiro ?? null)
     .input('motivo',     sql.NVarChar(30), datos.motivo_retiro ?? null)
     .input('destino',    sql.NVarChar(30), datos.destino ?? null)
     .input('hoy',        sql.Date,         fechaMexico())

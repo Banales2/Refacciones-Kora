@@ -12,6 +12,7 @@
 // El estado (vigente/vencida) no vive aquí: se calcula en `shared/garantias`.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { SQL_KM } from '../shared/km'
 import { kmDeVida } from './vehiculosSql'
 
 export type TriggerMode = 'km' | 'meses' | 'ambos'
@@ -339,7 +340,7 @@ export async function createVehiculo(data: GarantiaVehiculoCreate): Promise<Gara
     .input('meses',         sql.Int,               data.duracion_meses ?? null)
     .input('km',            sql.Int,               data.limite_km      ?? null)
     .input('fechaInicio',   sql.Date,              data.fecha_inicio   ?? null)
-    .input('kmInicio',      sql.Int,               data.km_inicio      ?? null)
+    .input('kmInicio',      SQL_KM,               data.km_inicio      ?? null)
     .input('folio',         sql.NVarChar(60),      data.folio          ?? null)
     .input('observaciones', sql.NVarChar(255),     data.observaciones  ?? null)
     .query(`
@@ -366,7 +367,7 @@ export async function updateVehiculo(
   if ('duracion_meses' in data)        { req.input('meses',       sql.Int,   data.duracion_meses ?? null); sets.push('duracion_meses=@meses')     }
   if ('limite_km'      in data)        { req.input('km',          sql.Int,   data.limite_km      ?? null); sets.push('limite_km=@km')             }
   if ('fecha_inicio'   in data)        { req.input('fechaInicio', sql.Date,  data.fecha_inicio   ?? null); sets.push('fecha_inicio=@fechaInicio') }
-  if ('km_inicio'      in data)        { req.input('kmInicio',    sql.Int,   data.km_inicio      ?? null); sets.push('km_inicio=@kmInicio')       }
+  if ('km_inicio'      in data)        { req.input('kmInicio',    SQL_KM,   data.km_inicio      ?? null); sets.push('km_inicio=@kmInicio')       }
   if ('folio'          in data)        { req.input('folio',       sql.NVarChar(60),  data.folio         ?? null); sets.push('folio=@folio')                 }
   if ('observaciones'  in data)        { req.input('observaciones', sql.NVarChar(255), data.observaciones ?? null); sets.push('observaciones=@observaciones') }
   if ('cancelada_en'   in data)        { req.input('cancelada',   sql.Date,  data.cancelada_en ?? null); sets.push('cancelada_en=@cancelada')     }

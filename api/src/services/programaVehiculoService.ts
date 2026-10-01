@@ -1016,7 +1016,7 @@ function kmEn(lecturas: Lectura[], fecha: string): number | null {
   const b = lecturas[i + 1]
   if (!b || a.fecha === fecha) return a.km
   const t = (Date.parse(fecha) - Date.parse(a.fecha)) / (Date.parse(b.fecha) - Date.parse(a.fecha))
-  return Math.round(a.km + (b.km - a.km) * t)
+  return Math.round((a.km + (b.km - a.km) * t) * 10) / 10
 }
 
 /**
