@@ -52,6 +52,8 @@ export interface ReportePdf {
   /** Mensaje centrado de "aquí no hubo nada", para no dejar una sección muda. */
   vacio(texto: string): void
   espacio(mm?: number): void
+  /** Salta a una hoja nueva: para documentos que se reparten hoja por hoja. */
+  nuevaPagina(): void
   guardar(nombreArchivo: string): void
 }
 
@@ -187,6 +189,8 @@ export async function crearReportePdf(opciones: OpcionesReporte): Promise<Report
     },
 
     espacio(mm = 4) { y += mm },
+
+    nuevaPagina() { doc.addPage(); y = 16 },
 
     guardar(nombreArchivo) {
       // La numeración se pone al final porque hasta aquí no se sabe cuántas

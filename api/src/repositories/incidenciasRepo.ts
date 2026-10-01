@@ -54,6 +54,12 @@ export interface IncidenciaConVehiculo extends Incidencia {
   vehiculo_tipo:   string
   /** Para buscar la unidad por sus placas, que es como la nombra el patio. */
   vehiculo_placas: string | null
+  /**
+   * La sucursal donde tiene base la unidad. Solo la tienen reparto y
+   * montacargas; las demás andan de patio en patio y llegan en null.
+   */
+  vehiculo_sucursal_id: number | null
+  vehiculo_sucursal:    string | null
 }
 
 export interface IncidenciaCreate {
@@ -120,11 +126,15 @@ export async function findAllConVehiculo(): Promise<IncidenciaConVehiculo[]> {
            i.reportado_por, i.severidad, i.fecha, ${HORA_TXT}, i.ubicacion,
            i.autorizado_por, i.clave_chequeo, ${MTTO_ATENDIO},
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
-           v.tipo AS vehiculo_tipo, v.placas AS vehiculo_placas
+           v.tipo AS vehiculo_tipo, v.placas AS vehiculo_placas,
+           s.id AS vehiculo_sucursal_id, s.nombre AS vehiculo_sucursal
     FROM pendientes p
     JOIN incidencias i ON i.id = p.id
     JOIN vehiculos v   ON v.id = p.vehiculo_id
     JOIN modelos mo    ON mo.id = v.modelo_id
+    LEFT JOIN camiones    c  ON c.vehiculo_id  = v.id
+    LEFT JOIN montacargas mc ON mc.vehiculo_id = v.id
+    LEFT JOIN sucursales  s  ON s.id = COALESCE(c.sucursal_id, mc.sucursal_id)
     ORDER BY i.fecha DESC, i.hora DESC
   `)
   return r.recordset

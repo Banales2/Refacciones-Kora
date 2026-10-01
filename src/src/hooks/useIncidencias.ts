@@ -44,6 +44,9 @@ export interface IncidenciaConVehiculo extends Incidencia {
   vehiculo_tipo:   string
   /** Para buscar la unidad por sus placas, que es como la nombra el patio. */
   vehiculo_placas: string | null
+  /** Base de la unidad. Solo reparto y montacargas la tienen; las demás, null. */
+  vehiculo_sucursal_id: number | null
+  vehiculo_sucursal:    string | null
 }
 
 export interface IncidenciaPayload {

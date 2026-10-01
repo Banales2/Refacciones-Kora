@@ -9,7 +9,7 @@ import {
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
-  IconPencil, IconPlus, IconAlertTriangle, IconSearch, IconTool, IconClipboardList,
+  IconPencil, IconPlus, IconAlertTriangle, IconSearch, IconTool, IconClipboardList, IconPrinter,
 } from '@tabler/icons-react'
 import {
   useIncidencias, useCreateIncidencia, useUpdateIncidencia,
@@ -31,6 +31,7 @@ import MantenimientoForm from '../components/MantenimientoForm'
 import type { DeshacerAtencion } from './Vehiculos'
 import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
 import SelectCatalogo from '../components/SelectCatalogo'
+import FichaChoferesModal from '../components/FichaChoferesModal'
 
 function fmtFechaHora(fecha: string, hora: string | null) {
   const f = new Date(`${fecha.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
@@ -62,6 +63,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
 
   const [filtro, setFiltro]       = useState<'abiertas' | 'todas'>('abiertas')
   const [busqueda, setBusqueda]   = useState('')
+  const [fichaOpen, setFichaOpen] = useState(false)
   const [debounced]               = useDebouncedValue(busqueda, 250)
 
   // El responsable reporta pero no edita ni atiende: atender es registrar el
@@ -155,6 +157,8 @@ export default function Incidencias({ onNavigateVehiculo }: {
             vehiculo_nombre: v ? vehiculoLabel(v) : '',
             vehiculo_tipo:   v?.tipo ?? '',
             vehiculo_placas: v?.placas ?? null,
+            vehiculo_sucursal_id: v?.sucursal_id ?? null,
+            vehiculo_sucursal:    v?.sucursal ?? null,
           })
         }
         setVehiculoNueva(null)
@@ -166,14 +170,20 @@ export default function Incidencias({ onNavigateVehiculo }: {
   function handleUpdate(payload: IncidenciaPayload) {
     if (!editando) return
     setFormError(null)
-    const { status: statusPrevio, vehiculo_nombre, vehiculo_tipo, vehiculo_placas } = editando
+    const {
+      status: statusPrevio, vehiculo_nombre, vehiculo_tipo, vehiculo_placas,
+      vehiculo_sucursal_id, vehiculo_sucursal,
+    } = editando
     updateMut.mutate({ id: editando.id, payload }, {
       onSuccess: ({ data }) => {
         setEditando(null)
         if (payload.status === 'completado' && statusPrevio !== 'completado') {
           setMantError(null)
           setDeshacer({ tipo: 'revertir', status: statusPrevio })
-          setAtendiendo({ ...data, vehiculo_nombre, vehiculo_tipo, vehiculo_placas })
+          setAtendiendo({
+            ...data, vehiculo_nombre, vehiculo_tipo, vehiculo_placas,
+            vehiculo_sucursal_id, vehiculo_sucursal,
+          })
         }
       },
       onError: (e) => setFormError((e as Error).message),
@@ -391,14 +401,28 @@ export default function Incidencias({ onNavigateVehiculo }: {
               { value: 'todas',    label: `Todas (${incidencias.length})` },
             ]}
           />
-          <TextInput
-            placeholder="Buscar por nombre, vehículo, placas, categoría…"
-            leftSection={<IconSearch size={16} />}
-            value={busqueda}
-            onChange={(e) => { setBusqueda(e.currentTarget.value); setSecciones(undefined) }}
-            w={320}
-          />
+          <Group gap="xs" wrap="wrap">
+            <TextInput
+              placeholder="Buscar por nombre, vehículo, placas, categoría…"
+              leftSection={<IconSearch size={16} />}
+              value={busqueda}
+              onChange={(e) => { setBusqueda(e.currentTarget.value); setSecciones(undefined) }}
+              w={320}
+            />
+            {/* Lo superficial, una hoja por unidad, para que lo resuelva el chofer. */}
+            <Button
+              variant="light" leftSection={<IconPrinter size={16} />}
+              onClick={() => setFichaOpen(true)}
+              disabled={isLoading || isError}
+            >
+              Ficha para choferes
+            </Button>
+          </Group>
         </Group>
+
+        {fichaOpen && (
+          <FichaChoferesModal incidencias={incidencias} onClose={() => setFichaOpen(false)} />
+        )}
 
         {isLoading ? (
           <Center py="xl"><Loader /></Center>
