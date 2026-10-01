@@ -5,6 +5,7 @@ import * as piezasVehiculoService from './piezasVehiculoService'
 import { DetalleMttoPiezaCreate, DetalleMttoPiezaUpdate } from '../schemas/detalleMttoPiezaSchema'
 import { NotFoundError, ValidationError } from '../shared/errors'
 import { exigirLoteLlegado } from './lotesDisponibles'
+import { MANTENIMIENTO_BASICO } from '../schemas/common'
 
 export async function getDetalle(mantenimientoId: number) {
   const mantenimiento = await mantenimientoRepo.findById(mantenimientoId)
@@ -18,6 +19,13 @@ export async function getLotesDisponibles() {
 }
 
 export async function create(mantenimientoId: number, data: DetalleMttoPiezaCreate) {
+  const mantenimiento = await mantenimientoRepo.findById(mantenimientoId)
+  if (!mantenimiento) throw new NotFoundError('Mantenimiento')
+  if (mantenimiento.tipo === MANTENIMIENTO_BASICO) {
+    throw new ValidationError(
+      'Un mantenimiento básico no lleva refacciones. Si se usó una, cámbialo a preventivo o correctivo.'
+    )
+  }
   // El stock se valida contra la sucursal elegida, no contra el total del lote:
   // que haya 10 piezas repartidas no significa que haya 10 en Vallarta.
   const lote = await repo.getLoteInfo(data.lote_id, data.sucursal_id)

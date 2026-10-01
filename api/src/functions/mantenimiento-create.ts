@@ -5,13 +5,17 @@ import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { nombreOCorreo } from '../shared/usuario'
-import { TEXTO_LIBRE, KM_MAX, lecturaKm } from '../schemas/common'
+import {
+  TEXTO_LIBRE, KM_MAX, lecturaKm, MANTENIMIENTO_BASICO, TIPOS_MANTENIMIENTO,
+} from '../schemas/common'
 import * as service from '../services/mantenimientoService'
 
 const Schema = z.object({
   fecha:             z.string().date(),
-  tipo:              z.enum(['Preventivo', 'Correctivo']),
-  tecnico_id:        z.coerce.number({ error: 'Técnico requerido' }).int().positive('Técnico requerido'),
+  tipo:              z.enum(TIPOS_MANTENIMIENTO),
+  // Obligatorio salvo en el básico, que no pasa por taller. Lo exige el
+  // `superRefine` de abajo, que es donde se sabe el tipo.
+  tecnico_id:        z.coerce.number().int().positive('Técnico requerido').nullish(),
   costo:             z.coerce.number({ error: 'Costo requerido' }).min(0),
   km_actual:         lecturaKm(),
   observaciones:     z.string().trim().min(1, 'Observaciones requeridas').max(255, 'Máximo 255 caracteres')
@@ -27,6 +31,14 @@ const Schema = z.object({
   // "tiene pendientes O cierra una columna del programa".
   pendiente_ids: z.array(z.number().int().positive()),
 })
+  .superRefine((v, ctx) => {
+    if (v.tipo !== MANTENIMIENTO_BASICO && !v.tecnico_id) {
+      ctx.addIssue({ code: 'custom', path: ['tecnico_id'], message: 'Técnico requerido' })
+    }
+  })
+  // El básico no lleva técnico ni cuesta, diga lo que diga el cuerpo: así nunca
+  // aparece como mano de obra por facturar.
+  .transform((v) => v.tipo === MANTENIMIENTO_BASICO ? { ...v, tecnico_id: null, costo: 0 } : v)
 
 export async function mantenimientoCreate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {

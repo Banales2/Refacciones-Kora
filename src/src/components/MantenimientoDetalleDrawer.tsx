@@ -13,6 +13,7 @@ import {
   useDetalleMtto, useCreateDetalleMtto, useUpdateDetalleMtto, useDeleteDetalleMtto,
 } from '../hooks/useDetalleMtto'
 import type { DetalleMttoPieza, DetalleMttoPayload } from '../hooks/useDetalleMtto'
+import { MANTENIMIENTO_BASICO } from '../hooks/useMantenimientos'
 import type { Mantenimiento } from '../hooks/useMantenimientos'
 import { useLotesDisponibles } from '../hooks/useLotesDisponibles'
 import type { LoteDisponible } from '../hooks/useLotesDisponibles'
@@ -394,9 +395,12 @@ export default function MantenimientoDetalleDrawer({ mantenimientoId, onClose, o
                   <Text fw={700} size="lg" c="blue">{formatMXN(granTotal)}</Text>
                 </div>
               </Group>
-              <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setCreateOpen(true)}>
-                Agregar refacción
-              </Button>
+              {/* El básico no lleva refacciones: la API lo rechazaría. */}
+              {data?.mantenimiento.tipo !== MANTENIMIENTO_BASICO && (
+                <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setCreateOpen(true)}>
+                  Agregar refacción
+                </Button>
+              )}
             </Group>
 
             {!detalles.length ? (

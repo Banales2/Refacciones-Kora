@@ -12,7 +12,7 @@ import { useDebouncedValue } from '@mantine/hooks'
 import {
   IconSearch, IconFileTypePdf, IconFileSpreadsheet, IconReportAnalytics,
 } from '@tabler/icons-react'
-import { useTodosLosMantenimientos } from '../hooks/useMantenimientos'
+import { useTodosLosMantenimientos, MANTENIMIENTO_BASICO, TIPOS_MANTENIMIENTO } from '../hooks/useMantenimientos'
 import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer'
 import {
   exportMantenimientosPdf, exportMantenimientosExcel,
@@ -39,6 +39,7 @@ function anioDe(iso: string | null): string | null {
 const TIPO_COLOR: Record<string, string> = {
   Preventivo: 'blue',
   Correctivo: 'orange',
+  [MANTENIMIENTO_BASICO]: 'teal',
 }
 
 function Metrica({ label, value }: { label: string; value: string }) {
@@ -195,7 +196,7 @@ export default function Mantenimientos({
           <Select
             w={150}
             placeholder="Tipo"
-            data={[{ value: 'Preventivo', label: 'Preventivo' }, { value: 'Correctivo', label: 'Correctivo' }]}
+            data={TIPOS_MANTENIMIENTO.map((t) => ({ value: t.value, label: t.value }))}
             value={tipo}
             onChange={setTipo}
             clearable

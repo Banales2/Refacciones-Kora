@@ -34,6 +34,7 @@ import type { LoteDisponible } from '../hooks/useLotesDisponibles'
 import { usePendientes, ORIGEN_LABEL } from '../hooks/usePendientes'
 import type { OrigenPendiente } from '../hooks/usePendientes'
 import { useIncidenciasVehiculo } from '../hooks/useIncidencias'
+import { MANTENIMIENTO_BASICO, TIPOS_MANTENIMIENTO } from '../hooks/useMantenimientos'
 import type { Mantenimiento, MantenimientoPayload } from '../hooks/useMantenimientos'
 import type { DetalleMttoPayload } from '../hooks/useDetalleMtto'
 import { useVehiculo } from '../hooks/useVehiculos'
@@ -253,9 +254,11 @@ export default function MantenimientoForm({
     validate: {
       fecha:             (v) => !v ? 'Requerido' : null,
       tipo:              (v) => !v ? 'Requerido' : null,
-      tecnico_id:        (v) => !v ? 'Requerido' : null,
+      // El básico no pasa por taller: ni técnico ni costo.
+      tecnico_id:        (v, vals) => !v && vals.tipo !== MANTENIMIENTO_BASICO ? 'Requerido' : null,
       km_actual:         (v) => tieneKilometraje && (v === '' || v === null) ? 'Requerido' : validarKm(v),
-      costo:             (v) => v === '' || v === null ? 'Requerido' : null,
+      costo:             (v, vals) =>
+        vals.tipo !== MANTENIMIENTO_BASICO && (v === '' || v === null) ? 'Requerido' : null,
       observaciones:     (v) =>
         !v.trim() ? 'Requerido' :
         v.length > 255 ? 'Máximo 255 caracteres' :
@@ -293,6 +296,7 @@ export default function MantenimientoForm({
   }, [kmVehiculo, isEdit])
 
   const piezas = form.values.piezas
+  const esBasico = form.values.tipo === MANTENIMIENTO_BASICO
 
   // Un lote ya elegido no se ofrece en las demás líneas: evita capturar dos
   // veces la misma pieza y que la suma de cantidades rebase el stock.
@@ -395,12 +399,13 @@ export default function MantenimientoForm({
   }
 
   function enviar(vals: MantForm) {
+    const basico = vals.tipo === MANTENIMIENTO_BASICO
     onSubmit(
       {
         fecha:             vals.fecha,
         tipo:              vals.tipo.trim()          || null,
-        tecnico_id:        Number(vals.tecnico_id),
-        costo:             vals.costo !== '' ? Number(vals.costo) : 0,
+        tecnico_id:        basico ? null : Number(vals.tecnico_id),
+        costo:             !basico && vals.costo !== '' ? Number(vals.costo) : 0,
         km_actual:         vals.km_actual !== '' ? Number(vals.km_actual) : 0,
         observaciones:     vals.observaciones.trim(),
         // El fijo no vive en el selector: se agrega aquí para que el alta lo
@@ -410,7 +415,9 @@ export default function MantenimientoForm({
           ...vals.pendiente_ids.map(Number).filter(id => id !== pendienteFijo?.id),
         ],
       },
-      vals.piezas.map(p => ({
+      // Lo que se haya capturado antes de cambiar a básico no se manda: el
+      // básico no consume refacciones.
+      (basico ? [] : vals.piezas).map(p => ({
         lote_id:        Number(p.lote_id),
         sucursal_id:    Number(p.sucursal_id),
         cantidad:       Number(p.cantidad),
@@ -440,13 +447,23 @@ export default function MantenimientoForm({
             <Select
               label="Tipo" required
               placeholder="Selecciona el tipo"
-              data={[
-                { value: 'Preventivo', label: 'Preventivo' },
-                { value: 'Correctivo', label: 'Correctivo' },
-              ]}
+              // La visita del programa es un servicio de taller con su acta:
+              // no puede ser básica.
+              data={acta
+                ? TIPOS_MANTENIMIENTO.filter((t) => t.value !== MANTENIMIENTO_BASICO)
+                : TIPOS_MANTENIMIENTO}
               {...form.getInputProps('tipo')}
             />
           </Grid.Col>
+          {esBasico ? (
+            <Grid.Col span={12}>
+              <Text size="xs" c="dimmed">
+                Lo que hace el propio personal sin taller ni refacción, como rellenar
+                el limpiaparabrisas con agua. Se registra sin técnico, sin costo y
+                sin factura.
+              </Text>
+            </Grid.Col>
+          ) : (
           <Grid.Col span={6}>
             <SelectCatalogo
               estado={tecnicosQuery}
@@ -465,8 +482,9 @@ export default function MantenimientoForm({
               Nuevo técnico
             </Button>
           </Grid.Col>
+          )}
           {tieneKilometraje && (
-            <Grid.Col span={3}>
+            <Grid.Col span={esBasico ? 6 : 3}>
               <NumberInput decimalScale={1}
                 label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required
                 thousandSeparator="," allowNegative={false} clampBehavior="strict"
@@ -477,6 +495,7 @@ export default function MantenimientoForm({
               />
             </Grid.Col>
           )}
+          {!esBasico && (
           <Grid.Col span={tieneKilometraje ? 3 : 6}>
             <NumberInput
               label="Costo de mano de obra" placeholder="0.00" min={0} decimalScale={2}
@@ -484,6 +503,7 @@ export default function MantenimientoForm({
               {...form.getInputProps('costo')}
             />
           </Grid.Col>
+          )}
           <Grid.Col span={12}>
             <Textarea
               label="Observaciones" autosize minRows={2} required maxLength={255}
@@ -570,7 +590,7 @@ export default function MantenimientoForm({
           </>
         )}
 
-        {!isEdit && (
+        {!isEdit && !esBasico && (
           <>
             <Divider
               label={

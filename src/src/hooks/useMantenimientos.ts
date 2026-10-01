@@ -25,6 +25,17 @@ export interface Mantenimiento {
   servicio_programa_km: number | null
 }
 
+// Lo que hace el propio personal sin taller ni refacción —rellenar el
+// limpiaparabrisas con agua—: sin técnico, sin costo y sin factura. La API le
+// quita técnico y costo aunque se los manden.
+export const MANTENIMIENTO_BASICO = 'Básico'
+
+export const TIPOS_MANTENIMIENTO = [
+  { value: 'Preventivo', label: 'Preventivo' },
+  { value: 'Correctivo', label: 'Correctivo' },
+  { value: MANTENIMIENTO_BASICO, label: 'Básico (sin taller ni refacción)' },
+]
+
 export interface MantenimientoPayload {
   fecha:              string
   tipo?:              string | null

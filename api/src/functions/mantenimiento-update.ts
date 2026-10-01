@@ -5,13 +5,15 @@ import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { assertManoObraEditable } from '../shared/revision'
-import { TEXTO_LIBRE, KM_MAX, lecturaKm } from '../schemas/common'
+import {
+  TEXTO_LIBRE, KM_MAX, lecturaKm, MANTENIMIENTO_BASICO, TIPOS_MANTENIMIENTO,
+} from '../schemas/common'
 import * as service from '../services/mantenimientoService'
 
 const Schema = z.object({
   fecha:             z.string().date().optional(),
-  tipo:              z.enum(['Preventivo', 'Correctivo']).optional(),
-  tecnico_id:        z.coerce.number().int().positive('Técnico requerido').optional(),
+  tipo:              z.enum(TIPOS_MANTENIMIENTO).optional(),
+  tecnico_id:        z.coerce.number().int().positive('Técnico requerido').nullish(),
   costo:             z.coerce.number().min(0).optional(),
   km_actual:         lecturaKm().optional(),
   observaciones:     z.string().trim().min(1, 'Observaciones requeridas').max(255, 'Máximo 255 caracteres')
@@ -21,6 +23,8 @@ const Schema = z.object({
   // misma salvedad de la visita del programa.
   pendiente_ids: z.array(z.number().int().positive()).optional(),
 })
+  // Volverlo básico le quita técnico y costo, igual que en el alta.
+  .transform((v) => v.tipo === MANTENIMIENTO_BASICO ? { ...v, tecnico_id: null, costo: 0 } : v)
 
 export async function mantenimientoUpdate(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {

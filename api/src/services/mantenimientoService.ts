@@ -1,6 +1,8 @@
 import * as repo from '../repositories/mantenimientoRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
-import { NotFoundError } from '../shared/errors'
+import * as detalleMttoPiezaRepo from '../repositories/detalleMttoPiezaRepo'
+import { NotFoundError, ValidationError } from '../shared/errors'
+import { MANTENIMIENTO_BASICO } from '../schemas/common'
 
 export async function getByVehiculo(vehiculoId: number) {
   return repo.findByVehiculo(vehiculoId)
@@ -36,6 +38,25 @@ export async function create(
 }
 
 export async function update(id: number, data: repo.MantenimientoUpdate) {
+  const actual = await repo.findById(id)
+  if (!actual) throw new NotFoundError('Mantenimiento')
+
+  if (data.tipo === MANTENIMIENTO_BASICO && actual.tipo !== MANTENIMIENTO_BASICO) {
+    // El básico no consume refacciones: con piezas cargadas dejaría de ser
+    // cierto, y quitarlas en silencio movería el inventario sin que nadie lo
+    // pidiera.
+    if ((await detalleMttoPiezaRepo.findByMantenimientoId(id)).length) {
+      throw new ValidationError(
+        'Este mantenimiento tiene refacciones. Quítalas desde su detalle antes de volverlo básico.'
+      )
+    }
+  }
+  // Dejar de ser básico es volver a pasar por taller: hace falta quién lo hizo.
+  if (data.tipo !== undefined && data.tipo !== MANTENIMIENTO_BASICO
+      && actual.tecnico_id == null && !data.tecnico_id) {
+    throw new ValidationError('Técnico requerido')
+  }
+
   const updated = await repo.update(id, data)
   if (!updated) throw new NotFoundError('Mantenimiento')
   return updated

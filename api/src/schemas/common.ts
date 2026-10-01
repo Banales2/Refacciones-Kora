@@ -51,3 +51,10 @@ export const lecturaKmPositiva = (msgMax = 'Máximo 9,999,999 km') =>
 // puntuación para leerse bien, pero sigue dejando fuera lo que sirve para
 // inyectar marcado o scripts: < > { } [ ] \ | ` ~ ^ * = _ $ @.
 export const TEXTO_LIBRE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 \r\n.,;:()¿?¡!"'%#°+&/-]+$/
+
+// Los tipos de mantenimiento. El básico es lo que hace el propio personal sin
+// taller ni refacción —rellenar el limpiaparabrisas con agua, calibrar
+// llantas—: no lleva técnico, no cuesta y no lo cobra ninguna factura, pero sí
+// queda en el historial de la unidad.
+export const MANTENIMIENTO_BASICO = 'Básico'
+export const TIPOS_MANTENIMIENTO = ['Preventivo', 'Correctivo', MANTENIMIENTO_BASICO] as const
