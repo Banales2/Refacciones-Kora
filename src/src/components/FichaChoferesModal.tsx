@@ -1,6 +1,6 @@
-// Elegir de qué sucursal se imprime la ficha de los choferes: lo superficial
-// que cada unidad trae abierto, una hoja por unidad. Ver
-// `lib/reportes/fichaChofer.ts`.
+// Elegir de qué sucursal se imprime la ficha de los choferes: lo que cada
+// unidad trae abierto y el chofer puede resolver, una hoja por unidad. Ver
+// `lib/reportes/fichaChofer.ts` para qué entra y por qué.
 import { useState } from 'react'
 import { Modal, Stack, Select, Text, Alert, Group, Button } from '@mantine/core'
 import { IconPrinter } from '@tabler/icons-react'
@@ -57,13 +57,16 @@ export default function FichaChoferesModal({ incidencias, onClose }: {
     <Modal opened onClose={onClose} title="Ficha para choferes" centered size="md">
       <Stack gap="sm">
         <Text size="sm" c="dimmed">
-          Las incidencias <strong>superficiales</strong> que siguen abiertas —lo que el chofer puede
-          resolver sin taller—, una hoja por unidad para entregársela a su chofer. Agrupadas por
-          sucursal; las unidades sin base fija van al final.
+          Lo que cada unidad trae abierto y el chofer puede resolver sin taller ni refacción:
+          extintor, llanta de refacción, herramienta, papeles a bordo, basura y líquido
+          limpiaparabrisas. Lo que necesita taller —un espejo, un parabrisas— no entra. Una hoja
+          por unidad, agrupadas por sucursal; las unidades sin base fija van al final.
         </Text>
 
         {total === 0 ? (
-          <Alert color="green" variant="light">No hay incidencias superficiales abiertas.</Alert>
+          <Alert color="green" variant="light">
+            No hay incidencias abiertas que pueda resolver el chofer.
+          </Alert>
         ) : (
           <Select
             label="Sucursal"

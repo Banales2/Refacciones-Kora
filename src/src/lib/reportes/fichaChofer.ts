@@ -1,22 +1,36 @@
-// La ficha que se le entrega al chofer: lo superficial que su unidad tiene
-// abierto, para que lo revise y lo resuelva él mismo —el extintor, los
-// papeles, la basura de la cabina—.
+// La ficha que se le entrega al chofer: lo que su unidad tiene abierto y él
+// mismo puede resolver —el extintor, los papeles, la basura de la cabina—.
 //
 // Una hoja por unidad, porque cada chofer se lleva solo la suya, y las hojas
 // agrupadas por sucursal, porque es en el patio de cada sucursal donde se
-// reparten. Lo moderado y lo grave no entra: eso va al taller, no a la cabina.
+// reparten.
 //
-// La hoja no cierra nada sola. Lo que el chofer arregle lo confirma el chequeo
-// diario, que es quien cierra la incidencia (ver `docs/chequeo-diario.md`).
+// QUÉ ENTRA NO LO DECIDE LA GRAVEDAD. "Superficial" dice qué tan urgente es, no
+// quién lo arregla: un espejo que falta es superficial y hay que comprarlo y
+// montarlo en el taller. Entran las preguntas del chequeo que el catálogo marca
+// con `cierreAutomatico` —lo que se arregla sin taller ni refacción—, que son
+// también las que el chequeo diario cierra solo cuando las encuentra bien. Así
+// la hoja y el cierre no se pueden desalinear: lo que se le pide al chofer es
+// justo lo que el siguiente chequeo confirma y cierra.
+//
+// Por eso una incidencia capturada a mano entra solo si dice de qué punto del
+// chequeo es (`clave_chequeo`): sin eso no hay forma de saber si la arregla el
+// chofer o el taller.
 import type { IncidenciaConVehiculo } from '../../hooks/useIncidencias'
+import { ITEMS_CHEQUEO } from '../chequeoItems'
 import { crearReportePdf, hoyISO } from './pdfDoc'
 import { formatFecha } from '../formato'
 
 export const SIN_SUCURSAL = 'Sin sucursal fija'
 
-/** Lo que entra en la ficha: superficial y todavía abierto. */
+const LAS_ARREGLA_EL_CHOFER = new Set(
+  ITEMS_CHEQUEO.filter((i) => i.cierreAutomatico).map((i) => i.clave)
+)
+
+/** Lo que entra en la ficha: abierto y de algo que el chofer puede resolver. */
 export function incidenciasParaFicha(incidencias: IncidenciaConVehiculo[]): IncidenciaConVehiculo[] {
-  return incidencias.filter((i) => i.severidad === 'superficial' && i.status === 'activo')
+  return incidencias.filter((i) =>
+    i.status === 'activo' && i.clave_chequeo != null && LAS_ARREGLA_EL_CHOFER.has(i.clave_chequeo))
 }
 
 interface HojaVehiculo {
@@ -70,7 +84,7 @@ export async function exportFichaChoferPdf(incidencias: IncidenciaConVehiculo[],
   })
 
   if (unidades === 0) {
-    pdf.vacio('No hay incidencias superficiales abiertas.')
+    pdf.vacio('No hay incidencias abiertas que pueda resolver el chofer.')
     pdf.guardar(`ficha-choferes-${hoyISO()}`)
     return
   }
@@ -95,7 +109,8 @@ export async function exportFichaChoferPdf(incidencias: IncidenciaConVehiculo[],
       )
       pdf.parrafo(
         'Revisa estos puntos de tu unidad y resuélvelos si está en tus manos. Marca cada uno ' +
-        'cuando quede listo y entrega la hoja. Lo confirma el siguiente chequeo diario.',
+        'cuando quede listo y entrega la hoja. El siguiente chequeo diario lo confirma y cierra ' +
+        'la incidencia.',
       )
       pdf.tabla({
         head: ['Listo', 'Punto a revisar', 'Detalle', 'Desde'],
