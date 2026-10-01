@@ -141,6 +141,48 @@ export const CeldasSchema = z.object({
     .max(60, 'Máximo 60 celdas'),
 })
 
+// Un programa completo de una sola vez, leído de la tabla del fabricante en CSV
+// (ver `docs/importar-programa.md`). El archivo lo interpreta el navegador; aquí
+// llega ya armado como la cuadrícula que el sistema guarda: las columnas, y por
+// cada renglón sus celdas identificadas por la marca de kilometraje, porque las
+// fases todavía no tienen id.
+export const ProgramaImportarSchema = ProgramaCreateSchema.extend({
+  fases: FasesSchema,
+  operaciones: z
+    .array(OperacionCreateSchema.omit({ categoria: true }).extend({
+      celdas: z
+        .array(z.object({
+          km:     z.coerce.number().int().positive(),
+          accion: z.string().trim().min(1).max(2),
+        }))
+        .max(60, 'Máximo 60 celdas'),
+    }))
+    .min(1, 'El archivo no trae ninguna operación')
+    .max(500, 'Máximo 500 operaciones'),
+}).superRefine((data, ctx) => {
+  const marcas = new Set(data.fases.map((f) => f.km))
+  data.operaciones.forEach((op, i) => {
+    const vistas = new Set<number>()
+    op.celdas.forEach((c, j) => {
+      if (!marcas.has(c.km)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['operaciones', i, 'celdas', j, 'km'],
+          message: `«${op.nombre}» marca los ${c.km} km, que no es una columna del programa`,
+        })
+      }
+      if (vistas.has(c.km)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['operaciones', i, 'celdas', j, 'km'],
+          message: `«${op.nombre}» marca dos veces los ${c.km} km`,
+        })
+      }
+      vistas.add(c.km)
+    })
+  })
+})
+
 export const ReordenarSchema = z.object({
   ids: z.array(z.coerce.number().int().positive()).max(500, 'Máximo 500 operaciones'),
 })

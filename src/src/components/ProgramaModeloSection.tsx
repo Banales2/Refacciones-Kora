@@ -23,7 +23,7 @@ import {
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import {
-  IconPlus, IconPencil, IconTrash, IconChecklist, IconColumns, IconCopy,
+  IconPlus, IconPencil, IconTrash, IconChecklist, IconColumns, IconCopy, IconFileImport,
 } from '@tabler/icons-react'
 import {
   useProgramasModelo, useAccionesPrograma, useCreatePrograma, useUpdatePrograma,
@@ -42,6 +42,7 @@ import { TEXTO_LIBRE, limpiarTextoLibre } from '../lib/validaciones'
 import { formatMXN, formatMXNCorto } from '../lib/formato'
 import ProgramaFasesModal from './ProgramaFasesModal'
 import ProgramaOperacionForm from './ProgramaOperacionForm'
+import ImportarProgramaModal from './ImportarProgramaModal'
 
 const nf = new Intl.NumberFormat('es-MX')
 
@@ -258,6 +259,7 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
   const [borrandoOp, setBorrandoOp] = useState<OperacionPrograma | null>(null)
   const [borrandoPrograma, setBorrandoPrograma] = useState(false)
   const [copiando, setCopiando] = useState(false)
+  const [importando, setImportando] = useState(false)
   const [formError, setFormError]   = useState<string | null>(null)
   const [celdaError, setCeldaError] = useState<string | null>(null)
 
@@ -339,14 +341,33 @@ function ProgramaPanel({ modeloId, tipo, programa, acciones }: {
               Se captura igual: los servicios por kilometraje y qué se le hace a cada pieza en
               cada uno, con el límite de meses de cada renglón.
             </Text>
-            <Button
-              leftSection={<IconPlus size={14} />}
-              onClick={() => { setFormError(null); setProgramaFormOpen(true) }}
-            >
-              Capturar programa
-            </Button>
+            <Group gap="xs">
+              <Button
+                leftSection={<IconPlus size={14} />}
+                onClick={() => { setFormError(null); setProgramaFormOpen(true) }}
+              >
+                Capturar programa
+              </Button>
+              {/* La tabla del fabricante ya pasada a CSV: columnas, renglones,
+                  cruces y precios de una vez, en vez de casilla por casilla. */}
+              <Button
+                variant="light"
+                leftSection={<IconFileImport size={14} />}
+                onClick={() => setImportando(true)}
+              >
+                Importar desde CSV
+              </Button>
+            </Group>
           </Stack>
         </Paper>
+
+        {importando && (
+          <ImportarProgramaModal
+            modeloId={modeloId}
+            tipo={tipo}
+            onClose={() => setImportando(false)}
+          />
+        )}
 
         <Modal
           opened={programaFormOpen} onClose={() => setProgramaFormOpen(false)}

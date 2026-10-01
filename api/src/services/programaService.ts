@@ -2,10 +2,12 @@
 // cuadrícula; aquí vive lo que la hace válida y lo que se deriva de ella.
 import * as repo from '../repositories/programaRepo'
 import * as vehiculoRepo from '../repositories/programaVehiculoRepo'
+import * as modelosRepo from '../repositories/modelosRepo'
+import * as tiposModeloRepo from '../repositories/tiposPiezaModeloRepo'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
 import type {
   ProgramaCreate, ProgramaUpdate, ProgramaCompleto, TipoPrograma,
-  OperacionCreate, OperacionUpdate, FaseEntrada, Fase,
+  OperacionCreate, OperacionUpdate, FaseEntrada, Fase, OperacionImportada,
 } from '../repositories/programaRepo'
 
 export async function getAcciones() {
@@ -76,6 +78,60 @@ export async function copiar(
   const copia = await repo.copiar(origenId, { modelo_id: destino.modelo_id, tipo, nombre })
   if (!copia) throw new NotFoundError('Programa de mantenimiento')
   return copia
+}
+
+/**
+ * Alta de un programa completo desde la tabla del fabricante en CSV.
+ *
+ * Las reglas son las mismas que la captura a mano reparte entre varios
+ * endpoints —uno por modelo y tipo, acciones del catálogo, un reemplazo dice
+ * qué pieza se cambia—, aquí revisadas todas antes de escribir nada.
+ *
+ * Una más, propia de la importación: el tipo de pieza de cada renglón tiene que
+ * estar declarado en el modelo. La captura a mano no lo exige, pero ahí el
+ * selector solo ofrece los del modelo; aquí el id llega de fuera, y un tipo que
+ * el modelo no pide dejaría a sus unidades sin el renglón donde montar la pieza
+ * que el programa manda cambiar.
+ */
+export async function importar(
+  modeloId: number,
+  data: Omit<ProgramaCreate, 'modelo_id'> & { fases: FaseEntrada[]; operaciones: OperacionImportada[] },
+) {
+  if (!await modelosRepo.findById(modeloId)) throw new NotFoundError('Modelo')
+  if (await repo.findByModelo(modeloId, data.tipo)) {
+    throw new ConflictError(
+      `Este modelo ya tiene un programa de mantenimiento ${ETIQUETA_TIPO[data.tipo]}. ` +
+      'Bórralo desde su pestaña antes de importar otro.'
+    )
+  }
+
+  const catalogo = await repo.findAcciones()
+  const acciones = new Set(catalogo.map((a) => a.codigo))
+  const exigen   = new Set(catalogo.filter((a) => a.requiere_pieza).map((a) => a.codigo))
+  const delModelo = new Set((await tiposModeloRepo.findByModelo(modeloId)).map((t) => t.id))
+
+  for (const op of data.operaciones) {
+    const desconocida = op.celdas.find((c) => !acciones.has(c.accion))
+    if (desconocida) {
+      throw new ValidationError(
+        `«${op.nombre}» usa la acción "${desconocida.accion}", que no está en el catálogo`
+      )
+    }
+    if (op.tipo_pieza_id == null) {
+      if (op.celdas.some((c) => exigen.has(c.accion))) {
+        throw new ValidationError(
+          `«${op.nombre}» manda reemplazar, así que hay que decir qué tipo de pieza se cambia.`
+        )
+      }
+    } else if (!delModelo.has(op.tipo_pieza_id)) {
+      throw new ValidationError(
+        `El tipo de pieza de «${op.nombre}» no está declarado en este modelo. ` +
+        'Agrégalo en «Tipos de pieza del modelo» y vuelve a intentar.'
+      )
+    }
+  }
+
+  return repo.importar({ ...data, modelo_id: modeloId })
 }
 
 export async function update(id: number, data: ProgramaUpdate) {

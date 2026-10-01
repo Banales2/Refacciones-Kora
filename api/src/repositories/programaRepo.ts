@@ -502,6 +502,87 @@ export async function copiar(
   }
 }
 
+/** Un renglón importado, con sus celdas por marca de kilometraje. */
+export interface OperacionImportada extends Omit<OperacionCreate, 'categoria'> {
+  celdas: { km: number; accion: string }[]
+}
+
+/**
+ * Da de alta un programa completo leído de la tabla del fabricante: cabecera,
+ * columnas, renglones y celdas.
+ *
+ * Todo en una transacción, por la misma razón que `copiar`: a medias quedaría
+ * un programa con columnas y sin renglones, y como solo cabe uno por modelo y
+ * tipo, el siguiente intento chocaría con esa mitad.
+ */
+export async function importar(
+  data: ProgramaCreate & { fases: FaseEntrada[]; operaciones: OperacionImportada[] },
+): Promise<Programa> {
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    const nuevo = (await tx.request()
+      .input('modeloId',    sql.Int,               data.modelo_id)
+      .input('tipo',        sql.NVarChar(20),      data.tipo)
+      .input('nombre',      sql.NVarChar(160),     data.nombre)
+      .input('descripcion', sql.NVarChar(sql.MAX), data.descripcion ?? null)
+      .input('activo',      sql.Bit,               data.activo ?? true)
+      .query(`
+        INSERT INTO programas_mantenimiento (modelo_id, tipo, nombre, descripcion, activo)
+        OUTPUT INSERTED.*
+        VALUES (@modeloId, @tipo, @nombre, @descripcion, @activo)
+      `)).recordset[0] as Programa
+
+    const faseDeKm = new Map<number, number>()
+    for (const [i, fase] of data.fases.entries()) {
+      const r = await tx.request()
+        .input('pid',   sql.Int,            nuevo.id)
+        .input('orden', sql.Int,            i)
+        .input('km',    sql.Int,            fase.km)
+        .input('unica', sql.Bit,            fase.unica)
+        .input('costo', sql.Decimal(18, 2), fase.costo ?? null)
+        .query(`
+          INSERT INTO programa_fases (programa_id, orden, km, unica, costo)
+          OUTPUT INSERTED.id
+          VALUES (@pid, @orden, @km, @unica, @costo)`)
+      faseDeKm.set(fase.km, r.recordset[0].id)
+    }
+
+    for (const [i, op] of data.operaciones.entries()) {
+      const r = await tx.request()
+        .input('pid',         sql.Int,               nuevo.id)
+        .input('orden',       sql.Int,               i)
+        .input('nombre',      sql.NVarChar(200),     op.nombre)
+        .input('descripcion', sql.NVarChar(sql.MAX), op.descripcion   ?? null)
+        .input('tipoPieza',   sql.Int,               op.tipo_pieza_id ?? null)
+        .input('limiteMeses', sql.Int,               op.limite_meses  ?? null)
+        .query(`
+          INSERT INTO programa_operaciones
+            (programa_id, orden, nombre, descripcion, tipo_pieza_id, limite_meses)
+          OUTPUT INSERTED.id
+          VALUES (@pid, @orden, @nombre, @descripcion, @tipoPieza, @limiteMeses)`)
+      const opId = r.recordset[0].id
+
+      for (const c of op.celdas) {
+        await tx.request()
+          .input('oid',    sql.Int,         opId)
+          .input('fid',    sql.Int,         faseDeKm.get(c.km)!)
+          .input('accion', sql.NVarChar(2), c.accion)
+          .query(`
+            INSERT INTO programa_operacion_fase (operacion_id, fase_id, accion)
+            VALUES (@oid, @fid, @accion)`)
+      }
+    }
+
+    await tx.commit()
+    return nuevo
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+}
+
 // ─── Operaciones (los renglones) ────────────────────────────────────────────
 
 export async function createOperacion(programaId: number, data: OperacionCreate): Promise<Operacion> {

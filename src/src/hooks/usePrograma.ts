@@ -154,6 +154,23 @@ export function useCreatePrograma(modeloId: number) {
   })
 }
 
+export interface ProgramaImportarPayload extends ProgramaPayload {
+  fases: FasePayload[]
+  operaciones: (Omit<OperacionPayload, 'categoria'> & {
+    celdas: { km: number; accion: string }[]
+  })[]
+}
+
+// El programa completo de una vez, leído de la tabla del fabricante en CSV.
+export function useImportarPrograma(modeloId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: ProgramaImportarPayload) =>
+      api.post<{ data: Programa }>(`/modelos/${modeloId}/programa/importar`, payload),
+    onSuccess: () => invalidar(qc, modeloId),
+  })
+}
+
 export function useUpdatePrograma(modeloId: number) {
   const qc = useQueryClient()
   return useMutation({

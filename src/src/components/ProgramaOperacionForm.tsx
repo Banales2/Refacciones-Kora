@@ -6,17 +6,10 @@
 import { Stack, Group, Text, Textarea, Button, NumberInput, Alert, Autocomplete } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { TEXTO_LIBRE, TEXTO_SIMPLE, limpiarTextoLibre, limpiarTextoSimple } from '../lib/validaciones'
-import { useMemo, useState } from 'react'
-import { useTiposPiezaModelo, useAddTiposPiezaModelo } from '../hooks/useTiposPiezaModelo'
-import { useTiposPieza, useCreateTipoPieza } from '../hooks/useTiposPieza'
+import { useTiposPiezaModelo } from '../hooks/useTiposPiezaModelo'
 import { usePermisos } from '../hooks/usePermisos'
-import SelectCatalogo from './SelectCatalogo'
+import SelectTipoPiezaModelo from './SelectTipoPiezaModelo'
 import type { OperacionPrograma, OperacionPayload } from '../hooks/usePrograma'
-
-// Valores centinela del selector de tipo: nunca se guardan, se reemplazan por
-// el id real en cuanto termina el alta.
-const CREAR   = '__crear__'
-const AGREGAR = '__agregar__:'
 
 export default function ProgramaOperacionForm({
   modeloId, initial, categorias, tipoPiezaObligatorio, isPending, error, onSubmit, onCancel,
@@ -42,33 +35,10 @@ export default function ProgramaOperacionForm({
   // Registrar el tipo desde aquí. Cuando el renglón pide reemplazar una pieza
   // que el modelo todavía no declara, obligar a cerrar el formulario, ir a
   // «Tipos de pieza del modelo» y volver era perder la operación a medio
-  // capturar. Escribir el nombre ofrece darlo de alta: si ya existe en el
-  // catálogo general solo se declara en el modelo; si no, además se crea.
-  // Solo quien puede editar el catálogo y el modelo (la API pide editor).
+  // capturar. El selector ofrece darlo de alta al escribir el nombre: si ya
+  // existe en el catálogo general solo se declara en el modelo; si no, además
+  // se crea. Solo quien puede editar el catálogo y el modelo (la API pide editor).
   const { puedeEditar } = usePermisos()
-  const catalogoQuery = useTiposPieza()
-  const crearTipoMut  = useCreateTipoPieza()
-  const agregarMut    = useAddTiposPiezaModelo()
-  const [busqueda, setBusqueda] = useState('')
-  const [errorAlta, setErrorAlta] = useState<string | null>(null)
-  const registrando = crearTipoMut.isPending || agregarMut.isPending
-
-  const tiposOpts = useMemo(() => {
-    const delModelo = tiposQuery.data?.data ?? []
-    const opts = delModelo.map((t) => ({
-      value: String(t.id),
-      label: t.etiqueta ? `${t.nombre} — ${t.etiqueta}` : t.nombre,
-    }))
-    const nuevo = busqueda.trim()
-    if (!puedeEditar || !nuevo) return opts
-    const igual = (n: string) => n.toLowerCase() === nuevo.toLowerCase()
-    if (delModelo.some((t) => igual(t.nombre))) return opts
-    const enCatalogo = (catalogoQuery.data?.data ?? []).find((t) => igual(t.nombre))
-    opts.unshift(enCatalogo
-      ? { value: `${AGREGAR}${enCatalogo.id}`, label: `+ Agregar "${enCatalogo.nombre}" a este modelo` }
-      : { value: CREAR, label: `+ Registrar tipo "${nuevo}" y agregarlo a este modelo` })
-    return opts
-  }, [tiposQuery.data, catalogoQuery.data, busqueda, puedeEditar])
 
   const form = useForm({
     initialValues: {
@@ -97,27 +67,6 @@ export default function ProgramaOperacionForm({
         v != null && (v < 1 || v > 600) ? 'Entre 1 y 600 meses' : null,
     },
   })
-
-  async function elegirTipo(v: string | null) {
-    setErrorAlta(null)
-    if (v !== CREAR && !v?.startsWith(AGREGAR)) {
-      form.setFieldValue('tipo_pieza_id', v ?? '')
-      return
-    }
-    try {
-      const tipoId = v === CREAR
-        ? (await crearTipoMut.mutateAsync(busqueda.trim())).data.id
-        : Number(v.slice(AGREGAR.length))
-      await agregarMut.mutateAsync({ modeloId, tipoIds: [tipoId] })
-      // Se espera a la lista nueva antes de elegirlo: con la vieja, el
-      // selector no encuentra la etiqueta del valor y se queda en blanco.
-      await tiposQuery.refetch()
-      form.setFieldValue('tipo_pieza_id', String(tipoId))
-      setBusqueda('')
-    } catch (e) {
-      setErrorAlta((e as Error).message)
-    }
-  }
 
   const sinTipos = !tiposQuery.isLoading && !tiposQuery.isError && !(tiposQuery.data?.data.length)
 
@@ -160,18 +109,13 @@ export default function ProgramaOperacionForm({
             {...form.getInputProps('limite_meses')}
           />
         </Group>
-        <SelectCatalogo
-          estado={tiposQuery}
-          nombre="tipos de pieza"
+        <SelectTipoPiezaModelo
+          modeloId={modeloId}
           label="Tipo de pieza" clearable required={tipoPiezaObligatorio}
           placeholder={
-            registrando ? 'Registrando tipo…'
-            : !sinTipos ? (tipoPiezaObligatorio ? 'Qué pieza se cambia' : 'Ninguna en particular')
+            !sinTipos ? (tipoPiezaObligatorio ? 'Qué pieza se cambia' : 'Ninguna en particular')
             : puedeEditar ? 'Escribe el tipo para registrarlo'
             : 'Primero declara los tipos de pieza del modelo'}
-          searchValue={busqueda}
-          onSearchChange={(v) => setBusqueda(limpiarTextoSimple(v, 40))}
-          nothingFoundMessage={puedeEditar ? 'Escribe el nombre para registrarlo' : 'Sin coincidencias'}
           // El selector solo ofrece los tipos que el modelo declara, no el
           // catálogo entero. Cuando la lista está vacía el campo queda sin
           // salida, así que hay que decir dónde se arregla.
@@ -182,13 +126,10 @@ export default function ProgramaOperacionForm({
             : tipoPiezaObligatorio
               ? 'Este renglón manda reemplazar: al cerrar la visita se va a exigir una refacción de este tipo.'
               : 'Opcional: muchos renglones son revisiones que no tocan una pieza del inventario. Si después lo marcas como reemplazo, va a hacer falta.'}
-          data={tiposOpts}
-          // Vacío por lento o por caído no es lo mismo que vacío de verdad:
-          // deshabilitarlo mientras carga esconde el aviso y el reintento.
-          disabled={registrando || (sinTipos && !puedeEditar)}
-          {...form.getInputProps('tipo_pieza_id')}
-          error={errorAlta ?? form.errors.tipo_pieza_id}
-          onChange={elegirTipo}
+          disabled={sinTipos && !puedeEditar}
+          value={form.values.tipo_pieza_id}
+          onChange={(v) => form.setFieldValue('tipo_pieza_id', v)}
+          error={form.errors.tipo_pieza_id}
         />
 
         <Text size="xs" c="dimmed">
