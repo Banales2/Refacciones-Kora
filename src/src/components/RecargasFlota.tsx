@@ -16,12 +16,16 @@ import {
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import { IconAlertTriangle, IconPlus, IconSearch } from '@tabler/icons-react'
-import { useRecargasTodas, useCreateRecarga, useCreateRecargaEmergencia } from '../hooks/useRecargas'
+import {
+  useRecargasTodas, useCreateRecarga, useCreateRecargaEmergencia, useUpdateRecarga,
+} from '../hooks/useRecargas'
 import type { RecargaConVehiculo, RecargaEmergenciaPayload, RecargaPayload } from '../hooks/useRecargas'
 import { usePermisos } from '../hooks/usePermisos'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCorto } from './OpcionVehiculo'
-import { RecargaEmergenciaForm, RecargaForm, RecargasTabla, ResumenGrupo } from './RecargasSection'
+import {
+  RecargaEmergenciaForm, RecargaForm, RecargasTabla, ResumenGrupo, recargaAFormulario,
+} from './RecargasSection'
 import { agrupar, calcularRendimientos } from '../lib/recargas'
 
 // Rendimientos de todas las unidades en un solo mapa id de recarga → km/L.
@@ -136,10 +140,14 @@ export default function RecargasFlota({
   const [emergencia, setEmergencia] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [busqueda, setBusqueda]   = useState('')
+  // La recarga que se está corrigiendo. Aquí solo el admin corrige: es quien
+  // revisa lo que capturaron las sucursales sin ir vehículo por vehículo.
+  const [editing, setEditing]     = useState<RecargaConVehiculo | null>(null)
 
   const { data, isLoading, error } = useRecargasTodas()
   const createMut = useCreateRecarga()
   const emergenciaMut = useCreateRecargaEmergencia()
+  const updateMut = useUpdateRecarga()
   // Registrar una recarga de emergencia es solo del admin (la API lo impone).
   const { esAdmin } = usePermisos()
 
@@ -184,6 +192,19 @@ export default function RecargasFlota({
     setFormError(null)
     createMut.mutate({ vehiculoId, payload }, {
       onSuccess: () => setFormOpen(false),
+      onError:   (e: Error) => setFormError(e.message),
+    })
+  }
+
+  function abrirEdicion(r: RecargaConVehiculo) {
+    setFormError(null); updateMut.reset(); setEditing(r)
+  }
+
+  function corregir(payload: RecargaPayload | RecargaEmergenciaPayload) {
+    if (!editing) return
+    setFormError(null)
+    updateMut.mutate({ id: editing.id, payload }, {
+      onSuccess: () => setEditing(null),
       onError:   (e: Error) => setFormError(e.message),
     })
   }
@@ -261,6 +282,7 @@ export default function RecargasFlota({
                             items={m.items}
                             rendimientos={rendimientos}
                             vehiculo={celdaVehiculo}
+                            onEdit={esAdmin ? abrirEdicion : undefined}
                           />
                         </Accordion.Panel>
                       </Accordion.Item>
@@ -288,6 +310,44 @@ export default function RecargasFlota({
             onCancel={() => setFormOpen(false)}
           />
         )}
+      </Modal>
+
+      <Modal
+        opened={editing !== null} onClose={() => setEditing(null)}
+        title={editing
+          ? `${editing.emergencia ? 'Corregir recarga de emergencia' : 'Corregir recarga'} · ${vehiculoLabel(editing)}`
+          : ''}
+        centered size="md"
+      >
+        {/* `key`: cada recarga abre su formulario desde cero. */}
+        {editing && (editing.emergencia ? (
+          <RecargaEmergenciaForm
+            key={editing.id}
+            initial={{
+              conductor_id: String(editing.conductor_id),
+              fecha:  editing.fecha.split('T')[0],
+              litros: Number(editing.litros),
+              costo:  Number(editing.costo),
+            }}
+            isPending={updateMut.isPending}
+            error={formError}
+            onSubmit={corregir}
+            onCancel={() => setEditing(null)}
+          />
+        ) : (
+          // Sin km del vehículo: al corregir no se toca el odómetro.
+          <RecargaForm
+            key={editing.id}
+            vehiculoId={editing.vehiculo_id}
+            kmVehiculo={null}
+            valesUsados={valesUsados}
+            initial={recargaAFormulario(editing)}
+            isPending={updateMut.isPending}
+            error={formError}
+            onSubmit={corregir}
+            onCancel={() => setEditing(null)}
+          />
+        ))}
       </Modal>
     </>
   )
