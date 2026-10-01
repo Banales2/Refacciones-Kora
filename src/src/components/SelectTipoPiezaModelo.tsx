@@ -42,8 +42,8 @@ export default function SelectTipoPiezaModelo({
 }) {
   const tiposQuery = useTiposPiezaModelo(modeloId)
 
-  // Solo quien puede editar el catálogo y el modelo (la API pide editor).
-  const { puedeEditar } = usePermisos()
+  // Admin, editor y practicante: los que la API deja registrar tipos.
+  const { puedeRegistrarTipoPieza: puedeRegistrar } = usePermisos()
   const catalogoQuery = useTiposPieza()
   const crearTipoMut  = useCreateTipoPieza()
   const agregarMut    = useAddTiposPiezaModelo()
@@ -59,7 +59,7 @@ export default function SelectTipoPiezaModelo({
       value: String(t.id),
       label: t.etiqueta ? `${t.nombre} — ${t.etiqueta}` : t.nombre,
     }))
-    if (!puedeEditar || !nuevo) return lista
+    if (!puedeRegistrar || !nuevo) return lista
     const igual = (n: string) => n.toLowerCase() === nuevo.toLowerCase()
     if (delModelo.some((t) => igual(t.nombre))) return lista
     const enCatalogo = (catalogoQuery.data?.data ?? []).find((t) => igual(t.nombre))
@@ -67,7 +67,7 @@ export default function SelectTipoPiezaModelo({
       ? { value: `${AGREGAR}${enCatalogo.id}`, label: `+ Agregar "${enCatalogo.nombre}" a este modelo` }
       : { value: CREAR, label: `+ Registrar tipo "${nuevo}" y agregarlo a este modelo` })
     return lista
-  }, [tiposQuery.data, catalogoQuery.data, nuevo, puedeEditar])
+  }, [tiposQuery.data, catalogoQuery.data, nuevo, puedeRegistrar])
 
   async function elegir(v: string | null) {
     setErrorAlta(null)
@@ -102,7 +102,7 @@ export default function SelectTipoPiezaModelo({
       placeholder={registrando ? 'Registrando tipo…' : placeholder}
       searchValue={busqueda}
       onSearchChange={(v) => setBusqueda(limpiarTextoSimple(v, 40))}
-      nothingFoundMessage={puedeEditar ? 'Escribe el nombre para registrarlo' : 'Sin coincidencias'}
+      nothingFoundMessage={puedeRegistrar ? 'Escribe el nombre para registrarlo' : 'Sin coincidencias'}
       data={opts}
       // Vacío por lento o por caído no es lo mismo que vacío de verdad:
       // deshabilitarlo mientras carga esconde el aviso y el reintento.

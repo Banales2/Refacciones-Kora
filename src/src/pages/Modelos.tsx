@@ -206,7 +206,9 @@ function ModeloForm({
 const CREAR_TIPO = '__crear__'
 
 function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
-  const { puedeEditar } = usePermisos()
+  // Agregar (y registrar un tipo nuevo) lo hace también el practicante;
+  // renombrar la etiqueta y quitar un renglón siguen siendo del editor.
+  const { puedeEditar, puedeRegistrarTipoPieza } = usePermisos()
   const [seleccion, setSeleccion] = useState<string[]>([])
   const [busqueda, setBusqueda]   = useState('')
   const [etiqueta, setEtiqueta]   = useState('')
@@ -295,7 +297,7 @@ function TiposPiezaModeloSection({ modeloId }: { modeloId: number }) {
         (delantero / trasero): cada renglón lleva su propia refacción e historial en cada unidad.
       </Text>
 
-      {puedeEditar && <Group align="flex-end" gap="sm" wrap="nowrap">
+      {puedeRegistrarTipoPieza && <Group align="flex-end" gap="sm" wrap="nowrap">
         <MultiSelect
           flex={1}
           searchable clearable

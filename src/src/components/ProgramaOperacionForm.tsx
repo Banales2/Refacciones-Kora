@@ -37,8 +37,8 @@ export default function ProgramaOperacionForm({
   // «Tipos de pieza del modelo» y volver era perder la operación a medio
   // capturar. El selector ofrece darlo de alta al escribir el nombre: si ya
   // existe en el catálogo general solo se declara en el modelo; si no, además
-  // se crea. Solo quien puede editar el catálogo y el modelo (la API pide editor).
-  const { puedeEditar } = usePermisos()
+  // se crea. Lo puede hacer el practicante también (ver `puedeRegistrarTipoPieza`).
+  const { puedeRegistrarTipoPieza: puedeRegistrar } = usePermisos()
 
   const form = useForm({
     initialValues: {
@@ -114,19 +114,19 @@ export default function ProgramaOperacionForm({
           label="Tipo de pieza" clearable required={tipoPiezaObligatorio}
           placeholder={
             !sinTipos ? (tipoPiezaObligatorio ? 'Qué pieza se cambia' : 'Ninguna en particular')
-            : puedeEditar ? 'Escribe el tipo para registrarlo'
+            : puedeRegistrar ? 'Escribe el tipo para registrarlo'
             : 'Primero declara los tipos de pieza del modelo'}
           // El selector solo ofrece los tipos que el modelo declara, no el
           // catálogo entero. Cuando la lista está vacía el campo queda sin
           // salida, así que hay que decir dónde se arregla.
-          description={sinTipos && !puedeEditar
+          description={sinTipos && !puedeRegistrar
             ? 'Este modelo no tiene tipos de pieza declarados. Se agregan en «Tipos de pieza del modelo», arriba en esta misma ficha.'
             : sinTipos
               ? 'Este modelo no tiene tipos de pieza declarados: escribe el nombre y elige registrarlo. Queda declarado en el modelo, así que sus unidades lo van a pedir.'
             : tipoPiezaObligatorio
               ? 'Este renglón manda reemplazar: al cerrar la visita se va a exigir una refacción de este tipo.'
               : 'Opcional: muchos renglones son revisiones que no tocan una pieza del inventario. Si después lo marcas como reemplazo, va a hacer falta.'}
-          disabled={sinTipos && !puedeEditar}
+          disabled={sinTipos && !puedeRegistrar}
           value={form.values.tipo_pieza_id}
           onChange={(v) => form.setFieldValue('tipo_pieza_id', v)}
           error={form.errors.tipo_pieza_id}

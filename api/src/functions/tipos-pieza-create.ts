@@ -11,7 +11,10 @@ export async function tiposPiezaCreate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    // El practicante también: captura programas y refacciones, y un tipo que
+    // falta lo encuentra justo a media captura. Lo que no hace es corregirlo
+    // (renombrar, quitar), que sigue siendo del editor.
+    const user = requireRole(request, 'admin', 'editor', 'practicante')
     const data = TipoPiezaCreateSchema.parse(await request.json())
     const created = await service.create(data)
     await audit({

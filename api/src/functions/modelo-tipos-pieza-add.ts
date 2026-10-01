@@ -20,7 +20,10 @@ export async function modeloTiposPiezaAdd(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    // El practicante también: captura programas y refacciones, y un tipo que
+    // falta lo encuentra justo a media captura. Lo que no hace es corregirlo
+    // (renombrar, quitar), que sigue siendo del editor.
+    const user = requireRole(request, 'admin', 'editor', 'practicante')
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
 

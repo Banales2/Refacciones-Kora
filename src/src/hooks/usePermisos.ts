@@ -112,6 +112,13 @@ export interface Permisos {
    * corregirlas sigue siendo `puedeEditar`.
    */
   puedeReportarIncidencia: boolean
+  /**
+   * Si registra un tipo de pieza nuevo y lo declara en un modelo
+   * (`tipos-pieza-create`, `modelo-tipos-pieza-add`). El practicante sí: lo
+   * necesita a media captura de un programa o de una refacción. Renombrar o
+   * quitar un tipo sigue siendo `puedeEditar`.
+   */
+  puedeRegistrarTipoPieza: boolean
   /** Si la sección debe aparecer en el menú y poder abrirse. */
   puedeVerSeccion: (s: Seccion) => boolean
   /** Si la pestaña de Catálogos debe aparecer. */
@@ -149,6 +156,7 @@ export function usePermisos(): Permisos {
     puedeRevisarChequeo: !esPracticante && rol !== 'lector',
     puedeEditarChofer: !esResponsable && rol !== 'lector',
     puedeReportarIncidencia: !esPracticante && rol !== 'lector',
+    puedeRegistrarTipoPieza: !esResponsable && rol !== 'lector',
     puedeVerSeccion: (s) => {
       if (s === 'registros' || s === 'errores-captura') return esAdmin
       if (esPracticante) return SECCIONES_PRACTICANTE.includes(s)
