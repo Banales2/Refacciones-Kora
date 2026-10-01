@@ -11,7 +11,7 @@ import { SQL_KM } from '../shared/km'
 import { Alcance, SIN_ACOTAR, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 import * as incidenciasRepo from './incidenciasRepo'
 import type { Severidad } from '../shared/chequeoItems'
-import { JOINS_HIJAS, NO_DADO_DE_BAJA } from './vehiculosSql'
+import { JOINS_HIJAS, EN_SEGUIMIENTO } from './vehiculosSql'
 
 export type Resultado = 'ok' | 'falla' | 'na'
 
@@ -475,7 +475,7 @@ export async function findPatio(sucursalId: number, fecha: string): Promise<Unid
       JOIN modelos mo ON mo.id = v.modelo_id
       ${JOINS_HIJAS}
       LEFT JOIN chequeos ch ON ch.vehiculo_id = v.id AND ch.fecha = @fecha
-      WHERE ${NO_DADO_DE_BAJA}
+      WHERE ${EN_SEGUIMIENTO}
         AND COALESCE(c.sucursal_id, mc.sucursal_id) = @suc
       ORDER BY CASE WHEN ch.id IS NULL THEN 0 ELSE 1 END, nombre
     `)
@@ -528,7 +528,8 @@ export async function findVisitantes(
  * tablero, y la razón de ser del índice único: sin él, "faltan" no se podría
  * contestar sin decidir antes cuál de los dos chequeos del día vale.
  *
- * Las dadas de baja quedan fuera, como en todos los avisos (NO_DADO_DE_BAJA).
+ * Las dadas de baja y las personales quedan fuera, como en todos los avisos
+ * (EN_SEGUIMIENTO).
  */
 export async function findSinChequeo(fecha: string): Promise<UnidadSinChequeo[]> {
   const pool = await getPool()
@@ -541,7 +542,7 @@ export async function findSinChequeo(fecha: string): Promise<UnidadSinChequeo[]>
       FROM vehiculos v
       JOIN modelos mo ON mo.id = v.modelo_id
       ${JOINS_HIJAS}
-      WHERE ${NO_DADO_DE_BAJA}
+      WHERE ${EN_SEGUIMIENTO}
         AND NOT EXISTS (
           SELECT 1 FROM chequeos ch
           WHERE ch.vehiculo_id = v.id AND ch.fecha = @fecha
@@ -558,7 +559,7 @@ export async function contarActivas(alcance: Alcance = SIN_ACOTAR): Promise<numb
     SELECT COUNT(*) AS total
     FROM vehiculos v
     ${JOINS_HIJAS}
-    WHERE ${NO_DADO_DE_BAJA}
+    WHERE ${EN_SEGUIMIENTO}
       AND ${vehiculoEnAlcance('v.id')}
   `)
   return r.recordset[0]?.total ?? 0

@@ -98,6 +98,16 @@ export const NO_DADO_DE_BAJA = `
   COALESCE(c.status, t.status, u.status, ct.status, mc.status, '') <> 'Baja'
 `
 
+// Lo que la flotilla sigue: lo que no está dado de baja y no es un vehículo
+// personal (migración 061). Los personales solo están en el sistema para que
+// sus recargas cuadren con las facturas de la gasolinera; no se les piden
+// documentos, chequeos ni servicios, y no entran en los gráficos ni en el
+// análisis de costos. Es el filtro de todos los avisos y análisis de la flota.
+// Pide `vehiculos v` y los alias de JOINS_HIJAS en el FROM.
+export const EN_SEGUIMIENTO = `
+  (${NO_DADO_DE_BAJA} AND v.uso_personal = 0)
+`
+
 // Sin tenencia = de los tipos que la pagan y sin fecha de vencimiento capturada.
 // Los tractocamiones quedaron fuera: no la pagan, y reclamársela era ruido.
 export const SIN_TENENCIA = `

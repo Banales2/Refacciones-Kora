@@ -12,7 +12,7 @@
 // service las lee con `parseVigencia` y las mete al rango ya interpretadas.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { JOINS_HIJAS, NO_DADO_DE_BAJA, PERMISO_ID_SQL, SEGURO_ID_SQL } from './vehiculosSql'
+import { JOINS_HIJAS, EN_SEGUIMIENTO, PERMISO_ID_SQL, SEGURO_ID_SQL } from './vehiculosSql'
 
 // Misma definición de flota que usa el tablero: lo que no está dado de baja. Un
 // documento de una unidad de baja ya no se va a renovar y solo sería ruido.
@@ -23,7 +23,7 @@ const FLOTA_EN_OPERACION = `
            ${PERMISO_ID_SQL} AS permiso_id
     FROM vehiculos v
     ${JOINS_HIJAS}
-    WHERE ${NO_DADO_DE_BAJA}
+    WHERE ${EN_SEGUIMIENTO}
   )
 `
 

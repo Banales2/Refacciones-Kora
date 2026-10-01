@@ -24,6 +24,12 @@ export interface VehiculoRow {
    * Informativo: `tipo` es el que gobierna seguros, tenencia y odómetro.
    */
   categoria:    string | null
+  /**
+   * Auto personal al que la empresa le paga la gasolina. Está en el sistema
+   * para que sus recargas cuadren con las facturas; no se le da seguimiento ni
+   * entra en los gráficos ni en el análisis de costos.
+   */
+  uso_personal: boolean
   status:       string | null
   /**
    * Lo que marca el tablero hoy. NO es la vida de la unidad: si el odómetro se
@@ -64,6 +70,7 @@ export interface VehiculoCreatePayload {
   serie:         string
   placas?:       string | null
   categoria?:    string | null
+  uso_personal?: boolean
   combustible?:  string
   kilometraje?:  number
   status?:       string

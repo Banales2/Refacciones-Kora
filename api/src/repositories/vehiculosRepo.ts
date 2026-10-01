@@ -7,7 +7,7 @@ import {
   TIPOS_CON_SEGURO, TIPOS_CON_PERMISO,
 } from '../schemas/vehiculoSchema'
 import {
-  JOINS_HIJAS, NO_DADO_DE_BAJA, PERMISO_ID_SQL, SEGURO_ID_SQL, SIN_SEGURO, SIN_TENENCIA,
+  JOINS_HIJAS, EN_SEGUIMIENTO, PERMISO_ID_SQL, SEGURO_ID_SQL, SIN_SEGURO, SIN_TENENCIA,
   conHoy,
 } from './vehiculosSql'
 
@@ -25,6 +25,12 @@ export interface VehiculoRow {
    * nombrarla y buscarla. Null = sin capturar.
    */
   categoria:    string | null
+  /**
+   * Auto personal al que la empresa le paga la gasolina (migración 061). Está
+   * para que sus recargas cuadren con las facturas; fuera de eso no se le da
+   * seguimiento ni entra en los gráficos.
+   */
+  uso_personal: boolean
   status:       string | null
   /**
    * Lo que marca el tablero hoy. NO es la vida de la unidad: si el odómetro se
@@ -92,7 +98,7 @@ function conAlertas(row: VehiculoRowSql): VehiculoRow {
   const alertas: AlertaDocumento[] = []
   if (alerta_sin_seguro)   alertas.push('sin_seguro')
   if (alerta_sin_tenencia) alertas.push('sin_tenencia')
-  return { ...resto, alertas }
+  return { ...resto, uso_personal: !!resto.uso_personal, alertas }
 }
 
 // ── Shared SQL fragments ──────────────────────────────────────────────────────
@@ -105,7 +111,7 @@ const KM_REINICIADO = `
 
 const SELECT_COLS = `
   v.id, v.tipo, v.modelo_id, v.fecha_compra,
-  v.numero_serie AS serie, v.placas, v.categoria,
+  v.numero_serie AS serie, v.placas, v.categoria, v.uso_personal,
   m.marca, m.nombre AS modelo,
   CASE WHEN v.tipo='camion'       THEN c.status       WHEN v.tipo='tractocamion' THEN t.status
        WHEN v.tipo='caja_trailer' THEN ct.status      WHEN v.tipo='utilitario'   THEN u.status
@@ -139,8 +145,8 @@ const SELECT_COLS = `
   -- Avisos resueltos aquí, con los mismos fragmentos que usa el filtro
   -- ?alerta=: antes cada pantalla los recalculaba por su cuenta y se le
   -- olvidaba alguna condición (las cajas seguían saliendo "sin seguro").
-  CAST(CASE WHEN ${NO_DADO_DE_BAJA} AND ${SIN_SEGURO}   THEN 1 ELSE 0 END AS bit) AS alerta_sin_seguro,
-  CAST(CASE WHEN ${NO_DADO_DE_BAJA} AND ${SIN_TENENCIA} THEN 1 ELSE 0 END AS bit) AS alerta_sin_tenencia
+  CAST(CASE WHEN ${EN_SEGUIMIENTO} AND ${SIN_SEGURO}   THEN 1 ELSE 0 END AS bit) AS alerta_sin_seguro,
+  CAST(CASE WHEN ${EN_SEGUIMIENTO} AND ${SIN_TENENCIA} THEN 1 ELSE 0 END AS bit) AS alerta_sin_tenencia
 `
 
 const JOINS = `
@@ -185,7 +191,7 @@ const WHERE_FILTER = `
     AND (@modeloId IS NULL OR v.modelo_id = @modeloId)
     AND ${Array.from({ length: MAX_TERMINOS }, (_, i) => terminoBusqueda(i)).join(' AND ')}
     AND (@alerta IS NULL
-         OR (${NO_DADO_DE_BAJA}
+         OR (${EN_SEGUIMIENTO}
              AND ((@alerta = 'sin_tenencia' AND ${SIN_TENENCIA})
                OR (@alerta = 'sin_seguro'   AND ${SIN_SEGURO})
                OR (@alerta = 'permiso_por_vencer'
@@ -235,6 +241,8 @@ export async function findAllParaReporte(): Promise<VehiculoRow[]> {
   const pool = await getPool()
   const result = await conHoy(pool.request()).query(`
     SELECT ${SELECT_COLS} ${JOINS}
+    -- El reporte es de la flotilla: los personales no entran (migración 061).
+    WHERE v.uso_personal = 0
     ORDER BY v.tipo, m.marca, m.nombre, v.numero_serie
   `)
   return (result.recordset as VehiculoRowSql[]).map(conAlertas)
@@ -284,7 +292,8 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
       .input('placas',       sql.NVarChar(20),  data.placas ?? null)
       .input('fechaCompra',  sql.Date,          data.fecha_compra ?? null)
       .input('categoria',    sql.NVarChar(60),  data.categoria ?? null)
-      .query('INSERT INTO vehiculos (modelo_id, tipo, numero_serie, placas, fecha_compra, categoria) OUTPUT INSERTED.id VALUES (@modelo_id, @tipo, @serie, @placas, @fechaCompra, @categoria)')
+      .input('personal',     sql.Bit,           data.uso_personal ?? false)
+      .query('INSERT INTO vehiculos (modelo_id, tipo, numero_serie, placas, fecha_compra, categoria, uso_personal) OUTPUT INSERTED.id VALUES (@modelo_id, @tipo, @serie, @placas, @fechaCompra, @categoria, @personal)')
     const vid = vRes.recordset[0].id
 
     // Seguro y permiso van en la tabla hija, y solo en las de los tipos que los
@@ -487,6 +496,7 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
   if ('placas' in data)               { baseReq.input('placas',     sql.NVarChar(20),  data.placas ?? null); baseSets.push('placas=@placas') }
   if ('fecha_compra' in data)         { baseReq.input('fechaCompra', sql.Date,          data.fecha_compra ?? null); baseSets.push('fecha_compra=@fechaCompra') }
   if ('categoria' in data)            { baseReq.input('categoria',   sql.NVarChar(60),  data.categoria ?? null);    baseSets.push('categoria=@categoria') }
+  if (data.uso_personal !== undefined) { baseReq.input('personal',  sql.Bit,           data.uso_personal);         baseSets.push('uso_personal=@personal') }
   if (baseSets.length) await baseReq.query(`UPDATE vehiculos SET ${baseSets.join(',')} WHERE id=@id`)
 
   // Update subtable

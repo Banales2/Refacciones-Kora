@@ -6,7 +6,7 @@ import { useForm } from '@mantine/form'
 import SelectCatalogo from './SelectCatalogo'
 import {
   Stack, Grid, TextInput, NumberInput, Select, Divider,
-  Badge, Text, Button, Group, Alert, Modal,
+  Badge, Text, Button, Group, Alert, Modal, Switch,
 } from '@mantine/core'
 import { FechaInput } from './FechaInput'
 import type { TipoVehiculo, VehiculoRow, VehiculoCreatePayload, VehiculoUpdatePayload } from '../hooks/useVehiculos'
@@ -45,6 +45,7 @@ type FormVals = {
   serie:        string
   placas:       string
   categoria:    string
+  uso_personal: boolean
   combustible:  string
   kilometraje:  number | string
   status:       string
@@ -66,6 +67,7 @@ function init(v?: VehiculoRow): FormVals {
     serie:        v?.serie       ?? '',
     placas:       v?.placas      ?? '',
     categoria:    v?.categoria   ?? '',
+    uso_personal: v?.uso_personal ?? false,
     combustible:  v?.combustible ?? '',
     kilometraje:  v?.kilometraje ?? '',
     status:       v?.status      ?? '',
@@ -236,6 +238,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
       serie:        vals.serie,
       placas:       vals.placas.trim() || null,
       categoria:    vals.categoria.trim() || null,
+      uso_personal: vals.uso_personal,
       fecha_compra: vals.fecha_compra || null,
       ...(llevaSeguro(t)  ? { seguro_id:  vals.seguro_id  ? parseInt(vals.seguro_id)  : null } : {}),
       ...(llevaPermiso(t) ? { permiso_id: vals.permiso_id ? parseInt(vals.permiso_id) : null } : {}),
@@ -382,6 +385,14 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
           onSearchChange={(v) => setCategoriaSearch(limpiarTextoSimple(v, 60))}
           value={form.values.categoria || null}
           onChange={(v) => { form.setFieldValue('categoria', v ?? ''); setCategoriaSearch('') }}
+        />
+
+        {/* Autos personales a los que la empresa les paga la gasolina: están
+            para que sus recargas cuadren con las facturas, y nada más. */}
+        <Switch
+          label="Vehículo personal (no es de la flotilla)"
+          description="Se registran sus recargas y vales para cuadrar las facturas de gasolina, pero no entra en gráficos, análisis de costos ni costo por gasolinera, y no se le piden seguro, tenencia, chequeos ni servicios."
+          {...form.getInputProps('uso_personal', { type: 'checkbox' })}
         />
 
         <FechaInput

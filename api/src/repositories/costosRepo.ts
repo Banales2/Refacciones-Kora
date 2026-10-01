@@ -6,7 +6,7 @@
 // TypeScript sale obvio.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { JOINS_HIJAS, NO_DADO_DE_BAJA } from './vehiculosSql'
+import { JOINS_HIJAS, EN_SEGUIMIENTO } from './vehiculosSql'
 
 // El odómetro vive en la tabla hija de cada tipo, igual que el status. Las
 // cajas de trailer y los montacargas no lo llevan y quedan en NULL — no se
@@ -65,7 +65,7 @@ export async function findRecargasEnRango(start: string, end: string): Promise<R
       JOIN conductores co ON co.id = rc.conductor_id
       ${JOINS_HIJAS}
       WHERE rc.fecha >= @start AND rc.fecha < @end
-        AND ${NO_DADO_DE_BAJA}
+        AND ${EN_SEGUIMIENTO}
       ORDER BY rc.vehiculo_id, rc.fecha, rc.id
     `)
   return r.recordset
@@ -110,7 +110,7 @@ export async function findMantenimientosEnRango(start: string, end: string): Pro
         GROUP BY mantenimiento_id
       ) pt ON pt.mantenimiento_id = m.id
       WHERE m.fecha >= @start AND m.fecha < @end
-        AND ${NO_DADO_DE_BAJA}
+        AND ${EN_SEGUIMIENTO}
       ORDER BY m.vehiculo_id, m.fecha, m.id
     `)
   return r.recordset
@@ -215,7 +215,8 @@ export async function findGastoMensual(desde: string): Promise<GastoMes[]> {
                CAST(0 AS DECIMAL(18,2))       AS refacciones,
                CAST(0 AS DECIMAL(18,2))       AS combustible
         FROM mantenimiento m
-        WHERE m.fecha >= @desde
+        JOIN vehiculos v ON v.id = m.vehiculo_id
+        WHERE m.fecha >= @desde AND v.uso_personal = 0
 
         UNION ALL
 
@@ -234,7 +235,9 @@ export async function findGastoMensual(desde: string): Promise<GastoMes[]> {
                CAST(0 AS DECIMAL(18,2)),
                rc.costo
         FROM recargas_combustible rc
-        WHERE rc.fecha >= @desde
+        JOIN vehiculos v ON v.id = rc.vehiculo_id
+        -- Los personales no son gasto de la flotilla (migración 061).
+        WHERE rc.fecha >= @desde AND v.uso_personal = 0
       ) x
       GROUP BY mes
       ORDER BY mes
@@ -266,7 +269,7 @@ export async function findFlotaEnOperacion(): Promise<VehiculoFlota[]> {
     FROM vehiculos v
     JOIN modelos mo ON mo.id = v.modelo_id
     ${JOINS_HIJAS}
-    WHERE ${NO_DADO_DE_BAJA}
+    WHERE ${EN_SEGUIMIENTO}
     ORDER BY v.tipo, mo.marca, mo.nombre, v.numero_serie
   `)
   return r.recordset

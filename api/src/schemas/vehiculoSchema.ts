@@ -49,6 +49,9 @@ const categoria = z.preprocess(
 export const VehiculoCreateSchema = z.object({
   tipo:        z.enum(TIPOS_VEHICULO),
   categoria,
+  // Auto personal: solo está para que sus recargas cuadren con las facturas de
+  // gasolina, sin seguimiento ni gráficos (migración 061).
+  uso_personal: z.boolean().optional(),
   modelo_id:   z.coerce.number().int().min(1, 'Requerido'),
   serie: z
     .string()
@@ -105,6 +108,9 @@ export const VehiculoCreateSchema = z.object({
 export const VehiculoUpdateSchema = z.object({
   modelo_id:    z.coerce.number().int().min(1).optional(),
   categoria,
+  // Auto personal: solo está para que sus recargas cuadren con las facturas de
+  // gasolina, sin seguimiento ni gráficos (migración 061).
+  uso_personal: z.boolean().optional(),
   serie: z
     .string()
     .trim()

@@ -1500,6 +1500,13 @@ function VehiculoDetalle({
                   <InfoItem label="Categoría" value={vehiculo.categoria} />
                 </Grid.Col>
               )}
+              {/* Auto personal: sus recargas cuentan para las facturas, pero no
+                  entra en gráficos ni avisos (migración 061). */}
+              {vehiculo.uso_personal && (
+                <Grid.Col span={{ base: 6, sm: 3 }}>
+                  <InfoItem label="Uso" value="Personal, fuera de la flotilla" />
+                </Grid.Col>
+              )}
               {/* Una caja de trailer no se asegura y solo reparto y utilitarios
                   tramitan permiso: donde no aplica, el dato no se muestra en
                   blanco (parecía un pendiente por capturar). */}
@@ -1795,6 +1802,11 @@ function VehiculosTable({
                       volver a ensanchar la tabla. */}
                   {v.categoria && (
                     <Text size="xs" c="dimmed" fw={400}>{v.categoria}</Text>
+                  )}
+                  {v.uso_personal && (
+                    <Tooltip label="No es de la flotilla: solo se registran sus recargas para cuadrar las facturas">
+                      <Badge size="xs" variant="light" color="gray">Personal</Badge>
+                    </Tooltip>
                   )}
                 </Table.Td>
                 {/* El año trae la versión pegada cuando el modelo la tiene ("2018-1"). */}

@@ -671,6 +671,9 @@ export async function findVinculosFleet(): Promise<VinculoFleet[]> {
     LEFT JOIN camiones              c ON c.vehiculo_id = v.id
     LEFT JOIN tractocamiones        t ON t.vehiculo_id = v.id
     LEFT JOIN vehiculos_utilitarios u ON u.vehiculo_id = v.id
+    -- A un vehículo personal no se le da seguimiento (migración 061), aunque
+    -- alguien le haya asignado un programa.
+    WHERE v.uso_personal = 0
   `)
   return r.recordset.map((row) => ({ ...row, forzada: !!row.forzada }))
 }

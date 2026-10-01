@@ -1,7 +1,7 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import {
-  JOINS_HIJAS, NO_DADO_DE_BAJA, PERMISO_ID_SQL, SEGURO_ID_SQL, SIN_SEGURO, SIN_TENENCIA,
+  JOINS_HIJAS, EN_SEGUIMIENTO, PERMISO_ID_SQL, SEGURO_ID_SQL, SIN_SEGURO, SIN_TENENCIA,
   conHoy,
 } from './vehiculosSql'
 
@@ -32,7 +32,7 @@ const FLOTA_EN_OPERACION = `
            ${PERMISO_ID_SQL} AS permiso_id
     FROM vehiculos v
     ${JOINS_HIJAS}
-    WHERE ${NO_DADO_DE_BAJA}
+    WHERE ${EN_SEGUIMIENTO}
   )
 `
 
@@ -130,7 +130,7 @@ export async function findVehiculosSinTenencia(): Promise<VehiculoSinDocumento[]
   const pool = await getPool()
   const r = await pool.request().query(`
     ${SELECT_VEHICULO_SIN_DOC}
-    WHERE ${SIN_TENENCIA} AND ${NO_DADO_DE_BAJA}
+    WHERE ${SIN_TENENCIA} AND ${EN_SEGUIMIENTO}
     ${ORDEN_SIN_DOC}`)
   return r.recordset
 }
@@ -139,7 +139,7 @@ export async function findVehiculosSinSeguro(): Promise<VehiculoSinDocumento[]> 
   const pool = await getPool()
   const r = await conHoy(pool.request()).query(`
     ${SELECT_VEHICULO_SIN_DOC}
-    WHERE ${SIN_SEGURO} AND ${NO_DADO_DE_BAJA}
+    WHERE ${SIN_SEGURO} AND ${EN_SEGUIMIENTO}
     ${ORDEN_SIN_DOC}`)
   return r.recordset
 }
@@ -218,6 +218,7 @@ export async function findMantenimientosEnRango(start: string, end: string): Pro
         GROUP BY mantenimiento_id
       ) pt ON pt.mantenimiento_id = m.id
       WHERE m.fecha >= @start AND m.fecha < @end
+        AND v.uso_personal = 0
       ORDER BY m.fecha DESC
     `)
   return r.recordset
@@ -314,7 +315,11 @@ export async function findCombustibleEnRango(
     .query(`
       SELECT COUNT(*) AS count, COALESCE(SUM(rc.costo), 0) AS costo_total
       FROM recargas_combustible rc
-      WHERE rc.fecha >= @start AND rc.fecha < @end`)
+      JOIN vehiculos v ON v.id = rc.vehiculo_id
+      WHERE rc.fecha >= @start AND rc.fecha < @end
+        -- Los personales cargan a cuenta de la empresa pero no son gasto de la
+        -- flotilla (migración 061).
+        AND v.uso_personal = 0`)
   return r.recordset[0] as CombustibleEnRango
 }
 
@@ -366,12 +371,14 @@ export async function findCostosPorVehiculoEnRango(start: string, end: string): 
              SUM(COALESCE(pt.piezas_total, 0)) AS costo_piezas,
              MAX(m.fecha) AS ultimo_mantenimiento
       FROM mantenimiento m
+      JOIN vehiculos v ON v.id = m.vehiculo_id
       LEFT JOIN (
         SELECT mantenimiento_id, SUM(cantidad * costo_unitario) AS piezas_total
         FROM detalle_mtto_pieza
         GROUP BY mantenimiento_id
       ) pt ON pt.mantenimiento_id = m.id
       WHERE m.fecha >= @start AND m.fecha < @end
+        AND v.uso_personal = 0
       GROUP BY m.vehiculo_id
     `)
   return r.recordset
