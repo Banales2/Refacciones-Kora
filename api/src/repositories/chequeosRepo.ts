@@ -10,6 +10,7 @@ import { getPool } from '../shared/db'
 import { SQL_KM } from '../shared/km'
 import { Alcance, SIN_ACOTAR, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 import * as incidenciasRepo from './incidenciasRepo'
+import * as mantenimientoRepo from './mantenimientoRepo'
 import type { Severidad } from '../shared/chequeoItems'
 import { JOINS_HIJAS, EN_SEGUIMIENTO } from './vehiculosSql'
 
@@ -126,6 +127,11 @@ export interface ItemAGuardar {
   resultado:  Resultado
   valor:      string | null
   nota:       string | null
+  /**
+   * Si sale bien y su pregunta tiene una incidencia abierta, se cierra sola con
+   * un mantenimiento básico (`cierreAutomatico` del catálogo).
+   */
+  cierreAutomatico: boolean
   /** Qué incidencia abrir por este renglón. `null` = ninguna. */
   incidencia: {
     nombre:      string
@@ -648,12 +654,12 @@ export async function fallasArrastradas(
  */
 async function incidenciaAbiertaDe(
   tx: sql.Transaction, vehiculoId: number, clave: string
-): Promise<{ id: number; fecha: string } | null> {
+): Promise<{ id: number; fecha: string; nombre: string } | null> {
   const r = await tx.request()
     .input('vid',   sql.Int,         vehiculoId)
     .input('clave', sql.VarChar(30), clave)
     .query(`
-      SELECT TOP 1 p.id, inc.fecha
+      SELECT TOP 1 p.id, inc.fecha, p.nombre
       FROM pendientes p
       JOIN incidencias inc ON inc.id = p.id
       WHERE p.vehiculo_id = @vid
@@ -663,14 +669,26 @@ async function incidenciaAbiertaDe(
       ORDER BY inc.fecha ASC, p.id ASC
     `)
   const fila = r.recordset[0]
-  return fila ? { id: fila.id, fecha: fila.fecha } : null
+  return fila ? { id: fila.id, fecha: fila.fecha, nombre: fila.nombre } : null
 }
 
 async function insertarItems(
   tx: sql.Transaction, chequeoId: number, vehiculoId: number,
   items: ItemAGuardar[], cabecera: ChequeoCabecera, revisadoPor: string,
 ): Promise<void> {
+  // Lo que el chequeo encontró resuelto y se cierra solo (ver abajo).
+  const resueltas: { id: number; nombre: string }[] = []
+
   for (const item of items) {
+    // Algo que arregla el propio personal —el extintor, los papeles— ya está
+    // bien y su incidencia sigue abierta: alguien lo arregló y nadie lo
+    // capturó. Se cierra con un mantenimiento básico en vez de pedírselo a
+    // alguien, que es lo que dejaba esas incidencias abiertas para siempre.
+    if (item.resultado === 'ok' && item.cierreAutomatico) {
+      const abierta = await incidenciaAbiertaDe(tx, vehiculoId, item.clave)
+      if (abierta) resueltas.push(abierta)
+    }
+
     // La incidencia primero: su id es lo que amarra el renglón con lo que hay
     // que atender. Va en la misma transacción, así que un fallo aquí deshace el
     // chequeo entero en vez de dejar una falla que dice haber abierto algo que
@@ -714,6 +732,21 @@ async function insertarItems(
         INSERT INTO chequeo_items (chequeo_id, clave, resultado, valor, nota, pendiente_id)
         VALUES (@ch, @clave, @resultado, @valor, @nota, @pend)
       `)
+  }
+
+  // Un solo mantenimiento por chequeo, con todo lo que cerró: es una sola
+  // visita a la unidad, y uno por renglón llenaría el historial de básicos
+  // idénticos. El comentario lo pone el sistema; a nadie se le pide.
+  if (resueltas.length) {
+    const observaciones =
+      `Resuelto, visto en el chequeo diario: ${resueltas.map((r) => r.nombre).join(', ')}.`
+    await mantenimientoRepo.createBasicoEnTx(tx, {
+      vehiculo_id:   vehiculoId,
+      fecha:         cabecera.fecha,
+      km_actual:     cabecera.lectura,
+      observaciones: observaciones.slice(0, 255),
+      pendiente_ids: resueltas.map((r) => r.id),
+    }, revisadoPor)
   }
 }
 

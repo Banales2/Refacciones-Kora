@@ -74,6 +74,19 @@ export interface ItemChequeo {
    */
   umbralFalla?: string
   /**
+   * Lo que arregla el propio personal sin taller ni refacción: ponerle el
+   * extintor que faltaba, subir los papeles, sacar la basura, rellenar el
+   * limpiaparabrisas. Si la pregunta tiene una incidencia abierta y el chequeo
+   * la encuentra bien, la incidencia se cierra sola con un mantenimiento
+   * básico (migración 060), sin pedirle a nadie que lo capture.
+   *
+   * Solo en esto. Unos faros que vuelven a prender los cambió alguien, con un
+   * foco que costó y que debería estar en un mantenimiento con su refacción;
+   * cerrarlos aquí como básico borraría ese gasto. Ahí la pregunta en verde
+   * solo avisa que la incidencia sigue abierta.
+   */
+  cierreAutomatico?: true
+  /**
    * Ya no se pregunta, pero los chequeos viejos la referencian por clave y la
    * pantalla de historial tiene que saber cómo llamarla. Mismo criterio que
    * archivar en vez de borrar (migración 033): el renglón sale de la captura,
@@ -215,6 +228,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'fraccion',
     tipos: TIPOS_CON_MOTOR,
     incidencia: { severidad: 'superficial', categoria: 'Niveles', nombre: 'Líquido limpiaparabrisas bajo' },
+    cierreAutomatico: true,
     umbralFalla: '1/4',
   },
   {
@@ -346,6 +360,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'ok_falla',
     tipos: ['camion', 'tractocamion', 'utilitario'],
     incidencia: { severidad: 'superficial', categoria: 'Limpieza', nombre: 'Basura en la cabina' },
+    cierreAutomatico: true,
   },
   {
     clave: 'doc_tarjeta',
@@ -353,6 +368,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'ok_falla',
     tipos: TIPOS_CON_PAPELES,
     incidencia: { severidad: 'superficial', categoria: 'Documentación', nombre: 'Sin tarjeta de circulación' },
+    cierreAutomatico: true,
   },
   {
     clave: 'doc_poliza',
@@ -360,6 +376,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'ok_falla',
     tipos: TIPOS_CON_PAPELES,
     incidencia: { severidad: 'superficial', categoria: 'Documentación', nombre: 'Sin póliza a bordo' },
+    cierreAutomatico: true,
   },
   {
     clave: 'doc_permiso',
@@ -367,6 +384,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'ok_falla',
     tipos: TIPOS_CON_PAPELES,
     incidencia: { severidad: 'superficial', categoria: 'Documentación', nombre: 'Sin permiso a bordo' },
+    cierreAutomatico: true,
   },
   {
     clave: 'acc_extintor',
@@ -374,6 +392,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'ok_falla',
     tipos: TODOS,
     incidencia: { severidad: 'superficial', categoria: 'Accesorios', nombre: 'Sin extintor' },
+    cierreAutomatico: true,
   },
   {
     clave: 'acc_llanta_refaccion',
@@ -381,6 +400,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'ok_falla',
     tipos: TODOS,
     incidencia: { severidad: 'superficial', categoria: 'Accesorios', nombre: 'Sin llanta de refacción' },
+    cierreAutomatico: true,
   },
   {
     clave: 'acc_herramienta',
@@ -388,6 +408,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'ok_falla',
     tipos: TODOS,
     incidencia: { severidad: 'superficial', categoria: 'Accesorios', nombre: 'Sin herramienta' },
+    cierreAutomatico: true,
   },
   {
     clave: 'caja_puertas',

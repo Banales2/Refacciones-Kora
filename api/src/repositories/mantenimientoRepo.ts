@@ -2,6 +2,7 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { SQL_KM } from '../shared/km'
 import { syncIncidenciaStatuses } from './pendientesRepo'
+import { MANTENIMIENTO_BASICO } from '../schemas/common'
 
 export interface Mantenimiento {
   id:               number
@@ -104,6 +105,44 @@ async function linkPendientes(
         FROM pendientes p WHERE p.id = @pid
       `)
   }
+}
+
+/**
+ * Un mantenimiento básico dentro de una transacción ajena, que deja cerradas
+ * las incidencias que atiende.
+ *
+ * Lo usa el chequeo diario cuando encuentra resuelto algo que lo arregla el
+ * propio personal (`cierreAutomatico` en el catálogo): el extintor ya está, los
+ * papeles ya están. Va en la transacción del chequeo para que no pueda quedar
+ * uno sin el otro. Sin técnico y en cero, como todo básico (migración 060).
+ */
+export async function createBasicoEnTx(
+  tx: sql.Transaction,
+  data: {
+    vehiculo_id:   number
+    fecha:         string
+    km_actual:     number | null
+    observaciones: string
+    pendiente_ids: number[]
+  },
+  capturadoPor: string,
+): Promise<number> {
+  const r = await tx.request()
+    .input('vid',           sql.Int,               data.vehiculo_id)
+    .input('fecha',         sql.Date,              data.fecha)
+    .input('tipo',          sql.NVarChar(80),      MANTENIMIENTO_BASICO)
+    .input('kmActual',      SQL_KM,                data.km_actual ?? 0)
+    .input('observaciones', sql.NVarChar(sql.MAX), data.observaciones)
+    .input('capturadoPor',  sql.NVarChar(120),     capturadoPor)
+    .query(`
+      INSERT INTO mantenimiento (vehiculo_id, fecha, tipo, tecnico_id, costo, km_actual, observaciones, capturado_por)
+      OUTPUT INSERTED.id
+      VALUES (@vid, @fecha, @tipo, NULL, 0, @kmActual, @observaciones, @capturadoPor)
+    `)
+  const id: number = r.recordset[0].id
+  await linkPendientes(tx, id, data.pendiente_ids, data.fecha, data.km_actual)
+  await syncIncidenciaStatuses(tx, data.pendiente_ids)
+  return id
 }
 
 async function attachPiezasTotal(

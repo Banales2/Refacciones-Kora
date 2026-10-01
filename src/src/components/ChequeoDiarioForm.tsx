@@ -470,13 +470,19 @@ export default function ChequeoDiarioForm({
                         sigue ahí o ya lo arreglaron y nadie lo cerró. */}
                     {arrastradas.has(item.clave) && (
                       <Alert
-                        color={r.resultado === 'ok' ? 'gray' : 'orange'}
+                        color={r.resultado === 'ok' ? (item.cierreAutomatico ? 'green' : 'gray') : 'orange'}
                         variant="light"
                         p={6}
                         icon={<IconAlertTriangle size={14} />}
                       >
                         <Text size="xs">
-                          {r.resultado === 'ok'
+                          {r.resultado === 'ok' && item.cierreAutomatico
+                            // Lo que arregla el propio personal —el extintor, los
+                            // papeles— se cierra solo al guardar, con un
+                            // mantenimiento básico que pone el sistema.
+                            ? `Estaba reportado desde el ${diaMes(arrastradas.get(item.clave)!)}.
+                               Al guardar, la incidencia se cierra con un mantenimiento básico.`
+                            : r.resultado === 'ok'
                             // Contestar "sí" aquí NO cierra el pendiente: se
                             // cierra atendiéndolo, con un mantenimiento. Decirlo
                             // aquí evita que alguien se vaya creyendo que ya

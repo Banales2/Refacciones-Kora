@@ -143,6 +143,21 @@ Si contesta que sí está bien, se le dice que la incidencia igual sigue abierta
 un pendiente no se cierra marcando la pregunta en verde, se cierra
 atendiéndolo.
 
+La excepción es lo que arregla el propio personal, sin taller ni refacción: el
+extintor, la llanta de refacción, la herramienta, los papeles a bordo, la
+basura de la cabina y el limpiaparabrisas (`cierreAutomatico` en el catálogo).
+Ahí "sí" quiere decir que alguien ya lo resolvió y nadie lo capturó, y pedir un
+mantenimiento a mano para cada extintor es lo que dejaba esas incidencias
+abiertas para siempre. Al guardar el chequeo, sus incidencias abiertas se
+cierran con **un** mantenimiento básico —sin técnico, en cero, con el
+comentario puesto por el sistema—, en la misma transacción que el chequeo. Si
+la pregunta vuelve a salir mal, no pasa nada distinto: se engancha a la
+incidencia abierta como siempre.
+
+Las demás no entran a propósito. Unos faros que vuelven a prender los cambió
+alguien con un foco que costó, y cerrarlos como básico borraría ese gasto: eso
+tiene que llegar como un mantenimiento con su refacción.
+
 ## Las dos pestañas de la pantalla
 
 "Chequeo de flotilla" tiene dos mitades del mismo día: **Recorrido**, que es

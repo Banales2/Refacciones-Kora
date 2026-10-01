@@ -92,6 +92,7 @@ function prepararItems(
       resultado,
       valor:     item.valor ?? null,
       nota:      item.nota ?? null,
+      cierreAutomatico: !!def.cierreAutomatico,
       incidencia: incidenciaDe(def, { ...item, resultado }, declaracion),
     }
   })
@@ -247,6 +248,7 @@ async function prepararDesgaste(
         resultado:  'falla',
         valor:      null,
         nota:       null,
+        cierreAutomatico: !!def.cierreAutomatico,
         incidencia: {
           nombre:      (def.incidencia!.nombre ?? def.label).slice(0, 40),
           descripcion: `${nombrePosicion(peor.pos)} en ${peor.mm} mm ` +
@@ -255,7 +257,10 @@ async function prepararDesgaste(
           severidad:   def.incidencia!.severidad,
         },
       }
-    : { clave: def.clave, resultado: 'ok', valor: null, nota: null, incidencia: null }
+    : {
+        clave: def.clave, resultado: 'ok', valor: null, nota: null,
+        cierreAutomatico: !!def.cierreAutomatico, incidencia: null,
+      }
 
   return { filas, item }
 }
