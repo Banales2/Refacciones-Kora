@@ -95,7 +95,7 @@ export const FacturaGasolinaQuerySchema = z.object({
     .optional(),
 })
 
-/** Las recargas que ninguna factura ha reclamado. Reusa los filtros del listado. */
+/** Los tickets que ninguna factura ha reclamado. Reusa los filtros del listado. */
 export const SinFacturarQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
@@ -108,15 +108,15 @@ export const SinFacturarQuerySchema = z.object({
 
 export const ConciliarGasolinaSchema = z.object({
   /**
-   * A qué recarga corresponde cada renglón. Va el conjunto COMPLETO, con los
-   * renglones sin casar incluidos y su `recarga_id` en null: la pantalla manda
+   * A qué ticket de recarga corresponde cada renglón. Va el conjunto COMPLETO,
+   * con los renglones sin casar incluidos y su `ticket_id` en null: la pantalla manda
    * la verdad entera y el servidor reemplaza. Mandar altas y bajas por separado
    * solo agrega una forma de que las dos versiones discrepen.
    */
   casados: z
     .array(z.object({
       renglon_id: z.coerce.number().int().positive(),
-      recarga_id: z.coerce.number().int().positive().nullable(),
+      ticket_id:  z.coerce.number().int().positive().nullable(),
     }))
     .max(300),
   nota: z.string().trim().max(255, 'Máximo 255 caracteres').optional(),

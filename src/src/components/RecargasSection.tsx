@@ -13,9 +13,9 @@ import {
   ActionIcon, Modal, Tooltip, NumberInput, Badge, Accordion,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
-import { IconAlertTriangle, IconPencil, IconPlus } from '@tabler/icons-react'
+import { IconAlertTriangle, IconPencil, IconPlus, IconX } from '@tabler/icons-react'
 import {
-  useRecargas, useCreateRecarga, useCreateRecargaEmergencia, useUpdateRecarga,
+  useRecargas, useCreateRecarga, useCreateRecargaEmergencia, useUpdateRecarga, TICKETS_MAX,
 } from '../hooks/useRecargas'
 import type { Recarga, RecargaEmergenciaPayload, RecargaPayload } from '../hooks/useRecargas'
 import { useGasolineras } from '../hooks/useGasolineras'
@@ -66,14 +66,35 @@ function todayIso() {
 
 // ── Formulario ────────────────────────────────────────────────────────────────
 
+type TicketFormValues = {
+  // El del ticket que ya existía, al editar. Ver RecargaPayload.
+  id?:    number
+  litros: number | string
+  costo:  number | string
+}
+
 type RecargaFormValues = {
   gasolinera_id: string
   conductor_id:  string
   vale_id:       string
   fecha:         string
-  litros:        number | string
-  costo:         number | string
+  // Uno por tanque: la bomba imprime un ticket por cada uno. El vale es uno solo.
+  tickets:       TicketFormValues[]
   kilometraje:   number | string
+}
+
+/** Los valores del formulario para editar una recarga ya registrada. */
+export function recargaAFormulario(r: Recarga): RecargaFormValues {
+  return {
+    gasolinera_id: r.gasolinera_id != null ? String(r.gasolinera_id) : '',
+    conductor_id:  String(r.conductor_id),
+    vale_id:       r.vale_id != null ? String(r.vale_id) : '',
+    fecha:  r.fecha.split('T')[0],
+    tickets: r.tickets.length
+      ? r.tickets.map((t) => ({ id: t.id, litros: t.litros, costo: t.costo }))
+      : [{ litros: Number(r.litros), costo: Number(r.costo) }],
+    kilometraje: r.kilometraje ?? '',
+  }
 }
 
 export function RecargaForm({
@@ -127,7 +148,8 @@ export function RecargaForm({
 
   const form = useForm<RecargaFormValues>({
     initialValues: initial ?? {
-      gasolinera_id: '', conductor_id: '', vale_id: '', fecha: hoy, litros: '', costo: '', kilometraje: '',
+      gasolinera_id: '', conductor_id: '', vale_id: '', fecha: hoy,
+      tickets: [{ litros: '', costo: '' }], kilometraje: '',
     },
     validate: {
       gasolinera_id: (v) => (!v ? 'Gasolinera requerida' : null),
@@ -138,17 +160,21 @@ export function RecargaForm({
         if (v > hoy) return 'No puede ser una fecha futura'
         return null
       },
-      litros: (v) => (v === '' || Number(v) <= 0 ? 'Debe ser mayor a 0' : null),
-      costo:  (v) => (v === '' || Number(v) < 0 ? 'No puede ser negativo' : null),
+      tickets: {
+        litros: (v) => (v === '' || Number(v) <= 0 ? 'Debe ser mayor a 0' : null),
+        costo:  (v) => (v === '' || Number(v) < 0 ? 'No puede ser negativo' : null),
+      },
       kilometraje: (v) =>
         v === '' || Number(v) < 0 ? 'No puede ser negativo' :
         validarKm(v),
     },
   })
 
-  const litros = Number(form.values.litros)
-  const costo  = Number(form.values.costo)
+  const tickets = form.values.tickets
+  const litros = tickets.reduce((s, t) => s + (Number(t.litros) || 0), 0)
+  const costo  = tickets.reduce((s, t) => s + (Number(t.costo) || 0), 0)
   const precioLitro = litros > 0 && costo > 0 ? costo / litros : null
+  const varios = tickets.length > 1
 
   // Al registrar, el km capturado se vuelve el del vehículo si es mayor al que
   // tiene. Eso no debe pasar de callado: se pide aceptar y hasta entonces se
@@ -161,8 +187,11 @@ export function RecargaForm({
       conductor_id:  parseInt(v.conductor_id, 10),
       vale_id:       parseInt(v.vale_id, 10),
       fecha:  v.fecha,
-      litros: Number(v.litros),
-      costo:  Number(v.costo),
+      tickets: v.tickets.map((t) => ({
+        ...(t.id !== undefined ? { id: t.id } : {}),
+        litros: Number(t.litros),
+        costo:  Number(t.costo),
+      })),
       kilometraje: Number(v.kilometraje),
     })
   }
@@ -232,16 +261,53 @@ export function RecargaForm({
           onChange={(d) => form.setFieldValue('fecha', d)}
           error={form.errors.fecha as string}
         />
-        <NumberInput
-          label="Litros" placeholder="0.000" required
-          min={0} decimalScale={3} step={0.001} suffix=" L"
-          {...form.getInputProps('litros')}
-        />
-        <NumberInput
-          label="Costo total" placeholder="0.00" required
-          min={0} decimalScale={2} step={0.01} prefix="$" thousandSeparator=","
-          {...form.getInputProps('costo')}
-        />
+        {/* Un renglón por ticket. Los trailers cargan cada tanque aparte y la
+            gasolinera cobra cada ticket en su propio renglón de factura, así
+            que se capturan tal como vienen y no ya sumados. */}
+        <Stack gap={6}>
+          {tickets.map((_, i) => (
+            <Group key={i} gap="xs" align="flex-start" wrap="nowrap">
+              <NumberInput
+                label={varios ? `Litros · ticket ${i + 1}` : 'Litros'}
+                placeholder="0.000" required style={{ flex: 1 }}
+                min={0} decimalScale={3} step={0.001} suffix=" L"
+                {...form.getInputProps(`tickets.${i}.litros`)}
+              />
+              <NumberInput
+                label={varios ? `Costo · ticket ${i + 1}` : 'Costo total'}
+                placeholder="0.00" required style={{ flex: 1 }}
+                min={0} decimalScale={2} step={0.01} prefix="$" thousandSeparator=","
+                {...form.getInputProps(`tickets.${i}.costo`)}
+              />
+              {varios && (
+                <Tooltip label="Quitar ticket">
+                  <ActionIcon
+                    variant="subtle" color="gray" mt={28}
+                    aria-label={`Quitar ticket ${i + 1}`}
+                    onClick={() => form.removeListItem('tickets', i)}
+                  >
+                    <IconX size={14} />
+                  </ActionIcon>
+                </Tooltip>
+              )}
+            </Group>
+          ))}
+          <Group justify="space-between">
+            {tickets.length < TICKETS_MAX ? (
+              <Button
+                variant="subtle" size="compact-xs" leftSection={<IconPlus size={12} />}
+                onClick={() => form.insertListItem('tickets', { litros: '', costo: '' })}
+              >
+                Agregar ticket (otro tanque)
+              </Button>
+            ) : <span />}
+            {varios && (
+              <Text size="xs" fw={500}>
+                Total: {formatLitros(litros)} · {formatMXN(costo)}
+              </Text>
+            )}
+          </Group>
+        </Stack>
         <NumberInput decimalScale={1}
           label="Kilometraje" placeholder="0" required
           min={0} max={KM_MAX} suffix=" km" thousandSeparator="," allowNegative={false} clampBehavior="strict"
@@ -449,7 +515,23 @@ export function RecargasTabla<T extends Recarga>({
               <Table.Td style={{ textAlign: 'right' }}>
                 {r.kilometraje != null ? formatKm(r.kilometraje) : '—'}
               </Table.Td>
-              <Table.Td style={{ textAlign: 'right' }}>{formatLitros(litros)}</Table.Td>
+              <Table.Td style={{ textAlign: 'right' }}>
+                {formatLitros(litros)}
+                {r.tickets.length > 1 && (
+                  <Tooltip
+                    multiline
+                    label={r.tickets.map((t, i) => (
+                      <div key={t.id}>
+                        Ticket {i + 1}: {formatLitros(t.litros)} · {formatMXN(t.costo)}
+                      </div>
+                    ))}
+                  >
+                    <Text size="xs" c="dimmed" style={{ cursor: 'help' }}>
+                      {r.tickets.length} tickets
+                    </Text>
+                  </Tooltip>
+                )}
+              </Table.Td>
               <Table.Td style={{ textAlign: 'right' }}>{formatMXN(costo)}</Table.Td>
               <Table.Td style={{ textAlign: 'right' }} c="dimmed">
                 {litros > 0 ? formatMXN(costo / litros) : '—'}
@@ -653,15 +735,7 @@ export default function RecargasSection({
           vehiculoId={vehiculoId}
           kmVehiculo={kmVehiculo}
           valesUsados={valesUsados}
-          initial={editing ? {
-            gasolinera_id: editing.gasolinera_id != null ? String(editing.gasolinera_id) : '',
-            conductor_id:  String(editing.conductor_id),
-            vale_id:       editing.vale_id != null ? String(editing.vale_id) : '',
-            fecha:  editing.fecha.split('T')[0],
-            litros: Number(editing.litros),
-            costo:  Number(editing.costo),
-            kilometraje: editing.kilometraje ?? '',
-          } : undefined}
+          initial={editing ? recargaAFormulario(editing) : undefined}
           isPending={createMut.isPending || updateMut.isPending}
           error={formError}
           onSubmit={handleSubmit}

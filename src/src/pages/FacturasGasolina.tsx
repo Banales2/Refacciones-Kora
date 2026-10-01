@@ -36,7 +36,7 @@ import {
   useReabrirFacturaGasolina, useRecargasSinFacturar, PRODUCTOS, RENGLONES_SIN_CASAR,
 } from '../hooks/useFacturasGasolina'
 import type {
-  Candidatas, FacturaGasolina, Producto, RecargaCandidata, RenglonNuevo,
+  Candidatas, FacturaGasolina, Producto, RenglonNuevo, TicketCandidato,
 } from '../hooks/useFacturasGasolina'
 import { useGasolineras } from '../hooks/useGasolineras'
 import { useAuth } from '../hooks/useAuth'
@@ -281,9 +281,16 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
 
 // ── Conciliación ─────────────────────────────────────────────────────────────
 
-/** Cómo se describe una recarga en el desplegable de cada renglón. */
-function etiquetaRecarga(r: RecargaCandidata): string {
-  return `${formatFecha(r.fecha)} · ${r.litros} L · ${formatMXN(r.costo)} · ${r.vehiculo}`
+/** "ticket 2/3" cuando la recarga trae varios; nada cuando es uno solo. */
+function numeroTicket(t: { ticket_n: number; tickets: number }): string {
+  return t.tickets > 1 ? `ticket ${t.ticket_n}/${t.tickets}` : ''
+}
+
+/** Cómo se describe un ticket en el desplegable de cada renglón. */
+function etiquetaTicket(t: TicketCandidato): string {
+  const n = numeroTicket(t)
+  return `${formatFecha(t.fecha)} · ${t.litros} L · ${formatMXN(t.costo)} · ${t.vehiculo}` +
+    (n ? ` · ${n}` : '')
 }
 
 /**
@@ -305,18 +312,18 @@ function CuadreFactura({
   const conciliar = useConciliar()
   const reabrir = useReabrirFacturaGasolina()
 
-  const { factura, renglones, recargas } = datos
+  const { factura, renglones, tickets } = datos
   const cerrada = factura.conciliada_en != null
 
-  // renglón → recarga elegida. Arranca con lo ya casado, o con lo propuesto.
+  // renglón → ticket elegido. Arranca con lo ya casado, o con lo propuesto.
   const [eleccion, setEleccion] = useState<Record<number, number | null>>(
     () => Object.fromEntries(
-      renglones.map((r) => [r.id, r.recarga_id ?? r.sugerida_recarga_id ?? null]),
+      renglones.map((r) => [r.id, r.ticket_id ?? r.sugerido_ticket_id ?? null]),
     ),
   )
   const [nota, setNota] = useState(factura.nota ?? '')
 
-  const porId = new Map(recargas.map((r) => [r.id, r]))
+  const porId = new Map(tickets.map((t) => [t.id, t]))
   const usadas = new Set(Object.values(eleccion).filter((v): v is number => v !== null))
 
   const sinCasar = renglones.filter((r) => eleccion[r.id] == null)
@@ -333,7 +340,7 @@ function CuadreFactura({
         factura_id: facturaId,
         casados: renglones.map((r) => ({
           renglon_id: r.id,
-          recarga_id: eleccion[r.id] ?? null,
+          ticket_id:  eleccion[r.id] ?? null,
         })),
         nota: nota.trim() || undefined,
         confirmar_sin_casar: confirmar,
@@ -443,9 +450,9 @@ function CuadreFactura({
               const elegida = eleccion[r.id] ?? null
               // Se ofrecen las libres más la ya elegida por este renglón: sin
               // eso, la propia elección desaparecería de su desplegable.
-              const opciones = recargas
+              const opciones = tickets
                 .filter((c) => !usadas.has(c.id) || c.id === elegida)
-                .map((c) => ({ value: String(c.id), label: etiquetaRecarga(c) }))
+                .map((c) => ({ value: String(c.id), label: etiquetaTicket(c) }))
 
               return (
                 <Table.Tr key={r.id}>
@@ -665,6 +672,9 @@ function SinFacturarPanel() {
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
                     <Text size="sm">{r.litros}</Text>
+                    {r.tickets > 1 && (
+                      <Text size="xs" c="dimmed">{numeroTicket(r)}</Text>
+                    )}
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
                     <Text size="sm" fw={600}>{formatMXN(r.costo)}</Text>

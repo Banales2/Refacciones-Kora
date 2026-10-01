@@ -63,10 +63,27 @@ El corte por fecha no tiene límite inferior a propósito: una carga de hace tre
 meses que nadie facturó sigue siendo candidata legítima, y poner una ventana la
 escondería justo cuando aparece la factura atrasada que la cobra.
 
-El vínculo vive en el **renglón** (`facturas_gasolina_renglones.recarga_id`), no
+El vínculo vive en el **renglón** (`facturas_gasolina_renglones.ticket_id`), no
 en la recarga. Así "qué falta por facturar" y "qué renglón no tiene recarga" son
 la misma consulta vista desde dos lados, y un índice único impide que dos
-renglones se lleven la misma carga.
+renglones se lleven el mismo ticket.
+
+## Varios tickets por recarga
+
+Los tráileres tienen más de un tanque y cada uno se despacha aparte: la bomba
+imprime un ticket por tanque y la gasolinera cobra cada ticket en su propio
+renglón, a veces en facturas distintas. Por eso una recarga trae de **1 a 3
+tickets** (`recargas_combustible_tickets`, migración 059), cada uno con sus
+litros y su costo. El vale sigue siendo uno: autoriza la carga completa.
+
+- El renglón se casa con el **ticket**. También guarda la `recarga_id` del
+  ticket, que es por donde se pregunta "qué factura cobra esta recarga"; una
+  llave compuesta impide que las dos discrepen.
+- La recarga conserva `litros` y `costo` como la **suma** de sus tickets, y la
+  API la recalcula en la misma transacción. Costos, rendimientos y reportes leen
+  esas columnas y no necesitan saber cuántos papeles eran.
+- **Recargas sin factura** se lista por ticket: una recarga de tres tanques puede
+  tener dos cobrados y uno pendiente.
 
 ## Las dos mitades de la pregunta
 
@@ -96,13 +113,15 @@ valen.
 
 ## El candado
 
-Una recarga que ya entró en una factura **conciliada** no puede cambiar de
-`litros`, `fecha` ni `gasolinera_id`: el emparejamiento se hizo con esos datos y
-dejaría de ser cierto sin que nadie se entere. `PUT /recargas/{id}` responde 409
-`RECARGA_CONCILIADA`.
+Un ticket que ya entró en una factura **conciliada** no puede cambiar de `litros`
+ni desaparecer, y su recarga no puede cambiar de `fecha` ni de `gasolinera_id`:
+el emparejamiento se hizo con esos datos y dejaría de ser cierto sin que nadie se
+entere. `PUT /recargas/{id}` responde 409 `RECARGA_CONCILIADA`.
 
-Los demás campos —chofer, vale, kilometraje, costo— **sí se siguen corrigiendo**
-con la factura cerrada. Son datos de la operación, no del cuadre.
+Los demás campos —chofer, vale, kilometraje, costo, y los tickets que ninguna
+factura conciliada cobra— **sí se siguen corrigiendo**. Son datos de la
+operación, no del cuadre. Quitar un ticket que casó con una factura **abierta**
+suelta ese renglón, que vuelve a quedar sin casar.
 
 ## Reabrir
 
@@ -139,16 +158,16 @@ pegó.
 |---|---|---|
 | `GET /facturas-gasolina` | admin, editor, lector | Lista, con `?por_conciliar=1` |
 | `POST /facturas-gasolina` | admin, editor | Alta: cabecera y renglones |
-| `GET /facturas-gasolina/{id}/candidatas` | admin, editor, lector | Renglones con su propuesta, y las recargas elegibles |
+| `GET /facturas-gasolina/{id}/candidatas` | admin, editor, lector | Renglones con su propuesta, y los tickets elegibles |
 | `POST /facturas-gasolina/{id}/conciliar` | **admin** | Guarda los emparejamientos y sella |
 | `POST /facturas-gasolina/{id}/reabrir` | **admin** | Suelta el sello |
-| `GET /facturas-gasolina/sin-facturar` | admin, editor, lector | Las recargas que ninguna factura ha reclamado |
+| `GET /facturas-gasolina/sin-facturar` | admin, editor, lector | Los tickets que ninguna factura ha reclamado |
 
 Conciliar es solo admin, igual que revisar una factura de refacciones: es el
 segundo par de ojos sobre lo capturado.
 
 `casados` es el conjunto **completo**, con los renglones sin casar incluidos y su
-`recarga_id` en null: la pantalla manda la verdad entera y el servidor reemplaza.
+`ticket_id` en null: la pantalla manda la verdad entera y el servidor reemplaza.
 
 ## La pantalla
 
@@ -172,10 +191,6 @@ en la pantalla de arriba, que es donde está el cuadre completo.
 - **La factura completa.** Serie, UUID, régimen, sello, precio unitario: nada de
   eso ayuda a contestar "¿a qué recarga corresponde este renglón?", y el
   documento ya se archiva por otro lado.
-- **El número de ticket.** Sería la llave exacta si la recarga lo capturara, pero
-  hoy no lo hace, y agregarlo a `recargas_combustible` es una decisión aparte.
+- **El número impreso del ticket.** Sería la llave exacta, pero el ticket solo
+  guarda litros y costo; el cuadre sigue yendo por litros.
 - **Importar el XML del CFDI.** Los renglones se capturan a mano.
-- **Un renglón se casa con una recarga y solo una.** Si una carga apareciera
-  partida entre dos facturas, esto se queda corto — pero inventar hoy la tabla
-  intermedia para un caso que nadie ha visto cuesta complejidad en el 100% de los
-  casos reales.

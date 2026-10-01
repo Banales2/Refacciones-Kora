@@ -586,17 +586,23 @@ export default function ValesGasolina({
 
   // Al entrar viene abierta la primera persona y su primer vehículo, para no
   // dejar la pantalla en puros encabezados cerrados.
-  const [personaAbierta, setPersonaAbierta] = useState<string | null>(null)
-  const [vehiculoAbierto, setVehiculoAbierto] = useState<string | null>(null)
+  // `undefined` es "nadie lo ha tocado" y `null` es "lo cerraron a propósito":
+  // si el null también cayera al primero, el grupo que viene abierto no se
+  // podría cerrar y, cuando es el único, el click no hacía nada.
+  const [personaAbierta, setPersonaAbierta] = useState<string | null | undefined>(undefined)
+  const [vehiculoAbierto, setVehiculoAbierto] = useState<string | null | undefined>(undefined)
   // Si lo que estaba abierto se cae del filtro, se abre lo primero que sí
   // quedó: sin esto, filtrar dejaba la pantalla en puros encabezados cerrados
   // justo después de que alguien buscó algo.
-  const persona = personas.find((p) => p.key === personaAbierta) ?? personas[0]
+  const persona = personaAbierta === null
+    ? undefined
+    : personas.find((p) => p.key === personaAbierta) ?? personas[0]
   const personaVisible = persona?.key ?? null
-  const vehiculoVisible =
-    persona?.vehiculos.find((g) => g.key === vehiculoAbierto)?.key
-    ?? persona?.vehiculos[0]?.key
-    ?? null
+  const vehiculoVisible = vehiculoAbierto === null
+    ? null
+    : persona?.vehiculos.find((g) => g.key === vehiculoAbierto)?.key
+      ?? persona?.vehiculos[0]?.key
+      ?? null
 
   // El practicante captura vales pero el listado de recargas no le responde.
   const { esPracticante } = usePermisos()
@@ -688,7 +694,8 @@ export default function ValesGasolina({
             </Text>
           </Center>
         ) : (
-          <Accordion variant="separated" value={personaVisible} onChange={setPersonaAbierta}>
+          <Accordion variant="separated" value={personaVisible}
+            onChange={(v) => { setPersonaAbierta(v); setVehiculoAbierto(undefined) }}>
             {personas.map((p) => (
               <Accordion.Item key={p.key} value={p.key}>
                 <Accordion.Control>

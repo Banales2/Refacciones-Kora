@@ -16,7 +16,12 @@ import { getPool } from '../shared/db'
 // incluye: compararlos da 16% de diferencia siempre. Los litros son el mismo
 // número de los dos lados.
 //
-// Ver `db/migrations/041_facturas_de_gasolina.sql`.
+// SE CASA CON EL TICKET, NO CON LA RECARGA. Un tráiler carga cada tanque aparte,
+// la bomba imprime un ticket por tanque y la gasolinera los cobra en renglones
+// —a veces en facturas— distintos. El renglón guarda también la recarga del
+// ticket, que es por donde se pregunta "qué factura cobra esta recarga".
+//
+// Ver `db/migrations/041_facturas_de_gasolina.sql` y la 059.
 
 export interface FacturaGasolina {
   id: number
@@ -43,19 +48,26 @@ export interface RenglonFactura {
   descripcion: string | null
   cantidad: number
   importe: number
+  ticket_id: number | null
   recarga_id: number | null
-  // Lo de la recarga casada, para enseñarlo junto al renglón.
+  // Lo del ticket casado, para enseñarlo junto al renglón.
   recarga_fecha: string | null
-  recarga_litros: number | null
+  ticket_litros: number | null
   /** Lo que se pagó en la bomba. No es comparable con `importe` si hay tasa. */
-  recarga_costo: number | null
+  ticket_costo: number | null
   vehiculo: string | null
   conductor: string | null
   vale_folio: string | null
 }
 
-export interface RecargaCandidata {
+/** Un ticket que algún renglón podría estar cobrando. */
+export interface TicketCandidato {
+  /** El del ticket: es lo que se casa. */
   id: number
+  recarga_id: number
+  /** Cuál de los tickets de su recarga es (1, 2, 3) y cuántos trae. */
+  ticket_n: number
+  tickets: number
   fecha: string
   litros: number
   costo: number
@@ -209,12 +221,13 @@ export async function renglones(facturaId: number): Promise<RenglonFactura[]> {
   const r = await pool.request()
     .input('id', sql.Int, facturaId)
     .query(`
-      SELECT fr.id, fr.descripcion, fr.cantidad, fr.importe, fr.recarga_id,
+      SELECT fr.id, fr.descripcion, fr.cantidad, fr.importe, fr.ticket_id, fr.recarga_id,
              CONVERT(char(10), rc.fecha, 23) AS recarga_fecha,
-             rc.litros AS recarga_litros, rc.costo AS recarga_costo,
+             t.litros AS ticket_litros, t.costo AS ticket_costo,
              CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
              co.nombre AS conductor, vg.folio AS vale_folio
       FROM facturas_gasolina_renglones fr
+      LEFT JOIN recargas_combustible_tickets t ON t.id = fr.ticket_id
       LEFT JOIN recargas_combustible rc ON rc.id = fr.recarga_id
       LEFT JOIN vehiculos    v  ON v.id  = rc.vehiculo_id
       LEFT JOIN modelos      mo ON mo.id = v.modelo_id
@@ -226,11 +239,11 @@ export async function renglones(facturaId: number): Promise<RenglonFactura[]> {
 }
 
 /**
- * Las recargas que algún renglón de esta factura podría estar cobrando.
+ * Los tickets que algún renglón de esta factura podría estar cobrando.
  *
- * Son las de su gasolinera, de su fecha hacia atrás, que ningún renglón de
- * ninguna OTRA factura haya reclamado — más las que esta misma tiene casadas,
- * para que al volver sigan apareciendo.
+ * Son los de las recargas de su gasolinera, de su fecha hacia atrás, que ningún
+ * renglón de ninguna OTRA factura haya reclamado — más los que esta misma tiene
+ * casados, para que al volver sigan apareciendo.
  *
  * El corte por fecha no tiene límite inferior a propósito: una carga de hace
  * tres meses que nadie facturó sigue siendo candidata legítima, y poner una
@@ -238,18 +251,27 @@ export async function renglones(facturaId: number): Promise<RenglonFactura[]> {
  */
 export async function candidatas(
   facturaId: number, limite = 400,
-): Promise<RecargaCandidata[]> {
+): Promise<TicketCandidato[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id',     sql.Int, facturaId)
     .input('limite', sql.Int, limite)
     .query(`
       SELECT TOP (@limite)
-             rc.id, CONVERT(char(10), rc.fecha, 23) AS fecha,
-             rc.litros, rc.costo,
+             t.id, t.recarga_id, t.ticket_n, t.tickets,
+             CONVERT(char(10), rc.fecha, 23) AS fecha,
+             t.litros, t.costo,
              CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
              co.nombre AS conductor, vg.folio AS vale_folio
-      FROM recargas_combustible rc
+      -- El número se cuenta antes del filtro: "ticket 2 de 3" no cambia
+      -- porque el 1 ya lo cobre otra factura.
+      FROM (
+        SELECT id, recarga_id, litros, costo,
+               ROW_NUMBER() OVER (PARTITION BY recarga_id ORDER BY id) AS ticket_n,
+               COUNT(*) OVER (PARTITION BY recarga_id) AS tickets
+        FROM recargas_combustible_tickets
+      ) t
+      JOIN recargas_combustible rc ON rc.id = t.recarga_id
       JOIN facturas_gasolina f ON f.id = @id
       JOIN vehiculos    v  ON v.id  = rc.vehiculo_id
       JOIN modelos      mo ON mo.id = v.modelo_id
@@ -259,24 +281,26 @@ export async function candidatas(
         AND rc.fecha <= f.fecha
         AND NOT EXISTS (
           SELECT 1 FROM facturas_gasolina_renglones otro
-          WHERE otro.recarga_id = rc.id AND otro.factura_id <> @id
+          WHERE otro.ticket_id = t.id AND otro.factura_id <> @id
         )
-      ORDER BY rc.fecha DESC, rc.id DESC`)
-  return r.recordset as RecargaCandidata[]
+      ORDER BY rc.fecha DESC, rc.id DESC, t.id`)
+  return r.recordset.map((c) => ({
+    ...c, litros: Number(c.litros), costo: Number(c.costo),
+  })) as TicketCandidato[]
 }
 
 export interface Casado {
   renglon_id: number
-  recarga_id: number | null
+  ticket_id: number | null
 }
 
 /**
- * Guarda a qué recarga corresponde cada renglón.
+ * Guarda a qué ticket corresponde cada renglón.
  *
  * Se sueltan todos primero y luego se asignan: lo que manda la pantalla es la
  * verdad completa, y calcular la diferencia contra lo que había solo agrega una
- * forma de equivocarse. El UNIQUE de `recarga_id` es quien impide de verdad que
- * dos renglones se lleven la misma carga.
+ * forma de equivocarse. El UNIQUE de `ticket_id` es quien impide de verdad que
+ * dos renglones se lleven el mismo ticket. La recarga se copia del ticket.
  */
 export async function guardarCasados(
   facturaId: number, casados: Casado[],
@@ -287,18 +311,22 @@ export async function guardarCasados(
   try {
     await tx.request()
       .input('id', sql.Int, facturaId)
-      .query('UPDATE facturas_gasolina_renglones SET recarga_id = NULL WHERE factura_id = @id')
+      .query(`
+        UPDATE facturas_gasolina_renglones SET ticket_id = NULL, recarga_id = NULL
+        WHERE factura_id = @id`)
 
     for (const c of casados) {
-      if (c.recarga_id === null) continue
+      if (c.ticket_id === null) continue
       await tx.request()
         .input('rid', sql.Int, c.renglon_id)
         .input('fid', sql.Int, facturaId)
-        .input('rec', sql.Int, c.recarga_id)
+        .input('tid', sql.Int, c.ticket_id)
         .query(`
-          UPDATE facturas_gasolina_renglones
-          SET recarga_id = @rec
-          WHERE id = @rid AND factura_id = @fid`)
+          UPDATE fr
+          SET ticket_id = t.id, recarga_id = t.recarga_id
+          FROM facturas_gasolina_renglones fr
+          JOIN recargas_combustible_tickets t ON t.id = @tid
+          WHERE fr.id = @rid AND fr.factura_id = @fid`)
     }
 
     await tx.commit()
@@ -333,8 +361,14 @@ export async function reabrir(facturaId: number): Promise<void> {
       WHERE id = @id`)
 }
 
+/** Un ticket que ninguna factura ha cobrado. */
 export interface RecargaSinFacturar {
+  /** El del ticket. */
   id: number
+  recarga_id: number
+  /** Cuál de los tickets de su recarga es (1, 2, 3) y cuántos trae. */
+  ticket_n: number
+  tickets: number
   fecha: string
   gasolinera_id: number
   gasolinera: string
@@ -348,7 +382,9 @@ export interface RecargaSinFacturar {
 }
 
 /**
- * Las recargas que ninguna factura ha reclamado todavía.
+ * Los tickets que ninguna factura ha reclamado todavía. Va por ticket y no por
+ * recarga porque cada uno se factura aparte: una recarga de tres tanques puede
+ * tener dos cobrados y uno pendiente.
  *
  * Es el reverso de "el renglón sin recarga": allá la gasolinera cobra algo que
  * no está capturado; aquí está capturado algo que la gasolinera no ha cobrado.
@@ -372,7 +408,7 @@ export async function recargasSinFacturar(p: {
     .input('pageSize', sql.Int, p.pageSize)
 
   const where = [
-    `NOT EXISTS (SELECT 1 FROM facturas_gasolina_renglones fgr WHERE fgr.recarga_id = rc.id)`,
+    `NOT EXISTS (SELECT 1 FROM facturas_gasolina_renglones fgr WHERE fgr.ticket_id = t.id)`,
   ]
   if (p.gasolinera_id) {
     req.input('gid', sql.Int, p.gasolinera_id)
@@ -386,8 +422,16 @@ export async function recargasSinFacturar(p: {
   if (p.desde) { req.input('desde', sql.Date, p.desde); where.push('rc.fecha >= @desde') }
   if (p.hasta) { req.input('hasta', sql.Date, p.hasta); where.push('rc.fecha <= @hasta') }
 
+  // `ticket_n` se cuenta antes del filtro: "ticket 2 de 3" no cambia porque
+  // el 1 ya esté facturado.
   const joins = `
-    FROM recargas_combustible rc
+    FROM (
+      SELECT id, recarga_id, litros, costo,
+             ROW_NUMBER() OVER (PARTITION BY recarga_id ORDER BY id) AS ticket_n,
+             COUNT(*) OVER (PARTITION BY recarga_id) AS tickets
+      FROM recargas_combustible_tickets
+    ) t
+    JOIN recargas_combustible rc ON rc.id = t.recarga_id
     JOIN gasolineras g  ON g.id  = rc.gasolinera_id
     JOIN vehiculos   v  ON v.id  = rc.vehiculo_id
     JOIN modelos     mo ON mo.id = v.modelo_id
@@ -396,17 +440,18 @@ export async function recargasSinFacturar(p: {
     WHERE ${where.join(' AND ')}`
 
   const r = await req.query(`
-    SELECT rc.id, CONVERT(char(10), rc.fecha, 23) AS fecha,
+    SELECT t.id, t.recarga_id, t.ticket_n, t.tickets,
+           CONVERT(char(10), rc.fecha, 23) AS fecha,
            rc.gasolinera_id, g.nombre AS gasolinera,
-           rc.litros, rc.costo,
+           t.litros, t.costo,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
            co.nombre AS conductor, vg.folio AS vale_folio,
            DATEDIFF(day, rc.fecha, CAST(SYSDATETIME() AS date)) AS dias
     ${joins}
-    ORDER BY rc.fecha DESC, rc.id DESC
+    ORDER BY rc.fecha DESC, rc.id DESC, t.id
     OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
 
-    SELECT COUNT(*) AS total, COALESCE(SUM(rc.costo), 0) AS costo_total
+    SELECT COUNT(*) AS total, COALESCE(SUM(t.costo), 0) AS costo_total
     ${joins};
   `)
 
@@ -418,18 +463,21 @@ export async function recargasSinFacturar(p: {
   }
 }
 
-/** La factura que ya cobra esa recarga, si alguna la reclamó. */
-export async function facturaDeRecarga(
+/**
+ * Los tickets de la recarga que ya cobra una factura CONCILIADA, con los litros
+ * con que casaron. Es lo que no se puede mover sin reabrir esa factura.
+ */
+export async function ticketsConciliados(
   recargaId: number,
-): Promise<{ id: number; folio: string; conciliada: boolean } | null> {
+): Promise<{ ticket_id: number; litros: number; folio: string }[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, recargaId)
     .query(`
-      SELECT f.id, f.folio,
-             CAST(CASE WHEN f.conciliada_en IS NULL THEN 0 ELSE 1 END AS BIT) AS conciliada
+      SELECT t.id AS ticket_id, t.litros, f.folio
       FROM facturas_gasolina_renglones fr
       JOIN facturas_gasolina f ON f.id = fr.factura_id
-      WHERE fr.recarga_id = @id`)
-  return r.recordset[0] ?? null
+      JOIN recargas_combustible_tickets t ON t.id = fr.ticket_id
+      WHERE fr.recarga_id = @id AND f.conciliada_en IS NOT NULL`)
+  return r.recordset.map((x) => ({ ...x, litros: Number(x.litros) }))
 }

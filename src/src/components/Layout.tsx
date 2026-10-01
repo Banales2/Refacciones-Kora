@@ -610,7 +610,9 @@ export default function Layout() {
         )}
         {section === 'vales'      && puedeVerSeccion('vales') && (
           <ValesGasolina
-            onNavigateVehiculo={navigateToVehiculoId}
+            // Sin Vehículos en el menú (el practicante), el nombre del vehículo
+            // llevaría a una pantalla que no se le enseña.
+            onNavigateVehiculo={puedeVerSeccion('vehiculos') ? navigateToVehiculoId : undefined}
             onNavigateConductor={navigateToConductor}
           />
         )}

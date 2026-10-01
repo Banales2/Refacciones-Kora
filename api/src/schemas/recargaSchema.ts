@@ -21,17 +21,47 @@ const fecha = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato inválido (YYYY-MM-DD)')
   .refine((v) => v <= todayIso(), 'No puede ser una fecha futura')
 
-export const RecargaCreateSchema = z.object({
+const costo = z.coerce.number().min(0, 'No puede ser negativo')
+
+// Los trailers tienen varios tanques y la bomba imprime un ticket por tanque;
+// la gasolinera los factura por separado. Ver la migración 059.
+export const TICKETS_MAX = 3
+
+const ticket = z.object({
+  // Al editar, el ticket que ya existía. Sin él se da de alta uno nuevo: un
+  // ticket que ya casó con una factura tiene que conservar su id.
+  id: z.coerce.number().int().positive().optional(),
+  litros,
+  costo,
+})
+
+const tickets = z
+  .array(ticket)
+  .min(1, 'Captura al menos un ticket')
+  .max(TICKETS_MAX, `Máximo ${TICKETS_MAX} tickets por recarga`)
+
+export type TicketRecarga = z.infer<typeof ticket>
+
+// Una pantalla de antes de los tickets (la PWA que no se ha recargado) manda
+// `litros` y `costo` sueltos: son un solo ticket.
+function conTickets(body: unknown): unknown {
+  if (body && typeof body === 'object' && !('tickets' in body) && 'litros' in body) {
+    const { litros, costo, ...resto } = body as Record<string, unknown>
+    return { ...resto, tickets: [{ litros, costo }] }
+  }
+  return body
+}
+
+export const RecargaCreateSchema = z.preprocess(conTickets, z.object({
   gasolinera_id: z.coerce.number().int().min(1, 'Gasolinera requerida'),
   conductor_id:  z.coerce.number().int().min(1, 'Conductor requerido'),
   // Obligatorio al registrar. Las recargas anteriores a esta función se
   // quedaron sin vale y por eso la columna sigue siendo NULL-able en la tabla.
   vale_id: z.coerce.number().int().min(1, 'Vale requerido'),
   fecha,
-  litros,
-  costo:  z.coerce.number().min(0, 'No puede ser negativo'),
+  tickets,
   kilometraje: lecturaKm(),
-})
+}))
 
 // El chofer cargó de su bolsa porque no le alcanzaba para ir por el vale: no hay
 // vale, la gasolinera fue la que estaba a mano y nadie leyó el odómetro. Ver la
@@ -40,16 +70,20 @@ export const RecargaEmergenciaSchema = z.object({
   conductor_id: z.coerce.number().int().min(1, 'Conductor requerido'),
   fecha,
   litros,
-  costo: z.coerce.number().min(0, 'No puede ser negativo'),
+  costo,
 })
 
+// `litros` y `costo` sueltos siguen valiendo para una recarga de UN ticket (la
+// de emergencia siempre lo es): corrigen ese ticket. Con más de uno hay que
+// mandar `tickets`, y lo decide el servicio, que sabe cuántos tiene.
 export const RecargaUpdateSchema = z.object({
   gasolinera_id: z.coerce.number().int().min(1).optional(),
   conductor_id:  z.coerce.number().int().min(1).optional(),
   vale_id:       z.coerce.number().int().min(1, 'Vale requerido').optional(),
   fecha:  fecha.optional(),
+  tickets: tickets.optional(),
   litros: litros.optional(),
-  costo:  z.coerce.number().min(0, 'No puede ser negativo').optional(),
+  costo:  costo.optional(),
   kilometraje: lecturaKm().optional(),
 })
 

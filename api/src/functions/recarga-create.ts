@@ -26,7 +26,7 @@ export async function recargaCreate(
       tabla: 'recargas_combustible',
       registroId: created.id,
       despues: await capturar('recargas_combustible', created.id),
-      detalles: { vehiculo_id: vehiculoId, litros: created.litros, costo: created.costo },
+      detalles: { vehiculo_id: vehiculoId, litros: created.litros, costo: created.costo, tickets: created.tickets.length },
       ipAddress: getClientIp(request),
     })
 

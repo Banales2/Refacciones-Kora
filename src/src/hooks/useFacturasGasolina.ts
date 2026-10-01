@@ -10,6 +10,9 @@
 // compararlos da 16% de diferencia siempre. Los litros son el mismo número de los
 // dos lados.
 //
+// SE CASA CON EL TICKET, NO CON LA RECARGA: un tráiler carga cada tanque aparte
+// y la gasolinera cobra cada ticket en su propio renglón (migración 059).
+//
 // Ver `docs/facturas-de-gasolina.md`.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
@@ -42,20 +45,27 @@ export interface RenglonFactura {
   descripcion:    string | null
   cantidad:       number
   importe:        number
+  ticket_id:      number | null
   recarga_id:     number | null
   recarga_fecha:  string | null
-  recarga_litros: number | null
+  ticket_litros:  number | null
   /** Lo que se pagó en la bomba. No comparable con `importe` si hay tasa. */
-  recarga_costo:  number | null
+  ticket_costo:   number | null
   vehiculo:       string | null
   conductor:      string | null
   vale_folio:     string | null
   /** Lo que el sistema propone para un renglón todavía sin casar. */
-  sugerida_recarga_id: number | null
+  sugerido_ticket_id: number | null
 }
 
-export interface RecargaCandidata {
+/** Un ticket de recarga que algún renglón podría estar cobrando. */
+export interface TicketCandidato {
+  /** El del ticket: es lo que se casa. */
   id:         number
+  recarga_id: number
+  /** Cuál de los tickets de su recarga es, y cuántos trae. */
+  ticket_n:   number
+  tickets:    number
   fecha:      string
   litros:     number
   costo:      number
@@ -96,10 +106,10 @@ export function useFacturasGasolina(filtros: FacturasGasolinaFiltros, enabled = 
 export interface Candidatas {
   factura:   FacturaGasolina
   renglones: RenglonFactura[]
-  recargas:  RecargaCandidata[]
+  tickets:   TicketCandidato[]
 }
 
-/** Los renglones de la factura con su propuesta, y las recargas elegibles. */
+/** Los renglones de la factura con su propuesta, y los tickets elegibles. */
 export function useCandidatas(facturaId: number | null) {
   return useQuery({
     queryKey: ['facturas-gasolina', 'candidatas', facturaId],
@@ -108,8 +118,13 @@ export function useCandidatas(facturaId: number | null) {
   })
 }
 
+/** Un ticket que ninguna factura ha cobrado. */
 export interface RecargaSinFacturar {
+  /** El del ticket. */
   id:            number
+  recarga_id:    number
+  ticket_n:      number
+  tickets:       number
   fecha:         string
   gasolinera_id: number
   gasolinera:    string
@@ -204,8 +219,8 @@ export function useCrearFacturaGasolina() {
 
 export interface ConciliarPayload {
   factura_id: number
-  /** El conjunto COMPLETO, con los renglones sin casar y su recarga en null. */
-  casados: { renglon_id: number; recarga_id: number | null }[]
+  /** El conjunto COMPLETO, con los renglones sin casar y su ticket en null. */
+  casados: { renglon_id: number; ticket_id: number | null }[]
   nota?: string
   /** Sellar aunque queden renglones sin casar. Sin esto la API responde 409. */
   confirmar_sin_casar?: boolean

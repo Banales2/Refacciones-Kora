@@ -3,6 +3,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
+// Los trailers tienen varios tanques y la bomba imprime un ticket por tanque;
+// la gasolinera los factura por separado. El vale sigue siendo uno.
+export const TICKETS_MAX = 3
+
+export interface TicketRecarga {
+  id:     number
+  litros: number
+  costo:  number
+}
+
 export interface Recarga {
   id:            number
   vehiculo_id:   number
@@ -24,6 +34,8 @@ export interface Recarga {
   // Folio impreso del vale. Null solo en las recargas que se quedaron sin vale.
   vale_folio:    string | null
   vale_fecha:    string | null
+  // De 1 a TICKETS_MAX. `litros` y `costo` de arriba son su suma.
+  tickets:       TicketRecarga[]
 }
 
 export interface RecargaPayload {
@@ -31,8 +43,9 @@ export interface RecargaPayload {
   conductor_id:  number
   vale_id:       number
   fecha:         string
-  litros:        number
-  costo:         number
+  // `id` solo al editar uno que ya existía: si ya casó con una factura tiene
+  // que conservarlo.
+  tickets:       { id?: number; litros: number; costo: number }[]
   kilometraje:   number
 }
 
@@ -102,9 +115,16 @@ export function useCreateRecargaEmergencia() {
 export function useUpdateRecarga() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: Partial<RecargaPayload> }) =>
+    mutationFn: ({ id, payload }: {
+      id: number
+      payload: Partial<RecargaPayload> | RecargaEmergenciaPayload
+    }) =>
       api.put<{ data: Recarga }>(`/recargas/${id}`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['recargas'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recargas'] })
+      // Quitar un ticket suelta el renglón de factura que lo cobraba.
+      qc.invalidateQueries({ queryKey: ['facturas-gasolina'] })
+    },
   })
 }
 

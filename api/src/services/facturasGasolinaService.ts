@@ -1,13 +1,14 @@
 import * as repo from '../repositories/facturasGasolinaRepo'
-import type { Casado, RecargaCandidata, RenglonFactura } from '../repositories/facturasGasolinaRepo'
+import type { Casado, RenglonFactura, TicketCandidato } from '../repositories/facturasGasolinaRepo'
 import {
   ConciliarGasolina, FacturaGasolinaCreate, SinFacturarQuery,
 } from '../schemas/facturaGasolinaSchema'
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../shared/errors'
 import { aCentavos } from '../shared/totales'
 
-// Conciliar la factura de la gasolinera: casar cada renglón del papel con la
-// recarga que le corresponde.
+// Conciliar la factura de la gasolinera: casar cada renglón del papel con el
+// ticket de recarga que le corresponde (un tráiler trae uno por tanque, y cada
+// uno se cobra en su propio renglón; ver la migración 059).
 //
 // Ver `db/migrations/041_facturas_de_gasolina.sql`.
 
@@ -31,7 +32,7 @@ export async function crear(
 }
 
 /**
- * Las recargas que ninguna factura ha reclamado.
+ * Los tickets que ninguna factura ha reclamado.
  *
  * Es el reverso de "el renglón sin recarga": allá la gasolinera cobra algo que
  * no está capturado; aquí está capturado algo que la gasolinera no ha cobrado.
@@ -48,11 +49,11 @@ function mismaCantidad(a: number, b: number): boolean {
 
 export interface RenglonSugerido extends RenglonFactura {
   /** Lo que el sistema propone, si el renglón no está casado ya. */
-  sugerida_recarga_id: number | null
+  sugerido_ticket_id: number | null
 }
 
 /**
- * Propone qué recarga corresponde a cada renglón, por CANTIDAD exacta.
+ * Propone qué ticket corresponde a cada renglón, por CANTIDAD exacta.
  *
  * POR QUÉ NO POR IMPORTE: el importe del renglón suele venir sin IVA y el costo
  * de la recarga es lo que se pagó en la bomba, que sí lo incluye. "El más
@@ -62,42 +63,42 @@ export interface RenglonSugerido extends RenglonFactura {
  * Lo que no case por cantidad se queda sin proponer y lo resuelve una persona:
  * es preferible a inventar un emparejamiento que nadie va a revisar.
  *
- * En empate —dos recargas con los mismos litros— gana la más reciente, que es la
+ * En empate —dos tickets con los mismos litros— gana el más reciente, que es la
  * que cae dentro del periodo que la factura cobra. Se puede cambiar a mano.
  */
 export async function candidatas(facturaId: number): Promise<{
   factura: repo.FacturaGasolina
   renglones: RenglonSugerido[]
-  recargas: RecargaCandidata[]
+  tickets: TicketCandidato[]
 }> {
   const factura = await repo.findById(facturaId)
   if (!factura) throw new NotFoundError('Factura')
 
   const rens = await repo.renglones(facturaId)
-  const recargas = await repo.candidatas(facturaId)
+  const tickets = await repo.candidatas(facturaId)
 
-  const sugeridos: RenglonSugerido[] = rens.map((r) => ({ ...r, sugerida_recarga_id: null }))
+  const sugeridos: RenglonSugerido[] = rens.map((r) => ({ ...r, sugerido_ticket_id: null }))
 
   if (factura.conciliada_en !== null) {
-    return { factura, renglones: sugeridos, recargas }
+    return { factura, renglones: sugeridos, tickets }
   }
 
-  const tomadas = new Set(
-    sugeridos.map((r) => r.recarga_id).filter((id): id is number => id !== null),
+  const tomados = new Set(
+    sugeridos.map((r) => r.ticket_id).filter((id): id is number => id !== null),
   )
 
   for (const r of sugeridos) {
-    if (r.recarga_id !== null) continue
-    const match = recargas.find(
-      (c) => !tomadas.has(c.id) && mismaCantidad(c.litros, r.cantidad),
+    if (r.ticket_id !== null) continue
+    const match = tickets.find(
+      (c) => !tomados.has(c.id) && mismaCantidad(c.litros, r.cantidad),
     )
     if (match) {
-      r.sugerida_recarga_id = match.id
-      tomadas.add(match.id)
+      r.sugerido_ticket_id = match.id
+      tomados.add(match.id)
     }
   }
 
-  return { factura, renglones: sugeridos, recargas }
+  return { factura, renglones: sugeridos, tickets }
 }
 
 export interface ResultadoConciliacion {
@@ -136,25 +137,25 @@ export async function conciliar(
     )
   }
 
-  // Dos renglones no pueden llevarse la misma recarga. El índice único lo
+  // Dos renglones no pueden llevarse el mismo ticket. El índice único lo
   // rechazaría de todos modos, pero con un error de constraint que no dice cuál.
-  const vistas = new Set<number>()
+  const vistos = new Set<number>()
   for (const c of datos.casados) {
-    if (c.recarga_id === null) continue
-    if (vistas.has(c.recarga_id)) {
-      throw new ValidationError('Dos renglones están apuntando a la misma recarga.')
+    if (c.ticket_id === null) continue
+    if (vistos.has(c.ticket_id)) {
+      throw new ValidationError('Dos renglones están apuntando al mismo ticket.')
     }
-    vistas.add(c.recarga_id)
+    vistos.add(c.ticket_id)
   }
 
   const casados: Casado[] = datos.casados.map((c) => ({
     renglon_id: c.renglon_id,
-    recarga_id: c.recarga_id ?? null,
+    ticket_id: c.ticket_id ?? null,
   }))
   await repo.guardarCasados(facturaId, casados)
 
   const rens = await repo.renglones(facturaId)
-  const sinCasar = rens.filter((r) => r.recarga_id === null)
+  const sinCasar = rens.filter((r) => r.ticket_id === null)
   const resultado: ResultadoConciliacion = {
     factura_id: facturaId,
     renglones: rens.length,
