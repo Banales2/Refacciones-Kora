@@ -100,6 +100,13 @@ export interface Permisos {
    */
   puedeRevisarChequeo: boolean
   /**
+   * Si corrige los datos de un chofer (`conductores-update`). El practicante
+   * sí: captura licencias y expedientes y es quien encuentra el dato mal. El
+   * responsable da de alta choferes pero no los corrige. Archivarlos sigue
+   * siendo `puedeEditar`.
+   */
+  puedeEditarChofer: boolean
+  /**
    * Si da de alta incidencias. `incidencias-create` admite a admin, editor y
    * responsable; el practicante y el lector solo las consultan. Atenderlas y
    * corregirlas sigue siendo `puedeEditar`.
@@ -140,6 +147,7 @@ export function usePermisos(): Permisos {
     puedeTraspasar: !esPracticante,
     puedeCapturarChequeo: rol !== 'lector',
     puedeRevisarChequeo: !esPracticante && rol !== 'lector',
+    puedeEditarChofer: !esResponsable && rol !== 'lector',
     puedeReportarIncidencia: !esPracticante && rol !== 'lector',
     puedeVerSeccion: (s) => {
       if (s === 'registros' || s === 'errores-captura') return esAdmin

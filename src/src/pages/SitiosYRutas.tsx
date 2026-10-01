@@ -886,8 +886,9 @@ function CeldaDocumento({ numero, vigencia }: { numero: string | null; vigencia:
 }
 
 function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
-  // El responsable de sucursal da de alta choferes pero no los corrige.
-  const { puedeEditar } = usePermisos()
+  // El responsable de sucursal da de alta choferes pero no los corrige. El
+  // practicante sí los corrige, pero no los archiva.
+  const { puedeEditar, puedeEditarChofer } = usePermisos()
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Conductor | null>(null)
   const [archivando, setArchivando] = useState<Conductor | null>(null)
@@ -1018,9 +1019,11 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
                     </Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
+                        {puedeEditarChofer && (
+                          <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(c)}><IconPencil size={14} /></ActionIcon></Tooltip>
+                        )}
                         {puedeEditar && (
                           <>
-                          <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(c)}><IconPencil size={14} /></ActionIcon></Tooltip>
                           <Tooltip label={c.archivado_en ? 'Restaurar' : 'Archivar'}>
                             <ActionIcon
                               variant="subtle" size="sm"
