@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert, Badge, Button, ActionIcon,
-  Modal, TextInput, Tooltip, SegmentedControl, Grid, Divider, Anchor,
+  Modal, TextInput, Tooltip, SegmentedControl, Grid, Divider, Anchor, Accordion,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
@@ -14,7 +14,9 @@ import {
 import {
   useIncidencias, useCreateIncidencia, useUpdateIncidencia,
 } from '../hooks/useIncidencias'
-import type { Incidencia, IncidenciaConVehiculo, IncidenciaPayload } from '../hooks/useIncidencias'
+import type {
+  Incidencia, IncidenciaConVehiculo, IncidenciaPayload, Severidad,
+} from '../hooks/useIncidencias'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import type { TipoVehiculo } from '../hooks/useVehiculos'
 import { useCreateMantenimiento } from '../hooks/useMantenimientos'
@@ -36,6 +38,9 @@ function fmtFechaHora(fecha: string, hora: string | null) {
   })
   return hora ? `${f}, ${hora.slice(0, 5)}` : f
 }
+
+// De lo más urgente a lo menos: es el orden en que alguien las atiende.
+const ORDEN_SEVERIDAD: Severidad[] = ['grave', 'moderada', 'superficial']
 
 function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -100,6 +105,22 @@ export default function Incidencias({ onNavigateVehiculo }: {
         .some((c) => c?.toLowerCase().includes(q))
     })
   }, [incidencias, filtro, debounced])
+
+  // Una sección por gravedad en vez de una sola lista larga. Las vacías no se
+  // pintan: un encabezado sin nada debajo no lleva a ninguna parte.
+  const grupos = useMemo(
+    () => ORDEN_SEVERIDAD
+      .map((sev) => ({ sev, items: visibles.filter((i) => i.severidad === sev) }))
+      .filter((g) => g.items.length > 0),
+    [visibles],
+  )
+
+  // `undefined` = nadie ha abierto ni cerrado nada: viene abierta la sección
+  // más grave que tenga algo, o todas si se está buscando —el resultado de una
+  // búsqueda escondido tras un encabezado cerrado parece "no encontré nada"—.
+  const [secciones, setSecciones] = useState<string[] | undefined>(undefined)
+  const seccionesAbiertas = secciones
+    ?? (debounced.trim() ? grupos.map((g) => g.sev) : grupos.slice(0, 1).map((g) => g.sev))
 
   const abiertas = incidencias.filter((i) => i.status === 'activo').length
   const graves   = incidencias.filter((i) => i.status === 'activo' && i.severidad === 'grave').length
@@ -225,6 +246,100 @@ export default function Incidencias({ onNavigateVehiculo }: {
     onNavigateVehiculo?.(vehiculoId)
   }
 
+  // Las incidencias de una sección. La gravedad ya la dice el encabezado, así
+  // que aquí no se repite en cada renglón.
+  function tablaIncidencias(items: IncidenciaConVehiculo[]) {
+    return (
+      <Table.ScrollContainer minWidth={940}>
+        <Table striped highlightOnHover withTableBorder>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Incidencia</Table.Th>
+              <Table.Th>Vehículo</Table.Th>
+              <Table.Th>Categoría</Table.Th>
+              <Table.Th>Reportada</Table.Th>
+              <Table.Th>Reportó</Table.Th>
+              <Table.Th>Autorizó</Table.Th>
+              <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
+              <Table.Th style={{ width: 80 }} />
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {items.map((i) => {
+              const st  = STATUS_INCIDENCIA_META[i.status]
+              return (
+                <Table.Tr
+                  key={i.id}
+                  onClick={() => setDetalle(i)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <Table.Td fw={500}>{i.nombre}</Table.Td>
+                  <Table.Td onClick={(e) => e.stopPropagation()}>
+                    {onNavigateVehiculo ? (
+                      // Botón y no <a>: no hay URL a la que apuntar (la
+                      // navegación es por estado), y así se puede tabular.
+                      <Anchor component="button" type="button" size="sm"
+                        onClick={() => irAlVehiculo(i.vehiculo_id)}>
+                        {i.vehiculo_nombre}
+                      </Anchor>
+                    ) : (
+                      <Text size="sm">{i.vehiculo_nombre}</Text>
+                    )}
+                  </Table.Td>
+                  <Table.Td>{i.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
+                  <Table.Td><Text size="sm">{fmtFechaHora(i.fecha, i.hora)}</Text></Table.Td>
+                  <Table.Td>
+                    {i.reportado_por ?? <Text component="span" c="dimmed" size="sm">—</Text>}
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm">
+                      {i.autorizado_por || <Text component="span" c="dimmed" size="sm">—</Text>}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'center' }}>
+                    <Badge variant="light" color={st.color} size="sm">{st.label}</Badge>
+                  </Table.Td>
+                  <Table.Td onClick={(e) => e.stopPropagation()}>
+                    <Group gap={4} justify="flex-end">
+                      {/* Solo las que siguen sin atender: registrarle un
+                          mantenimiento a una ya cerrada no cierra nada. */}
+                      {puedeEditar && i.status === 'activo' && (
+                        <Tooltip label="Registrar el mantenimiento que la atiende">
+                          <ActionIcon variant="subtle" color="teal" size="sm"
+                            onClick={() => abrirAtender(i)}>
+                            <IconTool size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                      {/* Y al revés, la que ya se atendió lleva al servicio
+                          con el que se cerró. */}
+                      {puedeEditar && i.mantenimiento_id !== null && (
+                        <Tooltip label="Ver el mantenimiento que la atendió">
+                          <ActionIcon variant="subtle" color="gray" size="sm"
+                            onClick={() => verMantenimiento(i.mantenimiento_id!)}>
+                            <IconClipboardList size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                      {puedeEditar && (
+                        <Tooltip label="Editar">
+                          <ActionIcon variant="subtle" color="blue" size="sm"
+                            onClick={() => { setFormError(null); setEditando(i) }}>
+                            <IconPencil size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              )
+            })}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+    )
+  }
+
   return (
     <>
       <Stack gap="md">
@@ -264,7 +379,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
         <Group justify="space-between" wrap="wrap" gap="sm">
           <SegmentedControl
             value={filtro}
-            onChange={(v) => setFiltro(v as 'abiertas' | 'todas')}
+            onChange={(v) => { setFiltro(v as 'abiertas' | 'todas'); setSecciones(undefined) }}
             data={[
               { value: 'abiertas', label: `Sin atender (${abiertas})` },
               { value: 'todas',    label: `Todas (${incidencias.length})` },
@@ -274,7 +389,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
             placeholder="Buscar por nombre, vehículo, categoría…"
             leftSection={<IconSearch size={16} />}
             value={busqueda}
-            onChange={(e) => setBusqueda(e.currentTarget.value)}
+            onChange={(e) => { setBusqueda(e.currentTarget.value); setSecciones(undefined) }}
             w={320}
           />
         </Group>
@@ -292,98 +407,39 @@ export default function Incidencias({ onNavigateVehiculo }: {
             </Text>
           </Center>
         ) : (
-          <Table.ScrollContainer minWidth={1040}>
-            <Table striped highlightOnHover withTableBorder>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Incidencia</Table.Th>
-                  <Table.Th>Vehículo</Table.Th>
-                  <Table.Th>Categoría</Table.Th>
-                  <Table.Th>Severidad</Table.Th>
-                  <Table.Th>Reportada</Table.Th>
-                  <Table.Th>Reportó</Table.Th>
-                  <Table.Th>Autorizó</Table.Th>
-                  <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
-                  <Table.Th style={{ width: 80 }} />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {visibles.map((i) => {
-                  const sev = SEVERIDAD_META[i.severidad]
-                  const st  = STATUS_INCIDENCIA_META[i.status]
-                  return (
-                    <Table.Tr
-                      key={i.id}
-                      onClick={() => setDetalle(i)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <Table.Td fw={500}>{i.nombre}</Table.Td>
-                      <Table.Td onClick={(e) => e.stopPropagation()}>
-                        {onNavigateVehiculo ? (
-                          // Botón y no <a>: no hay URL a la que apuntar (la
-                          // navegación es por estado), y así se puede tabular.
-                          <Anchor component="button" type="button" size="sm"
-                            onClick={() => irAlVehiculo(i.vehiculo_id)}>
-                            {i.vehiculo_nombre}
-                          </Anchor>
-                        ) : (
-                          <Text size="sm">{i.vehiculo_nombre}</Text>
-                        )}
-                      </Table.Td>
-                      <Table.Td>{i.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
-                      <Table.Td>
-                        <Badge variant="light" color={sev.color} size="sm">{sev.label}</Badge>
-                      </Table.Td>
-                      <Table.Td><Text size="sm">{fmtFechaHora(i.fecha, i.hora)}</Text></Table.Td>
-                      <Table.Td>
-                        {i.reportado_por ?? <Text component="span" c="dimmed" size="sm">—</Text>}
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">
-                          {i.autorizado_por || <Text component="span" c="dimmed" size="sm">—</Text>}
+          <Accordion
+            multiple variant="separated"
+            value={seccionesAbiertas} onChange={setSecciones}
+          >
+            {grupos.map(({ sev, items }) => {
+              const meta = SEVERIDAD_META[sev]
+              const sinAtender = items.filter((i) => i.status === 'activo').length
+              return (
+                <Accordion.Item key={sev} value={sev}>
+                  <Accordion.Control>
+                    <Group justify="space-between" wrap="nowrap" pr="sm">
+                      <Group gap="xs">
+                        <Badge variant="filled" color={meta.color}>{meta.label}</Badge>
+                        <Text size="sm" c="dimmed">
+                          {items.length} incidencia{items.length !== 1 ? 's' : ''}
                         </Text>
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'center' }}>
-                        <Badge variant="light" color={st.color} size="sm">{st.label}</Badge>
-                      </Table.Td>
-                      <Table.Td onClick={(e) => e.stopPropagation()}>
-                        <Group gap={4} justify="flex-end">
-                          {/* Solo las que siguen sin atender: registrarle un
-                              mantenimiento a una ya cerrada no cierra nada. */}
-                          {puedeEditar && i.status === 'activo' && (
-                            <Tooltip label="Registrar el mantenimiento que la atiende">
-                              <ActionIcon variant="subtle" color="teal" size="sm"
-                                onClick={() => abrirAtender(i)}>
-                                <IconTool size={14} />
-                              </ActionIcon>
-                            </Tooltip>
-                          )}
-                          {/* Y al revés, la que ya se atendió lleva al servicio
-                              con el que se cerró. */}
-                          {puedeEditar && i.mantenimiento_id !== null && (
-                            <Tooltip label="Ver el mantenimiento que la atendió">
-                              <ActionIcon variant="subtle" color="gray" size="sm"
-                                onClick={() => verMantenimiento(i.mantenimiento_id!)}>
-                                <IconClipboardList size={14} />
-                              </ActionIcon>
-                            </Tooltip>
-                          )}
-                          {puedeEditar && (
-                            <Tooltip label="Editar">
-                              <ActionIcon variant="subtle" color="blue" size="sm"
-                                onClick={() => { setFormError(null); setEditando(i) }}>
-                                <IconPencil size={14} />
-                              </ActionIcon>
-                            </Tooltip>
-                          )}
-                        </Group>
-                      </Table.Td>
-                    </Table.Tr>
-                  )
-                })}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
+                      </Group>
+                      {/* En "Todas" se mezclan las cerradas: lo que importa
+                          de cada sección es cuánto sigue pendiente. */}
+                      {filtro === 'todas' && sinAtender > 0 && (
+                        <Badge variant="light" color="orange" size="sm">
+                          {sinAtender} sin atender
+                        </Badge>
+                      )}
+                    </Group>
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    {tablaIncidencias(items)}
+                  </Accordion.Panel>
+                </Accordion.Item>
+              )
+            })}
+          </Accordion>
         )}
       </Stack>
 
