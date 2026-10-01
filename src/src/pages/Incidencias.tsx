@@ -101,7 +101,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
     return incidencias.filter((i) => {
       if (filtro === 'abiertas' && i.status !== 'activo') return false
       if (!q) return true
-      return [i.nombre, i.categoria, i.vehiculo_nombre, i.ubicacion, i.reportado_por, i.autorizado_por]
+      return [i.nombre, i.categoria, i.vehiculo_nombre, i.vehiculo_placas, i.ubicacion, i.reportado_por, i.autorizado_por]
         .some((c) => c?.toLowerCase().includes(q))
     })
   }, [incidencias, filtro, debounced])
@@ -125,8 +125,10 @@ export default function Incidencias({ onNavigateVehiculo }: {
   const abiertas = incidencias.filter((i) => i.status === 'activo').length
   const graves   = incidencias.filter((i) => i.status === 'activo' && i.severidad === 'grave').length
 
+  // Con las placas en la etiqueta, que es por donde busca el selector: en el
+  // patio a la unidad se le dice por sus placas más que por su serie.
   const vehiculoOptions = (vehiculosData?.data ?? []).map((v) => ({
-    value: String(v.id), label: vehiculoLabel(v),
+    value: String(v.id), label: v.placas ? `${vehiculoLabel(v)} · ${v.placas}` : vehiculoLabel(v),
   }))
 
   // El tipo de la unidad elegida para el alta: de él dependen las preguntas del
@@ -152,6 +154,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
             ...data,
             vehiculo_nombre: v ? vehiculoLabel(v) : '',
             vehiculo_tipo:   v?.tipo ?? '',
+            vehiculo_placas: v?.placas ?? null,
           })
         }
         setVehiculoNueva(null)
@@ -163,14 +166,14 @@ export default function Incidencias({ onNavigateVehiculo }: {
   function handleUpdate(payload: IncidenciaPayload) {
     if (!editando) return
     setFormError(null)
-    const { status: statusPrevio, vehiculo_nombre, vehiculo_tipo } = editando
+    const { status: statusPrevio, vehiculo_nombre, vehiculo_tipo, vehiculo_placas } = editando
     updateMut.mutate({ id: editando.id, payload }, {
       onSuccess: ({ data }) => {
         setEditando(null)
         if (payload.status === 'completado' && statusPrevio !== 'completado') {
           setMantError(null)
           setDeshacer({ tipo: 'revertir', status: statusPrevio })
-          setAtendiendo({ ...data, vehiculo_nombre, vehiculo_tipo })
+          setAtendiendo({ ...data, vehiculo_nombre, vehiculo_tipo, vehiculo_placas })
         }
       },
       onError: (e) => setFormError((e as Error).message),
@@ -285,6 +288,9 @@ export default function Incidencias({ onNavigateVehiculo }: {
                     ) : (
                       <Text size="sm">{i.vehiculo_nombre}</Text>
                     )}
+                    {i.vehiculo_placas && (
+                      <Text size="xs" c="dimmed">{i.vehiculo_placas}</Text>
+                    )}
                   </Table.Td>
                   <Table.Td>{i.categoria ?? <Text component="span" c="dimmed" size="sm">—</Text>}</Table.Td>
                   <Table.Td><Text size="sm">{fmtFechaHora(i.fecha, i.hora)}</Text></Table.Td>
@@ -386,7 +392,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
             ]}
           />
           <TextInput
-            placeholder="Buscar por nombre, vehículo, categoría…"
+            placeholder="Buscar por nombre, vehículo, placas, categoría…"
             leftSection={<IconSearch size={16} />}
             value={busqueda}
             onChange={(e) => { setBusqueda(e.currentTarget.value); setSecciones(undefined) }}

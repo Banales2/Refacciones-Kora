@@ -52,6 +52,8 @@ export interface Incidencia {
 export interface IncidenciaConVehiculo extends Incidencia {
   vehiculo_nombre: string
   vehiculo_tipo:   string
+  /** Para buscar la unidad por sus placas, que es como la nombra el patio. */
+  vehiculo_placas: string | null
 }
 
 export interface IncidenciaCreate {
@@ -118,7 +120,7 @@ export async function findAllConVehiculo(): Promise<IncidenciaConVehiculo[]> {
            i.reportado_por, i.severidad, i.fecha, ${HORA_TXT}, i.ubicacion,
            i.autorizado_por, i.clave_chequeo, ${MTTO_ATENDIO},
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
-           v.tipo AS vehiculo_tipo
+           v.tipo AS vehiculo_tipo, v.placas AS vehiculo_placas
     FROM pendientes p
     JOIN incidencias i ON i.id = p.id
     JOIN vehiculos v   ON v.id = p.vehiculo_id

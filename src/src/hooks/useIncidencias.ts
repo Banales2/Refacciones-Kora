@@ -42,6 +42,8 @@ export interface Incidencia {
 export interface IncidenciaConVehiculo extends Incidencia {
   vehiculo_nombre: string
   vehiculo_tipo:   string
+  /** Para buscar la unidad por sus placas, que es como la nombra el patio. */
+  vehiculo_placas: string | null
 }
 
 export interface IncidenciaPayload {
