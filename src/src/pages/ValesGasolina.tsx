@@ -604,9 +604,6 @@ export default function ValesGasolina({
       ?? persona?.vehiculos[0]?.key
       ?? null
 
-  // El practicante captura vales pero el listado de recargas no le responde.
-  const { esPracticante } = usePermisos()
-
   return (
     <>
       <Stack gap="md">
@@ -618,7 +615,7 @@ export default function ValesGasolina({
         <Tabs defaultValue="vales" keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="vales">Vales</Tabs.Tab>
-            {!esPracticante && <Tabs.Tab value="recargas">Recargas</Tabs.Tab>}
+            <Tabs.Tab value="recargas">Recargas</Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="vales" pt="md">
@@ -744,11 +741,9 @@ export default function ValesGasolina({
         </Stack>
           </Tabs.Panel>
 
-          {!esPracticante && (
-            <Tabs.Panel value="recargas" pt="md">
-              <RecargasFlota onNavigateVehiculo={onNavigateVehiculo} />
-            </Tabs.Panel>
-          )}
+          <Tabs.Panel value="recargas" pt="md">
+            <RecargasFlota onNavigateVehiculo={onNavigateVehiculo} />
+          </Tabs.Panel>
         </Tabs>
       </Stack>
 

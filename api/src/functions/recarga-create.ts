@@ -12,7 +12,10 @@ export async function recargaCreate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor', 'responsable')
+    // El practicante también: entrega los vales, y la recarga es la otra mitad
+    // del mismo papel. Corregirla (`recarga-update`) sigue siendo del editor y
+    // la de emergencia, del admin.
+    const user = requireRole(request, 'admin', 'editor', 'practicante', 'responsable')
     const vehiculoId = parseInt(request.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     await exigirVehiculo(vehiculoId, await alcanceDe(user))
