@@ -351,6 +351,16 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     incidencia: { severidad: 'superficial', categoria: 'Carrocería', nombre: 'Falta un espejo' },
   },
   {
+    // Se pregunta en todo lo que lleva cabina, montacargas incluido: en el
+    // patio es lo que avisa al que va a pie. No se cierra solo porque un
+    // claxon que vuelve a sonar lo arregló alguien, con su refacción.
+    clave: 'cab_claxon',
+    label: '¿El claxon suena?',
+    captura: 'ok_falla',
+    tipos: TIPOS_CON_CABINA,
+    incidencia: { severidad: 'moderada', categoria: 'Eléctrico', nombre: 'Claxon no suena' },
+  },
+  {
     // Detrás del asiento es donde se junta lo que nadie ve desde la puerta:
     // botellas, bolsas, trapos con aceite. Se nombra el lugar en la pregunta
     // porque "¿está limpia la cabina?" se contesta mirando el tablero. El
