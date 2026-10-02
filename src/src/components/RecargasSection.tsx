@@ -615,9 +615,10 @@ export default function RecargasSection({
   const createMut = useCreateRecarga()
   const emergenciaMut = useCreateRecargaEmergencia()
   const updateMut = useUpdateRecarga()
-  // El responsable de sucursal registra cargas pero no las corrige. Las de
-  // emergencia solo el admin las registra y las corrige.
-  const { puedeEditar, esAdmin } = usePermisos()
+  // El responsable de sucursal registra cargas pero no las corrige; el
+  // practicante, solo las que él capturó. Las de emergencia solo el admin las
+  // registra y las corrige.
+  const { puedeEditar, esAdmin, esPracticante, puedeCorregirCaptura } = usePermisos()
 
   const totalLitros = items.reduce((s, r) => s + Number(r.litros), 0)
   const totalCosto  = items.reduce((s, r) => s + Number(r.costo), 0)
@@ -704,8 +705,8 @@ export default function RecargasSection({
                         <Accordion.Panel>
                           <RecargasTabla
                             items={m.items} rendimientos={rendimientos}
-                            onEdit={puedeEditar ? openEdit : undefined}
-                            editable={(r) => !r.emergencia || esAdmin}
+                            onEdit={puedeEditar || esPracticante ? openEdit : undefined}
+                            editable={(r) => esAdmin || (!r.emergencia && puedeCorregirCaptura(r.capturado_por))}
                           />
                         </Accordion.Panel>
                       </Accordion.Item>

@@ -42,6 +42,12 @@ async function resolverCreador(
   return cuenta.email.trim()
 }
 
+export async function getById(id: number): Promise<ValeGasolina> {
+  const vale = await repo.findById(id)
+  if (!vale) throw new NotFoundError('Vale')
+  return vale
+}
+
 export async function getAll(incluirArchivados = false): Promise<ValeGasolina[]> {
   return repo.findAll(incluirArchivados)
 }
@@ -96,7 +102,7 @@ export async function create(
   if (await repo.existsFolio(data.folio)) {
     throw new ConflictError(`Ya existe un vale con el folio ${data.folio}`)
   }
-  return repo.create(data, creadoPor, sucursalId)
+  return repo.create(data, creadoPor, usuarioSesion, sucursalId)
 }
 
 export async function update(

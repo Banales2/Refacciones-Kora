@@ -7,6 +7,11 @@ export interface ValeGasolina {
   id:           number
   folio:        string
   creado_por:   string
+  /**
+   * Quién lo capturó, que no siempre es `creado_por` (a nombre de quién quedó).
+   * Decide si el practicante lo puede corregir. Null si no se sabe (migración 062).
+   */
+  capturado_por: string | null
   conductor_id: number
   vehiculo_id:  number
   /**
@@ -37,7 +42,7 @@ export interface ValeGasolina {
 }
 
 const SELECT_VALE = `
-  SELECT vg.id, vg.folio, vg.creado_por, vg.conductor_id, vg.vehiculo_id,
+  SELECT vg.id, vg.folio, vg.creado_por, vg.capturado_por, vg.conductor_id, vg.vehiculo_id,
          vg.sucursal_id, s.nombre AS sucursal,
          CONVERT(char(10), vg.fecha, 23) AS fecha,
          c.nombre AS conductor,
@@ -110,25 +115,26 @@ export async function findById(id: number): Promise<ValeGasolina | null> {
 
 // `sucursalId` llega ya resuelta: la del usuario si está acotado, la elegida si no.
 export async function create(
-  data: ValeGasolinaCreate, creadoPor: string, sucursalId: number
+  data: ValeGasolinaCreate, creadoPor: string, capturadoPor: string, sucursalId: number
 ): Promise<ValeGasolina> {
   const pool = await getPool()
   const r = await pool.request()
     .input('folio',        sql.NVarChar(30),  data.folio)
     .input('creado_por',   sql.NVarChar(120), creadoPor)
+    .input('capturado_por', sql.NVarChar(120), capturadoPor)
     .input('conductor_id', sql.Int,  data.conductor_id)
     .input('vehiculo_id',  sql.Int,  data.vehiculo_id)
     .input('sucursal_id',  sql.Int,  sucursalId)
     .input('fecha',        sql.Date, data.fecha)
     .query(`
-      INSERT INTO vales_gasolina (folio, creado_por, conductor_id, vehiculo_id, sucursal_id, fecha)
+      INSERT INTO vales_gasolina (folio, creado_por, capturado_por, conductor_id, vehiculo_id, sucursal_id, fecha)
       OUTPUT INSERTED.id
-      VALUES (@folio, @creado_por, @conductor_id, @vehiculo_id, @sucursal_id, @fecha)
+      VALUES (@folio, @creado_por, @capturado_por, @conductor_id, @vehiculo_id, @sucursal_id, @fecha)
     `)
   return findById(r.recordset[0].id) as Promise<ValeGasolina>
 }
 
-// `creado_por` no se edita: registra quién dio de alta el vale.
+// Ni `creado_por` ni `capturado_por` se editan: registran quién dio de alta el vale.
 export async function update(id: number, data: ValeGasolinaUpdate): Promise<ValeGasolina | null> {
   const pool = await getPool()
   const sets: string[] = []

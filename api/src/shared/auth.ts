@@ -48,3 +48,14 @@ export function requireRole(req: HttpRequest, ...roles: string[]): ClientPrincip
   }
   return principal
 }
+
+// Corregir un registro que uno mismo capturó. El editor y el admin corrigen
+// cualquiera; el practicante solo los suyos, para arreglar su propio error sin
+// esperar a nadie. `capturadoPor` null es un registro del que no se sabe quién
+// lo capturó (ver migración 062): ése no es de nadie, así que solo el editor.
+export function exigirCapturaPropia(user: ClientPrincipal, capturadoPor: string | null): void {
+  if (user.userRoles.includes('admin') || user.userRoles.includes('editor')) return
+  if (!capturadoPor || capturadoPor.toLowerCase() !== user.userDetails.toLowerCase()) {
+    throw new AuthError('Solo puedes corregir lo que tú capturaste', 403)
+  }
+}

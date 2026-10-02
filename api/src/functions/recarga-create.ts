@@ -13,15 +13,15 @@ export async function recargaCreate(
 ): Promise<HttpResponseInit> {
   try {
     // El practicante también: entrega los vales, y la recarga es la otra mitad
-    // del mismo papel. Corregirla (`recarga-update`) sigue siendo del editor y
-    // la de emergencia, del admin.
+    // del mismo papel. Corregirla (`recarga-update`) es del editor, y del
+    // practicante solo en las que él capturó; la de emergencia, del admin.
     const user = requireRole(request, 'admin', 'editor', 'practicante', 'responsable')
     const vehiculoId = parseInt(request.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     await exigirVehiculo(vehiculoId, await alcanceDe(user))
 
     const data = RecargaCreateSchema.parse(await request.json())
-    const created = await service.create(vehiculoId, data)
+    const created = await service.create(vehiculoId, data, user.userDetails)
 
     await audit({
       user,

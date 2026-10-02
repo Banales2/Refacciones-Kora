@@ -52,8 +52,15 @@ export interface Permisos {
   esPracticante: boolean
   esResponsable: boolean
   /**
+   * Si puede corregir un vale o una recarga, según quién lo capturó. El editor
+   * corrige cualquiera; el practicante solo los suyos, para arreglar su propio
+   * error sin esperar a nadie. Espejo de `exigirCapturaPropia` de la API.
+   */
+  puedeCorregirCaptura: (capturadoPor: string | null) => boolean
+  /**
    * Si puede modificar lo que ya existe. El practicante da de alta pero no
-   * corrige: si se equivocó, lo arregla un editor.
+   * corrige: si se equivocó, lo arregla un editor. La excepción son sus propios
+   * vales y recargas; ver `puedeCorregirCaptura`.
    *
    * Está escrito en negativo -y no como `esAdmin || esEditor`- porque `lector`
    * sigue viendo hoy los botones de edición que la API le niega. Arreglar eso
@@ -147,6 +154,11 @@ export function usePermisos(): Permisos {
     esAdmin,
     esPracticante,
     esResponsable,
+    puedeCorregirCaptura: (capturadoPor) => {
+      if (!esPracticante) return !esResponsable
+      return !!capturadoPor && !!user
+        && capturadoPor.toLowerCase() === user.userDetails.toLowerCase()
+    },
     puedeEditar: !esPracticante && !esResponsable,
     puedeDarDeAlta: !esResponsable,
     puedeVerMantenimiento: !esResponsable,

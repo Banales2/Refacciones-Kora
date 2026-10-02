@@ -1,5 +1,5 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
-import { requireRole } from '../shared/auth'
+import { requireRole, exigirCapturaPropia } from '../shared/auth'
 import { handleError } from '../shared/errors'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
@@ -11,9 +11,12 @@ export async function recargaUpdate(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(request, 'admin', 'editor')
+    // El practicante también, pero solo las recargas que él capturó: es para
+    // arreglar su propio error de captura sin esperar a un editor.
+    const user = requireRole(request, 'admin', 'editor', 'practicante')
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
+    exigirCapturaPropia(user, (await service.getById(id)).capturado_por)
 
     const data = RecargaUpdateSchema.parse(await request.json())
 

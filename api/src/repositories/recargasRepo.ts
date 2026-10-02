@@ -28,6 +28,9 @@ export interface RecargaConGasolinera {
   conductor:     string
   vale_folio:    string | null
   vale_fecha:    string | null
+  // Correo de quien la capturó: decide si el practicante la puede corregir.
+  // Null si no se sabe (migración 062).
+  capturado_por: string | null
   // `litros` y `costo` de arriba son la suma de estos.
   tickets:       Ticket[]
 }
@@ -37,7 +40,7 @@ export interface RecargaConGasolinera {
 // La gasolinera también: las de emergencia no la llevan.
 const SELECT_RECARGA = `
   SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.vale_id, r.fecha,
-         r.litros, r.costo, r.kilometraje, r.emergencia,
+         r.litros, r.costo, r.kilometraje, r.emergencia, r.capturado_por,
          g.nombre AS gasolinera, g.ubicacion,
          c.nombre AS conductor,
          vg.folio AS vale_folio,
@@ -99,7 +102,7 @@ export async function findAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
     .query(`
       SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.vale_id,
              CONVERT(char(10), r.fecha, 23) AS fecha,
-             r.litros, r.costo, r.kilometraje, r.emergencia,
+             r.litros, r.costo, r.kilometraje, r.emergencia, r.capturado_por,
              g.nombre AS gasolinera, g.ubicacion,
              c.nombre AS conductor,
              vg.folio AS vale_folio,
@@ -212,7 +215,9 @@ function sumar(tickets: { litros: number; costo: number }[]) {
   }
 }
 
-export async function create(vehiculoId: number, data: RecargaCreate): Promise<RecargaConGasolinera> {
+export async function create(
+  vehiculoId: number, data: RecargaCreate, capturadoPor: string,
+): Promise<RecargaConGasolinera> {
   const suma = sumar(data.tickets)
   const id = await enTransaccion(async (tx) => {
     const r = await tx.request()
@@ -224,10 +229,11 @@ export async function create(vehiculoId: number, data: RecargaCreate): Promise<R
       .input('litros',        sql.Decimal(10, 3), suma.litros)
       .input('costo',         sql.Decimal(18, 2), suma.costo)
       .input('kilometraje',   SQL_KM, data.kilometraje)
+      .input('capturado_por', sql.NVarChar(120), capturadoPor)
       .query(`
-        INSERT INTO recargas_combustible (vehiculo_id, gasolinera_id, conductor_id, vale_id, fecha, litros, costo, kilometraje)
+        INSERT INTO recargas_combustible (vehiculo_id, gasolinera_id, conductor_id, vale_id, fecha, litros, costo, kilometraje, capturado_por)
         OUTPUT INSERTED.id
-        VALUES (@vehiculo_id, @gasolinera_id, @conductor_id, @vale_id, @fecha, @litros, @costo, @kilometraje)
+        VALUES (@vehiculo_id, @gasolinera_id, @conductor_id, @vale_id, @fecha, @litros, @costo, @kilometraje, @capturado_por)
       `)
     const nueva = r.recordset[0].id as number
     // Sin ids: al registrar todos son nuevos, diga lo que diga el cuerpo.
@@ -241,7 +247,7 @@ export async function create(vehiculoId: number, data: RecargaCreate): Promise<R
 // acepta en una recarga marcada como emergencia. El kilometraje queda NULL:
 // nadie lo leyó.
 export async function createEmergencia(
-  vehiculoId: number, data: RecargaEmergencia
+  vehiculoId: number, data: RecargaEmergencia, capturadoPor: string,
 ): Promise<RecargaConGasolinera> {
   const id = await enTransaccion(async (tx) => {
     const r = await tx.request()
@@ -250,10 +256,11 @@ export async function createEmergencia(
       .input('fecha',        sql.Date, data.fecha)
       .input('litros',       sql.Decimal(10, 3), data.litros)
       .input('costo',        sql.Decimal(18, 2), data.costo)
+      .input('capturado_por', sql.NVarChar(120), capturadoPor)
       .query(`
-        INSERT INTO recargas_combustible (vehiculo_id, conductor_id, fecha, litros, costo, emergencia)
+        INSERT INTO recargas_combustible (vehiculo_id, conductor_id, fecha, litros, costo, emergencia, capturado_por)
         OUTPUT INSERTED.id
-        VALUES (@vehiculo_id, @conductor_id, @fecha, @litros, @costo, 1)
+        VALUES (@vehiculo_id, @conductor_id, @fecha, @litros, @costo, 1, @capturado_por)
       `)
     const nueva = r.recordset[0].id as number
     await escribirTickets(tx, nueva, [{ litros: data.litros, costo: data.costo }])

@@ -140,8 +140,9 @@ export default function RecargasFlota({
   const [emergencia, setEmergencia] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [busqueda, setBusqueda]   = useState('')
-  // La recarga que se está corrigiendo. Aquí solo el admin corrige: es quien
-  // revisa lo que capturaron las sucursales sin ir vehículo por vehículo.
+  // La recarga que se está corrigiendo. Aquí corrige el admin, que revisa lo que
+  // capturaron las sucursales sin ir vehículo por vehículo, y el practicante
+  // las que él capturó: es desde aquí que las registra.
   const [editing, setEditing]     = useState<RecargaConVehiculo | null>(null)
 
   const { data, isLoading, error } = useRecargasTodas()
@@ -149,7 +150,7 @@ export default function RecargasFlota({
   const emergenciaMut = useCreateRecargaEmergencia()
   const updateMut = useUpdateRecarga()
   // Registrar una recarga de emergencia es solo del admin (la API lo impone).
-  const { esAdmin } = usePermisos()
+  const { esAdmin, esPracticante, puedeCorregirCaptura } = usePermisos()
 
   const items = useMemo(() => data?.data ?? [], [data])
   const rendimientos = useMemo(() => rendimientosPorVehiculo(items), [items])
@@ -282,7 +283,8 @@ export default function RecargasFlota({
                             items={m.items}
                             rendimientos={rendimientos}
                             vehiculo={celdaVehiculo}
-                            onEdit={esAdmin ? abrirEdicion : undefined}
+                            onEdit={esAdmin || esPracticante ? abrirEdicion : undefined}
+                            editable={(r) => esAdmin || (!r.emergencia && puedeCorregirCaptura(r.capturado_por))}
                           />
                         </Accordion.Panel>
                       </Accordion.Item>

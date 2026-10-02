@@ -28,6 +28,8 @@ export interface ValeGasolina {
   id:           number
   folio:        string
   creado_por:   string
+  /** Quién lo capturó; el practicante corrige solo los suyos. Null si no se sabe. */
+  capturado_por: string | null
   conductor_id: number
   vehiculo_id:  number
   /** Dónde se entregó. `null` en los vales de antes de registrarla: ANTIGUO. */

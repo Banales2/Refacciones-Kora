@@ -393,9 +393,9 @@ function ValesTabla({
   onArchivar: (v: ValeGasolina) => void
   onNavigateConductor?: (id: number) => void
 }) {
-  // El vale se captura una vez; corregirlo —y darlo por perdido— es cosa de un
-  // editor.
-  const { puedeEditar } = usePermisos()
+  // El vale se captura una vez; darlo por perdido es cosa de un editor.
+  // Corregirlo también, salvo el practicante con los que él capturó.
+  const { puedeEditar, puedeCorregirCaptura } = usePermisos()
   const restaurarMut = useArchivarVale()
 
   return (
@@ -460,7 +460,7 @@ function ValesTabla({
               </Table.Td>
               <Table.Td>
                 <Group gap={4} justify="flex-end" wrap="nowrap">
-                  {puedeEditar && v.estado !== 'archivado' && (
+                  {puedeCorregirCaptura(v.capturado_por) && v.estado !== 'archivado' && (
                     <ActionIcon variant="subtle" color="blue" size="sm"
                       aria-label="Editar" onClick={() => onEdit(v)}>
                       <IconPencil size={14} />

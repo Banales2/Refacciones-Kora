@@ -21,7 +21,7 @@ export async function recargaEmergenciaCreate(
     await exigirVehiculo(vehiculoId, await alcanceDe(user))
 
     const data = RecargaEmergenciaSchema.parse(await request.json())
-    const created = await service.createEmergencia(vehiculoId, data)
+    const created = await service.createEmergencia(vehiculoId, data, user.userDetails)
 
     await audit({
       user,

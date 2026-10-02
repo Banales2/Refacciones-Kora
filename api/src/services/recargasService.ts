@@ -28,6 +28,12 @@ async function validarVale(
   }
 }
 
+export async function getById(id: number): Promise<RecargaConGasolinera> {
+  const recarga = await repo.findById(id)
+  if (!recarga) throw new NotFoundError('Recarga')
+  return recarga
+}
+
 export async function getAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
   return repo.findAll(alcance)
 }
@@ -41,10 +47,12 @@ export async function getByVehiculo(vehiculoId: number): Promise<RecargaConGasol
 // `avanzarKilometraje` solo sube (una recarga capturada tarde, con un km menor
 // al ya registrado, no hace retroceder el odómetro) e ignora los tipos que no
 // llevan. Al frontend se le avisa antes de guardar: ver ConfirmarAvanceKm.
-export async function create(vehiculoId: number, data: RecargaCreate): Promise<RecargaConGasolinera> {
+export async function create(
+  vehiculoId: number, data: RecargaCreate, capturadoPor: string,
+): Promise<RecargaConGasolinera> {
   if (!(await repo.vehiculoExists(vehiculoId))) throw new NotFoundError('Vehículo')
   await validarVale(data.vale_id, vehiculoId)
-  const recarga = await repo.create(vehiculoId, data)
+  const recarga = await repo.create(vehiculoId, data, capturadoPor)
   if (data.kilometraje > 0) {
     await vehiculosRepo.avanzarKilometraje(vehiculoId, data.kilometraje)
   }
@@ -54,10 +62,10 @@ export async function create(vehiculoId: number, data: RecargaCreate): Promise<R
 // La recarga de emergencia no lleva vale ni avanza el odómetro: no hay
 // kilometraje que tomar.
 export async function createEmergencia(
-  vehiculoId: number, data: RecargaEmergencia
+  vehiculoId: number, data: RecargaEmergencia, capturadoPor: string,
 ): Promise<RecargaConGasolinera> {
   if (!(await repo.vehiculoExists(vehiculoId))) throw new NotFoundError('Vehículo')
-  return repo.createEmergencia(vehiculoId, data)
+  return repo.createEmergencia(vehiculoId, data, capturadoPor)
 }
 
 // `esAdmin`: las de emergencia solo las registra el admin, y corregirlas

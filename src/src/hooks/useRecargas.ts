@@ -34,6 +34,8 @@ export interface Recarga {
   // Folio impreso del vale. Null solo en las recargas que se quedaron sin vale.
   vale_folio:    string | null
   vale_fecha:    string | null
+  // Quién la capturó; el practicante corrige solo las suyas. Null si no se sabe.
+  capturado_por: string | null
   // De 1 a TICKETS_MAX. `litros` y `costo` de arriba son su suma.
   tickets:       TicketRecarga[]
 }
