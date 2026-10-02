@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react'
 import {
   Stack, Group, Text, Table, Loader, Center, Alert, Badge, Button, ActionIcon,
-  Modal, TextInput, Tooltip, SegmentedControl, Grid, Divider, Anchor, Accordion,
+  Modal, TextInput, Tooltip, SegmentedControl, Grid, Divider, Anchor, Accordion, Select,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
@@ -18,7 +18,8 @@ import type {
   Incidencia, IncidenciaConVehiculo, IncidenciaPayload, Severidad,
 } from '../hooks/useIncidencias'
 import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
-import type { TipoVehiculo } from '../hooks/useVehiculos'
+import type { TipoVehiculo, VehiculoRow } from '../hooks/useVehiculos'
+import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal } from '../components/OpcionVehiculo'
 import { useCreateMantenimiento } from '../hooks/useMantenimientos'
 import type { MantenimientoPayload } from '../hooks/useMantenimientos'
 import { useCreateDetallesMtto } from '../hooks/useDetalleMtto'
@@ -30,7 +31,6 @@ import MantenimientoDetalleDrawer from '../components/MantenimientoDetalleDrawer
 import MantenimientoForm from '../components/MantenimientoForm'
 import type { DeshacerAtencion } from './Vehiculos'
 import { SEVERIDAD_META, STATUS_INCIDENCIA_META } from '../lib/incidenciaMeta'
-import SelectCatalogo from '../components/SelectCatalogo'
 import FichaChoferesModal from '../components/FichaChoferesModal'
 
 function fmtFechaHora(fecha: string, hora: string | null) {
@@ -58,8 +58,6 @@ export default function Incidencias({ onNavigateVehiculo }: {
   onNavigateVehiculo?: (vehiculoId: number) => void
 }) {
   const { data, isLoading, isError } = useIncidencias()
-  const vehiculosQuery = useVehiculos()
-  const vehiculosData = vehiculosQuery.data
 
   const [filtro, setFiltro]       = useState<'abiertas' | 'todas'>('abiertas')
   const [busqueda, setBusqueda]   = useState('')
@@ -71,7 +69,17 @@ export default function Incidencias({ onNavigateVehiculo }: {
   const { puedeEditar, puedeReportarIncidencia } = usePermisos()
   // El vehículo se elige al crear; al editar sale de la propia incidencia.
   const [createOpen, setCreateOpen]   = useState(false)
-  const [vehiculoNueva, setVehiculoNueva] = useState<string | null>(null)
+  // La flota puede pasar de los 100 vehículos que devuelve una página, así que
+  // el selector del alta busca contra la API en vez de filtrar una lista
+  // completa (igual que en los vales de gasolina). Del elegido se guarda la
+  // fila entera: la búsqueda activa puede dejar de devolverlo y de él salen el
+  // tipo para el chequeo y los datos con que se arma la incidencia recién creada.
+  const [vehiculoElegido, setVehiculoElegido] = useState<VehiculoRow | null>(null)
+  const [vehiculoSearch, setVehiculoSearch]   = useState('')
+  const [debouncedVehiculo] = useDebouncedValue(vehiculoSearch, 300)
+  const { data: vehData, isLoading: loadingVehiculos } =
+    useVehiculos(1, debouncedVehiculo, undefined, undefined, 20, createOpen)
+  const vehiculoNueva = vehiculoElegido ? String(vehiculoElegido.id) : null
   const [editando, setEditando]       = useState<IncidenciaConVehiculo | null>(null)
   const [formError, setFormError]     = useState<string | null>(null)
   // Incidencia cuya ficha se está viendo, y la que se está atendiendo con un
@@ -127,16 +135,23 @@ export default function Incidencias({ onNavigateVehiculo }: {
   const abiertas = incidencias.filter((i) => i.status === 'activo').length
   const graves   = incidencias.filter((i) => i.status === 'activo' && i.severidad === 'grave').length
 
-  // Con las placas en la etiqueta, que es por donde busca el selector: en el
-  // patio a la unidad se le dice por sus placas más que por su serie.
-  const vehiculoOptions = (vehiculosData?.data ?? []).map((v) => ({
-    value: String(v.id), label: v.placas ? `${vehiculoLabel(v)} · ${v.placas}` : vehiculoLabel(v),
-  }))
+  // El vehículo elegido se conserva en las opciones aunque la búsqueda activa
+  // ya no lo devuelva; si no, el Select se quedaría en blanco.
+  const vehiculoOptions = useMemo(() => {
+    const opts = (vehData?.data ?? []).map(opcionVehiculo)
+    if (vehiculoElegido && !opts.some((o) => o.value === String(vehiculoElegido.id))) {
+      opts.unshift(opcionVehiculo(vehiculoElegido))
+    }
+    return opts
+  }, [vehData, vehiculoElegido])
+
+  function seleccionarVehiculo(id: string | null) {
+    setVehiculoElegido((vehData?.data ?? []).find((v) => String(v.id) === id) ?? null)
+  }
 
   // El tipo de la unidad elegida para el alta: de él dependen las preguntas del
   // chequeo que se pueden ligar, y aquí el vehículo se escoge en el modal.
-  const tipoNueva = (vehiculosData?.data ?? [])
-    .find((v) => String(v.id) === vehiculoNueva)?.tipo
+  const tipoNueva = vehiculoElegido?.tipo
 
   // Marcar una incidencia como atendida obliga a registrar el mantenimiento que
   // la cerró: si no, quedaría cerrada sin nada que explique cómo (y de hecho la
@@ -149,7 +164,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
       onSuccess: ({ data }) => {
         setCreateOpen(false)
         if (payload.status === 'completado') {
-          const v = (vehiculosData?.data ?? []).find((x) => x.id === data.vehiculo_id)
+          const v = vehiculoElegido
           setMantError(null)
           setDeshacer({ tipo: 'revertir', status: 'activo' })
           setAtendiendo({
@@ -161,7 +176,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
             vehiculo_sucursal:    v?.sucursal ?? null,
           })
         }
-        setVehiculoNueva(null)
+        setVehiculoElegido(null)
       },
       onError: (e) => setFormError((e as Error).message),
     })
@@ -367,7 +382,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
           {puedeReportarIncidencia && (
             <Button
               leftSection={<IconPlus size={16} />}
-              onClick={() => { setFormError(null); setVehiculoNueva(null); setCreateOpen(true) }}
+              onClick={() => { setFormError(null); setVehiculoElegido(null); setVehiculoSearch(''); setCreateOpen(true) }}
             >
               Nueva incidencia
             </Button>
@@ -478,14 +493,19 @@ export default function Incidencias({ onNavigateVehiculo }: {
         title="Nueva incidencia" centered size="md"
       >
         <Stack gap="sm">
-          <SelectCatalogo
-            estado={vehiculosQuery}
-            nombre="vehículos"
+          <Select
             label="Vehículo" required
-            placeholder="¿De qué unidad es la incidencia?"
+            placeholder="Busca por marca, modelo, serie o placas"
             data={vehiculoOptions}
+            searchable
+            filter={sinFiltroLocal}
+            renderOption={renderOpcionVehiculo}
+            searchValue={vehiculoSearch}
+            onSearchChange={setVehiculoSearch}
+            rightSection={loadingVehiculos ? <Loader size="xs" /> : undefined}
+            nothingFoundMessage={loadingVehiculos ? 'Buscando…' : 'Sin resultados'}
             value={vehiculoNueva}
-            onChange={setVehiculoNueva}
+            onChange={seleccionarVehiculo}
           />
           {vehiculoNueva ? (
             <IncidenciaForm
