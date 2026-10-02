@@ -6,7 +6,7 @@ import * as service from '../services/vehiculosService'
 
 export async function vehiculosGet(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'practicante', 'responsable')
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
     const vehiculo = await service.getById(id, await alcanceDe(user))

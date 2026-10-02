@@ -7,7 +7,7 @@ import * as service from '../services/chequeosService'
 // El historial de chequeos de una unidad, para su ficha.
 export async function chequeosVehiculoList(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
-    const user = requireRole(req, 'admin', 'editor', 'lector', 'responsable')
+    const user = requireRole(req, 'admin', 'editor', 'lector', 'practicante', 'responsable')
     const vehiculoId = parseInt(req.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     await exigirVehiculo(vehiculoId, await alcanceDe(user))

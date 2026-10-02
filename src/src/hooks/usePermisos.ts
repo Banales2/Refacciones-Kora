@@ -25,9 +25,12 @@ export type Seccion =
 // pero no decide qué hacer con el reporte de un chofer (ver
 // `puedeCapturarChequeo` y `puedeRevisarChequeo`). Las incidencias,
 // igual: las lee, no las reporta ni las atiende (ver `puedeReportarIncidencia`).
+// Vehículos, solo para consultar: la ficha como la ve el responsable —datos,
+// chequeos, incidencias y recargas— sin lo de mantenimiento ni los botones de
+// alta y edición (ver `puedeVerMantenimiento` y `puedeEditar`).
 const SECCIONES_PRACTICANTE: readonly Seccion[] = [
   'piezas', 'modelos', 'sitios', 'vales', 'facturas', 'facturas-gasolina', 'chequeos',
-  'incidencias',
+  'incidencias', 'vehiculos',
 ]
 
 // El responsable de sucursal: la flota de su sucursal y la de translado, el
@@ -78,7 +81,8 @@ export interface Permisos {
   puedeDarDeAlta: boolean
   /**
    * Si ve lo que es de mantenimiento en la ficha de una unidad: servicios,
-   * programa, garantías y refacciones montadas.
+   * programa, garantías y refacciones montadas. Ni el responsable ni el
+   * practicante: sus endpoints no los admiten, y las consultas ni se lanzan.
    */
   puedeVerMantenimiento: boolean
   /**
@@ -161,7 +165,7 @@ export function usePermisos(): Permisos {
     },
     puedeEditar: !esPracticante && !esResponsable,
     puedeDarDeAlta: !esResponsable,
-    puedeVerMantenimiento: !esResponsable,
+    puedeVerMantenimiento: !esResponsable && !esPracticante,
     puedeVerCompras: !esResponsable,
     puedeTraspasar: !esPracticante,
     puedeCapturarChequeo: rol !== 'lector',

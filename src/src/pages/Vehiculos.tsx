@@ -194,7 +194,7 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
   const piezasMut = useCreateDetallesMtto()
   // El responsable reporta pero no edita ni atiende: atender es registrar el
   // mantenimiento, que no es suyo.
-  const { puedeEditar } = usePermisos()
+  const { puedeEditar, puedeReportarIncidencia } = usePermisos()
 
   const [formOpen, setFormOpen]   = useState(false)
   const [editing, setEditing]     = useState<Incidencia | null>(null)
@@ -337,11 +337,14 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
         label={
           <Group gap="xs">
             <Text size="sm" fw={500}>Incidencias ({abiertas} sin atender)</Text>
-            <Tooltip label="Reportar incidencia">
-              <ActionIcon variant="light" color="blue" size="xs" onClick={openCreate}>
-                <IconPlus size={12} />
-              </ActionIcon>
-            </Tooltip>
+            {/* El practicante y el lector solo consultan: la API no les deja reportar. */}
+            {puedeReportarIncidencia && (
+              <Tooltip label="Reportar incidencia">
+                <ActionIcon variant="light" color="blue" size="xs" onClick={openCreate}>
+                  <IconPlus size={12} />
+                </ActionIcon>
+              </Tooltip>
+            )}
           </Group>
         }
         labelPosition="left"
@@ -353,9 +356,11 @@ function IncidenciasSection({ vehiculoId, tipoVehiculo }: { vehiculoId: number; 
         <Center py="md">
           <Stack align="center" gap="xs">
             <Text c="dimmed" size="sm">No hay incidencias reportadas para este vehículo.</Text>
-            <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={openCreate}>
-              Reportar incidencia
-            </Button>
+            {puedeReportarIncidencia && (
+              <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={openCreate}>
+                Reportar incidencia
+              </Button>
+            )}
           </Stack>
         </Center>
       ) : (
