@@ -70,6 +70,9 @@ export interface DesgasteMedido {
 export interface ChequeoConVehiculo extends Chequeo {
   vehiculo_nombre: string
   vehiculo_tipo:   string
+  /** Solo en el listado por rango (`useChequeosRango`). */
+  vehiculo_placas?:   string | null
+  vehiculo_sucursal?: string | null
 }
 
 export interface ItemPayload {

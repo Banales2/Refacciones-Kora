@@ -31,6 +31,7 @@ export interface RecargaConGasolinera {
   // Correo de quien la capturó: decide si el practicante la puede corregir.
   // Null si no se sabe (migración 062).
   capturado_por: string | null
+  capturado_por_nombre: string | null
   // `litros` y `costo` de arriba son la suma de estos.
   tickets:       Ticket[]
 }
@@ -41,6 +42,7 @@ export interface RecargaConGasolinera {
 const SELECT_RECARGA = `
   SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.vale_id, r.fecha,
          r.litros, r.costo, r.kilometraje, r.emergencia, r.capturado_por,
+         cap.nombre AS capturado_por_nombre,
          g.nombre AS gasolinera, g.ubicacion,
          c.nombre AS conductor,
          vg.folio AS vale_folio,
@@ -49,6 +51,13 @@ const SELECT_RECARGA = `
   LEFT JOIN gasolineras g  ON g.id = r.gasolinera_id
   JOIN conductores c       ON c.id = r.conductor_id
   LEFT JOIN vales_gasolina vg ON vg.id = r.vale_id
+  -- El nombre de quien la capturó, para el seguimiento. APPLY y no JOIN: nada
+  -- garantiza que el correo no se repita en usuarios, y un JOIN duplicaría
+  -- la recarga.
+  OUTER APPLY (
+    SELECT TOP 1 NULLIF(LTRIM(RTRIM(u.nombre)), '') AS nombre
+    FROM usuarios u WHERE LTRIM(RTRIM(u.email)) = r.capturado_por
+  ) cap
 `
 
 // Los tickets van en una segunda consulta y no en un JOIN: con JOIN la recarga
@@ -103,6 +112,7 @@ export async function findAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
       SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.vale_id,
              CONVERT(char(10), r.fecha, 23) AS fecha,
              r.litros, r.costo, r.kilometraje, r.emergencia, r.capturado_por,
+             cap.nombre AS capturado_por_nombre,
              g.nombre AS gasolinera, g.ubicacion,
              c.nombre AS conductor,
              vg.folio AS vale_folio,
@@ -114,6 +124,10 @@ export async function findAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
       JOIN vehiculos   v       ON v.id = r.vehiculo_id
       JOIN modelos     m       ON m.id = v.modelo_id
       LEFT JOIN vales_gasolina vg ON vg.id = r.vale_id
+      OUTER APPLY (
+        SELECT TOP 1 NULLIF(LTRIM(RTRIM(u.nombre)), '') AS nombre
+        FROM usuarios u WHERE LTRIM(RTRIM(u.email)) = r.capturado_por
+      ) cap
       WHERE ${vehiculoEnAlcance('r.vehiculo_id')}
       ORDER BY r.fecha DESC, r.id DESC`)
   return conTickets<RecargaConVehiculo>(r.recordset)

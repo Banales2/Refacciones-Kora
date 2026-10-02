@@ -483,7 +483,18 @@ export function RecargasTabla<T extends Recarga>({
           const rendimiento = rendimientos.get(r.id) ?? null
           return (
             <Table.Tr key={r.id}>
-              <Table.Td>{formatDiaMes(r.fecha)}</Table.Td>
+              <Table.Td>
+                {formatDiaMes(r.fecha)}
+                {/* Quién la registró, para el seguimiento. Discreto: es dato de
+                    consulta, no algo que se lea en cada renglón. */}
+                {r.capturado_por && (
+                  <Tooltip label={`Registró: ${r.capturado_por}`}>
+                    <Text size="xs" c="dimmed" truncate maw={110}>
+                      {r.capturado_por_nombre ?? r.capturado_por.split('@')[0]}
+                    </Text>
+                  </Tooltip>
+                )}
+              </Table.Td>
               {vehiculo && <Table.Td>{vehiculo(r)}</Table.Td>}
               <Table.Td>
                 {r.emergencia ? (

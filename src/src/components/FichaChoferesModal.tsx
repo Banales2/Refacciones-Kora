@@ -1,13 +1,25 @@
-// Elegir de qué sucursal se imprime la ficha de los choferes: lo que cada
-// unidad trae abierto y el chofer puede resolver, una hoja por unidad. Ver
+// Elegir de qué sucursal se imprime la ficha de los choferes: una hoja por
+// unidad con lo que le toca resolver al chofer y lo que solo se le avisa. Ver
 // `lib/reportes/fichaChofer.ts` para qué entra y por qué.
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Modal, Stack, Select, Text, Alert, Group, Button } from '@mantine/core'
 import { IconPrinter } from '@tabler/icons-react'
 import type { IncidenciaConVehiculo } from '../hooks/useIncidencias'
-import { SIN_SUCURSAL, exportFichaChoferPdf, incidenciasParaFicha } from '../lib/reportes/fichaChofer'
+import { useChequeosRango } from '../hooks/useChequeos'
+import {
+  DIAS_COMBUSTIBLE, SIN_SUCURSAL, combustibleBajo, exportFichaChoferPdf,
+  incidenciasParaFicha, ordenarSucursales, unidadesPorSucursal,
+} from '../lib/reportes/fichaChofer'
+import { hoyISO } from '../lib/reportes/pdfDoc'
 
 const TODAS = '__todas__'
+
+// Hace `dias` días, en la fecha local (no UTC: recorrería el día en la tarde).
+function haceDias(dias: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - dias)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 export default function FichaChoferesModal({ incidencias, onClose }: {
   incidencias: IncidenciaConVehiculo[]
@@ -17,23 +29,25 @@ export default function FichaChoferesModal({ incidencias, onClose }: {
   const [generando, setGenerando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const superficiales = incidenciasParaFicha(incidencias)
+  // De aquí sale cómo venía el tanque: el combustible no abre incidencia.
+  const [desde] = useState(() => haceDias(DIAS_COMBUSTIBLE))
+  const chequeosQuery = useChequeosRango({ desde, hasta: hoyISO() })
+  const combustibles = useMemo(
+    () => combustibleBajo(chequeosQuery.data?.data ?? []),
+    [chequeosQuery.data],
+  )
+
+  const abiertas = incidenciasParaFicha(incidencias)
   const nombreSuc = (i: IncidenciaConVehiculo) => i.vehiculo_sucursal ?? SIN_SUCURSAL
 
   // Cuántas unidades entran por sucursal, para que la lista diga qué hay antes
   // de generar nada.
-  const unidadesPorSuc = new Map<string, Set<number>>()
-  for (const i of superficiales) {
-    const set = unidadesPorSuc.get(nombreSuc(i)) ?? new Set<number>()
-    set.add(i.vehiculo_id)
-    unidadesPorSuc.set(nombreSuc(i), set)
-  }
-  const total = new Set(superficiales.map((i) => i.vehiculo_id)).size
+  const porSuc = unidadesPorSucursal(incidencias, combustibles)
+  const total = new Set([...porSuc.values()].flatMap((s) => [...s])).size
   const opciones = [
     { value: TODAS, label: `Todas las sucursales (${total} unidades)` },
-    ...[...unidadesPorSuc.entries()]
-      .sort(([a], [b]) =>
-        a === SIN_SUCURSAL ? 1 : b === SIN_SUCURSAL ? -1 : a.localeCompare(b, 'es-MX'))
+    ...[...porSuc.entries()]
+      .sort(([a], [b]) => ordenarSucursales(a, b))
       .map(([s, set]) => ({ value: s, label: `${s} (${set.size} unidad${set.size !== 1 ? 'es' : ''})` })),
   ]
 
@@ -41,10 +55,12 @@ export default function FichaChoferesModal({ incidencias, onClose }: {
     setGenerando(true)
     setError(null)
     try {
-      const elegidas = sucursal === TODAS
-        ? superficiales
-        : superficiales.filter((i) => nombreSuc(i) === sucursal)
-      await exportFichaChoferPdf(elegidas, sucursal === TODAS ? 'Todas las sucursales' : sucursal)
+      const todas = sucursal === TODAS
+      await exportFichaChoferPdf(
+        todas ? abiertas : abiertas.filter((i) => nombreSuc(i) === sucursal),
+        todas ? combustibles : combustibles.filter((c) => c.sucursal === sucursal),
+        todas ? 'Todas las sucursales' : sucursal,
+      )
       onClose()
     } catch (e) {
       setError((e as Error).message || 'No se pudo generar el PDF.')
@@ -57,15 +73,25 @@ export default function FichaChoferesModal({ incidencias, onClose }: {
     <Modal opened onClose={onClose} title="Ficha para choferes" centered size="md">
       <Stack gap="sm">
         <Text size="sm" c="dimmed">
-          Lo que cada unidad trae abierto y el chofer puede resolver sin taller ni refacción:
-          extintor, llanta de refacción, herramienta, papeles a bordo, basura y líquido
-          limpiaparabrisas. Lo que necesita taller —un espejo, un parabrisas— no entra. Una hoja
-          por unidad, agrupadas por sucursal; las unidades sin base fija van al final.
+          Una hoja por unidad, agrupadas por sucursal. Arriba, con casilla, lo que el chofer
+          resuelve sin taller: niveles de aceite, frenos, anticongelante, dirección y
+          limpiaparabrisas, cargar combustible si trae un cuarto o menos, papeles, extintor,
+          herramienta y basura. Abajo, para que esté enterado, todo lo demás que la unidad
+          tiene abierto —llantas, luces, golpes— aunque lo atienda el taller.
         </Text>
 
-        {total === 0 ? (
+        {/* Sin los chequeos la ficha sale igual, solo que sin el aviso de
+            combustible: no tiene caso detener lo demás por eso. */}
+        {chequeosQuery.isError && (
+          <Alert color="yellow" variant="light">
+            No se pudieron consultar los chequeos recientes: la ficha saldrá sin el aviso de
+            combustible bajo.
+          </Alert>
+        )}
+
+        {total === 0 && !chequeosQuery.isLoading ? (
           <Alert color="green" variant="light">
-            No hay incidencias abiertas que pueda resolver el chofer.
+            Ninguna unidad trae incidencias abiertas ni el tanque bajo.
           </Alert>
         ) : (
           <Select
@@ -83,7 +109,9 @@ export default function FichaChoferesModal({ incidencias, onClose }: {
           <Button variant="default" onClick={onClose} disabled={generando}>Cancelar</Button>
           <Button
             leftSection={<IconPrinter size={16} />}
-            loading={generando}
+            // Mientras llegan los chequeos se espera: generar antes dejaría
+            // fuera el combustible sin avisar.
+            loading={generando || chequeosQuery.isLoading}
             disabled={total === 0}
             onClick={generar}
           >

@@ -424,7 +424,7 @@ export default function Incidencias({ onNavigateVehiculo }: {
               onChange={(e) => { setBusqueda(e.currentTarget.value); setSecciones(undefined) }}
               w={320}
             />
-            {/* Lo superficial, una hoja por unidad, para que lo resuelva el chofer. */}
+            {/* Una hoja por unidad: lo que resuelve el chofer y lo que se le avisa. */}
             <Button
               variant="light" leftSection={<IconPrinter size={16} />}
               onClick={() => setFichaOpen(true)}

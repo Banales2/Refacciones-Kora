@@ -36,6 +36,8 @@ export interface Recarga {
   vale_fecha:    string | null
   // Quién la capturó; el practicante corrige solo las suyas. Null si no se sabe.
   capturado_por: string | null
+  // Su nombre en `usuarios`; null si no tiene o no se sabe quién fue.
+  capturado_por_nombre: string | null
   // De 1 a TICKETS_MAX. `litros` y `costo` de arriba son su suma.
   tickets:       TicketRecarga[]
 }

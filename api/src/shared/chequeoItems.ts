@@ -190,12 +190,19 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
   // gravedad no es la misma en todos —quedarse sin líquido de frenos no es
   // quedarse sin limpiaparabrisas— y va de antemano, porque a quien revisa no
   // se le puede pedir que además gradúe.
+  //
+  // Todos llevan `cierreAutomatico`: rellenarlos es trabajo del chofer, sin
+  // taller ni refacción, y por eso salen en su ficha (`fichaChofer.ts`). El
+  // siguiente chequeo que los encuentre arriba del cuarto cierra la incidencia
+  // con un mantenimiento básico. Que el aceite bajo siga siendo grave es otra
+  // cosa: dice qué tan urgente es, no quién lo atiende.
   {
     clave: 'nivel_aceite_motor',
     label: 'Aceite de motor',
     captura: 'fraccion',
     tipos: TIPOS_CON_MOTOR,
     incidencia: { severidad: 'grave', categoria: 'Niveles', nombre: 'Aceite de motor bajo' },
+    cierreAutomatico: true,
     umbralFalla: '1/4',
   },
   {
@@ -204,6 +211,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'fraccion',
     tipos: TIPOS_CON_MOTOR,
     incidencia: { severidad: 'moderada', categoria: 'Niveles', nombre: 'Líquido de dirección bajo' },
+    cierreAutomatico: true,
     umbralFalla: '1/4',
   },
   {
@@ -212,6 +220,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'fraccion',
     tipos: TIPOS_CON_MOTOR,
     incidencia: { severidad: 'grave', categoria: 'Niveles', nombre: 'Líquido de frenos bajo' },
+    cierreAutomatico: true,
     umbralFalla: '1/4',
   },
   {
@@ -220,6 +229,7 @@ export const ITEMS_CHEQUEO: ItemChequeo[] = [
     captura: 'fraccion',
     tipos: TIPOS_CON_MOTOR,
     incidencia: { severidad: 'grave', categoria: 'Niveles', nombre: 'Anticongelante bajo' },
+    cierreAutomatico: true,
     umbralFalla: '1/4',
   },
   {

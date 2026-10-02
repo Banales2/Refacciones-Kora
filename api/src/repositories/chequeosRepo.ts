@@ -104,6 +104,12 @@ export interface Chequeo {
 export interface ChequeoConVehiculo extends Chequeo {
   vehiculo_nombre: string
   vehiculo_tipo:   string
+  // Solo en el listado por rango: la ficha de choferes agrupa por sucursal
+  // también las unidades que solo traen el tanque bajo, sin incidencia que
+  // diga de dónde son. Mismo cruce que las incidencias, para que la sucursal
+  // se llame igual en las dos.
+  vehiculo_placas?:   string | null
+  vehiculo_sucursal?: string | null
 }
 
 export interface ChequeoCabecera {
@@ -390,11 +396,15 @@ export async function findRango(params: {
            ch.declaracion_pendiente_id,
            ch.created_at, ch.updated_at,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo_nombre,
-           v.tipo AS vehiculo_tipo
+           v.tipo AS vehiculo_tipo,
+           v.placas AS vehiculo_placas, s.nombre AS vehiculo_sucursal
     FROM chequeos ch
     LEFT JOIN conductores co ON co.id = ch.conductor_id
     JOIN vehiculos v  ON v.id = ch.vehiculo_id
     JOIN modelos   mo ON mo.id = v.modelo_id
+    LEFT JOIN camiones    c  ON c.vehiculo_id  = v.id
+    LEFT JOIN montacargas mc ON mc.vehiculo_id = v.id
+    LEFT JOIN sucursales  s  ON s.id = COALESCE(c.sucursal_id, mc.sucursal_id)
     WHERE ${filtro}
     ORDER BY ch.fecha DESC, ch.id DESC
   `)
