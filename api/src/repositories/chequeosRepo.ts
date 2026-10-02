@@ -662,12 +662,15 @@ export async function fallasArrastradas(
  * abiertas por la misma pregunta, la que importa es la que lleva más tiempo sin
  * atenderse.
  */
+// `detectadaAntesDe`: solo las que se detectaron antes de ese día. Es lo que
+// pide el cierre automático; engancharse a una abierta no lo necesita.
 async function incidenciaAbiertaDe(
-  tx: sql.Transaction, vehiculoId: number, clave: string
+  tx: sql.Transaction, vehiculoId: number, clave: string, detectadaAntesDe?: string
 ): Promise<{ id: number; fecha: string; nombre: string } | null> {
   const r = await tx.request()
     .input('vid',   sql.Int,         vehiculoId)
     .input('clave', sql.VarChar(30), clave)
+    .input('antes', sql.Date,        detectadaAntesDe ?? null)
     .query(`
       SELECT TOP 1 p.id, inc.fecha, p.nombre
       FROM pendientes p
@@ -676,6 +679,7 @@ async function incidenciaAbiertaDe(
         AND inc.clave_chequeo = @clave
         AND p.origen = 'incidencia'
         AND p.status = 'activo'
+        AND (@antes IS NULL OR inc.fecha < @antes)
       ORDER BY inc.fecha ASC, p.id ASC
     `)
   const fila = r.recordset[0]
@@ -694,8 +698,15 @@ async function insertarItems(
     // bien y su incidencia sigue abierta: alguien lo arregló y nadie lo
     // capturó. Se cierra con un mantenimiento básico en vez de pedírselo a
     // alguien, que es lo que dejaba esas incidencias abiertas para siempre.
+    //
+    // Solo si se detectó ANTES del día de este chequeo. Un chequeo puede
+    // llevar fecha vieja —el de ayer que se quedó en papel, o uno que se
+    // corrige días después— y su "estaba bien" no dice nada de una falla que
+    // apareció después: cerrarla sería darla por resuelta sin que nadie la
+    // viera resuelta. El mismo día tampoco, porque sin hora no se sabe qué fue
+    // primero; se queda para el chequeo de mañana.
     if (item.resultado === 'ok' && item.cierreAutomatico) {
-      const abierta = await incidenciaAbiertaDe(tx, vehiculoId, item.clave)
+      const abierta = await incidenciaAbiertaDe(tx, vehiculoId, item.clave, cabecera.fecha)
       if (abierta) resueltas.push(abierta)
     }
 
