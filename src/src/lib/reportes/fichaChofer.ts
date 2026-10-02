@@ -180,6 +180,16 @@ function agrupar(
 }
 
 /**
+ * El título de cada parte de la hoja. `subseccion` deja solo 2 mm abajo —está
+ * pensada para ir pegada a una tabla— y aquí lo que sigue es un párrafo, que
+ * se encimaba con el título. Se deja el espacio de una línea.
+ */
+function tituloDeParte(pdf: Awaited<ReturnType<typeof crearReportePdf>>, texto: string) {
+  pdf.subseccion(texto)
+  pdf.espacio(5)
+}
+
+/**
  * Genera el PDF. `incidencias` y `combustibles` ya vienen filtrados a lo que se
  * quiere imprimir (una sucursal o todas).
  */
@@ -236,7 +246,7 @@ export async function exportFichaChoferPdf(
         ])
       }
 
-      pdf.subseccion('Lo que te toca resolver')
+      tituloDeParte(pdf, 'Lo que te toca resolver')
       if (tareas.length) {
         pdf.parrafo(
           'Estos puntos los puedes resolver tú, sin taller: rellenar niveles, cargar combustible, ' +
@@ -264,7 +274,7 @@ export async function exportFichaChoferPdf(
       // ── Lo que solo se le avisa ──
       if (h.avisos.length) {
         pdf.espacio(4)
-        pdf.subseccion('Para que estés enterado')
+        tituloDeParte(pdf, 'Para que estés enterado')
         pdf.parrafo(
           'Esto lo atiende el taller y no tienes que resolverlo, pero es tu unidad: tenlo en ' +
           'cuenta al manejarla. Si empeora o notas algo nuevo, avísale a tu supervisor.',
