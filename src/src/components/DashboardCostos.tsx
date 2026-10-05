@@ -20,6 +20,7 @@ import {
 import { StatCard } from './StatCard'
 import { formatMXN, formatMXNCorto, formatMes, formatNum, formatLitros, formatFecha } from '../lib/formato'
 import { TIPO_LABELS } from '../lib/tipoVehiculo'
+import { SIN_PRODUCTO } from '../lib/combustible'
 
 // ─── Piezas de presentación ─────────────────────────────────────────────────
 
@@ -164,7 +165,7 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
 
   const gasolinerasChart = data.gasolineras
     .filter((g) => g.precio_litro != null)
-    .map((g) => ({ gasolinera: g.gasolinera, precio: g.precio_litro! }))
+    .map((g) => ({ gasolinera: `${g.gasolinera} · ${g.producto}`, precio: g.precio_litro! }))
 
   // Solo las unidades con suficientes cargas para que el km/L signifique algo;
   // el backend ya deja en null las que no llegan, aquí solo se filtran.
@@ -173,6 +174,11 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
     .sort((a, b) => (a.desviacion_pct ?? 0) - (b.desviacion_pct ?? 0))
 
   const retrabajoTotal = data.retrabajos.reduce((s, r) => s + r.costo, 0)
+
+  const preciosProducto = data.precios_litro
+    .filter((p) => p.precio_litro != null)
+    .map((p) => `${p.producto} $${p.precio_litro!.toFixed(2)}`)
+    .join(' · ')
 
   return (
     <>
@@ -214,9 +220,9 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
         <StatCard
           label="Precio por litro"
           value={t.precio_litro != null ? `$${t.precio_litro.toFixed(2)}` : '—'}
-          sub="Promedio ponderado del periodo"
+          sub={preciosProducto || 'Promedio ponderado del periodo'}
           color="cyan" icon={IconGasStation}
-          ayuda="Lo pagado entre los litros cargados. Ponderado: una carga grande pesa más que una chica."
+          ayuda="Lo pagado entre los litros cargados, de todos los combustibles juntos y ponderado: una carga grande pesa más que una chica. Abajo, el de cada combustible, que es el que sirve para comparar: el Premium siempre cuesta más que la Magna."
         />
         <StatCard
           label="Salida de caja"
@@ -318,7 +324,7 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
       {/* ── Gasolineras ── */}
       <Seccion
         titulo="Precio por litro por gasolinera"
-        descripcion="Lo que costó el litro en cada una durante el periodo. El sobreprecio es lo que se pagó de más contra la más barata de las que ya se visitan con regularidad — un ahorro que solo requiere cambiar a dónde se manda a cargar."
+        descripcion="Lo que costó el litro en cada una durante el periodo, por combustible. El sobreprecio es lo que se pagó de más contra la más barata de las que ya se visitan con regularidad, en el mismo combustible — un ahorro que solo requiere cambiar a dónde se manda a cargar. Las cargas sin combustible especificado no se comparan."
         accion={t.ahorro_combustible > 0 && (
           <Badge color="teal" variant="light" size="lg">{formatMXN(t.ahorro_combustible)}</Badge>
         )}
@@ -342,6 +348,7 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Gasolinera</Table.Th>
+                    <Table.Th>Combustible</Table.Th>
                     <Table.Th style={{ textAlign: 'center' }}>Cargas</Table.Th>
                     <Table.Th style={{ textAlign: 'right' }}>Litros</Table.Th>
                     <Table.Th style={{ textAlign: 'right' }}>Gasto</Table.Th>
@@ -351,8 +358,9 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
                 </Table.Thead>
                 <Table.Tbody>
                   {data.gasolineras.map((g) => (
-                    <Table.Tr key={g.gasolinera_id}>
+                    <Table.Tr key={`${g.gasolinera_id}-${g.producto}`}>
                       <Table.Td fw={500}>{g.gasolinera}</Table.Td>
+                      <Table.Td>{g.producto}</Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>{g.recargas}</Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>{formatLitros(g.litros)}</Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>{formatMXN(g.costo)}</Table.Td>
@@ -362,7 +370,10 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
                       <Table.Td style={{ textAlign: 'right' }}>
                         {g.sobreprecio > 0
                           ? <Text size="sm" c="orange" fw={600}>{formatMXN(g.sobreprecio)}</Text>
-                          : <Badge size="sm" variant="light" color="teal">La más barata</Badge>}
+                          // Sin combustible especificado no se comparó con nadie.
+                          : g.producto === SIN_PRODUCTO
+                            ? <Guion />
+                            : <Badge size="sm" variant="light" color="teal">La más barata</Badge>}
                       </Table.Td>
                     </Table.Tr>
                   ))}

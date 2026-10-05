@@ -2,6 +2,7 @@
 // el conductor, la fecha, los litros cargados y lo que costó.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { Gasolina } from '../lib/combustible'
 
 // Los trailers tienen varios tanques y la bomba imprime un ticket por tanque;
 // la gasolinera los factura por separado. El vale sigue siendo uno.
@@ -28,6 +29,11 @@ export interface Recarga {
   // La carga que el chofer hizo de su bolsa porque no le alcanzaba para ir por
   // el vale: sin gasolinera, sin vale y sin kilometraje. Solo la registra el admin.
   emergencia:    boolean
+  // Diesel, Magna o Premium. Null = no se sabe: las de gasolina de antes de
+  // que se preguntara, y las de gas.
+  producto:      'Diesel' | Gasolina | null
+  // El combustible de la unidad hoy: decide si el formulario pregunta.
+  vehiculo_combustible: string | null
   gasolinera:    string | null
   ubicacion:     string | null
   conductor:     string
@@ -51,6 +57,8 @@ export interface RecargaPayload {
   // que conservarlo.
   tickets:       { id?: number; litros: number; costo: number }[]
   kilometraje:   number
+  // Solo en las unidades de gasolina; en las de Diesel lo pone la API.
+  producto?:     Gasolina
 }
 
 export interface RecargaEmergenciaPayload {
@@ -58,6 +66,7 @@ export interface RecargaEmergenciaPayload {
   fecha:        string
   litros:       number
   costo:        number
+  producto?:    Gasolina
 }
 
 /** Renglón del listado de toda la flota: trae además el vehículo recargado. */

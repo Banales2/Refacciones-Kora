@@ -3,6 +3,8 @@ import { getPool } from '../shared/db'
 import { SQL_KM } from '../shared/km'
 import { RecargaCreate, RecargaEmergencia, RecargaUpdate, TicketRecarga } from '../schemas/recargaSchema'
 import { Alcance, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
+import type { ProductoRecarga } from '../shared/combustible'
+import { combustibleDe } from './vehiculosSql'
 
 /** Un ticket de la bomba. Los trailers traen uno por tanque (migración 059). */
 export interface Ticket {
@@ -23,6 +25,13 @@ export interface RecargaConGasolinera {
   litros:        number
   costo:         number
   kilometraje:   number | null
+  /** Diesel, Magna o Premium. Null = no se sabe (migración 063). */
+  producto:      ProductoRecarga | null
+  /**
+   * El combustible del vehículo, hoy. Con él decide el formulario si pregunta
+   * Magna o Premium al corregir la recarga.
+   */
+  vehiculo_combustible: string | null
   gasolinera:    string | null
   ubicacion:     string | null
   conductor:     string
@@ -42,6 +51,7 @@ export interface RecargaConGasolinera {
 const SELECT_RECARGA = `
   SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.vale_id, r.fecha,
          r.litros, r.costo, r.kilometraje, r.emergencia, r.capturado_por,
+         r.producto, ${combustibleDe('r.vehiculo_id')} AS vehiculo_combustible,
          cap.nombre AS capturado_por_nombre,
          g.nombre AS gasolinera, g.ubicacion,
          c.nombre AS conductor,
@@ -112,6 +122,7 @@ export async function findAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
       SELECT r.id, r.vehiculo_id, r.gasolinera_id, r.conductor_id, r.vale_id,
              CONVERT(char(10), r.fecha, 23) AS fecha,
              r.litros, r.costo, r.kilometraje, r.emergencia, r.capturado_por,
+             r.producto, ${combustibleDe('r.vehiculo_id')} AS vehiculo_combustible,
              cap.nombre AS capturado_por_nombre,
              g.nombre AS gasolinera, g.ubicacion,
              c.nombre AS conductor,
@@ -230,7 +241,7 @@ function sumar(tickets: { litros: number; costo: number }[]) {
 }
 
 export async function create(
-  vehiculoId: number, data: RecargaCreate, capturadoPor: string,
+  vehiculoId: number, data: RecargaCreate, producto: ProductoRecarga | null, capturadoPor: string,
 ): Promise<RecargaConGasolinera> {
   const suma = sumar(data.tickets)
   const id = await enTransaccion(async (tx) => {
@@ -243,11 +254,12 @@ export async function create(
       .input('litros',        sql.Decimal(10, 3), suma.litros)
       .input('costo',         sql.Decimal(18, 2), suma.costo)
       .input('kilometraje',   SQL_KM, data.kilometraje)
+      .input('producto',      sql.NVarChar(10), producto)
       .input('capturado_por', sql.NVarChar(120), capturadoPor)
       .query(`
-        INSERT INTO recargas_combustible (vehiculo_id, gasolinera_id, conductor_id, vale_id, fecha, litros, costo, kilometraje, capturado_por)
+        INSERT INTO recargas_combustible (vehiculo_id, gasolinera_id, conductor_id, vale_id, fecha, litros, costo, kilometraje, producto, capturado_por)
         OUTPUT INSERTED.id
-        VALUES (@vehiculo_id, @gasolinera_id, @conductor_id, @vale_id, @fecha, @litros, @costo, @kilometraje, @capturado_por)
+        VALUES (@vehiculo_id, @gasolinera_id, @conductor_id, @vale_id, @fecha, @litros, @costo, @kilometraje, @producto, @capturado_por)
       `)
     const nueva = r.recordset[0].id as number
     // Sin ids: al registrar todos son nuevos, diga lo que diga el cuerpo.
@@ -261,7 +273,7 @@ export async function create(
 // acepta en una recarga marcada como emergencia. El kilometraje queda NULL:
 // nadie lo leyó.
 export async function createEmergencia(
-  vehiculoId: number, data: RecargaEmergencia, capturadoPor: string,
+  vehiculoId: number, data: RecargaEmergencia, producto: ProductoRecarga | null, capturadoPor: string,
 ): Promise<RecargaConGasolinera> {
   const id = await enTransaccion(async (tx) => {
     const r = await tx.request()
@@ -270,11 +282,12 @@ export async function createEmergencia(
       .input('fecha',        sql.Date, data.fecha)
       .input('litros',       sql.Decimal(10, 3), data.litros)
       .input('costo',        sql.Decimal(18, 2), data.costo)
+      .input('producto',     sql.NVarChar(10), producto)
       .input('capturado_por', sql.NVarChar(120), capturadoPor)
       .query(`
-        INSERT INTO recargas_combustible (vehiculo_id, conductor_id, fecha, litros, costo, emergencia, capturado_por)
+        INSERT INTO recargas_combustible (vehiculo_id, conductor_id, fecha, litros, costo, emergencia, producto, capturado_por)
         OUTPUT INSERTED.id
-        VALUES (@vehiculo_id, @conductor_id, @fecha, @litros, @costo, 1, @capturado_por)
+        VALUES (@vehiculo_id, @conductor_id, @fecha, @litros, @costo, 1, @producto, @capturado_por)
       `)
     const nueva = r.recordset[0].id as number
     await escribirTickets(tx, nueva, [{ litros: data.litros, costo: data.costo }])
@@ -287,7 +300,10 @@ export async function createEmergencia(
  * Lo que se puede cambiar de una recarga. Los tickets ya vienen resueltos por
  * el servicio: un `litros`/`costo` suelto ya se volvió el ticket que corrige.
  */
-export type CambiosRecarga = Omit<RecargaUpdate, 'litros' | 'costo'>
+export type CambiosRecarga = Omit<RecargaUpdate, 'litros' | 'costo' | 'producto'> & {
+  /** Ya resuelto contra el combustible del vehículo. */
+  producto?: ProductoRecarga | null
+}
 
 export async function update(id: number, data: CambiosRecarga): Promise<RecargaConGasolinera | null> {
   await enTransaccion(async (tx) => {
@@ -313,6 +329,10 @@ export async function update(id: number, data: CambiosRecarga): Promise<RecargaC
     if (data.kilometraje !== undefined) {
       req.input('kilometraje', SQL_KM, data.kilometraje)
       sets.push('kilometraje = @kilometraje')
+    }
+    if (data.producto !== undefined) {
+      req.input('producto', sql.NVarChar(10), data.producto)
+      sets.push('producto = @producto')
     }
 
     if (sets.length) {
@@ -360,12 +380,16 @@ export async function valeVehiculo(id: number): Promise<number | null> {
   return r.recordset[0]?.vehiculo_id ?? null
 }
 
-export async function vehiculoExists(id: number): Promise<boolean> {
+/**
+ * El combustible del vehículo, o `undefined` si el vehículo no existe (null es
+ * que existe pero no tiene, como las cajas de trailer).
+ */
+export async function combustibleDelVehiculo(id: number): Promise<string | null | undefined> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, id)
-    .query('SELECT 1 AS ok FROM vehiculos WHERE id = @id')
-  return r.recordset.length > 0
+    .query(`SELECT ${combustibleDe('@id')} AS combustible FROM vehiculos WHERE id = @id`)
+  return r.recordset.length ? r.recordset[0].combustible : undefined
 }
 
 /**

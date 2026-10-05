@@ -10,7 +10,7 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Stack, Group, Text, Table, Divider, Loader, Center, Alert, Button,
-  ActionIcon, Modal, Tooltip, NumberInput, Badge, Accordion,
+  ActionIcon, Modal, Tooltip, NumberInput, Badge, Accordion, Radio,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconAlertTriangle, IconPencil, IconPlus, IconX } from '@tabler/icons-react'
@@ -29,6 +29,7 @@ import { avanzaOdometro } from '../lib/odometro'
 import { formatLitros as fmtLitros } from '../lib/formato'
 import { usePermisos } from '../hooks/usePermisos'
 import { agrupar, calcularRendimientos } from '../lib/recargas'
+import { GASOLINAS, esGasolina, familiaCombustible } from '../lib/combustible'
 
 function formatMXN(n: number) {
   return n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
@@ -64,6 +65,24 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Magna o Premium. Solo se pregunta en las unidades de gasolina: a la de Diesel
+// la API le pone Diesel sola. Sin valor de inicio a propósito: con uno elegido
+// de antemano se guardaría sin que nadie lo mirara, y es justo el dato que se
+// quiere medir.
+function ProductoInput({ value, onChange, error }: {
+  value?: string
+  onChange?: (v: string) => void
+  error?: ReactNode
+}) {
+  return (
+    <Radio.Group label="¿Qué se cargó?" required value={value} onChange={onChange} error={error}>
+      <Group gap="lg" mt={4}>
+        {GASOLINAS.map((g) => <Radio key={g} value={g} label={g} />)}
+      </Group>
+    </Radio.Group>
+  )
+}
+
 // ── Formulario ────────────────────────────────────────────────────────────────
 
 type TicketFormValues = {
@@ -81,11 +100,14 @@ type RecargaFormValues = {
   // Uno por tanque: la bomba imprime un ticket por cada uno. El vale es uno solo.
   tickets:       TicketFormValues[]
   kilometraje:   number | string
+  // Magna o Premium; '' mientras no se elige, o si la unidad no es de gasolina.
+  producto:      string
 }
 
 /** Los valores del formulario para editar una recarga ya registrada. */
 export function recargaAFormulario(r: Recarga): RecargaFormValues {
   return {
+    producto: esGasolina(r.producto) ? r.producto : '',
     gasolinera_id: r.gasolinera_id != null ? String(r.gasolinera_id) : '',
     conductor_id:  String(r.conductor_id),
     vale_id:       r.vale_id != null ? String(r.vale_id) : '',
@@ -98,12 +120,14 @@ export function recargaAFormulario(r: Recarga): RecargaFormValues {
 }
 
 export function RecargaForm({
-  vehiculoId, kmVehiculo, valesUsados, initial, isPending, error, onSubmit, onCancel,
+  vehiculoId, kmVehiculo, combustibleVehiculo, valesUsados, initial, isPending, error, onSubmit, onCancel,
 }: {
   vehiculoId: number
   // Odómetro actual del vehículo, o null si no tiene (o no lleva). Sirve para
   // avisar cuando la lectura capturada lo va a hacer avanzar.
   kmVehiculo: number | null
+  // El combustible de la unidad: si es gasolina se pregunta Magna o Premium.
+  combustibleVehiculo: string | null
   // Vales ya consumidos por otras recargas; cada vale sirve una sola vez.
   valesUsados: Set<number>
   initial?: RecargaFormValues
@@ -146,12 +170,15 @@ export function RecargaForm({
              (v.estado === 'perdido' ? ' · dado por perdido' : ''),
     }))
 
+  const preguntaProducto = familiaCombustible(combustibleVehiculo) === 'gasolina'
+
   const form = useForm<RecargaFormValues>({
     initialValues: initial ?? {
       gasolinera_id: '', conductor_id: '', vale_id: '', fecha: hoy,
-      tickets: [{ litros: '', costo: '' }], kilometraje: '',
+      tickets: [{ litros: '', costo: '' }], kilometraje: '', producto: '',
     },
     validate: {
+      producto: (v) => (preguntaProducto && !esGasolina(v) ? 'Elige Magna o Premium' : null),
       gasolinera_id: (v) => (!v ? 'Gasolinera requerida' : null),
       conductor_id:  (v) => (!v ? 'Conductor requerido' : null),
       vale_id:       (v) => (!v ? 'Vale requerido' : null),
@@ -193,6 +220,7 @@ export function RecargaForm({
         costo:  Number(t.costo),
       })),
       kilometraje: Number(v.kilometraje),
+      ...(preguntaProducto && esGasolina(v.producto) ? { producto: v.producto } : {}),
     })
   }
 
@@ -261,6 +289,7 @@ export function RecargaForm({
           onChange={(d) => form.setFieldValue('fecha', d)}
           error={form.errors.fecha as string}
         />
+        {preguntaProducto && <ProductoInput {...form.getInputProps('producto')} />}
         {/* Un renglón por ticket. Los trailers cargan cada tanque aparte y la
             gasolinera cobra cada ticket en su propio renglón de factura, así
             que se capturan tal como vienen y no ya sumados. */}
@@ -351,14 +380,27 @@ type EmergenciaFormValues = {
   fecha:        string
   litros:       number | string
   costo:        number | string
+  producto:     string
+}
+
+/** Los valores del formulario para corregir una recarga de emergencia. */
+export function emergenciaAFormulario(r: Recarga): EmergenciaFormValues {
+  return {
+    conductor_id: String(r.conductor_id),
+    fecha:    r.fecha.split('T')[0],
+    litros:   Number(r.litros),
+    costo:    Number(r.costo),
+    producto: esGasolina(r.producto) ? r.producto : '',
+  }
 }
 
 // La carga que el chofer hizo de su bolsa porque no le alcanzaba para ir por el
 // vale. No lleva gasolinera, vale ni kilometraje: se cargó donde se pudo y nadie
 // leyó el odómetro. Solo el admin la registra (la API lo impone).
 export function RecargaEmergenciaForm({
-  initial, isPending, error, onSubmit, onCancel,
+  combustibleVehiculo, initial, isPending, error, onSubmit, onCancel,
 }: {
+  combustibleVehiculo: string | null
   initial?: EmergenciaFormValues
   isPending: boolean
   error: string | null
@@ -372,9 +414,12 @@ export function RecargaEmergenciaForm({
     label: c.nombre,
   }))
 
+  const preguntaProducto = familiaCombustible(combustibleVehiculo) === 'gasolina'
+
   const form = useForm<EmergenciaFormValues>({
-    initialValues: initial ?? { conductor_id: '', fecha: hoy, litros: '', costo: '' },
+    initialValues: initial ?? { conductor_id: '', fecha: hoy, litros: '', costo: '', producto: '' },
     validate: {
+      producto: (v) => (preguntaProducto && !esGasolina(v) ? 'Elige Magna o Premium' : null),
       conductor_id: (v) => (!v ? 'Conductor requerido' : null),
       fecha: (v) => {
         if (!v) return 'Fecha requerida'
@@ -396,6 +441,7 @@ export function RecargaEmergenciaForm({
       fecha:  v.fecha,
       litros: Number(v.litros),
       costo:  Number(v.costo),
+      ...(preguntaProducto && esGasolina(v.producto) ? { producto: v.producto } : {}),
     }))}>
       <Stack gap="sm">
         <Text size="xs" c="dimmed">
@@ -419,6 +465,7 @@ export function RecargaEmergenciaForm({
           onChange={(d) => form.setFieldValue('fecha', d)}
           error={form.errors.fecha as string}
         />
+        {preguntaProducto && <ProductoInput {...form.getInputProps('producto')} />}
         <NumberInput
           label="Litros" placeholder="0.000" required
           min={0} decimalScale={3} step={0.001} suffix=" L"
@@ -546,6 +593,9 @@ export function RecargasTabla<T extends Recarga>({
               <Table.Td style={{ textAlign: 'right' }}>{formatMXN(costo)}</Table.Td>
               <Table.Td style={{ textAlign: 'right' }} c="dimmed">
                 {litros > 0 ? formatMXN(costo / litros) : '—'}
+                {/* El precio solo se lee junto a lo que se cargó: un litro de
+                    Premium caro no es lo mismo que uno de Magna caro. */}
+                {r.producto && <Text size="xs" c="dimmed">{r.producto}</Text>}
               </Table.Td>
               <Table.Td style={{ textAlign: 'right' }} fw={500}>
                 {rendimiento != null ? formatRendimiento(rendimiento) : '—'}
@@ -592,10 +642,11 @@ export function ResumenGrupo({
 // ── Sección ───────────────────────────────────────────────────────────────────
 
 export default function RecargasSection({
-  vehiculoId, kmVehiculo,
+  vehiculoId, kmVehiculo, combustibleVehiculo,
 }: {
   vehiculoId: number
   kmVehiculo: number | null
+  combustibleVehiculo: string | null
 }) {
   const [formOpen, setFormOpen]   = useState(false)
   // El alta de emergencia usa su propio formulario; al editar lo decide la
@@ -746,6 +797,7 @@ export default function RecargasSection({
         <RecargaForm
           vehiculoId={vehiculoId}
           kmVehiculo={kmVehiculo}
+          combustibleVehiculo={combustibleVehiculo}
           valesUsados={valesUsados}
           initial={editing ? recargaAFormulario(editing) : undefined}
           isPending={createMut.isPending || updateMut.isPending}
@@ -762,12 +814,8 @@ export default function RecargasSection({
       >
         {emergenciaOpen && (
           <RecargaEmergenciaForm
-            initial={editing ? {
-              conductor_id: String(editing.conductor_id),
-              fecha:  editing.fecha.split('T')[0],
-              litros: Number(editing.litros),
-              costo:  Number(editing.costo),
-            } : undefined}
+            combustibleVehiculo={combustibleVehiculo}
+            initial={editing ? emergenciaAFormulario(editing) : undefined}
             isPending={emergenciaMut.isPending || updateMut.isPending}
             error={formError}
             onSubmit={handleEmergencia}

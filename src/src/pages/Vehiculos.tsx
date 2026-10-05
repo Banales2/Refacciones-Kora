@@ -1714,7 +1714,10 @@ function VehiculoDetalle({
       {conMtto && <MantenimientosSection vehiculoId={vehiculo.id} tipoVehiculo={vehiculo.tipo} />}
 
       {/* Recargas de combustible */}
-      <RecargasSection vehiculoId={vehiculo.id} kmVehiculo={vehiculo.kilometraje} />
+      <RecargasSection
+        vehiculoId={vehiculo.id} kmVehiculo={vehiculo.kilometraje}
+        combustibleVehiculo={vehiculo.combustible}
+      />
 
       {reiniciandoKm && (
         <ReiniciarOdometroModal

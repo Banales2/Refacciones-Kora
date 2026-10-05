@@ -91,6 +91,15 @@ export const JOINS_HIJAS = `
   LEFT JOIN montacargas           mc ON mc.vehiculo_id = v.id
 `
 
+// El combustible del vehículo, que también vive en la tabla hija (las cajas de
+// trailer no llevan). Pide los alias de JOINS_HIJAS en el FROM.
+export const COMBUSTIBLE_SQL = 'COALESCE(c.combustible, t.combustible, u.combustible, mc.combustible)'
+
+/** Lo mismo como subconsulta, para donde no conviene meter las cinco hijas. */
+export function combustibleDe(vehiculoId: string): string {
+  return `(SELECT ${COMBUSTIBLE_SQL} FROM vehiculos v ${JOINS_HIJAS} WHERE v.id = ${vehiculoId})`
+}
+
 // Las unidades dadas de baja quedan fuera de todos los avisos: ya no se les va a
 // capturar ni renovar nada. Solo aplica a los avisos; buscar por texto sí las
 // sigue encontrando. El status vive en la tabla hija, de ahí el COALESCE.

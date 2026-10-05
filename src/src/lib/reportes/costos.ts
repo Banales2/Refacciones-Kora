@@ -9,6 +9,7 @@ import { crearReportePdf, COLOR, type CellHookData } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
 import { formatMXN, formatNum, formatLitros, formatFecha, formatMes } from '../formato'
 import { TIPO_LABELS } from '../tipoVehiculo'
+import { SIN_PRODUCTO } from '../combustible'
 
 const ANOMALIA_LABEL: Record<TipoAnomalia, string> = {
   rendimiento_bajo:   'Rendimiento bajo',
@@ -74,6 +75,10 @@ export async function exportCostosPdf(a: AnalisisCostos) {
     ['Litros cargados', `${formatLitros(t.litros)} L`],
     ['Rendimiento de la flota', t.rendimiento != null ? `${t.rendimiento.toFixed(2)} km/L` : '—'],
     ['Precio por litro (promedio ponderado)', t.precio_litro != null ? `$${t.precio_litro.toFixed(2)}` : '—'],
+    ...a.precios_litro.map((p): [string, string] => [
+      `Precio por litro · ${p.producto}`,
+      p.precio_litro != null ? `$${p.precio_litro.toFixed(2)}` : '—',
+    ]),
   ])
 
   // ── Refacciones ──
@@ -101,24 +106,26 @@ export async function exportCostosPdf(a: AnalisisCostos) {
   // ── Gasolineras ──
   pdf.seccion(
     'Precio por litro por gasolinera',
-    'El sobreprecio es lo pagado de más contra la gasolinera más barata de las que ya se visitan con regularidad.',
+    'El sobreprecio es lo pagado de más contra la gasolinera más barata de las que ya se visitan con regularidad, ' +
+    'en el mismo combustible. Las cargas sin combustible especificado no se comparan.',
   )
   if (a.gasolineras.length === 0) {
     pdf.vacio('Sin recargas registradas en el periodo.')
   } else {
     pdf.tabla({
-      head: ['Gasolinera', 'Cargas', 'Litros', 'Gasto', '$/L', 'Sobreprecio'],
+      head: ['Gasolinera', 'Combustible', 'Cargas', 'Litros', 'Gasto', '$/L', 'Sobreprecio'],
       body: [
         ...a.gasolineras.map((g) => [
-          g.gasolinera, String(g.recargas), formatLitros(g.litros), formatMXN(g.costo),
+          g.gasolinera, g.producto, String(g.recargas), formatLitros(g.litros), formatMXN(g.costo),
           g.precio_litro != null ? `$${g.precio_litro.toFixed(2)}` : '—',
-          g.sobreprecio > 0 ? formatMXN(g.sobreprecio) : 'la más barata',
+          g.sobreprecio > 0 ? formatMXN(g.sobreprecio)
+            : g.producto === SIN_PRODUCTO ? '—' : 'la más barata',
         ]),
-        ['Total', '', '', '', '', formatMXN(t.ahorro_combustible)],
+        ['Total', '', '', '', '', '', formatMXN(t.ahorro_combustible)],
       ],
       columnStyles: {
-        1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' },
-        4: { halign: 'right' }, 5: { halign: 'right' },
+        2: { halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'right' },
+        5: { halign: 'right' }, 6: { halign: 'right' },
       },
       totalAlFinal: true,
       fontSize: 9,
@@ -301,6 +308,7 @@ export async function exportCostosExcel(a: AnalisisCostos) {
 
   wb.hoja('Gasolineras', [
     { header: 'Gasolinera',  width: 30, valor: (g) => g.gasolinera },
+    { header: 'Combustible', width: 16, valor: (g) => g.producto },
     { header: 'Cargas',      width: 10, formato: 'numero',  valor: (g) => g.recargas },
     { header: 'Litros',      width: 12, formato: 'litros', valor: (g) => g.litros },
     { header: 'Gasto',       width: 15, formato: 'moneda',  valor: (g) => g.costo },

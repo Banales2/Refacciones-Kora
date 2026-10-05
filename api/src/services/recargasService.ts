@@ -5,6 +5,27 @@ import type { RecargaConGasolinera, RecargaConVehiculo } from '../repositories/r
 import type { Alcance } from '../shared/alcance'
 import type { RecargaCreate, RecargaEmergencia, RecargaUpdate, TicketRecarga } from '../schemas/recargaSchema'
 import { AppError, NotFoundError, ValidationError, ConflictError } from '../shared/errors'
+import { familiaCombustible, type ProductoRecarga } from '../shared/combustible'
+
+// Qué se cargó, según el combustible de la unidad. A la de Diesel no se le
+// pregunta: es Diesel. A la de gasolina se le pregunta Magna o Premium, y si no
+// viene (la PWA que no se ha recargado) queda sin saberse, como las de antes.
+// Las de gas o eléctricas no llevan producto. Ver la migración 063.
+async function productoPara(
+  vehiculoId: number, pedido: 'Magna' | 'Premium' | undefined,
+): Promise<ProductoRecarga | null> {
+  const combustible = await repo.combustibleDelVehiculo(vehiculoId)
+  if (combustible === undefined) throw new NotFoundError('Vehículo')
+  const familia = familiaCombustible(combustible)
+  if (pedido && familia !== 'gasolina') {
+    throw new ValidationError(
+      `Esta unidad usa ${combustible ?? 'otro combustible'}: Magna o Premium solo se elige en las de gasolina`
+    )
+  }
+  if (familia === 'diesel') return 'Diesel'
+  if (familia === 'gasolina') return pedido ?? null
+  return null
+}
 
 // El vale tiene que existir, haber sido emitido para el mismo vehículo que se
 // está recargando (si no, la recarga quedaría amarrada al vale de otra unidad)
@@ -50,9 +71,9 @@ export async function getByVehiculo(vehiculoId: number): Promise<RecargaConGasol
 export async function create(
   vehiculoId: number, data: RecargaCreate, capturadoPor: string,
 ): Promise<RecargaConGasolinera> {
-  if (!(await repo.vehiculoExists(vehiculoId))) throw new NotFoundError('Vehículo')
+  const producto = await productoPara(vehiculoId, data.producto)
   await validarVale(data.vale_id, vehiculoId)
-  const recarga = await repo.create(vehiculoId, data, capturadoPor)
+  const recarga = await repo.create(vehiculoId, data, producto, capturadoPor)
   if (data.kilometraje > 0) {
     await vehiculosRepo.avanzarKilometraje(vehiculoId, data.kilometraje)
   }
@@ -64,8 +85,8 @@ export async function create(
 export async function createEmergencia(
   vehiculoId: number, data: RecargaEmergencia, capturadoPor: string,
 ): Promise<RecargaConGasolinera> {
-  if (!(await repo.vehiculoExists(vehiculoId))) throw new NotFoundError('Vehículo')
-  return repo.createEmergencia(vehiculoId, data, capturadoPor)
+  const producto = await productoPara(vehiculoId, data.producto)
+  return repo.createEmergencia(vehiculoId, data, producto, capturadoPor)
 }
 
 // `esAdmin`: las de emergencia solo las registra el admin, y corregirlas
@@ -94,8 +115,12 @@ export async function update(
   if (data.vale_id !== undefined) {
     await validarVale(data.vale_id, actual.vehiculo_id, id)
   }
-  const { litros: _l, costo: _c, ...cambios } = data
-  const result = await repo.update(id, { ...cambios, tickets })
+  // Solo cuando se manda: corregir el kilometraje no debe borrar el producto.
+  const producto = data.producto !== undefined
+    ? await productoPara(actual.vehiculo_id, data.producto)
+    : undefined
+  const { litros: _l, costo: _c, producto: _p, ...cambios } = data
+  const result = await repo.update(id, { ...cambios, tickets, producto })
   if (!result) throw new NotFoundError('Recarga')
   return result
 }

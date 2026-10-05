@@ -25,6 +25,7 @@ import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCorto } from './OpcionVehiculo'
 import {
   RecargaEmergenciaForm, RecargaForm, RecargasTabla, ResumenGrupo, recargaAFormulario,
+  emergenciaAFormulario,
 } from './RecargasSection'
 import { agrupar, calcularRendimientos } from '../lib/recargas'
 
@@ -44,7 +45,7 @@ function rendimientosPorVehiculo(items: RecargaConVehiculo[]): Map<number, numbe
 
 // ── Alta: vehículo + recarga ──────────────────────────────────────────────────
 
-type VehiculoElegido = { id: number; label: string; km: number | null }
+type VehiculoElegido = { id: number; label: string; km: number | null; combustible: string | null }
 
 // Con `onSubmitEmergencia` el alta es de emergencia: mismo selector de
 // vehículo, formulario sin gasolinera, vale ni kilometraje.
@@ -79,7 +80,7 @@ function NuevaRecarga({
     if (!id) { setElegido(null); return }
     if (elegido && String(elegido.id) === id) return
     const v = (vehData?.data ?? []).find((x) => String(x.id) === id)
-    if (v) setElegido({ id: v.id, label: vehiculoLabelCorto(v), km: v.kilometraje })
+    if (v) setElegido({ id: v.id, label: vehiculoLabelCorto(v), km: v.kilometraje, combustible: v.combustible })
   }
 
   return (
@@ -102,6 +103,7 @@ function NuevaRecarga({
       {elegido && onSubmitEmergencia ? (
         <RecargaEmergenciaForm
           key={elegido.id}
+          combustibleVehiculo={elegido.combustible}
           isPending={isPending}
           error={error}
           onSubmit={(payload) => onSubmitEmergencia(elegido.id, payload)}
@@ -114,6 +116,7 @@ function NuevaRecarga({
           key={elegido.id}
           vehiculoId={elegido.id}
           kmVehiculo={elegido.km}
+          combustibleVehiculo={elegido.combustible}
           valesUsados={valesUsados}
           isPending={isPending}
           error={error}
@@ -325,12 +328,8 @@ export default function RecargasFlota({
         {editing && (editing.emergencia ? (
           <RecargaEmergenciaForm
             key={editing.id}
-            initial={{
-              conductor_id: String(editing.conductor_id),
-              fecha:  editing.fecha.split('T')[0],
-              litros: Number(editing.litros),
-              costo:  Number(editing.costo),
-            }}
+            combustibleVehiculo={editing.vehiculo_combustible}
+            initial={emergenciaAFormulario(editing)}
             isPending={updateMut.isPending}
             error={formError}
             onSubmit={corregir}
@@ -342,6 +341,7 @@ export default function RecargasFlota({
             key={editing.id}
             vehiculoId={editing.vehiculo_id}
             kmVehiculo={null}
+            combustibleVehiculo={editing.vehiculo_combustible}
             valesUsados={valesUsados}
             initial={recargaAFormulario(editing)}
             isPending={updateMut.isPending}

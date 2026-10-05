@@ -320,14 +320,24 @@ export interface VehiculoCosto {
   recargas:           number
 }
 
+// Un renglón por gasolinera y combustible: cada uno tiene su propia "más barata".
 export interface GasolineraCosto {
   gasolinera_id: number
   gasolinera:    string
+  /** Diesel, Magna, Premium o 'Sin especificar' (las de antes de preguntarlo). */
+  producto:      string
   recargas:      number
   litros:        number
   costo:         number
   precio_litro:  number | null
   sobreprecio:   number
+}
+
+export interface PrecioProducto {
+  producto:     string
+  litros:       number
+  costo:        number
+  precio_litro: number | null
 }
 
 export type TipoAnomalia =
@@ -393,6 +403,8 @@ export interface AnalisisCostos {
     ahorro_total:          number
     vehiculos_analizados:  number
   }
+  /** El precio por litro de cada combustible, que es el que se compara. */
+  precios_litro:      PrecioProducto[]
   vehiculos:          VehiculoCosto[]
   gasolineras:        GasolineraCosto[]
   gasto_mensual:      GastoMes[]

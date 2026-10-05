@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { KM_MAX, lecturaKm } from './common'
+import { GASOLINAS } from '../shared/combustible'
 
 // Fecha local (no UTC) para no rechazar "hoy" en zonas horarias detrás de UTC.
 function todayIso() {
@@ -22,6 +23,11 @@ const fecha = z
   .refine((v) => v <= todayIso(), 'No puede ser una fecha futura')
 
 const costo = z.coerce.number().min(0, 'No puede ser negativo')
+
+// Solo se pregunta en las unidades de gasolina; en las de Diesel lo pone el
+// servicio. Es opcional para la PWA que no se ha recargado, que no lo manda:
+// esa recarga queda sin producto, como las de antes. Ver la migración 063.
+const producto = z.enum(GASOLINAS, { message: 'Elige Magna o Premium' })
 
 // Los trailers tienen varios tanques y la bomba imprime un ticket por tanque;
 // la gasolinera los factura por separado. Ver la migración 059.
@@ -61,6 +67,7 @@ export const RecargaCreateSchema = z.preprocess(conTickets, z.object({
   fecha,
   tickets,
   kilometraje: lecturaKm(),
+  producto: producto.optional(),
 }))
 
 // El chofer cargó de su bolsa porque no le alcanzaba para ir por el vale: no hay
@@ -71,6 +78,7 @@ export const RecargaEmergenciaSchema = z.object({
   fecha,
   litros,
   costo,
+  producto: producto.optional(),
 })
 
 // `litros` y `costo` sueltos siguen valiendo para una recarga de UN ticket (la
@@ -85,6 +93,7 @@ export const RecargaUpdateSchema = z.object({
   litros: litros.optional(),
   costo:  costo.optional(),
   kilometraje: lecturaKm().optional(),
+  producto: producto.optional(),
 })
 
 export type RecargaCreate = z.infer<typeof RecargaCreateSchema>

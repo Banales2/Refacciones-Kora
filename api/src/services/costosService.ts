@@ -30,6 +30,18 @@ const MAX_ANOMALIAS = 100
 /** Meses de historia en la gráfica de gasto mensual. */
 const MESES_GASTO = 12
 
+/**
+ * El producto de las recargas que no lo traen: las de gasolina anteriores a la
+ * migración 063 y las de gas. Juntas no son un combustible —puede haber Magna y
+ * Premium revueltos—, así que no se les juzga el precio: solo se reportan.
+ */
+const SIN_PRODUCTO = 'Sin especificar'
+
+/** Diesel, Magna, Premium y al final lo que no se sabe. */
+function ordenProducto(p: string): string {
+  return p === SIN_PRODUCTO ? '~' : p
+}
+
 function addDias(fechaYMD: string, dias: number): string {
   const d = new Date(`${fechaYMD}T12:00:00`)
   d.setDate(d.getDate() + dias)
@@ -84,15 +96,28 @@ export interface VehiculoCosto {
   recargas:       number
 }
 
+/**
+ * Una gasolinera y un combustible. El litro de Premium no se compara contra el
+ * de Diesel: cada combustible tiene su propio renglón y su propia "más barata".
+ */
 export interface GasolineraCosto {
   gasolinera_id: number
   gasolinera:    string
+  /** Diesel, Magna, Premium o SIN_PRODUCTO. */
+  producto:      string
   recargas:      number
   litros:        number
   costo:         number
   precio_litro:  number | null
-  /** Cuánto se pagó de más aquí contra la gasolinera más barata del periodo. */
+  /** Cuánto se pagó de más aquí contra la más barata del periodo, en el mismo combustible. */
   sobreprecio:   number
+}
+
+export interface PrecioProducto {
+  producto:     string
+  litros:       number
+  costo:        number
+  precio_litro: number | null
 }
 
 export type TipoAnomalia =
@@ -156,6 +181,7 @@ export interface AnalisisCostos {
     costo_por_km:           number | null
     litros:                 number
     rendimiento:            number | null
+    /** Todos los combustibles revueltos: sirve de total, no para comparar. */
     precio_litro:           number | null
     ahorro_refacciones:     number
     ahorro_combustible:     number
@@ -163,6 +189,8 @@ export interface AnalisisCostos {
     ahorro_total:           number
     vehiculos_analizados:   number
   }
+  /** El precio por litro de cada combustible, que es el que sí se compara. */
+  precios_litro:      PrecioProducto[]
   vehiculos:          VehiculoCosto[]
   gasolineras:        GasolineraCosto[]
   gasto_mensual:      repo.GastoMes[]
@@ -229,6 +257,21 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   const litrosTotales = recargas.reduce((s, r) => s + r.litros, 0)
   const costoCombustible = recargas.reduce((s, r) => s + r.costo, 0)
   const precioLitroFlota = ratio(costoCombustible, litrosTotales)
+
+  // El promedio de cada combustible es contra el que se juzga cada carga: con
+  // todos revueltos, la Premium salía "cara" solo por ser Premium.
+  const porProducto = new Map<string, { litros: number; costo: number }>()
+  for (const r of recargas) {
+    const p = r.producto ?? SIN_PRODUCTO
+    const e = porProducto.get(p) ?? { litros: 0, costo: 0 }
+    e.litros += r.litros
+    e.costo  += r.costo
+    porProducto.set(p, e)
+  }
+  const precioDe = (producto: string | null): number | null => {
+    const e = producto != null ? porProducto.get(producto) : undefined
+    return e ? ratio(e.costo, e.litros) : null
+  }
 
   let previa: repo.RecargaCosto | null = null
   // Litros de emergencia cargados desde la última carga normal de la unidad.
@@ -304,16 +347,18 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       })
     }
 
-    // Sobreprecio por litro contra el promedio del periodo.
+    // Sobreprecio por litro contra el promedio del mismo combustible. Sin
+    // producto no se sabe contra qué compararla y no se juzga.
     const precio = ratio(r.costo, r.litros)
-    if (precio != null && precioLitroFlota != null) {
-      const desviacion = ((precio - precioLitroFlota) / precioLitroFlota) * 100
+    const promedio = precioDe(r.producto)
+    if (precio != null && promedio != null) {
+      const desviacion = ((precio - promedio) / promedio) * 100
       if (desviacion >= PRECIO_LITRO_ALTO_PCT) {
         anomalias.push({
           key: `precio-${r.id}`, tipo: 'precio_alto', severidad: 'media',
           vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, fecha: r.fecha,
-          detalle: `$${precio.toFixed(2)}/L en ${r.gasolinera}, ${desviacion.toFixed(0)}% arriba del promedio de la flota`,
-          monto: (precio - precioLitroFlota) * r.litros,
+          detalle: `${r.producto} a $${precio.toFixed(2)}/L en ${r.gasolinera}, ${desviacion.toFixed(0)}% arriba del promedio de ${r.producto} en la flota`,
+          monto: (precio - promedio) * r.litros,
         })
       }
     }
@@ -392,11 +437,14 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     let sobrecostoAnual: number | null = null
     if (rendimiento != null && rendModelo != null && rendModelo > 0) {
       desviacion = ((rendimiento - rendModelo) / rendModelo) * 100
-      if (desviacion < 0 && precioLitroFlota != null && a.tramoKm > 0) {
+      // Los litros de más se pagan a lo que esa unidad paga el litro, no al
+      // promedio de la flota: un Diesel no cuesta lo que una Magna.
+      const precioUnidad = ratio(a.combustible, a.litros)
+      if (desviacion < 0 && precioUnidad != null && a.tramoKm > 0) {
         // Litros que habría gastado al rendimiento del modelo, contra los que
         // gastó de verdad, extrapolados al año con el ritmo del periodo.
         const litrosIdeales = a.tramoKm / rendModelo
-        const extraPeriodo  = (a.tramoLitros - litrosIdeales) * precioLitroFlota
+        const extraPeriodo  = (a.tramoLitros - litrosIdeales) * precioUnidad
         sobrecostoAnual = extraPeriodo * (365 / dias)
       }
     }
@@ -436,40 +484,49 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   vehiculos.sort((x, y) => y.total - x.total)
 
   // ── Gasolineras ──
-  const porGasolinera = new Map<number, GasolineraCosto>()
+  // Un renglón por gasolinera y combustible: la que despacha Diesel y Premium
+  // no es "cara" ni "barata" en general, lo es en cada uno.
+  const porGasolinera = new Map<string, GasolineraCosto>()
   for (const r of recargas) {
     // La de emergencia se cargó donde se pudo: no dice nada de a qué
     // gasolinera conviene mandar a la flota.
     if (r.gasolinera_id == null) continue
-    const g = porGasolinera.get(r.gasolinera_id) ?? {
-      gasolinera_id: r.gasolinera_id, gasolinera: r.gasolinera ?? '',
+    const producto = r.producto ?? SIN_PRODUCTO
+    const clave = `${r.gasolinera_id}|${producto}`
+    const g = porGasolinera.get(clave) ?? {
+      gasolinera_id: r.gasolinera_id, gasolinera: r.gasolinera ?? '', producto,
       recargas: 0, litros: 0, costo: 0, precio_litro: null, sobreprecio: 0,
     }
     g.recargas += 1
     g.litros   += r.litros
     g.costo    += r.costo
-    porGasolinera.set(r.gasolinera_id, g)
+    porGasolinera.set(clave, g)
   }
   const gasolineras = [...porGasolinera.values()]
   for (const g of gasolineras) g.precio_litro = redondear(ratio(g.costo, g.litros))
 
-  // El sobreprecio se mide contra la gasolinera más barata a la que ya se va:
-  // es un ahorro alcanzable —basta mandar ahí las cargas—, no un precio ideal
-  // de mercado que nadie ofrece. Solo cuentan las que tienen volumen suficiente
-  // para no premiar a una gasolinera con una sola carga barata de casualidad.
-  const conVolumen = gasolineras.filter((g) => g.recargas >= 3 && g.precio_litro != null)
-  const precioMinimo = conVolumen.length > 0
-    ? Math.min(...conVolumen.map((g) => g.precio_litro!))
-    : null
-  let ahorroCombustible = 0
-  if (precioMinimo != null) {
-    for (const g of gasolineras) {
-      if (g.precio_litro == null) continue
-      g.sobreprecio = redondear(Math.max(0, (g.precio_litro - precioMinimo) * g.litros), 2)!
-      ahorroCombustible += g.sobreprecio
-    }
+  // El sobreprecio se mide contra la gasolinera más barata a la que ya se va,
+  // en el mismo combustible: es un ahorro alcanzable —basta mandar ahí las
+  // cargas—, no un precio ideal de mercado que nadie ofrece. Solo cuentan las
+  // que tienen volumen suficiente para no premiar a una gasolinera con una sola
+  // carga barata de casualidad. Lo que no tiene producto no se compara.
+  const precioMinimo = new Map<string, number>()
+  for (const g of gasolineras) {
+    if (g.producto === SIN_PRODUCTO || g.recargas < 3 || g.precio_litro == null) continue
+    const min = precioMinimo.get(g.producto)
+    if (min == null || g.precio_litro < min) precioMinimo.set(g.producto, g.precio_litro)
   }
-  gasolineras.sort((a, b) => (b.precio_litro ?? 0) - (a.precio_litro ?? 0))
+  let ahorroCombustible = 0
+  for (const g of gasolineras) {
+    const min = precioMinimo.get(g.producto)
+    if (min == null || g.precio_litro == null) continue
+    g.sobreprecio = redondear(Math.max(0, (g.precio_litro - min) * g.litros), 2)!
+    ahorroCombustible += g.sobreprecio
+  }
+  // Agrupadas por combustible y, dentro de cada uno, la más cara arriba.
+  gasolineras.sort((a, b) =>
+    ordenProducto(a.producto).localeCompare(ordenProducto(b.producto)) ||
+    (b.precio_litro ?? 0) - (a.precio_litro ?? 0))
   for (const g of gasolineras) {
     g.litros = redondear(g.litros, 3)!
     g.costo  = redondear(g.costo, 2)!
@@ -531,6 +588,15 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
 
   retrabajos.sort((a, b) => b.costo - a.costo || b.fecha.localeCompare(a.fecha))
 
+  const preciosLitro: PrecioProducto[] = [...porProducto.entries()]
+    .map(([producto, e]) => ({
+      producto,
+      litros:       redondear(e.litros, 3)!,
+      costo:        redondear(e.costo, 2)!,
+      precio_litro: redondear(ratio(e.costo, e.litros)),
+    }))
+    .sort((a, b) => ordenProducto(a.producto).localeCompare(ordenProducto(b.producto)))
+
   return {
     rango: { start, end, dias },
     totales: {
@@ -550,6 +616,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       ahorro_total:          redondear(totalAhorroRefacciones + ahorroCombustible, 2)!,
       vehiculos_analizados:  vehiculos.length,
     },
+    precios_litro: preciosLitro,
     vehiculos,
     gasolineras,
     gasto_mensual: gastoMensual,

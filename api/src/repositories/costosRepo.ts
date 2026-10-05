@@ -38,6 +38,8 @@ export interface RecargaCosto {
   costo:           number
   kilometraje:     number | null
   emergencia:      boolean
+  /** Diesel, Magna o Premium. Null = no se sabe (migración 063). */
+  producto:        string | null
 }
 
 // Las recargas del rango, de la flota en operación, ordenadas por vehículo y
@@ -57,7 +59,7 @@ export async function findRecargasEnRango(start: string, end: string): Promise<R
              rc.conductor_id, co.nombre AS conductor,
              rc.vale_id,
              CONVERT(char(10), rc.fecha, 23) AS fecha,
-             rc.litros, rc.costo, rc.kilometraje, rc.emergencia
+             rc.litros, rc.costo, rc.kilometraje, rc.emergencia, rc.producto
       FROM recargas_combustible rc
       JOIN vehiculos   v  ON v.id  = rc.vehiculo_id
       JOIN modelos     mo ON mo.id = v.modelo_id
