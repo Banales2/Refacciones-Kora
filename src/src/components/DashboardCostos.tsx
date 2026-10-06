@@ -9,7 +9,7 @@ import {
   Alert, Badge, Card, Center, Group, Loader, Progress, SegmentedControl, SimpleGrid,
   Stack, Table, Text, Tooltip,
 } from '@mantine/core'
-import { AreaChart, BarChart } from '@mantine/charts'
+import { BarChart } from '@mantine/charts'
 import {
   IconAlertTriangle, IconCashBanknote, IconDiscount2, IconDroplet,
   IconGasStation, IconRoad,
@@ -241,14 +241,16 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
         {gastoMensual.length < 2 ? (
           <Vacio>Aún no hay suficiente historial para ver la tendencia.</Vacio>
         ) : (
-          <AreaChart
+          // Barras y no área: en un área apilada cada banda se dibuja sobre la
+          // anterior, y cuando solo sube el combustible las de mano de obra y
+          // refacciones suben con él aunque valgan cero —parece que todo creció—.
+          // En la barra, un concepto en cero simplemente no aparece.
+          <BarChart
             h={280}
             data={gastoMensual}
             dataKey="mes"
             type="stacked"
             withLegend
-            withDots={false}
-            curveType="monotone"
             valueFormatter={(v) => formatMXN(v)}
             yAxisProps={{ width: 70, tickFormatter: formatMXNCorto }}
             series={[
