@@ -6,9 +6,9 @@ import * as revisionRepo from '../repositories/revisionRepo'
 import * as lotesService from '../services/lotesService'
 import * as refaccionesRepo from '../repositories/refaccionesRepo'
 import * as facturasRepo from '../repositories/facturasRepo'
-import type { FacturaHallada, RenglonesPapel } from '../schemas/cuadreSchema'
+import type { CabeceraPapel, FacturaHallada, RenglonesPapel } from '../schemas/cuadreSchema'
 import { AppError, NotFoundError } from '../shared/errors'
-import { aCentavos, contribucionRenglon } from '../shared/totales'
+import { aCentavos, contribucionRenglon, totalesFactura } from '../shared/totales'
 
 // Cuadrar una factura: lo que dice el papel contra lo capturado.
 //
@@ -151,7 +151,20 @@ export interface Cuadre {
   sin_capturar_papel: boolean
 }
 
-export async function getCuadre(facturaId: number): Promise<Cuadre> {
+/** El descuento y el IVA con que se le pone precio a cada diferencia. */
+interface Tasas {
+  descuento_pct: number | null
+  tasa_iva: number | null
+}
+
+/**
+ * `tasas` mide las diferencias con otro descuento e IVA que los capturados. Lo
+ * usa `cuadrar` cuando el papel corrige la cabecera: la cabecera se corrige
+ * primero y los renglones se miden ya con la tasa correcta. Sin esto, un
+ * renglón mal tecleado en una factura con el IVA también mal se mediría con el
+ * IVA equivocado.
+ */
+export async function getCuadre(facturaId: number, tasas?: Tasas): Promise<Cuadre> {
   const factura = await revisionRepo.leerCabecera(facturaId)
   if (!factura) throw new NotFoundError('Factura')
 
@@ -159,7 +172,7 @@ export async function getCuadre(facturaId: number): Promise<Cuadre> {
   const lotes = await repo.lotesDeFactura(facturaId)
   const casados = emparejar(renglones, lotes)
   const porLote = new Map(lotes.map((l) => [l.lote_id, l]))
-  const { descuento_pct: desc, tasa_iva: iva } = factura
+  const { descuento_pct: desc, tasa_iva: iva } = tasas ?? factura
 
   const importePapel = (r: RenglonPapel) => aCentavos(r.cantidad * r.costo_unitario)
   const importeLote = (l: LoteDeFactura) => aCentavos(l.cantidad_inicial * l.costo_unitario)
@@ -503,6 +516,69 @@ export async function registrarRenglon(
   return { lote_id: lote.id, factura_id: r.factura_id }
 }
 
+function texto(v: number | null): string | null {
+  return v === null ? null : String(v)
+}
+
+/**
+ * Lo que el papel le corrige a la cabecera: folio, fecha, descuento e IVA.
+ *
+ * Se le carga a `facturas.autorizado_por`, quien registró la compra: es lo más
+ * cerca que se puede estar de quien tecleó una cabecera, que no pertenece a
+ * ningún renglón.
+ *
+ * El descuento y el IVA se miden contra el subtotal CAPTURADO y en ese orden,
+ * que es el orden en que el proveedor los aplica. Los renglones se miden
+ * después, ya con la tasa del papel, y así la cadena entera suma exacto.
+ */
+function correccionesDeCabecera(
+  c: revisionRepo.CabeceraParaRevision, papel: CabeceraPapel,
+): revisionRepo.Correccion[] {
+  const correcciones: revisionRepo.Correccion[] = []
+  const comun = { lote_id: null, capturado_por: c.autorizado_por }
+
+  if (papel.num_factura !== c.folio) {
+    correcciones.push({
+      ...comun, campo: 'folio',
+      valor_antes: c.folio, valor_despues: papel.num_factura, delta_dinero: 0,
+    })
+  }
+
+  if (papel.fecha_compra !== c.fecha_compra) {
+    correcciones.push({
+      ...comun, campo: 'fecha_compra',
+      valor_antes: c.fecha_compra, valor_despues: papel.fecha_compra, delta_dinero: 0,
+    })
+  }
+
+  const descAntes = c.descuento_pct ?? null
+  const ivaAntes = c.tasa_iva ?? null
+  const descPapel = papel.descuento_pct ?? null
+  const ivaPapel = papel.tasa_iva ?? null
+  let totalCorriente = totalesFactura(c.subtotal, descAntes, ivaAntes).total
+
+  if (descPapel !== descAntes) {
+    const tras = totalesFactura(c.subtotal, descPapel, ivaAntes).total
+    correcciones.push({
+      ...comun, campo: 'descuento_pct',
+      valor_antes: texto(descAntes), valor_despues: texto(descPapel),
+      delta_dinero: aCentavos(tras - totalCorriente),
+    })
+    totalCorriente = tras
+  }
+
+  if (ivaPapel !== ivaAntes) {
+    const tras = totalesFactura(c.subtotal, descPapel, ivaPapel).total
+    correcciones.push({
+      ...comun, campo: 'tasa_iva',
+      valor_antes: texto(ivaAntes), valor_despues: texto(ivaPapel),
+      delta_dinero: aCentavos(tras - totalCorriente),
+    })
+  }
+
+  return correcciones
+}
+
 export interface ResultadoCuadre {
   factura_id: number
   correcciones: number
@@ -525,11 +601,52 @@ export interface ResultadoCuadre {
  *
  * Esos dos se pueden dejar pendientes y sellar igual —el papel puede tardar en
  * aclararse— pero exige confirmarlo, así que no pasa por descuido.
+ *
+ * LA CABECERA VA PRIMERO EN LA CADENA. Su descuento y su IVA se miden contra lo
+ * capturado, y después los renglones se miden ya con la tasa del papel: así
+ * cada corrección se queda con lo que ella sola movió y la suma da el cambio
+ * total exacto, igual que la cantidad y el costo de un mismo renglón.
+ *
+ * Y VA AL ÚLTIMO EN LAS ESCRITURAS. Corregir un lote puede fallar —el papel dice
+ * menos piezas de las que ya se consumieron—, y si la cabecera ya estuviera
+ * corregida, el reintento la vería igual al papel y su error no quedaría
+ * registrado en ningún lado. Por lo mismo, el folio que chocaría con otra
+ * factura se rechaza antes de escribir nada.
  */
 export async function cuadrar(
-  facturaId: number, nota: string | null, confirmar: boolean, quien: string,
+  facturaId: number,
+  cabecera: CabeceraPapel,
+  nota: string | null,
+  confirmar: boolean,
+  quien: string,
 ): Promise<ResultadoCuadre> {
-  const cuadre = await getCuadre(facturaId)
+  const c = await revisionRepo.leerCabecera(facturaId)
+  if (!c) throw new NotFoundError('Factura')
+  if (c.cabecera_revisada_en !== null) {
+    throw new AppError('Esta factura ya fue cuadrada', 409, 'CABECERA_REVISADA')
+  }
+
+  const tasasPapel: Tasas = {
+    descuento_pct: cabecera.descuento_pct ?? null,
+    tasa_iva: cabecera.tasa_iva ?? null,
+  }
+  const cuadre = await getCuadre(facturaId, tasasPapel)
+
+  // Corregir el folio hacia uno que el proveedor ya tiene fusionaría las dos
+  // facturas, y esta dejaría de existir a media operación: no habría dónde
+  // sellar ni a qué colgar las correcciones. Se junta primero, y se cuadra la
+  // que quede.
+  if (cabecera.num_factura !== c.folio) {
+    const otra = await facturasRepo.findByFolio(cabecera.num_factura, c.proveedor_id)
+    if (otra && otra.id !== facturaId) {
+      throw new AppError(
+        `Este proveedor ya tiene otra factura con el folio ${cabecera.num_factura}. ` +
+        'Si es el mismo papel capturado en dos partes, júntalas primero corrigiendo ' +
+        'el folio de esta factura, y después cuadra la que quede.',
+        409, 'FOLIO_EXISTENTE',
+      )
+    }
+  }
 
   if (cuadre.sin_capturar_papel) {
     throw new AppError(
@@ -561,7 +678,8 @@ export async function cuadrar(
     )
   }
 
-  const correcciones: revisionRepo.Correccion[] = []
+  const correcciones: revisionRepo.Correccion[] = correccionesDeCabecera(c, cabecera)
+  const { descuento_pct: desc, tasa_iva: iva } = tasasPapel
 
   for (const d of cuadre.diferencias) {
     if (d.tipo !== 'valores' || d.lote_id === null || !d.papel || !d.sistema) continue
@@ -570,7 +688,6 @@ export async function cuadrar(
     // el costo viejo, después el costo sobre la cantidad ya corregida. Así cada
     // corrección se queda con lo que ella sola movió y las dos suman el cambio
     // total; medidas por separado se solapan.
-    const { descuento_pct: desc, tasa_iva: iva } = cuadre.factura
     let corriente = contribucionRenglon(d.sistema.costo_unitario, d.sistema.cantidad, desc, iva)
 
     if (d.papel.cantidad !== d.sistema.cantidad) {
@@ -612,8 +729,6 @@ export async function cuadrar(
   // ── La mano de obra ────────────────────────────────────────────────────────
   // Un solo campo, así que no hay cadena que repartir: el importe del papel pisa
   // a `mantenimiento.costo` y la corrección se queda con la diferencia entera.
-  const { descuento_pct: dpct, tasa_iva: ipct } = cuadre.factura
-
   for (const d of cuadre.diferencias_mano_obra) {
     if (d.tipo !== 'valores' || d.mantenimiento_id === null || d.sistema === null) continue
 
@@ -625,8 +740,8 @@ export async function cuadrar(
       valor_despues: String(d.papel),
       capturado_por: d.capturado_por,
       delta_dinero: aCentavos(
-        contribucionRenglon(d.papel, 1, dpct, ipct)
-        - contribucionRenglon(d.sistema, 1, dpct, ipct),
+        contribucionRenglon(d.papel, 1, desc, iva)
+        - contribucionRenglon(d.sistema, 1, desc, iva),
       ),
     })
 
@@ -660,6 +775,19 @@ export async function cuadrar(
     })
   }
 
+  // La cabecera se escribe al final; ver el comentario de la función. El folio
+  // ya se comprobó arriba, así que aquí no puede fusionar nada.
+  if (cabecera.num_factura !== c.folio) {
+    await facturasRepo.setFolio(facturaId, cabecera.num_factura)
+  }
+  if (cabecera.fecha_compra !== c.fecha_compra) {
+    await facturasRepo.setFecha(facturaId, cabecera.fecha_compra)
+  }
+  if (tasasPapel.descuento_pct !== (c.descuento_pct ?? null)
+    || tasasPapel.tasa_iva !== (c.tasa_iva ?? null)) {
+    await facturasRepo.setTotales(facturaId, tasasPapel.tasa_iva, tasasPapel.descuento_pct)
+  }
+
   const sellado = await revisionRepo.sellarCuadre(
     facturaId, correcciones, quien, nota?.trim() || null,
   )
@@ -670,7 +798,7 @@ export async function cuadrar(
   return {
     factura_id: facturaId,
     correcciones: correcciones.length,
-    delta_total: aCentavos(correcciones.reduce((s, c) => s + c.delta_dinero, 0)),
+    delta_total: aCentavos(correcciones.reduce((s, x) => s + x.delta_dinero, 0)),
     sin_resolver: pendientes.length + pendientesManoObra.length,
   }
 }

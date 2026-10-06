@@ -39,7 +39,31 @@ export const RenglonesPapelSchema = z.object({
   renglones: z.array(RenglonPapelSchema).max(200, 'Máximo 200 renglones por factura'),
 })
 
+/**
+ * Lo que dice el papel de la cabecera: folio, fecha, descuento e IVA.
+ *
+ * Va en el cuadre y no aparte porque el cuadre sella la factura entera. Cuando
+ * vivía en su propio endpoint, cuadrar sellaba la cabecera sin haberla
+ * comparado contra nada, y el IVA y el descuento —los dos datos que mueven el
+ * total completo— quedaban dados por buenos sin que nadie los leyera.
+ *
+ * Los cuatro son obligatorios, incluidos los nulos: `tasa_iva: null` dice "el
+ * precio ya trae IVA" y `descuento_pct: null` dice "no trae descuento". Que
+ * falten no puede leerse como ninguna de las dos cosas.
+ *
+ * El proveedor no está a propósito: cambiarlo mueve la factura a otro proveedor
+ * entero, y la llave (proveedor, folio) haría que dejara de ser la misma compra.
+ * Es una operación aparte, no un dato más del cuadre.
+ */
+export const CabeceraPapelSchema = z.object({
+  num_factura: numFactura,
+  fecha_compra: fechaCompra,
+  tasa_iva: tasaIva.refine((v) => v !== undefined, 'Indica si el papel suma IVA'),
+  descuento_pct: descuentoPct.refine((v) => v !== undefined, 'Indica si el papel trae descuento'),
+})
+
 export const CuadrarSchema = z.object({
+  cabecera: CabeceraPapelSchema,
   nota: z.string().trim().max(255, 'Máximo 255 caracteres').optional(),
   /**
    * Cerrar aunque queden refacciones del papel sin capturar, o capturadas que el
@@ -74,4 +98,5 @@ export const FacturaHalladaSchema = z.object({
 export type FacturaHallada = z.infer<typeof FacturaHalladaSchema>
 export type RenglonesPapel = z.infer<typeof RenglonesPapelSchema>
 export type Cuadrar = z.infer<typeof CuadrarSchema>
+export type CabeceraPapel = z.infer<typeof CabeceraPapelSchema>
 export type RegistrarRenglon = z.infer<typeof RegistrarRenglonSchema>

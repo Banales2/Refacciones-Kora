@@ -24,7 +24,7 @@
 import { useState } from 'react'
 import {
   Alert, Badge, Button, Card, Center, Divider, Group, Loader, Modal, NumberInput,
-  Stack, Table, Text, Textarea, Tooltip,
+  Select, Stack, Table, Text, Textarea, TextInput, Tooltip,
 } from '@mantine/core'
 import {
   IconAlertTriangle, IconCheck, IconCopy, IconPlus, IconTrash,
@@ -33,16 +33,20 @@ import {
   useCuadrar, useCuadre, useGuardarRenglonesPapel, useRegistrarRenglon,
   CUADRE_INCOMPLETO,
 } from '../hooks/useCuadreFactura'
-import type { Cuadre, Diferencia, RenglonPapelPayload } from '../hooks/useCuadreFactura'
+import type {
+  CabeceraPapelPayload, Cuadre, Diferencia, RenglonPapelPayload,
+} from '../hooks/useCuadreFactura'
 import { useCandidatosManoObra } from '../hooks/useFacturasMantenimiento'
 import { useTodasLasPiezas } from '../hooks/useRefacciones'
 import { useSucursales } from '../hooks/useSucursales'
 import { useQuitarRenglon } from '../hooks/useRevision'
 import { DiferenciasManoObra, TranscripcionManoObra } from './CuadreManoObra'
 import { SelectCatalogo } from './SelectCatalogo'
+import { FechaInput } from './FechaInput'
 import { ApiError } from '../lib/api'
-import { formatMXN } from '../lib/formato'
-import { totalesFactura } from '../lib/totales'
+import { formatFecha, formatMXN } from '../lib/formato'
+import { DESCUENTO_DEFAULT, IVA_DEFAULT, totalesFactura } from '../lib/totales'
+import { limpiarFolio, normalizarFolio } from '../lib/validaciones'
 
 /** Una fila de la transcripción mientras se está capturando. */
 interface FilaPapel {
@@ -409,6 +413,172 @@ function MitadRefacciones({ cuadre }: { cuadre: Cuadre }) {
   )
 }
 
+// ── La cabecera del papel ────────────────────────────────────────────────────
+
+/** Lo que se lleva tecleado de la cabecera. `null` en las dos preguntas = sin contestar. */
+interface CabeceraPapel {
+  /** De qué factura es: el modal no se desmonta al cambiar de una a otra. */
+  facturaId: number | null
+  folio: string
+  fecha: string
+  descuento: 'no' | 'si' | null
+  descuentoPct: number | string
+  iva: 'incluido' | 'suma' | null
+  tasa: number | string
+}
+
+function cabeceraVacia(facturaId: number | null): CabeceraPapel {
+  return {
+    facturaId, folio: '', fecha: '', descuento: null,
+    descuentoPct: DESCUENTO_DEFAULT, iva: null, tasa: IVA_DEFAULT,
+  }
+}
+
+/** Lo tecleado, listo para mandar; `null` mientras falte algo o no sea válido. */
+function payloadCabecera(c: CabeceraPapel): CabeceraPapelPayload | null {
+  const folio = normalizarFolio(c.folio)
+  if (folio === '' || c.fecha === '' || c.descuento === null || c.iva === null) return null
+
+  const desc = c.descuento === 'si' ? Number(c.descuentoPct) : null
+  const tasa = c.iva === 'suma' ? Number(c.tasa) : null
+  if (desc !== null && !(desc > 0 && desc < 100)) return null
+  if (tasa !== null && !(tasa > 0 && tasa <= 100)) return null
+
+  return { num_factura: folio, fecha_compra: c.fecha, tasa_iva: tasa, descuento_pct: desc }
+}
+
+function textoDescuento(v: number | null) { return v === null ? 'sin descuento' : `${v}%` }
+function textoIva(v: number | null) { return v === null ? 'ya incluido' : `+${v}%` }
+
+/**
+ * Folio, fecha, descuento e IVA, como vienen en el papel.
+ *
+ * ARRANCA VACÍA, al revés que los renglones, que se pueden copiar de lo
+ * capturado. Allá la concesión existe porque teclear quince renglones desde cero
+ * acaba en que nadie revisa; aquí son cuatro datos, y dos de ellos —el descuento
+ * y el IVA— mueven el total de la factura entera. Prellenarlos sería dar por
+ * bueno justo lo que más dinero cuesta tener mal.
+ *
+ * Lo capturado se enseña DESPUÉS de teclear, y solo lo que no coincide: antes
+ * invitaría a copiarlo.
+ */
+function CabeceraDelPapel({
+  cuadre, valor, onChange,
+}: {
+  cuadre: Cuadre
+  valor: CabeceraPapel
+  onChange: (c: CabeceraPapel) => void
+}) {
+  const f = cuadre.factura
+  const set = (cambios: Partial<CabeceraPapel>) => onChange({ ...valor, ...cambios })
+  const papel = payloadCabecera(valor)
+
+  const diferencias = papel === null ? [] : [
+    papel.num_factura !== f.folio
+      && { campo: 'Folio', capturado: f.folio, papel: papel.num_factura },
+    papel.fecha_compra !== f.fecha_compra
+      && { campo: 'Fecha', capturado: formatFecha(f.fecha_compra), papel: formatFecha(papel.fecha_compra) },
+    papel.descuento_pct !== f.descuento_pct
+      && { campo: 'Descuento', capturado: textoDescuento(f.descuento_pct), papel: textoDescuento(papel.descuento_pct) },
+    papel.tasa_iva !== f.tasa_iva
+      && { campo: 'IVA', capturado: textoIva(f.tasa_iva), papel: textoIva(papel.tasa_iva) },
+  ].filter((d): d is { campo: string; capturado: string; papel: string } => Boolean(d))
+
+  // Lo que la cabecera sola mueve del total: medido sobre lo capturado, igual
+  // que lo registra la API, para que el número de aquí sea el que queda.
+  const delta = papel === null ? 0
+    : totalesFactura(f.subtotal, papel.descuento_pct, papel.tasa_iva).total
+      - totalesFactura(f.subtotal, f.descuento_pct, f.tasa_iva).total
+
+  return (
+    <Stack gap="sm">
+      <div>
+        <Text size="sm" fw={600}>Datos de la factura</Text>
+        <Text size="xs" c="dimmed">
+          Como vienen en el papel. Lo que no coincida con lo capturado se corrige al
+          cerrar y queda a nombre de quien registró la compra.
+        </Text>
+      </div>
+
+      <Group grow align="flex-start">
+        <TextInput
+          label="Folio" size="xs" placeholder="Como viene impreso"
+          value={valor.folio}
+          onChange={(e) => set({ folio: limpiarFolio(e.currentTarget.value, 30) })}
+        />
+        <FechaInput
+          label="Fecha de la factura" size="xs"
+          value={valor.fecha} onChange={(fecha) => set({ fecha })}
+        />
+      </Group>
+
+      <Group grow align="flex-start">
+        <Stack gap={4}>
+          <Select
+            label="Descuento" size="xs" placeholder="¿Trae descuento?"
+            data={[
+              { value: 'no', label: 'No trae descuento' },
+              { value: 'si', label: 'Trae descuento' },
+            ]}
+            value={valor.descuento}
+            onChange={(v) => set({ descuento: v as CabeceraPapel['descuento'] })}
+          />
+          {valor.descuento === 'si' && (
+            <NumberInput
+              size="xs" min={0.01} max={99.99} clampBehavior="strict"
+              decimalScale={2} suffix="%"
+              value={valor.descuentoPct}
+              onChange={(descuentoPct) => set({ descuentoPct })}
+            />
+          )}
+        </Stack>
+        <Stack gap={4}>
+          <Select
+            label="IVA" size="xs" placeholder="¿Cómo viene el IVA?"
+            data={[
+              { value: 'incluido', label: 'Los precios ya lo incluyen' },
+              { value: 'suma', label: 'Se suma al subtotal' },
+            ]}
+            value={valor.iva}
+            onChange={(v) => set({ iva: v as CabeceraPapel['iva'] })}
+          />
+          {valor.iva === 'suma' && (
+            <NumberInput
+              size="xs" min={0.01} max={100} clampBehavior="strict"
+              decimalScale={2} suffix="%"
+              value={valor.tasa}
+              onChange={(tasa) => set({ tasa })}
+            />
+          )}
+        </Stack>
+      </Group>
+
+      {papel !== null && (
+        diferencias.length === 0 ? (
+          <Text size="xs" c="green.7">
+            <IconCheck size={12} style={{ verticalAlign: 'middle' }} /> Coincide con lo capturado.
+          </Text>
+        ) : (
+          <Alert color="yellow" variant="light" p="xs">
+            <Stack gap={2}>
+              {diferencias.map((d) => (
+                <Text key={d.campo} size="xs">
+                  <b>{d.campo}:</b> capturado {d.capturado}, el papel dice {d.papel}
+                </Text>
+              ))}
+              {Math.abs(delta) >= 0.01 && (
+                <Text size="xs" fw={600}>
+                  Mueve el total {delta > 0 ? '+' : '−'}{formatMXN(Math.abs(delta))}
+                </Text>
+              )}
+            </Stack>
+          </Alert>
+        )
+      )}
+    </Stack>
+  )
+}
+
 // ── La pantalla ──────────────────────────────────────────────────────────────
 
 export default function CuadreFacturaModal({
@@ -421,6 +591,13 @@ export default function CuadreFacturaModal({
   const { data, isLoading, isError } = useCuadre(facturaId)
   const cuadrar = useCuadrar()
   const [nota, setNota] = useState('')
+  // El modal no se desmonta al pasar de una factura a otra: lo tecleado de la
+  // cabecera de una no puede arrastrarse a la siguiente.
+  const [cabeceraTecleada, setCabecera] = useState(() => cabeceraVacia(facturaId))
+  const cabecera = cabeceraTecleada.facturaId === facturaId
+    ? cabeceraTecleada
+    : cabeceraVacia(facturaId)
+  const cabeceraLista = payloadCabecera(cabecera)
 
   // Solo para saber si este papel es de un taller. Si lo es, hay una mitad más
   // que cuadrar; si no, enseñar una tabla de mano de obra que nunca se va a
@@ -438,6 +615,11 @@ export default function CuadreFacturaModal({
   const esDeTaller =
     taller.data?.taller != null || (cuadre?.renglones_mano_obra.length ?? 0) > 0
   const totalDiferencias = diferencias.length + diferenciasManoObra.length
+  const cabeceraCoincide = cabeceraLista !== null && cuadre !== undefined
+    && cabeceraLista.num_factura === cuadre.factura.folio
+    && cabeceraLista.fecha_compra === cuadre.factura.fecha_compra
+    && cabeceraLista.tasa_iva === cuadre.factura.tasa_iva
+    && cabeceraLista.descuento_pct === cuadre.factura.descuento_pct
 
   const incompletoPendiente =
     cuadrar.error instanceof ApiError && cuadrar.error.code === CUADRE_INCOMPLETO
@@ -445,10 +627,11 @@ export default function CuadreFacturaModal({
       : null
 
   function sellar(confirmar = false) {
-    if (!facturaId) return
+    if (!facturaId || !cabeceraLista) return
     cuadrar.mutate(
       {
         factura_id: facturaId,
+        cabecera: cabeceraLista,
         nota: nota.trim() || undefined,
         confirmar_sin_resolver: confirmar,
       },
@@ -476,6 +659,10 @@ export default function CuadreFacturaModal({
             </Alert>
           ) : (
             <>
+              {/* La cabecera va primero porque así viene en el papel, y porque
+                  sin ella no se puede cerrar: el cuadre sella la factura entera. */}
+              <CabeceraDelPapel cuadre={cuadre} valor={cabecera} onChange={setCabecera} />
+
               {/* En una factura de taller las dos mitades se rotulan, porque son
                   dos y hay que saber cuál se está capturando. En una compra de
                   refacciones normal no hay nada que distinguir: solo hay una. */}
@@ -572,6 +759,7 @@ export default function CuadreFacturaModal({
                         <Group gap="xs">
                           <Button
                             size="xs" color="orange" loading={cuadrar.isPending}
+                            disabled={!cabeceraLista}
                             onClick={() => sellar(true)}
                           >
                             Cerrar dejándolo señalado
@@ -591,13 +779,19 @@ export default function CuadreFacturaModal({
                   )}
 
                   <Group justify="flex-end">
+                    {!cabeceraLista && (
+                      <Text size="xs" c="dimmed" mr="auto">
+                        Faltan los datos de la factura para poder cerrarla.
+                      </Text>
+                    )}
                     <Button variant="default" onClick={onClose}>Cerrar</Button>
                     <Button
-                      color={totalDiferencias === 0 ? 'green' : 'yellow'}
+                      color={totalDiferencias === 0 && cabeceraCoincide ? 'green' : 'yellow'}
                       loading={cuadrar.isPending}
+                      disabled={!cabeceraLista}
                       onClick={() => sellar()}
                     >
-                      {totalDiferencias === 0
+                      {totalDiferencias === 0 && cabeceraCoincide
                         ? 'Todo coincide, cerrar la factura'
                         : 'Aplicar el papel y cerrar'}
                     </Button>

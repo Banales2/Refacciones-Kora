@@ -10,9 +10,10 @@ import * as service from '../services/cuadreFacturaService'
 /**
  * Aplica lo que dice el papel y sella la factura entera.
  *
- * Corrige los lotes cuya cantidad o costo no coinciden, registra cada error con
- * su importe y a nombre de quien lo capturó, y sella cabecera y renglones de una
- * vez — el cuadre es de la factura completa, no de un renglón suelto.
+ * Corrige la cabecera —folio, fecha, descuento, IVA— y los lotes cuya cantidad o
+ * costo no coinciden, registra cada error con su importe y a nombre de quien lo
+ * capturó, y sella cabecera y renglones de una vez — el cuadre es de la factura
+ * completa, no de un renglón suelto.
  *
  * Lo que queda sin resolver —una refacción del papel que nadie capturó, o una
  * capturada que el papel no trae— también se registra: perderlo porque alguien
@@ -32,7 +33,8 @@ export async function facturaCuadrar(
     const antes = await capturar('facturas', id)
 
     const r = await service.cuadrar(
-      id, body.nota ?? null, body.confirmar_sin_resolver, await nombreOCorreo(user),
+      id, body.cabecera, body.nota ?? null, body.confirmar_sin_resolver,
+      await nombreOCorreo(user),
     )
 
     await audit({

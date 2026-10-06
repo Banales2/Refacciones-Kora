@@ -24,7 +24,7 @@ import {
 import type { Factura, FacturaRenglon } from '../hooks/useFacturas'
 import { useAuth } from '../hooks/useAuth'
 import { usePermisos } from '../hooks/usePermisos'
-import { EstadoRevision, RevisionCabecera } from './RevisionFactura'
+import { EstadoRevision, SelloFactura } from './RevisionFactura'
 import CuadreFacturaModal from './CuadreFactura'
 import FacturaHalladaModal from './FacturaHalladaModal'
 import { ApiError } from '../lib/api'
@@ -569,11 +569,7 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
                         </Button>
                       )}
 
-                      <RevisionCabecera
-                        key={`rev:${f.id}:${f.cabecera_revisada_en}`}
-                        factura={f}
-                        esAdmin={esAdmin}
-                      />
+                      <SelloFactura factura={f} esAdmin={esAdmin} />
 
                       {/* Con la cabecera sellada estos dos controles solo pueden
                           contestar 409: lo revisado no se edita por otra vía.

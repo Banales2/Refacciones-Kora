@@ -4,10 +4,10 @@
 // de facturas originales cuadra lo que dice el papel contra lo que dice la
 // pantalla, corrige lo que esté mal y lo sella para que nadie lo mueva.
 //
-// EL SELLO VA EN EL RENGLÓN. Una factura de quince partidas no se verifica de
-// una sentada, así que cada renglón se sella solo; la cabecera —folio, fecha,
-// IVA, descuento— tiene el suyo aparte. La factura está `cerrada` cuando las dos
-// mitades lo están, y eso lo calcula la API: no es un campo que se guarde.
+// EL SELLO ES DE LA FACTURA ENTERA. El cuadre (`useCuadreFactura`) compara el
+// papel completo —cabecera y renglones— y lo sella todo de una vez. La factura
+// está `cerrada` cuando la cabecera y todos sus renglones lo están, y eso lo
+// calcula la API: no es un campo que se guarde.
 //
 // Ver `db/migrations/040_revision_de_facturas.sql`.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -15,8 +15,6 @@ import { api } from '../lib/api'
 
 /** El renglón ya estaba sellado: hay que reabrir la factura para tocarlo. */
 export const RENGLON_REVISADO = 'RENGLON_REVISADO'
-/** La cabecera ya estaba sellada. */
-export const CABECERA_REVISADA = 'CABECERA_REVISADA'
 
 /**
  * Todo lo que la revisión invalida.
@@ -34,39 +32,6 @@ function invalidarTodo(qc: ReturnType<typeof useQueryClient>) {
   ]) {
     qc.invalidateQueries({ queryKey: key })
   }
-}
-
-export interface RevisionResultado {
-  factura_id:   number
-  correcciones: number
-  /** Lo que la revisión movió del total de la factura, en pesos. */
-  delta_total:  number
-}
-
-export interface CabeceraRevisarPayload {
-  factura_id:       number
-  num_factura:      string
-  fecha_compra:     string
-  tasa_iva:         number | null
-  descuento_pct:    number | null
-  nota?:            string
-  /** Corregir el folio hacia uno que ya existe fusiona las dos facturas. */
-  confirmar_fusion?: boolean
-}
-
-export interface CabeceraResultado extends RevisionResultado {
-  /** Se fusionó con otra factura: esta dejó de existir y no quedó sellada. */
-  fusionada: boolean
-}
-
-/** Cuadra la cabecera —folio, fecha, IVA, descuento— y la sella. */
-export function useRevisarCabecera() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ factura_id, ...body }: CabeceraRevisarPayload) =>
-      api.post<{ data: CabeceraResultado }>(`/facturas/${factura_id}/revisar`, body),
-    onSuccess: () => invalidarTodo(qc),
-  })
 }
 
 /**

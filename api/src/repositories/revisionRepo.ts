@@ -133,45 +133,6 @@ async function insertarCorrecciones(
 }
 
 /**
- * Sella la cabecera y guarda sus correcciones.
- *
- * Igual que en el renglón, los valores ya se aplicaron antes: el folio pasa por
- * `facturasService.setFolio` —que es quien sabe de fusiones— y el IVA y el
- * descuento por `facturasRepo.setTotales`.
- */
-export async function sellarCabecera(
-  facturaId: number, correcciones: Correccion[], quien: string, nota: string | null,
-): Promise<boolean> {
-  const pool = await getPool()
-  const tx = pool.transaction()
-  await tx.begin()
-  try {
-    const sellado = await tx.request()
-      .input('id',    sql.Int,           facturaId)
-      .input('quien', sql.NVarChar(120),  quien)
-      .input('nota',  sql.NVarChar(255),  nota)
-      .query(`
-        UPDATE facturas
-        SET cabecera_revisada_en = SYSUTCDATETIME(),
-            cabecera_revisada_por = @quien,
-            revision_nota = @nota
-        WHERE id = @id AND cabecera_revisada_en IS NULL`)
-
-    if ((sellado.rowsAffected[0] ?? 0) === 0) {
-      await tx.rollback()
-      return false
-    }
-
-    await insertarCorrecciones(tx, facturaId, correcciones, quien)
-    await tx.commit()
-    return true
-  } catch (err) {
-    await tx.rollback()
-    throw err
-  }
-}
-
-/**
  * Sella la factura entera —cabecera y todos sus renglones— y guarda lo que el
  * cuadre corrigió.
  *

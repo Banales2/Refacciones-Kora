@@ -1,33 +1,17 @@
-// La revisión de una factura contra su papel, en pantalla.
+// El estado de la revisión de una factura, en pantalla.
 //
-// Quien captura no es quien verifica. Estas piezas son lo que usa el
-// verificador: teclea LO QUE DICE LA FACTURA ORIGINAL y el sistema lo compara
-// con lo guardado. Lo que coincide se sella sin más; lo que no, se corrige, se
-// le pone precio y se le carga a quien lo tecleó.
-//
-// POR QUÉ NO HAY BOTÓN CUANDO NADA CAMBIA. Los campos vienen prellenados con lo
-// guardado para no obligar a teclear a ciegas, pero con el prellenado un solo
-// clic sellaba la cabecera sin haber leído el papel. Por eso el botón de sellar
-// sólo aparece cuando el verificador modificó algún dato: la verificación se
-// hace a mano, nunca de corrido.
+// Quien captura no es quien verifica. La verificación misma —teclear lo que dice
+// el papel y compararlo contra lo guardado— vive en `CuadreFactura`; aquí solo
+// están las piezas que enseñan en qué va: la insignia del listado y el sello.
 //
 // Ver `db/migrations/040_revision_de_facturas.sql`.
-import { useState } from 'react'
 import {
-  Alert, Badge, Button, Group, NumberInput, Stack, Switch,
-  Text, Textarea, TextInput, Tooltip,
+  Alert, Badge, Button, Group, Text, Tooltip,
 } from '@mantine/core'
-import {
-  IconAlertTriangle, IconCheck, IconLock, IconLockOpen,
-} from '@tabler/icons-react'
+import { IconCheck, IconLock, IconLockOpen } from '@tabler/icons-react'
 import type { Factura } from '../hooks/useFacturas'
-import { useReabrirFactura, useRevisarCabecera } from '../hooks/useRevision'
-import { FOLIO_EXISTENTE } from '../hooks/useFacturas'
-import { ApiError } from '../lib/api'
-import { FechaInput } from './FechaInput'
-import { formatMXN, formatFecha } from '../lib/formato'
-import { IVA_DEFAULT, DESCUENTO_DEFAULT, totalesFactura } from '../lib/totales'
-import { limpiarFolio, normalizarFolio } from '../lib/validaciones'
+import { useReabrirFactura } from '../hooks/useRevision'
+import { formatFecha } from '../lib/formato'
 
 /** El estado de la factura de un vistazo, para la cabecera del acordeón. */
 export function EstadoRevision({ factura }: { factura: Factura }) {
@@ -66,27 +50,20 @@ export function EstadoRevision({ factura }: { factura: Factura }) {
 }
 
 /**
- * Cuadra la cabecera —folio, fecha, IVA y descuento— y la sella.
+ * El sello de la factura, debajo de sus renglones.
  *
- * Es la otra mitad del trabajo: esos cuatro datos no viven en ningún renglón, y
- * el IVA y el descuento mueven el total de la compra entera. Por eso su error se
- * mide contra el total y no contra un importe suelto.
+ * Sellada, dice quién y cuándo, y le da al admin el botón para reabrirla. Sin
+ * sellar no ofrece nada que hacer: la factura se revisa en el cuadre, que
+ * compara el papel completo —cabecera incluida— y lo sella todo de una vez.
+ * Hubo aquí un formulario para revisar la cabecera por su lado, y se quitó:
+ * sellaba la cabecera sola y la factura ya no se podía cuadrar.
  */
-export function RevisionCabecera({
+export function SelloFactura({
   factura, esAdmin,
 }: {
   factura: Factura
   esAdmin: boolean
 }) {
-  const [folio, setFolio] = useState(factura.num_factura)
-  const [fecha, setFecha] = useState(factura.fecha_compra)
-  const [conIva, setConIva] = useState(factura.tasa_iva != null)
-  const [tasa, setTasa] = useState<number | string>(factura.tasa_iva ?? IVA_DEFAULT)
-  const [conDesc, setConDesc] = useState(factura.descuento_pct != null)
-  const [desc, setDesc] = useState<number | string>(factura.descuento_pct ?? DESCUENTO_DEFAULT)
-  const [nota, setNota] = useState(factura.revision_nota ?? '')
-
-  const revisar = useRevisarCabecera()
   const reabrir = useReabrirFactura()
 
   if (factura.cabecera_revisada_en !== null) {
@@ -95,7 +72,7 @@ export function RevisionCabecera({
         <Group justify="space-between" wrap="nowrap">
           <div>
             <Text size="sm">
-              Datos revisados por <b>{factura.cabecera_revisada_por}</b> el{' '}
+              Cuadrada por <b>{factura.cabecera_revisada_por}</b> el{' '}
               {formatFecha(factura.cabecera_revisada_en.slice(0, 10))}.
               {factura.renglones_revisados < factura.renglones && (
                 <> Faltan {factura.renglones - factura.renglones_revisados} renglón(es).</>
@@ -128,153 +105,11 @@ export function RevisionCabecera({
     )
   }
 
-  if (!esAdmin) {
-    return (
-      <Alert color="gray" variant="light">
-        <Text size="sm">Los datos de esta factura todavía no se han cuadrado contra el papel.</Text>
-      </Alert>
-    )
-  }
-
-  const folioNuevo = normalizarFolio(folio)
-  const tasaNueva = conIva ? Number(tasa) : null
-  const descNueva = conDesc ? Number(desc) : null
-
-  const invalido = folioNuevo === ''
-    || (conIva && !(Number(tasa) > 0 && Number(tasa) <= 100))
-    || (conDesc && !(Number(desc) > 0 && Number(desc) < 100))
-
-  const cambia = folioNuevo !== factura.num_factura
-    || fecha !== factura.fecha_compra
-    || tasaNueva !== factura.tasa_iva
-    || descNueva !== factura.descuento_pct
-
-  const totalAntes = totalesFactura(factura.subtotal, factura.descuento_pct, factura.tasa_iva).total
-  const totalDespues = totalesFactura(factura.subtotal, descNueva, tasaNueva).total
-  const delta = totalDespues - totalAntes
-
-
-  // El 409 del folio que ya existe se lee del error del intento anterior, igual
-  // que en `FolioDeFactura`: así la pregunta se cae sola al volver a teclear.
-  const fusionPendiente =
-    revisar.error instanceof ApiError && revisar.error.code === FOLIO_EXISTENTE
-      ? revisar.error.message
-      : null
-
-  function sellar(confirmarFusion = false) {
-    revisar.mutate({
-      factura_id:       factura.id,
-      num_factura:      folioNuevo,
-      fecha_compra:     fecha,
-      tasa_iva:         tasaNueva,
-      descuento_pct:    descNueva,
-      nota:             nota.trim() || undefined,
-      confirmar_fusion: confirmarFusion,
-    })
-  }
+  if (esAdmin) return null
 
   return (
-    <Stack gap="xs">
-      <Text size="sm" fw={600}>Revisar los datos de la factura</Text>
-      <Text size="xs" c="dimmed">
-        Teclea lo que dice el papel. Lo que no coincida se corrige y queda
-        registrado a nombre de quien capturó la compra.
-      </Text>
-
-      <Group grow align="flex-start">
-        <TextInput
-          label="Folio" size="xs" value={folio}
-          error={folioNuevo === '' ? 'Requerido' : undefined}
-          onChange={(e) => {
-            setFolio(limpiarFolio(e.currentTarget.value, 30))
-            if (revisar.error) revisar.reset()
-          }}
-        />
-        <FechaInput label="Fecha de la factura" value={fecha} onChange={setFecha} />
-      </Group>
-
-      <Group grow align="flex-start">
-        <Stack gap={4}>
-          <Switch
-            size="xs" label="Trae descuento" checked={conDesc}
-            onChange={(e) => setConDesc(e.currentTarget.checked)}
-          />
-          {conDesc && (
-            <NumberInput
-              size="xs" min={0.01} max={99.99} decimalScale={2} suffix="%"
-              value={desc} onChange={setDesc}
-            />
-          )}
-        </Stack>
-        <Stack gap={4}>
-          <Switch
-            size="xs" label="Hay que sumarle IVA" checked={conIva}
-            onChange={(e) => setConIva(e.currentTarget.checked)}
-          />
-          {conIva && (
-            <NumberInput
-              size="xs" min={0.01} max={100} decimalScale={2} suffix="%"
-              value={tasa} onChange={setTasa}
-            />
-          )}
-        </Stack>
-      </Group>
-
-      <Textarea
-        label="Nota (opcional)" size="xs" autosize minRows={1} maxLength={255}
-        placeholder="El papel viene roto, el proveedor la reexpidió…"
-        value={nota} onChange={(e) => setNota(e.currentTarget.value)}
-      />
-
-      <Group justify="space-between" align="flex-end">
-        <Text size="sm">
-          Total según lo tecleado <Text component="span" fw={700}>{formatMXN(totalDespues)}</Text>
-          {Math.abs(delta) >= 0.01 && (
-            <Text component="span" size="xs" c="yellow.7">
-              {' '}({delta > 0 ? '+' : '−'}{formatMXN(Math.abs(delta))} contra lo capturado)
-            </Text>
-          )}
-        </Text>
-        {cambia ? (
-          <Button
-            size="xs"
-            color="yellow"
-            disabled={invalido}
-            loading={revisar.isPending}
-            onClick={() => sellar()}
-          >
-            Corregir y sellar
-          </Button>
-        ) : (
-          <Text size="xs" c="dimmed" maw={280} ta="right">
-            Lo tecleado es igual a lo capturado. Sella hasta que hayas corregido
-            contra el papel lo que no coincida.
-          </Text>
-        )}
-      </Group>
-
-      {fusionPendiente ? (
-        <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
-          <Stack gap="xs">
-            <Text size="sm">
-              {fusionPendiente} Si es la misma factura capturada en dos partes, adelante.
-              La revisión sigue en la factura que quede.
-            </Text>
-            <Group gap="xs">
-              <Button size="xs" color="yellow" loading={revisar.isPending} onClick={() => sellar(true)}>
-                Sí, juntarlas en una factura
-              </Button>
-              <Button size="xs" variant="default" onClick={() => revisar.reset()}>
-                Cancelar
-              </Button>
-            </Group>
-          </Stack>
-        </Alert>
-      ) : revisar.error ? (
-        <Alert color="red" title="No se pudo revisar">
-          {(revisar.error as Error).message}
-        </Alert>
-      ) : null}
-    </Stack>
+    <Alert color="gray" variant="light">
+      <Text size="sm">Esta factura todavía no se ha cuadrado contra el papel.</Text>
+    </Alert>
   )
 }

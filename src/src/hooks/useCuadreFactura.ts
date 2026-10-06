@@ -225,12 +225,30 @@ export interface ResultadoCuadre {
   sin_resolver: number
 }
 
-/** Aplica lo que dice el papel y sella la factura entera. */
+/**
+ * Lo que dice el papel de la cabecera. Los cuatro van siempre: `null` en el IVA
+ * es "el precio ya lo incluye" y en el descuento es "no trae", no "no sé".
+ */
+export interface CabeceraPapelPayload {
+  num_factura:   string
+  fecha_compra:  string
+  tasa_iva:      number | null
+  descuento_pct: number | null
+}
+
+/**
+ * Aplica lo que dice el papel —cabecera y renglones— y sella la factura entera.
+ *
+ * La cabecera viaja aquí y no en una revisión aparte: el cuadre sella la factura
+ * completa, y sellarla sin haber comparado el IVA y el descuento contra el papel
+ * era darlos por buenos sin que nadie los leyera.
+ */
 export function useCuadrar() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ factura_id, ...body }: {
       factura_id: number
+      cabecera: CabeceraPapelPayload
       nota?: string
       confirmar_sin_resolver?: boolean
     }) => api.post<{ data: ResultadoCuadre }>(`/facturas/${factura_id}/cuadrar`, body),

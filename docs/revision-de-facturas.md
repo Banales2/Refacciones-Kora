@@ -45,6 +45,40 @@ carga; aquí no hay uno así, y casar por parecido entre descripciones se equivo
 en silencio. Si el papel trae una pieza que no existe, se da de alta ahí mismo —
 igual que en el alta de compra.
 
+## La cabecera también se transcribe
+
+El cuadre pide además la cabecera del papel —folio, fecha, descuento e IVA— y no
+se puede cerrar sin ella. Lo que no coincida se corrige al cerrar, con su
+corrección a nombre de `autorizado_por`.
+
+Hubo una revisión de cabecera aparte (`POST /facturas/{id}/revisar`) y se quitó,
+porque las dos rutas se estorbaban:
+
+- **Cuadrar sellaba la cabecera sin compararla contra nada.** El IVA y el
+  descuento —los dos datos que mueven el total entero— quedaban dados por buenos
+  sin que nadie los leyera.
+- **Revisar la cabecera sola dejaba la factura sin poder cerrarse.** Sellaba la
+  cabecera, y el cuadre exige una cabecera sin sellar para correr; los renglones
+  se quedaban sin revisar hasta que alguien la reabriera.
+
+**La cabecera arranca vacía**, al revés que los renglones, que se pueden copiar
+de lo capturado. Allá la concesión existe porque teclear quince renglones desde
+cero acaba en que nadie revisa; aquí son cuatro datos, y prellenar el descuento y
+el IVA sería dar por bueno justo lo que más cuesta tener mal. Lo capturado se
+enseña después de teclear, y solo lo que no coincide.
+
+**En la cadena va primero, en las escrituras al último.** Su descuento y su IVA
+se miden contra lo capturado, y los renglones después, ya con la tasa del papel:
+así la suma de las correcciones da el cambio total exacto. Pero se escribe
+después de corregir los lotes, porque corregir un lote puede fallar —el papel
+dice menos piezas de las que ya se consumieron— y una cabecera ya corregida haría
+que el reintento no registrara su error.
+
+**El folio que choca con otra factura del mismo proveedor se rechaza** (409
+`FOLIO_EXISTENTE`) en vez de fusionar: la factura dejaría de existir a media
+operación. Se juntan primero corrigiendo el folio desde la lista, y se cuadra la
+que quede.
+
 **El emparejado va en dos pasadas**: primero los que coinciden en pieza, cantidad
 y costo (esos no son inferencia, son el mismo renglón), después por pieza a
 secas. Sin la primera pasada, una factura con la misma refacción en dos renglones
@@ -248,9 +282,8 @@ es nada: se borra también, salvo que ya tenga correcciones registradas.
 | `GET /facturas/{id}/cuadre` | admin, editor, lector | Las dos listas y sus diferencias |
 | `PUT /facturas/{id}/renglones` | **admin** | Guarda la transcripción del papel |
 | `POST /facturas/renglones/{id}/registrar` | **admin** | Da de alta la compra que falta |
-| `POST /facturas/{id}/cuadrar` | **admin** | Aplica el papel y sella la factura |
+| `POST /facturas/{id}/cuadrar` | **admin** | Aplica el papel —cabecera y renglones— y sella la factura |
 | `POST /facturas/halladas` | **admin** | Da de alta la factura que nadie capturó |
-| `POST /facturas/{id}/revisar` | **admin** | Cuadra la cabecera (folio, fecha, IVA, descuento) |
 | `POST /facturas/{id}/reabrir` | **admin** | Quita los sellos |
 | `POST /lotes/{id}/quitar` | **admin** | Borra el renglón que no está en el papel |
 | `GET /facturas/{id}/correcciones` | admin, editor | Qué se le corrigió a esta factura |
