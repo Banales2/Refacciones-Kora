@@ -3,6 +3,40 @@ import type { ValeGasolina } from '../repositories/valesGasolinaRepo'
 import type { ValeGasolinaCreate, ValeGasolinaUpdate } from '../schemas/valeGasolinaSchema'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
 import * as archivadoRepo from '../repositories/archivadoRepo'
+import * as recargasRepo from '../repositories/recargasRepo'
+import * as vehiculosRepo from '../repositories/vehiculosRepo'
+import type { RecargaConGasolinera } from '../repositories/recargasRepo'
+import { familiaCombustible } from '../shared/combustible'
+
+/**
+ * Lo que la corrección del vale le cambia a la recarga que lo gastó.
+ *
+ * El vale es el papel y la recarga copia de él al chofer y la unidad: si el
+ * vale se capturó mal, la recarga quedó mal igual, y corregir solo el vale
+ * dejaría la carga a nombre de otro chofer o en el tanque de otra unidad. La
+ * fecha no se copia: el vale se entrega un día y se gasta otro.
+ *
+ * Al cambiar de unidad, lo que se cargó se vuelve a decidir: la de Diesel carga
+ * Diesel; en la de gasolina se conserva Magna o Premium si ya se sabía; en
+ * cualquier otro caso queda sin saberse. Ver la migración 063.
+ */
+async function cambiosParaLaRecarga(
+  recarga: RecargaConGasolinera, data: ValeGasolinaUpdate,
+): Promise<repo.CambiosRecargaDelVale | null> {
+  const cambios: repo.CambiosRecargaDelVale = { recarga_id: recarga.id }
+  if (data.conductor_id !== undefined && data.conductor_id !== recarga.conductor_id) {
+    cambios.conductor_id = data.conductor_id
+  }
+  if (data.vehiculo_id !== undefined && data.vehiculo_id !== recarga.vehiculo_id) {
+    cambios.vehiculo_id = data.vehiculo_id
+    const familia = familiaCombustible(await recargasRepo.combustibleDelVehiculo(data.vehiculo_id))
+    cambios.producto =
+      familia === 'diesel' ? 'Diesel'
+      : familia === 'gasolina' && (recarga.producto === 'Magna' || recarga.producto === 'Premium') ? recarga.producto
+      : null
+  }
+  return cambios.conductor_id !== undefined || cambios.vehiculo_id !== undefined ? cambios : null
+}
 
 // Chofer y vehículo se validan aquí para devolver un 404 con mensaje claro en
 // vez de dejar que reviente la restricción de llave foránea con un 500.
@@ -116,8 +150,22 @@ export async function update(
   if (data.folio !== undefined && await repo.existsFolio(data.folio, id)) {
     throw new ConflictError(`Ya existe un vale con el folio ${data.folio}`)
   }
-  const result = await repo.update(id, data)
+
+  const vale = await repo.findById(id)
+  if (!vale) throw new NotFoundError('Vale')
+  const recarga = vale.recarga_id != null ? await recargasRepo.findById(vale.recarga_id) : null
+  const cambios = recarga ? await cambiosParaLaRecarga(recarga, data) : null
+
+  const result = await repo.update(id, data, cambios)
   if (!result) throw new NotFoundError('Vale')
+
+  // La lectura del odómetro era de la unidad correcta, no de la que se capturó
+  // por error: se le aplica, igual que al registrar la recarga. La que la
+  // recibió por error se queda como está —el odómetro solo sube y no se sabe
+  // qué marcaba antes—; si quedó alta, se corrige en su ficha.
+  if (cambios?.vehiculo_id !== undefined && recarga!.kilometraje != null && recarga!.kilometraje > 0) {
+    await vehiculosRepo.avanzarKilometraje(cambios.vehiculo_id, recarga!.kilometraje)
+  }
   return result
 }
 

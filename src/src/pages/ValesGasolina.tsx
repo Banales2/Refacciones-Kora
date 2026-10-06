@@ -135,7 +135,11 @@ function ValeForm({
 }: {
   // Al editar, el vehículo ya elegido puede no venir en los resultados de la
   // búsqueda; su etiqueta se pasa aparte para poder mostrarlo en el Select.
-  initial?: ValeFormValues & { vehiculo_label: string; sucursal_label: string; creado_por: string }
+  initial?: ValeFormValues & {
+    vehiculo_label: string; sucursal_label: string; creado_por: string
+    /** Fecha de la recarga que lo gastó; null si sigue sin usarse. */
+    recarga_fecha: string | null
+  }
   isPending: boolean
   error: string | null
   onSubmit: (payload: ValeGasolinaPayload) => void
@@ -358,6 +362,16 @@ function ValeForm({
             onChange={(d) => form.setFieldValue('fecha', d)}
             error={form.errors.fecha as string}
           />
+          {/* Corregir un vale ya gastado corrige también su recarga: que no
+              tome por sorpresa a quien solo quería arreglar el papel. */}
+          {initial?.recarga_fecha && (
+            <Alert color="blue" variant="light">
+              <Text size="sm">
+                Este vale ya se usó en la recarga del {formatFecha(initial.recarga_fecha)}.
+                Si cambias el chofer o el vehículo, también se corrigen en esa recarga.
+              </Text>
+            </Alert>
+          )}
           {error && <Alert color="red" title="Error">{error}</Alert>}
           <Group justify="flex-end" mt="xs">
             <Button variant="default" onClick={onCancel} disabled={isPending}>
@@ -837,6 +851,7 @@ export default function ValesGasolina({
               vehiculo_label: vehiculoLabelCorto(editVale),
               sucursal_label: editVale.sucursal ?? SIN_SUCURSAL,
               creado_por:     editVale.creado_por,
+              recarga_fecha:  editVale.recarga_fecha,
             }}
             isPending={updateMut.isPending}
             error={updateMut.error ? (updateMut.error as Error).message : null}

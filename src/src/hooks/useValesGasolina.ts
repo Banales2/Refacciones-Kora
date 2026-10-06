@@ -127,7 +127,14 @@ export function useUpdateValeGasolina() {
   return useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: ValeGasolinaPayload }) =>
       api.put<{ data: ValeGasolina }>(`/vales-gasolina/${id}`, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vales-gasolina'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['vales-gasolina'] })
+      // Si el vale ya se gastó, la API corrigió también el chofer y la unidad
+      // de su recarga, y cambiar de unidad puede avanzar su odómetro.
+      qc.invalidateQueries({ queryKey: ['recargas'] })
+      qc.invalidateQueries({ queryKey: ['vehiculos'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }
 

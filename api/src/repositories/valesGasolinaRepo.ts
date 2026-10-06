@@ -135,10 +135,65 @@ export async function create(
 }
 
 // Ni `creado_por` ni `capturado_por` se editan: registran quién dio de alta el vale.
-export async function update(id: number, data: ValeGasolinaUpdate): Promise<ValeGasolina | null> {
+/**
+ * Lo que hay que corregir en la recarga que gastó el vale, ya resuelto por el
+ * servicio. Solo trae lo que de verdad cambia.
+ */
+export interface CambiosRecargaDelVale {
+  recarga_id:    number
+  conductor_id?: number
+  vehiculo_id?:  number
+  /** Va junto con `vehiculo_id`: lo que se cargó depende de la unidad. */
+  producto?:     string | null
+}
+
+/**
+ * Corrige el vale y, si ya se gastó, la recarga que cuelga de él, en una sola
+ * transacción: el vale y su recarga no pueden quedar diciendo cosas distintas
+ * ni un momento.
+ */
+export async function update(
+  id: number, data: ValeGasolinaUpdate, recarga: CambiosRecargaDelVale | null = null,
+): Promise<ValeGasolina | null> {
   const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    const ok = await actualizarVale(tx, id, data)
+    if (ok && recarga) await actualizarRecarga(tx, recarga)
+    await tx.commit()
+    if (!ok) return null
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+  return findById(id)
+}
+
+async function actualizarRecarga(tx: sql.Transaction, c: CambiosRecargaDelVale): Promise<void> {
   const sets: string[] = []
-  const req = pool.request().input('id', sql.Int, id)
+  const req = tx.request().input('rid', sql.Int, c.recarga_id)
+  if (c.conductor_id !== undefined) {
+    req.input('conductor_id', sql.Int, c.conductor_id)
+    sets.push('conductor_id = @conductor_id')
+  }
+  if (c.vehiculo_id !== undefined) {
+    req.input('vehiculo_id', sql.Int, c.vehiculo_id)
+    sets.push('vehiculo_id = @vehiculo_id')
+  }
+  if (c.producto !== undefined) {
+    req.input('producto', sql.NVarChar(10), c.producto)
+    sets.push('producto = @producto')
+  }
+  if (sets.length) {
+    await req.query(`UPDATE recargas_combustible SET ${sets.join(', ')} WHERE id = @rid`)
+  }
+}
+
+/** false si el vale no existe. */
+async function actualizarVale(tx: sql.Transaction, id: number, data: ValeGasolinaUpdate): Promise<boolean> {
+  const sets: string[] = []
+  const req = tx.request().input('id', sql.Int, id)
 
   if (data.folio !== undefined) {
     req.input('folio', sql.NVarChar(30), data.folio)
@@ -160,13 +215,15 @@ export async function update(id: number, data: ValeGasolinaUpdate): Promise<Vale
     req.input('fecha', sql.Date, data.fecha)
     sets.push('fecha = @fecha')
   }
-  if (!sets.length) return findById(id)
+  if (!sets.length) {
+    const r = await req.query('SELECT id FROM vales_gasolina WHERE id = @id')
+    return r.recordset.length > 0
+  }
 
   const r = await req.query(
     `UPDATE vales_gasolina SET ${sets.join(', ')} OUTPUT INSERTED.id WHERE id = @id`
   )
-  if (!r.recordset.length) return null
-  return findById(id)
+  return r.recordset.length > 0
 }
 
 // El folio identifica al papel: no se repite entre vales. `exceptId` deja fuera
