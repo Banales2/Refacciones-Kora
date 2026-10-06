@@ -47,6 +47,7 @@ import ErroresCaptura from '../pages/ErroresCaptura'
 import Facturas from '../pages/Facturas'
 import FacturasGasolina from '../pages/FacturasGasolina'
 import FacturasMantenimientos from '../pages/FacturasMantenimientos'
+import FacturasCasetas from '../pages/FacturasCasetas'
 import Mantenimientos from '../pages/Mantenimientos'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 import type { DestinoDocumento } from '../lib/documentosDashboard'
@@ -132,8 +133,7 @@ const NAV_GROUPS: {
       { section: 'facturas',           label: 'Refacciones', description: 'Compras por factura: cuadrarlas contra el papel', icon: IconReceipt },
       { section: 'facturas-gasolina',  label: 'Gas',         description: 'Cuadrar la factura de la gasolinera contra las recargas', icon: IconReceipt2 },
       { section: 'facturas-mantenimientos', label: 'Mantenimientos', description: 'Cuadrar la mano de obra del taller contra los servicios registrados', icon: IconTool },
-      // Apartado previsto: sale apagado hasta que tenga pantalla.
-      { section: 'facturas-casetas', label: 'Casetas', description: 'Próximamente: cuadrar los cobros de casetas', icon: IconRoad, pendiente: true },
+      { section: 'facturas-casetas', label: 'Casetas', description: 'Revisar la factura de PASE: cobros de más y uso de las unidades', icon: IconRoad },
     ],
   },
 ]
@@ -626,6 +626,7 @@ export default function Layout() {
         {section === 'facturas'  && puedeVerSeccion('facturas') && <Facturas />}
         {section === 'facturas-gasolina' && puedeVerSeccion('facturas-gasolina') && <FacturasGasolina />}
         {section === 'facturas-mantenimientos' && puedeVerSeccion('facturas-mantenimientos') && <FacturasMantenimientos />}
+        {section === 'facturas-casetas' && puedeVerSeccion('facturas-casetas') && <FacturasCasetas />}
       </AppShell.Main>
     </AppShell>
   )
