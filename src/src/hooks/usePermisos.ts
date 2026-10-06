@@ -15,7 +15,7 @@ export type Seccion =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
   | 'mantenimientos' | 'sitios' | 'vales' | 'registros' | 'chequeos'
   | 'errores-captura' | 'facturas' | 'facturas-gasolina' | 'facturas-mantenimientos'
-  | 'solicitudes'
+  | 'facturas-casetas' | 'solicitudes'
 
 // Lo único que el practicante puede abrir sin chocar contra un 403. Es la lista
 // corta a propósito: el dashboard queda fuera porque sus doce endpoints piden

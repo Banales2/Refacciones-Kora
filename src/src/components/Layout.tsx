@@ -27,6 +27,7 @@ import {
   IconReceipt,
   IconReceipt2,
   IconReceiptOff,
+  IconRoad,
 } from '@tabler/icons-react'
 import type { Icon } from '@tabler/icons-react'
 import { useAuth } from '../hooks/useAuth'
@@ -54,7 +55,7 @@ type Section =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
   | 'mantenimientos' | 'sitios' | 'vales' | 'registros' | 'chequeos'
   | 'errores-captura' | 'facturas' | 'facturas-gasolina' | 'facturas-mantenimientos'
-  | 'solicitudes'
+  | 'facturas-casetas' | 'solicitudes'
 
 const SECTION_LABELS: Record<Section, string> = {
   dashboard:      'Dashboard',
@@ -71,6 +72,7 @@ const SECTION_LABELS: Record<Section, string> = {
   facturas:       'Facturas de compra',
   'facturas-gasolina': 'Facturas de gasolinera',
   'facturas-mantenimientos': 'Facturas de mantenimientos',
+  'facturas-casetas': 'Facturas de casetas',
   solicitudes:    'Solicitudes de refacción',
   chequeos:       'Chequeo de flotilla',
 }
@@ -130,6 +132,8 @@ const NAV_GROUPS: {
       { section: 'facturas',           label: 'Refacciones', description: 'Compras por factura: cuadrarlas contra el papel', icon: IconReceipt },
       { section: 'facturas-gasolina',  label: 'Gas',         description: 'Cuadrar la factura de la gasolinera contra las recargas', icon: IconReceipt2 },
       { section: 'facturas-mantenimientos', label: 'Mantenimientos', description: 'Cuadrar la mano de obra del taller contra los servicios registrados', icon: IconTool },
+      // Apartado previsto: sale apagado hasta que tenga pantalla.
+      { section: 'facturas-casetas', label: 'Casetas', description: 'Próximamente: cuadrar los cobros de casetas', icon: IconRoad, pendiente: true },
     ],
   },
 ]
