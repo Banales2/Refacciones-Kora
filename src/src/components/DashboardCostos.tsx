@@ -9,7 +9,7 @@ import {
   Alert, Badge, Card, Center, Group, Loader, Progress, SegmentedControl, SimpleGrid,
   Stack, Table, Text, Tooltip,
 } from '@mantine/core'
-import { BarChart } from '@mantine/charts'
+import { AreaChart, BarChart } from '@mantine/charts'
 import {
   IconAlertTriangle, IconCashBanknote, IconDiscount2, IconDroplet,
   IconGasStation, IconRoad,
@@ -236,21 +236,22 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
       {/* ── Tendencia de gasto ── */}
       <Seccion
         titulo="En qué se va el dinero"
-        descripcion="Gasto mensual de los últimos doce meses, apilado por concepto. Las refacciones son las compradas al almacén, no las consumidas."
+        descripcion="Gasto mensual de los últimos doce meses, una línea por concepto. Las refacciones son las compradas al almacén, no las consumidas."
       >
         {gastoMensual.length < 2 ? (
           <Vacio>Aún no hay suficiente historial para ver la tendencia.</Vacio>
         ) : (
-          // Barras y no área: en un área apilada cada banda se dibuja sobre la
-          // anterior, y cuando solo sube el combustible las de mano de obra y
-          // refacciones suben con él aunque valgan cero —parece que todo creció—.
-          // En la barra, un concepto en cero simplemente no aparece.
-          <BarChart
+          // Sin apilar: apiladas, cada línea marca la suma con las de abajo, y
+          // cuando solo sube el combustible las de mano de obra y refacciones
+          // suben con él aunque valgan cero. Así cada una va a su propia altura.
+          <AreaChart
             h={280}
             data={gastoMensual}
             dataKey="mes"
-            type="stacked"
             withLegend
+            withDots={false}
+            curveType="monotone"
+            fillOpacity={0.15}
             valueFormatter={(v) => formatMXN(v)}
             yAxisProps={{ width: 70, tickFormatter: formatMXNCorto }}
             series={[
