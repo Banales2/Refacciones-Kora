@@ -240,11 +240,21 @@ function sumar(tickets: { litros: number; costo: number }[]) {
   }
 }
 
+// `corregirVale`: el vale se emitió para otra unidad y quien captura dijo que
+// era para esta. Se le cambia en la misma transacción para que el vale y su
+// recarga no discrepen nunca, ni si el INSERT falla.
 export async function create(
   vehiculoId: number, data: RecargaCreate, producto: ProductoRecarga | null, capturadoPor: string,
+  corregirVale = false,
 ): Promise<RecargaConGasolinera> {
   const suma = sumar(data.tickets)
   const id = await enTransaccion(async (tx) => {
+    if (corregirVale) {
+      await tx.request()
+        .input('vale_id',     sql.Int, data.vale_id)
+        .input('vehiculo_id', sql.Int, vehiculoId)
+        .query('UPDATE vales_gasolina SET vehiculo_id = @vehiculo_id WHERE id = @vale_id')
+    }
     const r = await tx.request()
       .input('vehiculo_id',   sql.Int, vehiculoId)
       .input('gasolinera_id', sql.Int, data.gasolinera_id)

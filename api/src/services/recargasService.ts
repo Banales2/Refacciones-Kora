@@ -30,12 +30,17 @@ async function productoPara(
 // El vale tiene que existir, haber sido emitido para el mismo vehículo que se
 // está recargando (si no, la recarga quedaría amarrada al vale de otra unidad)
 // y no haberse usado antes: cada vale sirve para una sola recarga.
+//
+// `corregirVehiculo`: al registrar, quien captura dijo que el vale se emitió
+// para la unidad equivocada. Entonces el vale de otra unidad se acepta y
+// devuelve true: hay que pasarlo a la de la recarga.
 async function validarVale(
-  valeId: number, vehiculoId: number, recargaId?: number
-): Promise<void> {
+  valeId: number, vehiculoId: number, recargaId?: number, corregirVehiculo = false,
+): Promise<boolean> {
   const vehiculoDelVale = await repo.valeVehiculo(valeId)
   if (vehiculoDelVale === null) throw new NotFoundError('Vale')
-  if (vehiculoDelVale !== vehiculoId) {
+  const otroVehiculo = vehiculoDelVale !== vehiculoId
+  if (otroVehiculo && !corregirVehiculo) {
     throw new ValidationError('El vale corresponde a otro vehículo')
   }
   if (await repo.valeUsado(valeId, recargaId)) {
@@ -47,6 +52,7 @@ async function validarVale(
       'Vales de gasolina y vuelve a intentarlo.'
     )
   }
+  return otroVehiculo
 }
 
 export async function getById(id: number): Promise<RecargaConGasolinera> {
@@ -72,8 +78,8 @@ export async function create(
   vehiculoId: number, data: RecargaCreate, capturadoPor: string,
 ): Promise<RecargaConGasolinera> {
   const producto = await productoPara(vehiculoId, data.producto)
-  await validarVale(data.vale_id, vehiculoId)
-  const recarga = await repo.create(vehiculoId, data, producto, capturadoPor)
+  const corregirVale = await validarVale(data.vale_id, vehiculoId, undefined, data.corregir_vale)
+  const recarga = await repo.create(vehiculoId, data, producto, capturadoPor, corregirVale)
   if (data.kilometraje > 0) {
     await vehiculosRepo.avanzarKilometraje(vehiculoId, data.kilometraje)
   }

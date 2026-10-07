@@ -21,6 +21,7 @@ import type { Recarga, RecargaEmergenciaPayload, RecargaPayload } from '../hooks
 import { useGasolineras } from '../hooks/useGasolineras'
 import { useConductores } from '../hooks/useConductores'
 import { useValesGasolina } from '../hooks/useValesGasolina'
+import type { ValeGasolina } from '../hooks/useValesGasolina'
 import { KM_MAX, validarKm } from '../lib/validaciones'
 import { FechaInput } from './FechaInput'
 import SelectCatalogo from './SelectCatalogo'
@@ -120,7 +121,7 @@ export function recargaAFormulario(r: Recarga): RecargaFormValues {
 }
 
 export function RecargaForm({
-  vehiculoId, kmVehiculo, combustibleVehiculo, valesUsados, initial, isPending, error, onSubmit, onCancel,
+  vehiculoId, kmVehiculo, combustibleVehiculo, valesUsados, vale, initial, isPending, error, onSubmit, onCancel,
 }: {
   vehiculoId: number
   // Odómetro actual del vehículo, o null si no tiene (o no lleva). Sirve para
@@ -130,6 +131,10 @@ export function RecargaForm({
   combustibleVehiculo: string | null
   // Vales ya consumidos por otras recargas; cada vale sirve una sola vez.
   valesUsados: Set<number>
+  // El vale ya elegido fuera del formulario (alta desde la flota, donde el vale
+  // decide la unidad). Sin él, el vale se elige aquí, entre los de la unidad.
+  // Si la unidad ya no es la del vale, al guardar se le corrige al vale.
+  vale?: ValeGasolina
   initial?: RecargaFormValues
   isPending: boolean
   error: string | null
@@ -158,9 +163,10 @@ export function RecargaForm({
   // Solo los vales emitidos para este vehículo y que sigan libres: la API
   // rechaza los de otra unidad y los ya usados, así que no tiene caso
   // ofrecerlos. Al editar se conserva el vale de la propia recarga.
-  const vales = (valesData?.data ?? [])
+  const valesLibres = (valesData?.data ?? [])
     .filter((v) => v.vehiculo_id === vehiculoId)
     .filter((v) => !valesUsados.has(v.id) || String(v.id) === initial?.vale_id)
+  const vales = valesLibres
     .map((v) => ({
       value: String(v.id),
       // El "perdido" se dice aquí: si el papel aparece y se gasta, quien lo
@@ -174,7 +180,11 @@ export function RecargaForm({
 
   const form = useForm<RecargaFormValues>({
     initialValues: initial ?? {
-      gasolinera_id: '', conductor_id: '', vale_id: '', fecha: hoy,
+      gasolinera_id: '',
+      // El chofer sale del vale: es a quien se le entregó.
+      conductor_id: vale ? String(vale.conductor_id) : '',
+      vale_id:      vale ? String(vale.id) : '',
+      fecha: hoy,
       tickets: [{ litros: '', costo: '' }], kilometraje: '', producto: '',
     },
     validate: {
@@ -208,6 +218,14 @@ export function RecargaForm({
   // guarda. Al editar no aplica: la edición no toca el odómetro.
   const [porConfirmar, setPorConfirmar] = useState<RecargaFormValues | null>(null)
 
+  // Elegir el vale trae al chofer a quien se le entregó. Se puede cambiar
+  // después si el papel lo cargó otro.
+  function elegirVale(id: string | null) {
+    form.setFieldValue('vale_id', id ?? '')
+    const elegido = valesLibres.find((v) => String(v.id) === id)
+    if (elegido) form.setFieldValue('conductor_id', String(elegido.conductor_id))
+  }
+
   function enviar(v: RecargaFormValues) {
     onSubmit({
       gasolinera_id: parseInt(v.gasolinera_id, 10),
@@ -221,6 +239,7 @@ export function RecargaForm({
       })),
       kilometraje: Number(v.kilometraje),
       ...(preguntaProducto && esGasolina(v.producto) ? { producto: v.producto } : {}),
+      ...(vale && vale.vehiculo_id !== vehiculoId ? { corregir_vale: true } : {}),
     })
   }
 
@@ -237,6 +256,26 @@ export function RecargaForm({
     <>
     <form onSubmit={form.onSubmit(handleSubmit)}>
       <Stack gap="sm">
+        {/* El vale primero: trae al chofer. Desde la flota ya se eligió arriba. */}
+        {!vale && (
+          <>
+            <SelectCatalogo
+              estado={valesQuery}
+              nombre="vales"
+              label="Vale de gasolina"
+              placeholder={vales.length ? 'Selecciona el vale usado' : 'No hay vales para este vehículo'}
+              data={vales}
+              required
+              {...form.getInputProps('vale_id')}
+              onChange={elegirVale}
+            />
+            {!valesQuery.isLoading && !valesQuery.isError && vales.length === 0 && (
+              <Text size="xs" c="dimmed">
+                No hay vales libres de este vehículo. Registra uno en Vales de gasolina.
+              </Text>
+            )}
+          </>
+        )}
         <SelectCatalogo
           estado={gasQuery}
           nombre="gasolineras"
@@ -265,20 +304,6 @@ export function RecargaForm({
         {!conQuery.isLoading && !conQuery.isError && conductores.length === 0 && (
           <Text size="xs" c="dimmed">
             Da de alta los conductores en Catálogos → Conductores.
-          </Text>
-        )}
-        <SelectCatalogo
-          estado={valesQuery}
-          nombre="vales"
-          label="Vale de gasolina"
-          placeholder={vales.length ? 'Selecciona el vale usado' : 'No hay vales para este vehículo'}
-          data={vales}
-          required
-          {...form.getInputProps('vale_id')}
-        />
-        {!valesQuery.isLoading && !valesQuery.isError && vales.length === 0 && (
-          <Text size="xs" c="dimmed">
-            No hay vales libres de este vehículo. Registra uno en Vales de gasolina.
           </Text>
         )}
         <FechaInput

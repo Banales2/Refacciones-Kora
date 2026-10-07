@@ -21,6 +21,9 @@ export async function recargaCreate(
     await exigirVehiculo(vehiculoId, await alcanceDe(user))
 
     const data = RecargaCreateSchema.parse(await request.json())
+    // Si la recarga corrige la unidad del vale, ese cambio va a la bitácora
+    // como edición del vale, con su propio antes y después.
+    const valeAntes = data.corregir_vale ? await capturar('vales_gasolina', data.vale_id) : null
     const created = await service.create(vehiculoId, data, user.userDetails)
 
     await audit({
@@ -32,6 +35,21 @@ export async function recargaCreate(
       detalles: { vehiculo_id: vehiculoId, litros: created.litros, costo: created.costo, tickets: created.tickets.length },
       ipAddress: getClientIp(request),
     })
+    if (valeAntes) {
+      const valeDespues = await capturar('vales_gasolina', data.vale_id)
+      if (JSON.stringify(valeAntes) !== JSON.stringify(valeDespues)) {
+        await audit({
+          user,
+          accion: 'EDITAR',
+          tabla: 'vales_gasolina',
+          registroId: data.vale_id,
+          antes: valeAntes,
+          despues: valeDespues,
+          detalles: { por_recarga: created.id },
+          ipAddress: getClientIp(request),
+        })
+      }
+    }
 
     return { status: 201, jsonBody: { data: created } }
   } catch (err) {

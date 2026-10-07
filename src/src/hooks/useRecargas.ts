@@ -59,6 +59,8 @@ export interface RecargaPayload {
   kilometraje:   number
   // Solo en las unidades de gasolina; en las de Diesel lo pone la API.
   producto?:     Gasolina
+  // Solo al registrar: el vale se emitió para otra unidad y se corrige a esta.
+  corregir_vale?: boolean
 }
 
 export interface RecargaEmergenciaPayload {
@@ -108,6 +110,8 @@ export function useCreateRecarga() {
       // capturado es mayor al que ya tenía).
       qc.invalidateQueries({ queryKey: ['vehiculos'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
+      // El vale pasa a usado, y puede haber cambiado de unidad (corregir_vale).
+      qc.invalidateQueries({ queryKey: ['vales-gasolina'] })
     },
   })
 }

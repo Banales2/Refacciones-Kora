@@ -21,7 +21,10 @@ import {
 } from '../hooks/useRecargas'
 import type { RecargaConVehiculo, RecargaEmergenciaPayload, RecargaPayload } from '../hooks/useRecargas'
 import { usePermisos } from '../hooks/usePermisos'
-import { useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
+import { useVehiculo, useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
+import { useValesGasolina } from '../hooks/useValesGasolina'
+import { formatFecha } from '../lib/formato'
+import SelectCatalogo from './SelectCatalogo'
 import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCorto } from './OpcionVehiculo'
 import {
   RecargaEmergenciaForm, RecargaForm, RecargasTabla, ResumenGrupo, recargaAFormulario,
@@ -43,12 +46,17 @@ function rendimientosPorVehiculo(items: RecargaConVehiculo[]): Map<number, numbe
   return todos
 }
 
-// ── Alta: vehículo + recarga ──────────────────────────────────────────────────
+// ── Alta: vale + vehículo + recarga ───────────────────────────────────────────
 
-type VehiculoElegido = { id: number; label: string; km: number | null; combustible: string | null }
+type VehiculoElegido = { id: number; label: string }
 
-// Con `onSubmitEmergencia` el alta es de emergencia: mismo selector de
-// vehículo, formulario sin gasolinera, vale ni kilometraje.
+// Primero el vale: es el papel que el chofer trae en la mano, y ya dice a qué
+// unidad y a qué chofer se le entregó. Elegirlo llena los dos; se pueden
+// cambiar si el vale venía mal, y al guardar la API le corrige la unidad.
+//
+// Con `onSubmitEmergencia` el alta es de emergencia: no hay vale, así que se
+// empieza por el vehículo y el formulario no lleva gasolinera, vale ni
+// kilometraje.
 function NuevaRecarga({
   valesUsados, isPending, error, onSubmit, onSubmitEmergencia, onCancel,
 }: {
@@ -59,12 +67,37 @@ function NuevaRecarga({
   onSubmitEmergencia?: (vehiculoId: number, payload: RecargaEmergenciaPayload) => void
   onCancel: () => void
 }) {
+  const conVale = !onSubmitEmergencia
+
   // La flota puede pasar de una página de vehículos, así que el Select busca
   // contra la API (que ya acota al responsable a su sucursal).
   const [busqueda, setBusqueda] = useState('')
   const [debounced] = useDebouncedValue(busqueda, 300)
   const { data: vehData, isLoading } = useVehiculos(1, debounced, undefined, undefined, 20)
   const [elegido, setElegido] = useState<VehiculoElegido | null>(null)
+  // El odómetro y el combustible de la unidad elegida. Se piden aparte porque
+  // la que trae el vale no tiene por qué estar en la búsqueda.
+  const vehQuery = useVehiculo(elegido?.id)
+  const vehiculo = vehQuery.data?.data
+
+  // Vales que todavía se pueden gastar. Los archivados ya no llegan, y los
+  // usados se descartan también por las recargas a la vista: la consulta de
+  // vales puede venir de antes de la última recarga.
+  const valesQuery = useValesGasolina()
+  const [valeId, setValeId] = useState<string | null>(null)
+  const valesLibres = useMemo(
+    () => (valesQuery.data?.data ?? [])
+      .filter((v) => v.estado !== 'usado' && v.estado !== 'archivado' && !valesUsados.has(v.id)),
+    [valesQuery.data, valesUsados],
+  )
+  const vale = valesLibres.find((v) => String(v.id) === valeId)
+  const opcionesVale = valesLibres.map((v) => ({
+    value: String(v.id),
+    // El "perdido" se dice aquí: si el papel aparece y se gasta, quien lo
+    // captura merece ver que el sistema lo daba por extraviado.
+    label: `Vale ${v.folio} — ${formatFecha(v.fecha)} — ${v.conductor} — ${vehiculoLabelCorto(v)}` +
+           (v.estado === 'perdido' ? ' · dado por perdido' : ''),
+  }))
 
   // El elegido se conserva en las opciones aunque la búsqueda activa —que
   // Mantine llena con su etiqueta al seleccionarlo— ya no lo devuelva.
@@ -76,48 +109,94 @@ function NuevaRecarga({
     return opts
   }, [vehData, elegido])
 
+  function elegirVale(id: string | null) {
+    setValeId(id)
+    const v = valesLibres.find((x) => String(x.id) === id)
+    if (v) {
+      setElegido({ id: v.vehiculo_id, label: vehiculoLabelCorto(v) })
+      setBusqueda(vehiculoLabelCorto(v))
+    }
+  }
+
   function seleccionar(id: string | null) {
     if (!id) { setElegido(null); return }
     if (elegido && String(elegido.id) === id) return
     const v = (vehData?.data ?? []).find((x) => String(x.id) === id)
-    if (v) setElegido({ id: v.id, label: vehiculoLabelCorto(v), km: v.kilometraje, combustible: v.combustible })
+    if (v) setElegido({ id: v.id, label: vehiculoLabelCorto(v) })
   }
+
+  const otraUnidad = vale && elegido && vale.vehiculo_id !== elegido.id
 
   return (
     <Stack gap="sm">
-      <Select
-        label="Vehículo"
-        placeholder="Busca por marca, modelo, serie o placas"
-        data={opciones}
-        searchable
-        filter={sinFiltroLocal}
-        renderOption={renderOpcionVehiculo}
-        required
-        value={elegido ? String(elegido.id) : null}
-        onChange={seleccionar}
-        searchValue={busqueda}
-        onSearchChange={setBusqueda}
-        rightSection={isLoading ? <Loader size="xs" /> : undefined}
-        nothingFoundMessage={isLoading ? 'Buscando…' : 'Sin resultados'}
-      />
-      {elegido && onSubmitEmergencia ? (
+      {conVale && (
+        <>
+          <SelectCatalogo
+            estado={valesQuery}
+            nombre="vales"
+            label="Vale de gasolina"
+            placeholder={opcionesVale.length ? 'Busca por folio, chofer o unidad' : 'No hay vales libres'}
+            data={opcionesVale}
+            required
+            value={valeId}
+            onChange={elegirVale}
+          />
+          {!valesQuery.isLoading && !valesQuery.isError && opcionesVale.length === 0 && (
+            <Text size="xs" c="dimmed">
+              No hay vales libres. Registra uno en la pestaña Vales.
+            </Text>
+          )}
+        </>
+      )}
+      {(!conVale || vale) && (
+        <Select
+          label="Vehículo"
+          placeholder="Busca por marca, modelo, serie o placas"
+          description={conVale ? 'El del vale. Cámbialo solo si el vale se emitió para otra unidad.' : undefined}
+          data={opciones}
+          searchable
+          filter={sinFiltroLocal}
+          renderOption={renderOpcionVehiculo}
+          required
+          value={elegido ? String(elegido.id) : null}
+          onChange={seleccionar}
+          searchValue={busqueda}
+          onSearchChange={setBusqueda}
+          rightSection={isLoading ? <Loader size="xs" /> : undefined}
+          nothingFoundMessage={isLoading ? 'Buscando…' : 'Sin resultados'}
+        />
+      )}
+      {otraUnidad && (
+        <Alert color="yellow" icon={<IconAlertTriangle size={16} />}>
+          El vale {vale.folio} se emitió para {vehiculoLabelCorto(vale)}. Al guardar, el vale
+          también se corrige a esta unidad.
+        </Alert>
+      )}
+      {elegido && vehQuery.isError ? (
+        <Alert color="red" title="No se pudo cargar el vehículo">
+          {(vehQuery.error as Error).message}
+        </Alert>
+      ) : elegido && !vehiculo ? (
+        <Center py="md"><Loader size="sm" /></Center>
+      ) : elegido && vehiculo && !conVale ? (
         <RecargaEmergenciaForm
           key={elegido.id}
-          combustibleVehiculo={elegido.combustible}
+          combustibleVehiculo={vehiculo.combustible}
           isPending={isPending}
           error={error}
-          onSubmit={(payload) => onSubmitEmergencia(elegido.id, payload)}
+          onSubmit={(payload) => onSubmitEmergencia!(elegido.id, payload)}
           onCancel={onCancel}
         />
-      ) : elegido ? (
-        // `key`: al cambiar de vehículo el formulario empieza de cero, porque
-        // el vale elegido era del vehículo anterior y la API lo rechazaría.
+      ) : elegido && vehiculo && vale ? (
+        // `key`: otro vale empieza el formulario de cero, con su chofer.
+        // Cambiar de vehículo no: lo capturado sigue valiendo.
         <RecargaForm
-          key={elegido.id}
+          key={vale.id}
           vehiculoId={elegido.id}
-          kmVehiculo={elegido.km}
-          combustibleVehiculo={elegido.combustible}
+          kmVehiculo={vehiculo.kilometraje}
+          combustibleVehiculo={vehiculo.combustible}
           valesUsados={valesUsados}
+          vale={vale}
           isPending={isPending}
           error={error}
           onSubmit={(payload) => onSubmit(elegido.id, payload)}

@@ -64,6 +64,11 @@ export const RecargaCreateSchema = z.preprocess(conTickets, z.object({
   // Obligatorio al registrar. Las recargas anteriores a esta función se
   // quedaron sin vale y por eso la columna sigue siendo NULL-able en la tabla.
   vale_id: z.coerce.number().int().min(1, 'Vale requerido'),
+  // La recarga se captura a partir del vale, que trae chofer y unidad. Si quien
+  // captura corrige la unidad, es que el vale se emitió mal: con esto el vale
+  // pasa a la unidad de la recarga, en la misma transacción. Sin él, un vale de
+  // otra unidad se sigue rechazando.
+  corregir_vale: z.boolean().optional(),
   fecha,
   tickets,
   kilometraje: lecturaKm(),
