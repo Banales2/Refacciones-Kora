@@ -17,7 +17,7 @@ import {
 import { useForm } from '@mantine/form'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
-  IconPencil, IconPlus, IconArchive, IconArchiveOff, IconSearch,
+  IconPencil, IconPlus, IconArchive, IconArchiveOff, IconSearch, IconReportAnalytics,
 } from '@tabler/icons-react'
 import {
   useValesGasolina, useCreateValeGasolina, useUpdateValeGasolina,
@@ -43,6 +43,7 @@ import { CODIGO, limpiarCodigo } from '../lib/validaciones'
 import NuevoConductorModal from '../components/NuevoConductorModal'
 import SelectCatalogo from '../components/SelectCatalogo'
 import RecargasFlota from '../components/RecargasFlota'
+import ReporteValesSinUsarModal from '../components/ReporteValesSinUsarModal'
 
 function todayIso() {
   const d = new Date()
@@ -554,6 +555,7 @@ export default function ValesGasolina({
   onNavigateConductor?: (id: number) => void
 }) {
   const [createOpen, setCreateOpen] = useState(false)
+  const [reporteOpen, setReporteOpen] = useState(false)
   const [editVale, setEditVale]     = useState<ValeGasolina | null>(null)
   // El vale que se está dando por perdido. Se pregunta el motivo: dentro de un
   // mes, "archivado" a secas no le dice nada a nadie.
@@ -650,12 +652,21 @@ export default function ValesGasolina({
               <Text size="sm" c="dimmed">{vales.length} en total</Text>
             )}
           </Group>
-          <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={() => setCreateOpen(true)}
-          >
-            Nuevo vale
-          </Button>
+          <Group gap="sm">
+            <Button
+              variant="light"
+              leftSection={<IconReportAnalytics size={16} />}
+              onClick={() => setReporteOpen(true)}
+            >
+              Reporte de sin usar
+            </Button>
+            <Button
+              leftSection={<IconPlus size={16} />}
+              onClick={() => setCreateOpen(true)}
+            >
+              Nuevo vale
+            </Button>
+          </Group>
         </Group>
 
         <Group gap="sm" align="center" wrap="wrap">
@@ -760,6 +771,8 @@ export default function ValesGasolina({
           </Tabs.Panel>
         </Tabs>
       </Stack>
+
+      <ReporteValesSinUsarModal opened={reporteOpen} onClose={() => setReporteOpen(false)} />
 
       {/* Dar por perdido. Se pregunta el motivo porque es una decisión, no un
           hecho: dentro de un mes, quien lea "archivado" a secas no va a saber
