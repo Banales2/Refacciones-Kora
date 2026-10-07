@@ -78,12 +78,25 @@ que cae dentro del periodo que la factura cobra. Se puede cambiar a mano.
 
 ## Las candidatas
 
-> Las de **su gasolinera**, con fecha **menor o igual** a la de la factura, que
-> **ningún renglón de ninguna otra factura** haya reclamado.
+> Las de **su gasolinera**, con fecha **hasta 3 días después** de la de la
+> factura, que **ningún renglón de ninguna otra factura** haya reclamado.
 
 El corte por fecha no tiene límite inferior a propósito: una carga de hace tres
 meses que nadie facturó sigue siendo candidata legítima, y poner una ventana la
 escondería justo cuando aparece la factura atrasada que la cobra.
+
+### Los días de gracia
+
+La fecha de la recarga es la de **captura**, y no siempre la de la carga: la del
+sábado se registra el lunes, la de un puente el martes. Con el corte exacto, esa
+recarga ni aparecía como opción y su renglón salía como "carga que nadie
+capturó" aunque sí se capturó. Por eso el corte admite `DIAS_DE_GRACIA` (3) días
+después de la factura (`facturasGasolinaRepo.ts`).
+
+Esos tickets se distinguen en el desplegable —"registrada 2 días después de la
+factura"— y **en empate de litros pierden** contra uno registrado hasta la fecha
+de la factura: pueden ser la carga del sábado, pero también una carga de después
+que no le toca a esta factura. Si no hay otro con esos litros, se proponen.
 
 El vínculo vive en el **renglón** (`facturas_gasolina_renglones.ticket_id`), no
 en la recarga. Así "qué falta por facturar" y "qué renglón no tiene recarga" son
@@ -136,9 +149,15 @@ valen.
 ## El candado
 
 Un ticket que ya entró en una factura **conciliada** no puede cambiar de `litros`
-ni desaparecer, y su recarga no puede cambiar de `fecha` ni de `gasolinera_id`:
-el emparejamiento se hizo con esos datos y dejaría de ser cierto sin que nadie se
+ni desaparecer, y su recarga no puede cambiar de `gasolinera_id`: el
+emparejamiento se hizo con esos datos y dejaría de ser cierto sin que nadie se
 entere. `PUT /recargas/{id}` responde 409 `RECARGA_CONCILIADA`.
+
+La `fecha` **sí se puede corregir**, mientras no quede después de la fecha de la
+factura más los días de gracia. Es justo el arreglo que tiene que poder hacerse
+—la carga del sábado registrada el lunes— y dentro de ese margen la recarga
+seguía siendo candidata, así que el cuadre sigue siendo cierto. Moverla más allá
+sí pide reabrir la factura.
 
 Los demás campos —chofer, vale, kilometraje, costo, y los tickets que ninguna
 factura conciliada cobra— **sí se siguen corrigiendo**. Son datos de la

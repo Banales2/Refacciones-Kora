@@ -155,6 +155,13 @@ function resolverTickets(
   }]
 }
 
+/** `2026-10-03` + 3 → `2026-10-06`. En UTC para que el horario de verano no mueva el día. */
+function sumarDias(fecha: string, dias: number): string {
+  const d = new Date(`${fecha}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + dias)
+  return d.toISOString().slice(0, 10)
+}
+
 /** Las cantidades se comparan en milésimas: es lo que guarda la columna. */
 function mismaCantidad(a: number, b: number): boolean {
   return Math.round(a * 1000) === Math.round(b * 1000)
@@ -163,8 +170,11 @@ function mismaCantidad(a: number, b: number): boolean {
 // Un ticket que ya entró en una factura conciliada no puede cambiar de litros
 // ni desaparecer: el renglón del papel se casó con él porque despacharon esa
 // misma cantidad, y el cuadre dejaría de ser cierto sin que nadie se enterara.
-// La fecha y la gasolinera tampoco, aunque no lo parezca: deciden si la recarga
-// era siquiera candidata de esa factura.
+// La gasolinera tampoco, aunque no lo parezca: decide si la recarga era siquiera
+// candidata de esa factura. La fecha, solo si la saca del corte: corregir la
+// carga del sábado que se registró el lunes es justo lo que tiene que poder
+// hacerse, y mientras quede dentro de la fecha de la factura más los días de
+// gracia, seguía siendo candidata y el cuadre sigue siendo cierto.
 //
 // Lo demás —chofer, vale, kilometraje, costo, y tickets nuevos o que nadie ha
 // conciliado— no toca el cuadre y se sigue corrigiendo: son datos de la
@@ -173,19 +183,23 @@ function mismaCantidad(a: number, b: number): boolean {
 async function protegerCuadre(
   recargaId: number, data: RecargaUpdate, tickets: TicketRecarga[] | undefined,
 ): Promise<void> {
-  const tocaSitio = data.fecha !== undefined || data.gasolinera_id !== undefined
-  if (!tocaSitio && !tickets) return
+  const tocaGasolinera = data.gasolinera_id !== undefined
+  if (!tocaGasolinera && data.fecha === undefined && !tickets) return
 
   const conciliados = await facturasGasolinaRepo.ticketsConciliados(recargaId)
   const roto = conciliados.find((c) => {
-    if (tocaSitio) return true
+    if (tocaGasolinera) return true
+    const corte = sumarDias(c.fecha_factura, facturasGasolinaRepo.DIAS_DE_GRACIA)
+    if (data.fecha !== undefined && data.fecha.slice(0, 10) > corte) return true
+    if (!tickets) return false
     const nuevo = tickets!.find((t) => t.id === c.ticket_id)
     return !nuevo || !mismaCantidad(nuevo.litros, c.litros)
   })
   if (roto) {
     throw new AppError(
       `Esta recarga ya está conciliada en la factura ${roto.folio}. ` +
-      'Reábrela para poder corregir los litros de ese ticket, la fecha o la gasolinera.',
+      'Reábrela para poder corregir los litros de ese ticket, la gasolinera o una fecha ' +
+      'que quede después de la factura más los días de gracia.',
       409, 'RECARGA_CONCILIADA',
     )
   }

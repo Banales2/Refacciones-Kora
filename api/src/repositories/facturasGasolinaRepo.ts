@@ -73,6 +73,17 @@ export interface RenglonFactura {
 }
 
 /** Un ticket que algún renglón podría estar cobrando. */
+/**
+ * Cuántos días DESPUÉS de la fecha de la factura puede estar registrada una
+ * recarga y seguir siendo candidata.
+ *
+ * La fecha de la recarga es la de captura, y no siempre la de la carga: la del
+ * sábado se registra el lunes, la de un puente el martes. Con el corte exacto,
+ * esa recarga ni aparecía como opción y su renglón salía como "carga que nadie
+ * capturó" aunque sí se capturó. Tres días cubren el fin de semana y un puente.
+ */
+export const DIAS_DE_GRACIA = 3
+
 export interface TicketCandidato {
   /** El del ticket: es lo que se casa. */
   id: number
@@ -86,6 +97,11 @@ export interface TicketCandidato {
   vehiculo: string
   conductor: string
   vale_folio: string | null
+  /**
+   * Cuántos días después de la fecha de la factura quedó registrada. 0 si fue
+   * antes o el mismo día. Ver `DIAS_DE_GRACIA`.
+   */
+  dias_despues: number
 }
 
 /**
@@ -359,9 +375,10 @@ export async function renglones(facturaId: number): Promise<RenglonFactura[]> {
 /**
  * Los tickets que algún renglón de esta factura podría estar cobrando.
  *
- * Son los de las recargas de su gasolinera, de su fecha hacia atrás, que ningún
- * renglón de ninguna OTRA factura haya reclamado — más los que esta misma tiene
- * casados, para que al volver sigan apareciendo.
+ * Son los de las recargas de su gasolinera, de su fecha hacia atrás —con
+ * `DIAS_DE_GRACIA` de margen, porque la carga del sábado se registra el lunes—,
+ * que ningún renglón de ninguna OTRA factura haya reclamado — más los que esta
+ * misma tiene casados, para que al volver sigan apareciendo.
  *
  * El corte por fecha no tiene límite inferior a propósito: una carga de hace
  * tres meses que nadie facturó sigue siendo candidata legítima, y poner una
@@ -374,13 +391,16 @@ export async function candidatas(
   const r = await pool.request()
     .input('id',     sql.Int, facturaId)
     .input('limite', sql.Int, limite)
+    .input('gracia', sql.Int, DIAS_DE_GRACIA)
     .query(`
       SELECT TOP (@limite)
              t.id, t.recarga_id, t.ticket_n, t.tickets,
              CONVERT(char(10), rc.fecha, 23) AS fecha,
              t.litros, t.costo,
              CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
-             co.nombre AS conductor, vg.folio AS vale_folio
+             co.nombre AS conductor, vg.folio AS vale_folio,
+             CASE WHEN rc.fecha > f.fecha THEN DATEDIFF(day, f.fecha, rc.fecha) ELSE 0 END
+               AS dias_despues
       -- El número se cuenta antes del filtro: "ticket 2 de 3" no cambia
       -- porque el 1 ya lo cobre otra factura.
       FROM (
@@ -396,7 +416,7 @@ export async function candidatas(
       JOIN conductores  co ON co.id = rc.conductor_id
       LEFT JOIN vales_gasolina vg ON vg.id = rc.vale_id
       WHERE rc.gasolinera_id = f.gasolinera_id
-        AND rc.fecha <= f.fecha
+        AND rc.fecha <= DATEADD(day, @gracia, f.fecha)
         AND NOT EXISTS (
           SELECT 1 FROM facturas_gasolina_renglones otro
           WHERE otro.ticket_id = t.id AND otro.factura_id <> @id
@@ -602,12 +622,13 @@ export async function recargasSinFacturar(p: {
  */
 export async function ticketsConciliados(
   recargaId: number,
-): Promise<{ ticket_id: number; litros: number; folio: string }[]> {
+): Promise<{ ticket_id: number; litros: number; folio: string; fecha_factura: string }[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, recargaId)
     .query(`
-      SELECT t.id AS ticket_id, t.litros, f.folio
+      SELECT t.id AS ticket_id, t.litros, f.folio,
+             CONVERT(char(10), f.fecha, 23) AS fecha_factura
       FROM facturas_gasolina_renglones fr
       JOIN facturas_gasolina f ON f.id = fr.factura_id
       JOIN recargas_combustible_tickets t ON t.id = fr.ticket_id

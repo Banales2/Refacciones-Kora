@@ -322,11 +322,18 @@ function numeroTicket(t: { ticket_n: number; tickets: number }): string {
   return t.tickets > 1 ? `ticket ${t.ticket_n}/${t.tickets}` : ''
 }
 
-/** Cómo se describe un ticket en el desplegable de cada renglón. */
+/**
+ * Cómo se describe un ticket en el desplegable de cada renglón. La registrada
+ * después de la factura se dice: es la del sábado capturada el lunes, o una carga
+ * de después que no le toca a esta factura, y quien concilia es quien lo sabe.
+ */
 function etiquetaTicket(t: TicketCandidato): string {
   const n = numeroTicket(t)
+  const despues = t.dias_despues > 0
+    ? ` · registrada ${t.dias_despues} día${t.dias_despues === 1 ? '' : 's'} después de la factura`
+    : ''
   return `${formatFecha(t.fecha)} · ${t.litros} L · ${formatMXN(t.costo)} · ${t.vehiculo}` +
-    (n ? ` · ${n}` : '')
+    (n ? ` · ${n}` : '') + despues
 }
 
 /**

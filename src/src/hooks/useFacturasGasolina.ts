@@ -82,6 +82,11 @@ export interface TicketCandidato {
   vehiculo:   string
   conductor:  string
   vale_folio: string | null
+  /**
+   * Días que quedó registrada después de la fecha de la factura (0 si antes).
+   * Se admiten unos días de gracia: la carga del sábado se registra el lunes.
+   */
+  dias_despues: number
 }
 
 export interface FacturasGasolinaFiltros {

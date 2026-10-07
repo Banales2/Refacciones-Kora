@@ -179,8 +179,11 @@ export interface RenglonSugerido extends RenglonFactura {
  * Lo que no case por cantidad se queda sin proponer y lo resuelve una persona:
  * es preferible a inventar un emparejamiento que nadie va a revisar.
  *
- * En empate —dos tickets con los mismos litros— gana el más reciente, que es la
- * que cae dentro del periodo que la factura cobra. Se puede cambiar a mano.
+ * En empate —dos tickets con los mismos litros— gana el más reciente de los que
+ * quedaron registrados hasta la fecha de la factura, que es el que cae en el
+ * periodo que cobra. Los de los días de gracia (`DIAS_DE_GRACIA`) solo ganan si
+ * no hay otro: son la carga del sábado registrada el lunes, pero también podrían
+ * ser una carga de después. Se puede cambiar a mano.
  */
 export async function candidatas(facturaId: number): Promise<{
   factura: repo.FacturaGasolina
@@ -205,9 +208,11 @@ export async function candidatas(facturaId: number): Promise<{
 
   for (const r of sugeridos) {
     if (r.ticket_id !== null) continue
-    const match = tickets.find(
+    const iguales = tickets.filter(
       (c) => !tomados.has(c.id) && mismaCantidad(c.litros, r.cantidad),
     )
+    // Vienen del más reciente al más viejo.
+    const match = iguales.find((c) => c.dias_despues === 0) ?? iguales[0]
     if (match) {
       r.sugerido_ticket_id = match.id
       tomados.add(match.id)
