@@ -50,6 +50,9 @@ function rendimientosPorVehiculo(items: RecargaConVehiculo[]): Map<number, numbe
 
 type VehiculoElegido = { id: number; label: string }
 
+/** Lo que se le dice a quien capturó cuando la recarga le corrigió la unidad al vale. */
+type CorreccionVale = { folio: string; antes: string; ahora: string }
+
 // Primero el vale: es el papel que el chofer trae en la mano, y ya dice a qué
 // unidad y a qué chofer se le entregó. Elegirlo llena los dos; se pueden
 // cambiar si el vale venía mal, y al guardar la API le corrige la unidad.
@@ -63,11 +66,14 @@ function NuevaRecarga({
   valesUsados: Set<number>
   isPending: boolean
   error: string | null
-  onSubmit: (vehiculoId: number, payload: RecargaPayload) => void
+  onSubmit: (vehiculoId: number, payload: RecargaPayload, correccion?: CorreccionVale) => void
   onSubmitEmergencia?: (vehiculoId: number, payload: RecargaEmergenciaPayload) => void
   onCancel: () => void
 }) {
   const conVale = !onSubmitEmergencia
+  // Corregir la unidad del vale cambia un papel que no es la recarga: no debe
+  // pasar de callado, como el avance del odómetro. Se pide aceptar al guardar.
+  const [porConfirmarVale, setPorConfirmarVale] = useState<RecargaPayload | null>(null)
 
   // La flota puede pasar de una página de vehículos, así que el Select busca
   // contra la API (que ya acota al responsable a su sucursal).
@@ -126,6 +132,21 @@ function NuevaRecarga({
   }
 
   const otraUnidad = vale && elegido && vale.vehiculo_id !== elegido.id
+
+  function guardar(payload: RecargaPayload) {
+    if (!elegido) return
+    if (payload.corregir_vale) { setPorConfirmarVale(payload); return }
+    onSubmit(elegido.id, payload)
+  }
+
+  function confirmarCorreccion() {
+    const payload = porConfirmarVale!
+    setPorConfirmarVale(null)
+    if (!elegido || !vale) return
+    onSubmit(elegido.id, payload, {
+      folio: vale.folio, antes: vehiculoLabelCorto(vale), ahora: elegido.label,
+    })
+  }
 
   return (
     <Stack gap="sm">
@@ -199,7 +220,7 @@ function NuevaRecarga({
           vale={vale}
           isPending={isPending}
           error={error}
-          onSubmit={(payload) => onSubmit(elegido.id, payload)}
+          onSubmit={guardar}
           onCancel={onCancel}
         />
       ) : (
@@ -207,6 +228,36 @@ function NuevaRecarga({
           <Button variant="default" onClick={onCancel}>Cancelar</Button>
         </Group>
       )}
+
+      <Modal
+        opened={porConfirmarVale !== null}
+        onClose={() => setPorConfirmarVale(null)}
+        title="Se corregirá el vale"
+        centered size="sm"
+      >
+        {vale && elegido && (
+          <Stack gap="md">
+            <Alert color="yellow" icon={<IconAlertTriangle size={16} />}>
+              <Text size="sm">
+                El vale <strong>{vale.folio}</strong> se emitió para{' '}
+                <strong>{vehiculoLabelCorto(vale)}</strong>. Al guardar la recarga, el vale
+                pasa a <strong>{elegido.label}</strong>.
+              </Text>
+            </Alert>
+            <Text size="xs" c="dimmed">
+              Si el vale está bien, cancela y elige el vehículo del vale.
+            </Text>
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setPorConfirmarVale(null)} disabled={isPending}>
+                Cancelar
+              </Button>
+              <Button color="yellow" onClick={confirmarCorreccion} loading={isPending}>
+                Guardar y corregir el vale
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
     </Stack>
   )
 }
@@ -226,6 +277,9 @@ export default function RecargasFlota({
   // capturaron las sucursales sin ir vehículo por vehículo, y el practicante
   // las que él capturó: es desde aquí que las registra.
   const [editing, setEditing]     = useState<RecargaConVehiculo | null>(null)
+  // El vale que la última recarga le corrigió de unidad, para decirlo después
+  // de cerrar el formulario: el cambio no se ve en este listado.
+  const [valeCorregido, setValeCorregido] = useState<CorreccionVale | null>(null)
 
   const { data, isLoading, error } = useRecargasTodas()
   const createMut = useCreateRecarga()
@@ -260,7 +314,7 @@ export default function RecargasFlota({
   const mesVisible  = mesAbierto  ?? anios[0]?.meses[0]?.key ?? null
 
   function abrir(deEmergencia: boolean) {
-    setFormError(null); setEmergencia(deEmergencia); setFormOpen(true)
+    setFormError(null); setValeCorregido(null); setEmergencia(deEmergencia); setFormOpen(true)
   }
 
   function registrarEmergencia(vehiculoId: number, payload: RecargaEmergenciaPayload) {
@@ -271,10 +325,10 @@ export default function RecargasFlota({
     })
   }
 
-  function registrar(vehiculoId: number, payload: RecargaPayload) {
+  function registrar(vehiculoId: number, payload: RecargaPayload, correccion?: CorreccionVale) {
     setFormError(null)
     createMut.mutate({ vehiculoId, payload }, {
-      onSuccess: () => setFormOpen(false),
+      onSuccess: () => { setFormOpen(false); setValeCorregido(correccion ?? null) },
       onError:   (e: Error) => setFormError(e.message),
     })
   }
@@ -309,6 +363,14 @@ export default function RecargasFlota({
   return (
     <>
       <Stack gap="md">
+        {valeCorregido && (
+          <Alert
+            color="green" withCloseButton onClose={() => setValeCorregido(null)}
+            title="Recarga registrada y vale corregido"
+          >
+            El vale {valeCorregido.folio} pasó de {valeCorregido.antes} a {valeCorregido.ahora}.
+          </Alert>
+        )}
         <Group justify="space-between" align="flex-end">
           <TextInput
             placeholder="Buscar vehículo, placas, conductor, gasolinera o vale"
