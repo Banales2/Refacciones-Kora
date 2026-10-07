@@ -866,6 +866,10 @@ function GasolinerasPanel() {
 
 // ── Panel de conductores ──────────────────────────────────────────────────────
 
+function sinAcentos(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+}
+
 // Celda vacía: la tabla de conductores tiene varias columnas opcionales.
 function SinDato() {
   return <Text component="span" c="dimmed" size="sm">—</Text>
@@ -924,6 +928,7 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
   // de lo que se puede elegir. El switch los trae para poder restaurarlos.
   const [verArchivados, setVerArchivados] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [busqueda, setBusqueda]   = useState('')
 
   const { data, isLoading, isError } = useConductores(true)
   const createMut = useCreateConductor()
@@ -933,6 +938,15 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
   const todos      = data?.data ?? []
   const archivados = todos.filter((x) => x.archivado_en).length
   const items      = todos.filter((x) => verArchivados || !x.archivado_en)
+  // Sin acentos ni mayúsculas: "Jose" encuentra a "José". También busca por
+  // número de licencia o expediente, que es como llegan a preguntar por uno.
+  const q = sinAcentos(busqueda.trim())
+  const visibles = q
+    ? items.filter((c) =>
+        [c.nombre, c.ubicacion, c.licencia_estatal_numero, c.licencia_federal_numero,
+         c.licencia_federal_expediente]
+          .some((t) => t != null && sinAcentos(t).includes(q)))
+    : items
   const isPending = createMut.isPending || updateMut.isPending
 
   // Al llegar desde otra pantalla (el chofer de un vale) la lista puede ser
@@ -942,7 +956,7 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
   useEffect(() => {
     if (destacadoId == null) return
     filaDestacada.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [destacadoId, items.length])
+  }, [destacadoId, visibles.length])
 
   // Documentos (licencia estatal, federal y expediente) que ya vencieron o
   // vencen dentro de 2 meses, para el aviso de arriba de la tabla.
@@ -971,7 +985,18 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
     <>
       <Stack gap="md">
         <Group justify="space-between">
-          <Text size="sm" c="dimmed">{items.length} conductor{items.length !== 1 ? 'es' : ''}</Text>
+          <Group gap="sm">
+            <TextInput
+              placeholder="Buscar nombre, ubicación o licencia"
+              leftSection={<IconSearch size={14} />}
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.currentTarget.value)}
+              style={{ width: 300, maxWidth: '100%' }}
+            />
+            <Text size="sm" c="dimmed">
+              {q ? `${visibles.length} de ${items.length}` : items.length} conductor{items.length !== 1 ? 'es' : ''}
+            </Text>
+          </Group>
           <Group gap="sm">
             {(archivados > 0 || verArchivados) && (
               <Switch
@@ -1000,6 +1025,7 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
         {isLoading ? <Center py="xl"><Loader /></Center>
         : isError   ? <Alert color="red" title="Error">No se pudieron obtener los conductores.</Alert>
         : items.length === 0 ? <Center py="xl"><Text c="dimmed">No hay conductores registrados.</Text></Center>
+        : visibles.length === 0 ? <Center py="xl"><Text c="dimmed">Ningún conductor coincide con la búsqueda.</Text></Center>
         : (
           <Table.ScrollContainer minWidth={1040}>
             <Table striped highlightOnHover withTableBorder>
@@ -1014,7 +1040,7 @@ function ConductoresPanel({ destacadoId }: { destacadoId?: number | null }) {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {items.map((c) => (
+                {visibles.map((c) => (
                   <Table.Tr
                     key={c.id}
                     ref={c.id === destacadoId ? filaDestacada : undefined}
