@@ -485,7 +485,11 @@ function CuadreFactura({
         </Alert>
       )}
 
-      <Table.ScrollContainer minWidth={700} mah={340}>
+      {/* Sin tope de altura: el modal ya hace scroll. Con `mah` el contenedor
+          recortaba la tabla sin dar scroll vertical (en Mantine eso es
+          `maxHeight`), y de unos 8 renglones para abajo no se podían ver ni
+          elegir. Una factura importada trae 14 o más. */}
+      <Table.ScrollContainer minWidth={700}>
         <Table withTableBorder striped>
           <Table.Thead>
             <Table.Tr>
