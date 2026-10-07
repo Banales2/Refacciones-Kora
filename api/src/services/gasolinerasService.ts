@@ -18,7 +18,15 @@ export async function update(id: number, data: GasolineraUpdate): Promise<Gasoli
   if (data.nombre !== undefined && await repo.existsNombre(data.nombre, id)) {
     throw new ConflictError(`Ya existe una gasolinera con el nombre ${data.nombre}`)
   }
-  const result = await repo.update(id, data.nombre, data.ubicacion)
+  if (data.permiso_cre) {
+    const duena = await repo.findByPermiso(data.permiso_cre)
+    if (duena && duena.id !== id) {
+      throw new ConflictError(
+        `El permiso ${data.permiso_cre} ya es de la gasolinera ${duena.nombre}.`,
+      )
+    }
+  }
+  const result = await repo.update(id, data.nombre, data.ubicacion, data.permiso_cre, data.rfc)
   if (!result) throw new NotFoundError('Gasolinera')
   return result
 }

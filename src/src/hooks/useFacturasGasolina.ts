@@ -16,6 +16,7 @@
 // Ver `docs/facturas-de-gasolina.md`.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import type { FacturaGasolinaXml } from '../lib/xmlGasolina'
 
 /** Quedaron renglones sin casar y no se confirmó cerrar así. */
 export const RENGLONES_SIN_CASAR = 'RENGLONES_SIN_CASAR'
@@ -36,8 +37,17 @@ export interface FacturaGasolina {
   renglones:      number
   /** Cuántos de esos ya casaron con una recarga. */
   casados:        number
-  /** Suma de los importes de los renglones. El total se calcula con la tasa. */
+  /** Suma de los importes de los renglones. */
   subtotal:       number
+  /** El IVA del papel (migración 065). null en las capturadas antes de ella. */
+  iva:            number | null
+  /** Lo calcula la API: subtotal + IVA. */
+  total:          number
+  /**
+   * El total salió de la tasa porque falta el IVA del papel. En combustible eso
+   * da de más: el IVA no se cobra sobre el IEPS.
+   */
+  total_estimado: boolean
 }
 
 export interface RenglonFactura {
@@ -203,8 +213,11 @@ export interface FacturaGasolinaCreatePayload {
   gasolinera_id: number
   folio:         string
   fecha:         string
-  /** null = los importes ya incluyen IVA. No es cero. */
-  tasa_iva:      number | null
+  /**
+   * El IVA como lo imprime el papel. No la tasa: en combustible el IVA no se
+   * cobra sobre el IEPS, así que no es el 16% del subtotal. Ver la migración 065.
+   */
+  iva:           number
   renglones:     RenglonNuevo[]
 }
 
@@ -213,6 +226,45 @@ export function useCrearFacturaGasolina() {
   return useMutation({
     mutationFn: (body: FacturaGasolinaCreatePayload) =>
       api.post<{ data: { id: number } }>('/facturas-gasolina', body),
+    onSuccess: () => invalidar(qc),
+  })
+}
+
+/** Ya se importó una factura con ese folio fiscal. */
+export const FACTURA_DUPLICADA = 'FACTURA_DUPLICADA'
+
+/**
+ * Importa la factura leída de su XML (ver `lib/xmlGasolina.ts`). La API reconoce
+ * la gasolinera por el permiso de la estación; `gasolinera_id` solo se manda la
+ * primera vez, cuando el permiso no es de nadie, y entonces se le queda.
+ */
+export function useImportarFacturaGasolina() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ factura, gasolinera_id }: { factura: FacturaGasolinaXml; gasolinera_id?: number }) =>
+      api.post<{ data: { id: number; gasolinera: string; ligada: boolean } }>(
+        '/facturas-gasolina/importar',
+        {
+          uuid: factura.uuid, serie: factura.serie, folio: factura.folio, fecha: factura.fecha,
+          permiso_cre: factura.permiso_cre, emisor_rfc: factura.emisor_rfc, gasolinera_id,
+          subtotal: factura.subtotal, iva: factura.iva, total: factura.total,
+          renglones: factura.renglones,
+        },
+      ),
+    onSuccess: () => {
+      invalidar(qc)
+      // El permiso pudo quedar ligado a la gasolinera.
+      qc.invalidateQueries({ queryKey: ['gasolineras'] })
+    },
+  })
+}
+
+/** Corrige con el papel el IVA de una factura capturada con tasa. */
+export function useCorregirIvaFactura() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, iva }: { id: number; iva: number }) =>
+      api.put<{ data: { id: number } }>(`/facturas-gasolina/${id}/iva`, { iva }),
     onSuccess: () => invalidar(qc),
   })
 }

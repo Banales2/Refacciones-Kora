@@ -1,7 +1,8 @@
 import * as repo from '../repositories/facturasGasolinaRepo'
+import * as gasolinerasRepo from '../repositories/gasolinerasRepo'
 import type { Casado, RenglonFactura, TicketCandidato } from '../repositories/facturasGasolinaRepo'
 import {
-  ConciliarGasolina, FacturaGasolinaCreate, SinFacturarQuery,
+  ConciliarGasolina, FacturaGasolinaCreate, FacturaGasolinaImport, SinFacturarQuery,
 } from '../schemas/facturaGasolinaSchema'
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../shared/errors'
 import { aCentavos } from '../shared/totales'
@@ -37,6 +38,121 @@ export async function crear(
  * Es el reverso de "el renglón sin recarga": allá la gasolinera cobra algo que
  * no está capturado; aquí está capturado algo que la gasolinera no ha cobrado.
  */
+/** Ya se importó una factura con ese folio fiscal. */
+export const FACTURA_DUPLICADA = 'FACTURA_DUPLICADA'
+/** El permiso de la estación no es de ninguna gasolinera y no se dijo de cuál. */
+export const GASOLINERA_DESCONOCIDA = 'GASOLINERA_DESCONOCIDA'
+
+/** Un centavo: lo que se tolera al comparar sumas contra lo impreso. */
+const TOLERANCIA = 0.01
+
+/**
+ * Guarda la factura leída de su XML.
+ *
+ * La pantalla lee el CFDI y manda los conceptos ya separados; aquí se comprueba
+ * que sumen lo que el documento imprime antes de guardar nada. Si no cuadra, se
+ * rechaza entera: este repo ya quitó una vez un lector que se equivocaba en
+ * silencio.
+ *
+ * LA GASOLINERA SALE DEL PERMISO de la estación (migración 066). Si el permiso
+ * todavía no es de nadie, quien importa dice de cuál gasolinera es y se le
+ * queda; si ya es de una, manda ese vínculo y no lo que se elija.
+ */
+export async function importar(
+  data: FacturaGasolinaImport, capturadoPor: string,
+): Promise<{ id: number; gasolinera: string; ligada: boolean }> {
+  const repetida = await repo.findByUuid(data.uuid)
+  if (repetida) {
+    throw new AppError(
+      `Esta factura ya está importada (folio ${repetida.folio}).`, 409, FACTURA_DUPLICADA,
+    )
+  }
+
+  const duena = await gasolinerasRepo.findByPermiso(data.permiso_cre)
+  let gasolinera = duena
+  if (duena && data.gasolinera_id && data.gasolinera_id !== duena.id) {
+    throw new ConflictError(
+      `El permiso ${data.permiso_cre} ya es de la gasolinera ${duena.nombre}. ` +
+      'Si se ligó a la equivocada, deslígalo desde Catálogos → Gasolineras.',
+    )
+  }
+  if (!duena) {
+    if (!data.gasolinera_id) {
+      throw new AppError(
+        `Ninguna gasolinera tiene el permiso ${data.permiso_cre}. Elige de cuál es.`,
+        409, GASOLINERA_DESCONOCIDA,
+      )
+    }
+    gasolinera = await gasolinerasRepo.findById(data.gasolinera_id)
+    if (!gasolinera) throw new NotFoundError('Gasolinera')
+    if (gasolinera.permiso_cre) {
+      throw new ConflictError(
+        `${gasolinera.nombre} ya tiene el permiso ${gasolinera.permiso_cre}, y el de esta ` +
+        `factura es ${data.permiso_cre}: es otra estación. Dala de alta aparte.`,
+      )
+    }
+  }
+  const g = gasolinera!
+
+  // El folio con su serie, como lo imprime el papel. Una capturada a mano pudo
+  // quedar con o sin la serie: se buscan las dos para no meterla dos veces.
+  const folio = data.serie ? `${data.serie}-${data.folio}` : data.folio
+  if (folio.length > 30) throw new ValidationError(`El folio ${folio} pasa de 30 caracteres.`)
+  for (const candidato of new Set([folio, data.folio, `${data.serie ?? ''}${data.folio}`])) {
+    if (await repo.findByFolio(g.id, candidato)) {
+      throw new ConflictError(
+        `${g.nombre} ya tiene una factura con el folio ${candidato}, capturada a mano. ` +
+        'No hace falta importarla.',
+      )
+    }
+  }
+
+  const suma = (k: 'importe' | 'iva') => aCentavos(data.renglones.reduce((s, r) => s + r[k], 0))
+  const comparaciones: [string, number, number][] = [
+    ['subtotal', suma('importe'), data.subtotal],
+    ['IVA', suma('iva'), data.iva],
+    ['total', aCentavos(data.subtotal + data.iva), data.total],
+  ]
+  for (const [nombre, sumado, impreso] of comparaciones) {
+    if (Math.abs(sumado - impreso) > TOLERANCIA) {
+      throw new ValidationError(
+        `Los renglones dan ${sumado.toFixed(2)} de ${nombre} y la factura dice ` +
+        `${impreso.toFixed(2)}. No se importó nada.`,
+      )
+    }
+  }
+
+  const id = await repo.crearImportada({
+    uuid: data.uuid,
+    gasolinera_id: g.id,
+    folio,
+    fecha: data.fecha,
+    iva: data.iva,
+    renglones: data.renglones.map((r) => ({ ...r, despacho: r.despacho ?? null })),
+    ligar: duena ? null : { permiso_cre: data.permiso_cre, rfc: data.emisor_rfc },
+  }, capturadoPor)
+
+  return { id, gasolinera: g.nombre, ligada: !duena }
+}
+
+/**
+ * Corrige con el papel el IVA de una factura capturada con tasa. Lo conciliado
+ * no se toca sin reabrir: mismo candado que el resto de la factura.
+ */
+export async function corregirIva(facturaId: number, iva: number): Promise<void> {
+  const f = await repo.findById(facturaId)
+  if (!f) throw new NotFoundError('Factura')
+  if (f.conciliada_en !== null) {
+    throw new AppError(
+      'Esta factura ya está conciliada. Reábrela para corregirle el IVA.',
+      409, FACTURA_CONCILIADA,
+    )
+  }
+  if (!(await repo.setIva(facturaId, iva))) {
+    throw new ConflictError('Alguien acaba de conciliar esta factura.')
+  }
+}
+
 export async function sinFacturar(p: SinFacturarQuery) {
   const r = await repo.recargasSinFacturar(p)
   return { ...r, page: p.page, pageSize: p.pageSize }

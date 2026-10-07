@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { permisoCre, rfc } from './gasolineraSchema'
 
 // La factura de la gasolinera, desglosada en renglones.
 //
@@ -37,6 +38,11 @@ const cantidad = z.coerce
   .positive('Debe ser mayor a 0')
   .refine((v) => Math.abs(v * 1000 - Math.round(v * 1000)) < 1e-6, 'Máximo 3 decimales')
 
+const ivaDelPapel = z.coerce
+  .number()
+  .min(0, 'No puede ser negativo')
+  .max(99999999, 'Fuera de rango')
+
 /**
  * Lo que una gasolinera despacha, y lo único que puede decir un renglón.
  *
@@ -72,6 +78,12 @@ export const FacturaGasolinaCreateSchema = z.object({
     .max(100, 'La tasa no puede pasar de 100%')
     .nullish(),
   /**
+   * El IVA como viene en el papel. Es lo que se manda ahora en vez de la tasa:
+   * en combustible el IVA no se cobra sobre el IEPS, así que el total es
+   * subtotal + IVA y no subtotal * 1.16. Ver la migración 065.
+   */
+  iva: ivaDelPapel.nullish(),
+  /**
    * El tope no es arbitrario: una factura de gasolinera con más de 300 renglones
    * es más probable que sea un error de pegado que un mes real.
    */
@@ -80,6 +92,47 @@ export const FacturaGasolinaCreateSchema = z.object({
     .min(1, 'La factura tiene que traer al menos un renglón')
     .max(300, 'Máximo 300 renglones por factura'),
 })
+
+/**
+ * Un concepto del CFDI. La cantidad puede traer seis decimales (90.451852); se
+ * guarda a tres, que es como guarda el ticket la bomba y como se casan.
+ */
+export const RenglonImportadoSchema = z.object({
+  descripcion: z.enum(PRODUCTOS),
+  cantidad: z.coerce.number().positive('Debe ser mayor a 0').max(99999),
+  importe: z.coerce.number().min(0).max(99999999),
+  iva: z.coerce.number().min(0).max(99999999),
+  /** El número de despacho de la bomba, de `NoIdentificacion`. */
+  despacho: z.string().trim().max(30).nullable(),
+})
+
+/**
+ * La factura leída de su XML (CFDI 4.0 con el complemento de Hidrocarburos).
+ *
+ * La gasolinera se reconoce por el PERMISO de la estación, no por el nombre ni
+ * por el RFC: una razón social puede tener varias estaciones. Si el permiso no
+ * está ligado a ninguna, `gasolinera_id` dice de cuál es y el permiso se le
+ * queda. Ver la migración 066.
+ */
+export const FacturaGasolinaImportSchema = z.object({
+  uuid: z.string().trim().toUpperCase()
+    .regex(/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/, 'UUID inválido'),
+  serie: z.string().trim().max(25).nullable(),
+  folio: z.string().trim().min(1).max(40),
+  fecha,
+  permiso_cre: permisoCre,
+  emisor_rfc: rfc,
+  gasolinera_id: z.coerce.number().int().positive().optional(),
+  subtotal: z.coerce.number().min(0).max(99999999),
+  iva: ivaDelPapel,
+  total: z.coerce.number().min(0).max(99999999),
+  renglones: z.array(RenglonImportadoSchema)
+    .min(1, 'La factura no trae renglones')
+    .max(300, 'Máximo 300 renglones por factura'),
+})
+
+/** Corregir con el papel el IVA de una factura capturada con tasa. */
+export const IvaFacturaSchema = z.object({ iva: ivaDelPapel })
 
 export const FacturaGasolinaQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -131,4 +184,6 @@ export const ConciliarGasolinaSchema = z.object({
 export type FacturaGasolinaCreate = z.infer<typeof FacturaGasolinaCreateSchema>
 export type FacturaGasolinaQueryIn = z.infer<typeof FacturaGasolinaQuerySchema>
 export type ConciliarGasolina = z.infer<typeof ConciliarGasolinaSchema>
+export type IvaFactura = z.infer<typeof IvaFacturaSchema>
+export type FacturaGasolinaImport = z.infer<typeof FacturaGasolinaImportSchema>
 export type SinFacturarQuery = z.infer<typeof SinFacturarQuerySchema>

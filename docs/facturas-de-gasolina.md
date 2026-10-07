@@ -8,8 +8,9 @@ qué chofer la hizo ni contra qué vale — eso solo lo sabe el sistema.
 lo necesario para comprobar que el gasto está bien capturado, y nada más:
 
 ```
-facturas_gasolina          folio, gasolinera, fecha, tasa de IVA
-  ..._renglones            descripción, cantidad, importe  →  recarga
+facturas_gasolina          folio, gasolinera, fecha, IVA del papel, uuid
+  ..._renglones            descripción, cantidad, importe, IVA, despacho  →  recarga
+gasolineras                permiso de la CRE  ← con él se reconocen sus facturas
 ```
 
 Ver `db/migrations/041_facturas_de_gasolina.sql`, y la **042** si se llegó a
@@ -24,14 +25,35 @@ Como en la migración 026, la cabecera lleva la llave de negocio
 `UNIQUE (gasolinera_id, folio)`: la misma gasolinera no emite dos veces el mismo
 folio, pero dos gasolineras sí pueden tener cada una su "44272".
 
-Y como en la 020, **los importes no se guardan, se calculan**. Lo único que se
-guarda es la tasa:
+El subtotal sale de sumar los renglones. **El IVA se guarda como lo imprime el
+papel**, y el total es `subtotal + IVA` (migración 065). La API lo calcula y lo
+devuelve; la pantalla no hace cuentas.
 
-- `tasa_iva NULL` → los importes de los renglones **ya incluyen IVA**.
-- `tasa_iva 16.00` → son subtotal, y el total es `subtotal × 1.16`.
+### Por qué el IVA y no la tasa
 
-El subtotal sale de sumar los renglones. Guardar los tres sería repetir datos
-derivados que quedan desalineados en cuanto alguien corrija un renglón.
+Hasta la 065 se guardaba solo la tasa y el total salía de `subtotal × 1.16`. En
+combustible eso da de más: el precio incluye IEPS, y **el IVA no se cobra sobre
+el IEPS**, así que la base del IVA es menor que el importe. Con cuatro facturas
+reales de octubre de 2026:
+
+| | papel | subtotal × 1.16 | de más |
+|---|---|---|---|
+| Dakota G-4969 | $47,402.36 | $47,542.16 | $139.80 |
+| Flogas CF-171482 | $28,810.93 | $28,893.05 | $82.12 |
+| Vázquez G-44703 | $16,284.89 | $16,333.15 | $48.26 |
+| Bagaleza BGC-17491 | $16,199.67 | $16,246.81 | $47.14 |
+
+Tampoco sirve una "tasa efectiva": el IEPS es una cuota por litro que cambia con
+el producto y con la semana. El único número correcto es el del papel.
+
+La 042 había hecho justo lo contrario —convirtió el IVA guardado en tasa— y de
+ahí venía el error.
+
+Las facturas capturadas antes de la 065 conservan su tasa y su total sale de
+ella, **marcado como estimado**. Al abrirlas, el cuadre pide el IVA del papel
+(`PUT /facturas-gasolina/{id}/iva`); con él, el total pasa a ser el correcto. No
+se rellenó nada al migrar: `subtotal × 0.16` sería guardar el mismo error con
+otro nombre.
 
 ## Se empareja por cantidad, no por importe
 
@@ -130,10 +152,43 @@ cuando aparece la recarga que no estaba: se captura por la vía normal, se reabr
 ahora sí casa. Los emparejamientos **no** se deshacen, así que solo hay que
 ajustar lo que faltaba.
 
-## Capturar la factura
+## Importar el XML
 
-Ni el subtotal ni el total se teclean: salen de los renglones y la tasa. Pedirlos
-aparte solo crea la oportunidad de que discrepen de lo capturado.
+Es el camino normal. Toda factura de combustible es un **CFDI 4.0 con el
+complemento de Hidrocarburos**, sea de la gasolinera que sea, y lo que hace falta
+sale de campos estándar del SAT (`src/src/lib/xmlGasolina.ts`):
+
+| dato | de dónde |
+|---|---|
+| producto | `ClaveProdServ`: 15101505 Diesel, 15101514 Magna, 15101515 Premium |
+| litros | `Cantidad` (se guarda a 3 decimales, como el ticket) |
+| importe | `Importe` menos su `Descuento` |
+| IVA | el `Traslado` 002 del concepto |
+| estación | `NumeroPermiso` del complemento `HidroYPetro` |
+| despacho | lo que va después del permiso en `NoIdentificacion` |
+
+La descripción **no se usa**: cada gasolinera escribe lo suyo ("DIESEL 34006",
+"DIESEL (Despacho 576356-0)", "DIESEL").
+
+**La gasolinera se reconoce por el permiso de la estación** (migración 066), no
+por el nombre ni por el RFC: una razón social puede tener varias estaciones. La
+primera vez que llega una factura de un permiso desconocido, quien importa elige
+de cuál gasolinera es y el permiso se le queda; de ahí en adelante se reconoce
+sola. Si se ligó a la equivocada, se desliga desde Catálogos → Gasolineras.
+
+Se pueden importar varios XML a la vez. Cada uno se enseña antes de guardar, y la
+API rechaza **entera** la factura cuyos renglones no sumen el subtotal, el IVA o
+el total impresos, la que ya se importó (409 `FACTURA_DUPLICADA`, por UUID) y la
+que ya estaba capturada a mano con ese folio —con o sin serie—. También se
+rechaza, para capturarla a mano, la que traiga algo que no sea combustible, un
+impuesto que no sea IVA o cargas de dos estaciones.
+
+Lo importado se concilia igual que lo capturado a mano.
+
+## Capturar la factura a mano
+
+Para la que no trae XML. El subtotal no se teclea: sale de los renglones. El IVA
+sí, el que imprime el papel —no se puede calcular, por lo del IEPS—.
 
 El botón **Agregar recarga** pone una fila en la tabla y ahí se llena, campo por
 campo: producto, cantidad e importe, cada uno con su nombre. El producto hereda
@@ -157,7 +212,9 @@ pegó.
 | Ruta | Rol | Qué hace |
 |---|---|---|
 | `GET /facturas-gasolina` | admin, editor, lector | Lista, con `?por_conciliar=1` |
-| `POST /facturas-gasolina` | admin, editor | Alta: cabecera y renglones |
+| `POST /facturas-gasolina` | admin, editor | Alta a mano: cabecera y renglones |
+| `POST /facturas-gasolina/importar` | admin, editor | Alta desde el XML |
+| `PUT /facturas-gasolina/{id}/iva` | admin, editor | Pone el IVA del papel a una capturada con tasa |
 | `GET /facturas-gasolina/{id}/candidatas` | admin, editor, lector | Renglones con su propuesta, y los tickets elegibles |
 | `POST /facturas-gasolina/{id}/conciliar` | **admin** | Guarda los emparejamientos y sella |
 | `POST /facturas-gasolina/{id}/reabrir` | **admin** | Suelta el sello |
@@ -188,9 +245,11 @@ en la pantalla de arriba, que es donde está el cuadre completo.
 
 ## Lo que quedó fuera, a propósito
 
-- **La factura completa.** Serie, UUID, régimen, sello, precio unitario: nada de
-  eso ayuda a contestar "¿a qué recarga corresponde este renglón?", y el
-  documento ya se archiva por otro lado.
-- **El número impreso del ticket.** Sería la llave exacta, pero el ticket solo
-  guarda litros y costo; el cuadre sigue yendo por litros.
-- **Importar el XML del CFDI.** Los renglones se capturan a mano.
+- **La factura completa.** Régimen, sello, precio unitario: nada de eso ayuda a
+  contestar "¿a qué recarga corresponde este renglón?", y el documento ya se
+  archiva por otro lado. El UUID sí se guarda, para no importar dos veces.
+- **Casar por número de despacho.** El XML lo trae y ya se guarda en el renglón
+  (`despacho`), pero el ticket de la recarga no lo captura, así que el cuadre
+  sigue yendo por litros. Algunas gasolineras mandan los litros con seis
+  decimales (90.451852); se redondean a tres. Si el ticket capturado dice otra
+  cosa (90.45), el emparejado exacto no lo propone y hay que elegirlo a mano.

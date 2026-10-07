@@ -39,8 +39,20 @@ export interface FacturaGasolina {
   renglones: number
   /** Cuántos de esos ya casaron con una recarga. */
   casados: number
-  /** Suma de los importes de los renglones. El total se calcula con la tasa. */
+  /** Suma de los importes de los renglones. */
   subtotal: number
+  /**
+   * El IVA como viene en el papel (migración 065). null en las capturadas antes,
+   * cuyo total sale de la tasa.
+   */
+  iva: number | null
+  /** subtotal + iva. Ver `TOTAL_SQL`. */
+  total: number
+  /**
+   * El total salió de la tasa porque nadie ha capturado el IVA del papel. En
+   * combustible eso da de más: el IVA no se cobra sobre el IEPS.
+   */
+  total_estimado: boolean
 }
 
 export interface RenglonFactura {
@@ -76,20 +88,38 @@ export interface TicketCandidato {
   vale_folio: string | null
 }
 
+/**
+ * El total del papel. Con el IVA capturado es subtotal + IVA, que es lo que
+ * imprime una factura de combustible: el IVA no se cobra sobre el IEPS, así que
+ * NO es subtotal * 1.16 (migración 065). Sin él, las capturadas antes caen a la
+ * tasa, y el total es una estimación que la pantalla marca como tal.
+ */
+const TOTAL_SQL = `
+  CAST(s.subtotal + COALESCE(
+    f.iva,
+    CASE WHEN f.tasa_iva IS NULL THEN 0 ELSE ROUND(s.subtotal * f.tasa_iva / 100, 2) END
+  ) AS DECIMAL(18, 2))
+`
+
 const SELECT_FACTURA = `
   SELECT f.id, f.gasolinera_id, g.nombre AS gasolinera, f.folio,
          CONVERT(char(10), f.fecha, 23) AS fecha,
-         f.tasa_iva, f.capturado_por,
+         f.tasa_iva, f.iva, f.capturado_por,
          CONVERT(varchar(19), f.conciliada_en, 126) AS conciliada_en,
          f.conciliada_por, f.nota,
-         (SELECT COUNT(*) FROM facturas_gasolina_renglones r
-           WHERE r.factura_id = f.id) AS renglones,
-         (SELECT COUNT(*) FROM facturas_gasolina_renglones r
-           WHERE r.factura_id = f.id AND r.recarga_id IS NOT NULL) AS casados,
-         COALESCE((SELECT SUM(r.importe) FROM facturas_gasolina_renglones r
-                   WHERE r.factura_id = f.id), 0) AS subtotal
+         s.renglones, s.casados, s.subtotal,
+         ${TOTAL_SQL} AS total,
+         CAST(CASE WHEN f.iva IS NULL AND f.tasa_iva IS NOT NULL THEN 1 ELSE 0 END AS BIT)
+           AS total_estimado
   FROM facturas_gasolina f
   JOIN gasolineras g ON g.id = f.gasolinera_id
+  CROSS APPLY (
+    SELECT COUNT(*) AS renglones,
+           SUM(CASE WHEN r.recarga_id IS NOT NULL THEN 1 ELSE 0 END) AS casados,
+           COALESCE(SUM(r.importe), 0) AS subtotal
+    FROM facturas_gasolina_renglones r
+    WHERE r.factura_id = f.id
+  ) s
 `
 
 export interface FacturaGasolinaQuery {
@@ -173,6 +203,8 @@ export interface FacturaGasolinaNueva {
   folio: string
   fecha: string
   tasa_iva?: number | null
+  /** El IVA del papel. Ver la migración 065. */
+  iva?: number | null
   renglones: RenglonNuevo[]
 }
 
@@ -189,11 +221,12 @@ export async function crear(
       .input('folio',   sql.NVarChar(30),  data.folio)
       .input('fecha',   sql.Date,          data.fecha)
       .input('tasa',    sql.Decimal(5, 2), data.tasa_iva ?? null)
+      .input('iva',     sql.Decimal(18, 2), data.iva ?? null)
       .input('capturo', sql.NVarChar(120), capturadoPor)
       .query(`
-        INSERT INTO facturas_gasolina (gasolinera_id, folio, fecha, tasa_iva, capturado_por)
+        INSERT INTO facturas_gasolina (gasolinera_id, folio, fecha, tasa_iva, iva, capturado_por)
         OUTPUT INSERTED.id
-        VALUES (@gid, @folio, @fecha, @tasa, @capturo)`)
+        VALUES (@gid, @folio, @fecha, @tasa, @iva, @capturo)`)
     const facturaId = cab.recordset[0].id as number
 
     for (const r of data.renglones) {
@@ -205,6 +238,91 @@ export async function crear(
         .query(`
           INSERT INTO facturas_gasolina_renglones (factura_id, descripcion, cantidad, importe)
           VALUES (@fid, @desc, @cant, @importe)`)
+    }
+
+    await tx.commit()
+    return facturaId
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+}
+
+export async function findByUuid(uuid: string): Promise<{ id: number; folio: string } | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('uuid', sql.Char(36), uuid)
+    .query('SELECT id, folio FROM facturas_gasolina WHERE uuid = @uuid')
+  return r.recordset[0] ?? null
+}
+
+export interface FacturaImportada {
+  uuid: string
+  gasolinera_id: number
+  folio: string
+  fecha: string
+  iva: number
+  renglones: {
+    descripcion: string
+    cantidad: number
+    importe: number
+    iva: number
+    despacho: string | null
+  }[]
+  /** Si el permiso todavía no era de nadie, se le queda a esta gasolinera. */
+  ligar: { permiso_cre: string; rfc: string } | null
+}
+
+/**
+ * La factura leída del XML, con sus renglones, en una transacción. Si hay que
+ * ligar el permiso a la gasolinera, va en la misma: una factura importada a una
+ * gasolinera que no quedó ligada se volvería a preguntar la próxima vez.
+ *
+ * La cantidad se guarda a tres decimales, como el ticket de la bomba: es la
+ * llave del cuadre.
+ */
+export async function crearImportada(
+  data: FacturaImportada, capturadoPor: string,
+): Promise<number> {
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    if (data.ligar) {
+      await tx.request()
+        .input('gid',     sql.Int,          data.gasolinera_id)
+        .input('permiso', sql.NVarChar(40), data.ligar.permiso_cre)
+        .input('rfc',     sql.NVarChar(13), data.ligar.rfc)
+        .query(`
+          UPDATE gasolineras SET permiso_cre = @permiso, rfc = @rfc
+          WHERE id = @gid AND permiso_cre IS NULL`)
+    }
+
+    const cab = await tx.request()
+      .input('gid',     sql.Int,            data.gasolinera_id)
+      .input('folio',   sql.NVarChar(30),   data.folio)
+      .input('fecha',   sql.Date,           data.fecha)
+      .input('iva',     sql.Decimal(18, 2), data.iva)
+      .input('uuid',    sql.Char(36),       data.uuid)
+      .input('capturo', sql.NVarChar(120),  capturadoPor)
+      .query(`
+        INSERT INTO facturas_gasolina (gasolinera_id, folio, fecha, iva, uuid, capturado_por)
+        OUTPUT INSERTED.id
+        VALUES (@gid, @folio, @fecha, @iva, @uuid, @capturo)`)
+    const facturaId = cab.recordset[0].id as number
+
+    for (const r of data.renglones) {
+      await tx.request()
+        .input('fid',      sql.Int,            facturaId)
+        .input('desc',     sql.NVarChar(100),  r.descripcion)
+        .input('cant',     sql.Decimal(10, 3), Math.round(r.cantidad * 1000) / 1000)
+        .input('importe',  sql.Decimal(18, 6), r.importe)
+        .input('iva',      sql.Decimal(18, 6), r.iva)
+        .input('despacho', sql.NVarChar(30),   r.despacho)
+        .query(`
+          INSERT INTO facturas_gasolina_renglones
+            (factura_id, descripcion, cantidad, importe, iva, despacho)
+          VALUES (@fid, @desc, @cant, @importe, @iva, @despacho)`)
     }
 
     await tx.commit()
@@ -334,6 +452,21 @@ export async function guardarCasados(
     await tx.rollback()
     throw err
   }
+}
+
+/**
+ * Pone el IVA del papel a una factura capturada con tasa. Solo a las que no
+ * están conciliadas: lo sellado no se mueve sin reabrir.
+ */
+export async function setIva(facturaId: number, iva: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id',  sql.Int,            facturaId)
+    .input('iva', sql.Decimal(18, 2), iva)
+    .query(`
+      UPDATE facturas_gasolina SET iva = @iva
+      WHERE id = @id AND conciliada_en IS NULL`)
+  return (r.rowsAffected[0] ?? 0) > 0
 }
 
 export async function sellar(

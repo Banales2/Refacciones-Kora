@@ -5,14 +5,24 @@ import { api } from '../lib/api'
 import type { CamposArchivado } from './useArchivado'
 
 export interface Gasolinera extends CamposArchivado {
-  id:        number
-  nombre:    string
-  ubicacion: string
+  id:          number
+  nombre:      string
+  ubicacion:   string
+  /**
+   * El permiso de expendio de la CRE (migración 066). Se le queda la primera vez
+   * que se importa una factura suya, y de ahí en adelante sus facturas se
+   * reconocen solas.
+   */
+  permiso_cre: string | null
+  rfc:         string | null
 }
 
 export interface GasolineraPayload {
-  nombre:    string
-  ubicacion: string
+  nombre?:      string
+  ubicacion?:   string
+  /** null lo desliga: su próxima factura preguntará otra vez de quién es. */
+  permiso_cre?: string | null
+  rfc?:         string | null
 }
 
 // Por defecto solo lo que está en uso. `incluirArchivados` es para la pantalla

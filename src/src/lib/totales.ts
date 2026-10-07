@@ -45,11 +45,6 @@ export function importeIva(base: number, tasa: number | null | undefined): numbe
   return base * (tasa / 100)
 }
 
-/** La base ya con IVA. Igual a la base si el precio ya lo incluye. */
-export function conIva(base: number, tasa: number | null | undefined): number {
-  return base + importeIva(base, tasa)
-}
-
 export interface TotalesFactura {
   subtotal:  number
   /** Lo descontado, en pesos. 0 si la factura no trae descuento. */

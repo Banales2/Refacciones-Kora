@@ -3,13 +3,19 @@ import { getPool } from '../shared/db'
 import { COLS_ARCHIVADO, filtroArchivado, type CamposArchivado } from './archivadoRepo'
 
 export interface Gasolinera extends CamposArchivado {
-  id:        number
-  nombre:    string
-  ubicacion: string
+  id:          number
+  nombre:      string
+  ubicacion:   string
+  /**
+   * El permiso de expendio de la CRE (migración 066). Es con lo que se reconocen
+   * sus facturas al importarlas: viene en el complemento de Hidrocarburos.
+   */
+  permiso_cre: string | null
+  rfc:         string | null
 }
 
-const COLS = `id, nombre, ubicacion, ${COLS_ARCHIVADO}`
-const OUT  = 'INSERTED.id, INSERTED.nombre, INSERTED.ubicacion, INSERTED.archivado_en, INSERTED.archivado_motivo'
+const COLS = `id, nombre, ubicacion, permiso_cre, rfc, ${COLS_ARCHIVADO}`
+const OUT  = 'INSERTED.id, INSERTED.nombre, INSERTED.ubicacion, INSERTED.permiso_cre, INSERTED.rfc, INSERTED.archivado_en, INSERTED.archivado_motivo'
 
 // Por defecto solo lo que está en uso; `incluirArchivados` es para la pantalla
 // del catálogo, que necesita verlos para poder restaurarlos.
@@ -38,16 +44,30 @@ export async function create(nombre: string, ubicacion: string): Promise<Gasolin
   return r.recordset[0]
 }
 
-export async function update(id: number, nombre?: string, ubicacion?: string): Promise<Gasolinera | null> {
+export async function update(
+  id: number, nombre?: string, ubicacion?: string,
+  permisoCre?: string | null, rfc?: string | null,
+): Promise<Gasolinera | null> {
   const pool = await getPool()
   const sets: string[] = []
   const req = pool.request().input('id', sql.Int, id)
-  if (nombre    !== undefined) { req.input('nombre',    sql.NVarChar(120), nombre);    sets.push('nombre=@nombre')       }
-  if (ubicacion !== undefined) { req.input('ubicacion', sql.NVarChar(200), ubicacion); sets.push('ubicacion=@ubicacion') }
+  if (nombre     !== undefined) { req.input('nombre',    sql.NVarChar(120), nombre);     sets.push('nombre=@nombre')         }
+  if (ubicacion  !== undefined) { req.input('ubicacion', sql.NVarChar(200), ubicacion);  sets.push('ubicacion=@ubicacion')   }
+  if (permisoCre !== undefined) { req.input('permiso',   sql.NVarChar(40),  permisoCre); sets.push('permiso_cre=@permiso')   }
+  if (rfc        !== undefined) { req.input('rfc',       sql.NVarChar(13),  rfc);        sets.push('rfc=@rfc')               }
   if (!sets.length) return findById(id)
   const r = await req.query(
     `UPDATE gasolineras SET ${sets.join(',')} OUTPUT ${OUT} WHERE id=@id`
   )
+  return r.recordset[0] ?? null
+}
+
+/** La gasolinera de un permiso de la CRE. Es como se reconoce una factura. */
+export async function findByPermiso(permiso: string): Promise<Gasolinera | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('permiso', sql.NVarChar(40), permiso)
+    .query(`SELECT ${COLS} FROM gasolineras WHERE permiso_cre = @permiso`)
   return r.recordset[0] ?? null
 }
 

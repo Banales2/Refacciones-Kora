@@ -23,7 +23,7 @@ import TallerDrawer from '../components/TallerDrawer'
 import { TIPOS_CON_PERMISO, TIPOS_CON_SEGURO } from '../lib/tipoVehiculo'
 import { useForm } from '@mantine/form'
 import {
-  IconPencil, IconPlus, IconAlertTriangle, IconRefresh, IconReceipt,
+  IconPencil, IconPlus, IconUnlink, IconAlertTriangle, IconRefresh, IconReceipt,
   IconSearch, IconFileTypePdf, IconFileSpreadsheet, IconArchive, IconArchiveOff,
 } from '@tabler/icons-react'
 import {
@@ -61,7 +61,6 @@ import type { Sucursal, SucursalPayload } from '../hooks/useSucursales'
 import type { Ruta, RutaPayload } from '../hooks/useRutas'
 import { useConsumosGasolinera } from '../hooks/useGasolineras'
 import { useFacturasGasolina } from '../hooks/useFacturasGasolina'
-import { conIva } from '../lib/totales'
 import type { Gasolinera, GasolineraPayload, ConsumoGasolinera } from '../hooks/useGasolineras'
 import type { Conductor, ConductorPayload } from '../hooks/useConductores'
 import type { Tecnico, TecnicoPayload } from '../hooks/useTecnicos'
@@ -504,7 +503,8 @@ function FacturasDeGasolinera({ gasolineraId }: { gasolineraId: number | null })
                 <Table.Td><Text size="sm" fw={600}>{f.folio}</Text></Table.Td>
                 <Table.Td><Text size="sm">{f.fecha}</Text></Table.Td>
                 <Table.Td style={{ textAlign: 'right' }}>
-                  <Text size="sm" fw={600}>{formatMXN(conIva(f.subtotal, f.tasa_iva))}</Text>
+                  <Text size="sm" fw={600}>{formatMXN(f.total)}</Text>
+                  {f.total_estimado && <Text size="xs" c="orange.7">estimado</Text>}
                 </Table.Td>
                 <Table.Td style={{ textAlign: 'center' }}>
                   <Text size="sm">{f.casados}/{f.renglones}</Text>
@@ -776,6 +776,11 @@ function GasolinerasPanel() {
                 <Table.Tr>
                   <Table.Th>Nombre</Table.Th>
                   <Table.Th>Ubicación</Table.Th>
+                  <Table.Th>
+                    <Tooltip label="Con él se reconocen sus facturas al importar el XML. Se liga solo la primera vez.">
+                      <span>Permiso CRE</span>
+                    </Tooltip>
+                  </Table.Th>
                   <Table.Th style={{ width: 80 }} />
                 </Table.Tr>
               </Table.Thead>
@@ -789,8 +794,31 @@ function GasolinerasPanel() {
                       </Group>
                     </Table.Td>
                     <Table.Td c="dimmed">{g.ubicacion}</Table.Td>
+                    <Table.Td>
+                      {g.permiso_cre ? (
+                        <>
+                          <Text size="xs" ff="monospace">{g.permiso_cre}</Text>
+                          {g.rfc && <Text size="xs" c="dimmed">{g.rfc}</Text>}
+                        </>
+                      ) : (
+                        <Text size="xs" c="dimmed">—</Text>
+                      )}
+                    </Table.Td>
                     <Table.Td onClick={(e) => e.stopPropagation()}>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
+                        {puedeEditar && g.permiso_cre && (
+                          // Para cuando se ligó a la gasolinera equivocada: su
+                          // próxima factura vuelve a preguntar de quién es.
+                          <Tooltip label="Desligar el permiso">
+                            <ActionIcon
+                              variant="subtle" color="gray" size="sm" aria-label="Desligar el permiso"
+                              loading={updateMut.isPending && updateMut.variables?.id === g.id}
+                              onClick={() => updateMut.mutate({ id: g.id, payload: { permiso_cre: null, rfc: null } })}
+                            >
+                              <IconUnlink size={14} />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
                         {puedeEditar && (
                           <>
                           <Tooltip label="Editar"><ActionIcon variant="subtle" color="blue" size="sm" onClick={() => openEdit(g)}><IconPencil size={14} /></ActionIcon></Tooltip>

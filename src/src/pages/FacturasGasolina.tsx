@@ -2,8 +2,13 @@
 //
 // ESTO NO GUARDA LA FACTURA. El documento se archiva por otro lado; aquí solo se
 // captura lo necesario para cuadrarlo — descripción, cantidad e importe por
-// renglón, y la tasa de IVA en la cabecera. El subtotal y el total se calculan,
-// igual que en las facturas de refacciones.
+// renglón, y el IVA en la cabecera, como lo imprime el papel.
+//
+// EL TOTAL ES SUBTOTAL + IVA, NO SUBTOTAL * 1.16. En combustible el precio
+// incluye IEPS y el IVA no se cobra sobre él, así que el IVA del papel es menos
+// del 16% del subtotal. Por eso se captura el importe del IVA y no la tasa
+// (migración 065); las facturas capturadas antes con tasa enseñan su total como
+// estimado y piden el IVA del papel.
 //
 // POR QUÉ NO SE PARECE A LA PANTALLA DE REFACCIONES. Allá cada renglón del papel
 // apunta a un lote concreto y se verifican uno a uno. Aquí el renglón trae
@@ -29,22 +34,23 @@ import {
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
-  IconAlertTriangle, IconCheck, IconLockOpen, IconPlus, IconSearch, IconTrash,
+  IconAlertTriangle, IconCheck, IconFileImport, IconLockOpen, IconPlus, IconSearch, IconTrash,
 } from '@tabler/icons-react'
 import {
-  useCandidatas, useConciliar, useCrearFacturaGasolina, useFacturasGasolina,
+  useCandidatas, useConciliar, useCorregirIvaFactura, useCrearFacturaGasolina,
+  useFacturasGasolina,
   useReabrirFacturaGasolina, useRecargasSinFacturar, PRODUCTOS, RENGLONES_SIN_CASAR,
 } from '../hooks/useFacturasGasolina'
 import type {
   Candidatas, FacturaGasolina, Producto, RenglonNuevo, TicketCandidato,
 } from '../hooks/useFacturasGasolina'
 import { useGasolineras } from '../hooks/useGasolineras'
-import { useAuth } from '../hooks/useAuth'
+import ImportarFacturasGasolina from '../components/ImportarFacturasGasolina'
 import { SelectCatalogo } from '../components/SelectCatalogo'
 import { FechaInput } from '../components/FechaInput'
 import { ApiError } from '../lib/api'
 import { formatMXN, formatFecha } from '../lib/formato'
-import { IVA_DEFAULT, conIva } from '../lib/totales'
+import { usePermisos } from '../hooks/usePermisos'
 
 const PAGE_SIZE = 15
 // Más alto que el de facturas: esta lista se recorre buscando lo viejo, no se
@@ -85,8 +91,7 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
   const [gasolineraId, setGasolineraId] = useState<string | null>(null)
   const [folio, setFolio] = useState('')
   const [fecha, setFecha] = useState('')
-  const [conIvaAparte, setConIvaAparte] = useState(true)
-  const [tasa, setTasa] = useState<number | string>(IVA_DEFAULT)
+  const [iva, setIva] = useState<number | string>('')
   // Los renglones se capturan EN la tabla, no en un formulario aparte que luego
   // los agrega. Cada valor tiene su campo con su nombre — antes esto era un
   // cuadro de texto que leía la línea entera adivinando cuál número era cuál por
@@ -94,11 +99,10 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
   const [renglones, setRenglones] = useState<RenglonNuevo[]>([])
   const mut = useCrearFacturaGasolina()
 
-  // Ni el subtotal ni el total se teclean: salen de los renglones y la tasa.
-  // Pedirlos aparte solo crea la oportunidad de que discrepen de lo capturado.
+  // El subtotal no se teclea: sale de los renglones. El IVA sí, porque no se
+  // puede calcular: depende del IEPS de cada litro, que el papel no desglosa.
   const subtotal = renglones.reduce((s, r) => s + r.importe, 0)
-  const tasaNueva = conIvaAparte ? Number(tasa) : null
-  const total = conIva(subtotal, tasaNueva)
+  const total = subtotal + (Number(iva) || 0)
 
   function agregarRecarga() {
     // Hereda el producto del renglón anterior: en una factura de gasolinera casi
@@ -117,7 +121,7 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
 
   const invalido = !gasolineraId || folio.trim() === '' || !fecha
     || renglones.length === 0 || renglonIncompleto
-    || (conIvaAparte && !(Number(tasa) > 0 && Number(tasa) <= 100))
+    || iva === '' || !(Number(iva) >= 0)
 
   function guardar() {
     mut.mutate(
@@ -125,13 +129,13 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
         gasolinera_id: Number(gasolineraId),
         folio: folio.trim(),
         fecha,
-        tasa_iva: tasaNueva,
+        iva: Number(iva),
         renglones,
       },
       {
         onSuccess: () => {
           setGasolineraId(null); setFolio(''); setFecha('')
-          setRenglones([]); setConIvaAparte(true); setTasa(IVA_DEFAULT)
+          setRenglones([]); setIva('')
           onClose()
         },
       },
@@ -166,19 +170,12 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
           />
         </Group>
 
-        <Group align="flex-end" gap="sm">
-          <Switch
-            size="xs" label="Los importes vienen sin IVA"
-            checked={conIvaAparte}
-            onChange={(e) => setConIvaAparte(e.currentTarget.checked)}
-          />
-          {conIvaAparte && (
-            <NumberInput
-              size="xs" w={110} min={0.01} max={100} decimalScale={2} suffix="%"
-              value={tasa} onChange={setTasa}
-            />
-          )}
-        </Group>
+        <NumberInput
+          label="IVA de la factura" w={220} required
+          description="El importe que imprime el papel. No lo calcules: en combustible el IVA no se cobra sobre el IEPS, así que no es el 16% del subtotal."
+          min={0} decimalScale={2} prefix="$" thousandSeparator=","
+          value={iva} onChange={setIva}
+        />
 
         <Group justify="space-between" align="center">
           <Text size="sm" fw={500}>
@@ -281,6 +278,45 @@ function NuevaFacturaModal({ abierto, onClose }: { abierto: boolean; onClose: ()
 
 // ── Conciliación ─────────────────────────────────────────────────────────────
 
+/**
+ * Pide el IVA del papel a una factura capturada con tasa, cuyo total es una
+ * estimación que da de más. Con el IVA, el total pasa a ser subtotal + IVA.
+ */
+function IvaDelPapel({ facturaId, subtotal }: { facturaId: number; subtotal: number }) {
+  const [iva, setIva] = useState<number | string>('')
+  const mut = useCorregirIvaFactura()
+  const valido = iva !== '' && Number(iva) >= 0
+
+  return (
+    <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
+      <Stack gap="xs">
+        <Text size="sm">
+          Esta factura se capturó con la tasa de IVA, y su total sale de más: en
+          combustible el IVA no se cobra sobre el IEPS. Captura el IVA que imprime
+          el papel.
+        </Text>
+        <Group gap="xs" align="flex-end">
+          <NumberInput
+            size="xs" w={160} label="IVA del papel"
+            min={0} decimalScale={2} prefix="$" thousandSeparator=","
+            value={iva} onChange={setIva}
+          />
+          <Button
+            size="xs" disabled={!valido} loading={mut.isPending}
+            onClick={() => mut.mutate({ id: facturaId, iva: Number(iva) })}
+          >
+            Guardar
+          </Button>
+          {valido && (
+            <Text size="xs" c="dimmed">Total: {formatMXN(subtotal + Number(iva))}</Text>
+          )}
+        </Group>
+        {mut.error && <Text size="xs" c="red">{(mut.error as Error).message}</Text>}
+      </Stack>
+    </Alert>
+  )
+}
+
 /** "ticket 2/3" cuando la recarga trae varios; nada cuando es uno solo. */
 function numeroTicket(t: { ticket_n: number; tickets: number }): string {
   return t.tickets > 1 ? `ticket ${t.ticket_n}/${t.tickets}` : ''
@@ -311,6 +347,7 @@ function CuadreFactura({
 }) {
   const conciliar = useConciliar()
   const reabrir = useReabrirFacturaGasolina()
+  const { puedeEditar } = usePermisos()
 
   const { factura, renglones, tickets } = datos
   const cerrada = factura.conciliada_en != null
@@ -386,7 +423,7 @@ function CuadreFactura({
         <Text size="xs" c="dimmed">
           El sistema ya emparejó los renglones que pudo, por cantidad exacta. Los
           demás se eligen a mano.
-          {factura.tasa_iva != null && (
+          {(factura.iva != null || factura.tasa_iva != null) && (
             <> Ojo: los importes del papel son <b>sin IVA</b> y el costo de la
             recarga es lo que se pagó en la bomba, <b>con IVA</b>; por eso el
             cuadre va por litros y no por importe.</>
@@ -397,14 +434,16 @@ function CuadreFactura({
       <Group gap="sm" wrap="wrap">
         <Card withBorder padding="xs" style={{ flex: 1, minWidth: 120 }}>
           <Text size="xs" c="dimmed">Total del papel</Text>
-          <Text size="lg" fw={700}>
-            {formatMXN(conIva(factura.subtotal, factura.tasa_iva))}
-          </Text>
-          {factura.tasa_iva != null && (
+          <Text size="lg" fw={700}>{formatMXN(factura.total)}</Text>
+          {factura.total_estimado ? (
+            <Tooltip label="Calculado con la tasa: da de más, porque el IVA no se cobra sobre el IEPS. Captura el IVA del papel.">
+              <Text size="xs" c="orange.7">Estimado · {formatMXN(factura.subtotal)} + {factura.tasa_iva}%</Text>
+            </Tooltip>
+          ) : factura.iva != null ? (
             <Text size="xs" c="dimmed">
-              {formatMXN(factura.subtotal)} + {factura.tasa_iva}%
+              {formatMXN(factura.subtotal)} + IVA {formatMXN(factura.iva)}
             </Text>
-          )}
+          ) : null}
         </Card>
         <Card withBorder padding="xs" style={{ flex: 1, minWidth: 120 }}>
           <Text size="xs" c="dimmed">Renglones casados</Text>
@@ -424,6 +463,10 @@ function CuadreFactura({
           </Text>
         </Card>
       </Group>
+
+      {!cerrada && factura.total_estimado && puedeEditar && (
+        <IvaDelPapel facturaId={factura.id} subtotal={factura.subtotal} />
+      )}
 
       {!cerrada && sinCasar.length > 0 && (
         <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
@@ -715,10 +758,10 @@ export default function FacturasGasolina() {
   const [porConciliar, setPorConciliar] = useState(false)
   const [page, setPage] = useState(1)
   const [nueva, setNueva] = useState(false)
+  const [importando, setImportando] = useState(false)
   const [conciliando, setConciliando] = useState<number | null>(null)
 
-  const { user } = useAuth()
-  const esAdmin = user?.userRoles.includes('admin') ?? false
+  const { esAdmin, puedeEditar } = usePermisos()
 
   const { data, isLoading, isError } = useFacturasGasolina({
     page, pageSize: PAGE_SIZE,
@@ -743,9 +786,18 @@ export default function FacturasGasolina() {
             se cobró y que nadie registró.
           </Text>
         </div>
-        <Button leftSection={<IconPlus size={16} />} onClick={() => setNueva(true)}>
-          Nueva factura
-        </Button>
+        {/* Dar de alta es de admin y editor (la API responde 403 a los demás).
+            El XML es el camino normal; a mano queda para la que no lo trae. */}
+        {puedeEditar && (
+          <Group gap="xs" wrap="nowrap">
+            <Button leftSection={<IconFileImport size={16} />} onClick={() => setImportando(true)}>
+              Importar XML
+            </Button>
+            <Button variant="default" leftSection={<IconPlus size={16} />} onClick={() => setNueva(true)}>
+              A mano
+            </Button>
+          </Group>
+        )}
       </Group>
 
       <Tabs defaultValue="facturas">
@@ -806,9 +858,12 @@ export default function FacturasGasolina() {
                   <Table.Td><Text size="sm">{f.gasolinera}</Text></Table.Td>
                   <Table.Td>{formatFecha(f.fecha)}</Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
-                    <Text size="sm" fw={500}>
-                      {formatMXN(conIva(f.subtotal, f.tasa_iva))}
-                    </Text>
+                    <Text size="sm" fw={500}>{formatMXN(f.total)}</Text>
+                    {f.total_estimado && (
+                      <Tooltip label="Calculado con la tasa: falta el IVA del papel">
+                        <Text size="xs" c="orange.7">estimado</Text>
+                      </Tooltip>
+                    )}
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'center' }}>
                     <Text size="sm">{f.casados}/{f.renglones}</Text>
@@ -837,6 +892,7 @@ export default function FacturasGasolina() {
       </Tabs>
 
       <NuevaFacturaModal abierto={nueva} onClose={() => setNueva(false)} />
+      <ImportarFacturasGasolina abierto={importando} onClose={() => setImportando(false)} />
       <ConciliarModal
         facturaId={conciliando}
         onClose={() => setConciliando(null)}
