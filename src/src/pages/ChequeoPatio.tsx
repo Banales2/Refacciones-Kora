@@ -359,6 +359,10 @@ export default function ChequeoPatio() {
           </Group>
         )}
         size="lg"
+        // Un toque fuera del formulario lo cerraba con todo lo capturado. El
+        // borrador ya lo rescata, pero salirse sin querer a media unidad sigue
+        // costando: se cierra con la X o con Cancelar, que se ven.
+        closeOnClickOutside={false}
         fullScreen={typeof window !== 'undefined' && window.innerWidth < 768}
         // El modal se dibuja en un portal, así que la clase del contenedor de
         // arriba no lo alcanza: va también aquí.

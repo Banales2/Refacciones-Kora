@@ -45,9 +45,33 @@ function ExigirSucursal({ children }: { children: ReactNode }) {
 }
 
 function App() {
-  const { user, loading } = useAuth()
+  const { user, loading, sinRed, reintentar } = useAuth()
 
   if (loading) return <Cargando />
+
+  // Sin red no se sabe si hay sesión. Mandar al login sería mentir, y sin señal
+  // el login tampoco abre: se dice qué pasa y se reintenta solo al volver.
+  if (sinRed) {
+    return (
+      <div style={{ ...centrado, padding: '0 16px', textAlign: 'center' }}>
+        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Sin conexión</h1>
+        <p style={{ margin: 0, color: '#6b7280', maxWidth: 420 }}>
+          No se pudo comprobar tu sesión porque no hay internet. En cuanto regrese la
+          señal se vuelve a intentar sola.
+        </p>
+        <button
+          type="button"
+          onClick={reintentar}
+          style={{
+            padding: '10px 24px', background: '#7c3aed', color: '#fff', border: 0,
+            borderRadius: '8px', fontWeight: 500, fontSize: '1rem', cursor: 'pointer',
+          }}
+        >
+          Reintentar
+        </button>
+      </div>
+    )
+  }
 
   if (!user) {
     return (

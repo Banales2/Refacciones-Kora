@@ -16,7 +16,8 @@
 // cuenta de la sesión. Cambian a distinto ritmo —uno por unidad, uno por
 // recorrido— y confundirlos haría que el reporte quedara a nombre de quien no
 // lo hizo.
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Stack, Group, Button, Text, Textarea, TextInput, NumberInput, Alert, Divider,
   SegmentedControl, Card, Badge, Loader, Center, SimpleGrid,
@@ -34,6 +35,9 @@ import type { Resultado, Severidad } from '../lib/chequeoItems'
 import { NIVELES_TANQUE, nivelEsFalla, diaMes } from '../lib/chequeoItems'
 import { TEXTO_LIBRE, TEXTO_SIMPLE, limpiarTextoLibre, limpiarTextoSimple, KM_MAX } from '../lib/validaciones'
 import { useOpcionesTexto } from '../hooks/useOpcionesTexto'
+import { ApiError, SIN_RESPUESTA } from '../lib/api'
+import type { FormularioChequeo } from '../hooks/useChequeos'
+import { leerBorrador, guardarBorrador, borrarBorrador, type BorradorChequeo } from '../lib/borradorChequeo'
 
 /** Lo capturado de una pregunta, antes de mandarse. */
 interface Respuesta {
@@ -65,9 +69,28 @@ function pistaFalla(clave: string): string {
   return clave === 'luces_cuartos' ? '¿Cuál falla y qué foco lleva?' : '¿Qué tiene?'
 }
 
-export default function ChequeoDiarioForm({
-  vehiculoId, onListo, onCancel, ubicacionFija,
-}: {
+/**
+ * El error de guardar, dicho para quien está en el patio.
+ *
+ * El de `api.ts` promete que "se volverá a intentar", y es verdad para las
+ * consultas, no para guardar: el chequeo no se reintenta solo (ver
+ * `mutations.retry` en main.tsx). Con ese texto, quien recorre cerraba el
+ * formulario esperando que se mandara después, y se perdía.
+ */
+function mensajeAlGuardar(err: unknown): string {
+  if (err instanceof ApiError && (err.status === SIN_RESPUESTA || err.status >= 500)) {
+    return 'No se guardó: no hay conexión con el servidor. Lo capturado sigue aquí y en el ' +
+           'teléfono; vuelve a darle Guardar cuando tengas señal.'
+  }
+  return err instanceof Error ? err.message : 'No se pudo guardar el chequeo'
+}
+
+/** Hora de un borrador para decirla al recuperarlo: "10:42". */
+function horaBorrador(iso: string): string {
+  return new Date(iso).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+}
+
+interface PropsChequeo {
   vehiculoId: number
   onListo:    (avisos: string[]) => void
   onCancel:   () => void
@@ -79,14 +102,66 @@ export default function ChequeoDiarioForm({
    * desaparezca de la lista.
    */
   ubicacionFija?: string
+}
+
+// El formulario se arma hasta tener las preguntas de la unidad. Antes el estado
+// se inicializaba en el primer render, cuando la consulta todavía venía en
+// camino: una unidad con chequeo de hoy que no estaba en la caché se abría en
+// blanco diciendo "lo que guardes aquí lo corrige". Separado, lo ya capturado
+// —el chequeo de hoy o el borrador— entra desde el principio.
+export default function ChequeoDiarioForm(props: PropsChequeo) {
+  const { data, isLoading, isError, refetch } = useFormularioChequeo(props.vehiculoId, true)
+  // Subirla vuelve a montar el formulario: así se descarta un borrador y se
+  // regresa a lo guardado (o a la hoja en blanco) sin tocar estado por estado.
+  const [version, setVersion] = useState(0)
+  // Se lee una sola vez por montaje: después manda lo que hay en pantalla.
+  const [borrador, setBorrador] = useState(() => leerBorrador(props.vehiculoId))
+
+  if (isLoading) {
+    return <Center py="xl"><Loader /></Center>
+  }
+  if (isError || !data) {
+    return (
+      <Alert color="red" title="No se pudo cargar el chequeo">
+        <Group>
+          <Text size="sm">Revisa la conexión e inténtalo de nuevo.</Text>
+          <Button size="xs" variant="light" onClick={() => refetch()}>Reintentar</Button>
+        </Group>
+      </Alert>
+    )
+  }
+  return (
+    <FormularioCargado
+      key={version}
+      {...props}
+      formulario={data.data}
+      recargar={refetch}
+      borrador={borrador}
+      onDescartarBorrador={() => {
+        borrarBorrador(props.vehiculoId)
+        setBorrador(null)
+        setVersion((v) => v + 1)
+      }}
+    />
+  )
+}
+
+function FormularioCargado({
+  vehiculoId, onListo, onCancel, ubicacionFija, formulario, recargar, borrador, onDescartarBorrador,
+}: PropsChequeo & {
+  formulario: FormularioChequeo
+  /** Vuelve a pedir el formulario: tras un 409, para saber qué ya estaba guardado. */
+  recargar: () => Promise<unknown>
+  /** Lo que se capturó en este teléfono y no se alcanzó a guardar. */
+  borrador: BorradorChequeo | null
+  onDescartarBorrador: () => void
 }) {
-  const { data, isLoading, isError, refetch } = useFormularioChequeo(vehiculoId, true)
+  const qc = useQueryClient()
   const crear     = useCreateChequeo(vehiculoId)
   const actualizar = useUpdateChequeo(vehiculoId)
   const declarantes = useDeclarantes()
 
-  const formulario = data?.data
-  const existente  = formulario?.hoy ?? null
+  const existente  = formulario.hoy ?? null
 
   // Paso 1, con tres respuestas y no dos. `null` = todavía no contesta, que no
   // es ninguna de las tres: mientras siga en null el checklist no aparece.
@@ -95,23 +170,28 @@ export default function ChequeoDiarioForm({
   // mitad de las unidades están solas. Sin esa opción, el que revisa acabaría
   // marcando "sin novedad" por alguien que no estaba, que es inventar el único
   // dato que este formulario existe para proteger.
+  //
+  // Todo el estado arranca del borrador si lo hay —es lo más nuevo que se
+  // capturó—, y si no, del chequeo de hoy.
   const [paso1, setPaso1] = useState<'sin_novedad' | 'novedad' | 'sin_chofer' | null>(
-    existente
+    borrador ? borrador.paso1
+    : existente
       ? (existente.sin_chofer ? 'sin_chofer' : existente.hay_novedad ? 'novedad' : 'sin_novedad')
       : null
   )
   const hayNovedad = paso1 === 'novedad'
   const sinChofer  = paso1 === 'sin_chofer'
-  const [declaracion, setDeclaracion] = useState(existente?.declaracion ?? '')
+  const [declaracion, setDeclaracion] = useState(borrador?.declaracion ?? existente?.declaracion ?? '')
   // El chofer de ESTA unidad. No se arrastra del chequeo anterior ni de quien
   // recorre: el chequeo lo hace una persona aparte que camina el patio, y el
   // chofer cambia con cada unidad que revisa.
-  const [declaradoPor, setDeclaradoPor] = useState(existente?.declarado_por ?? '')
+  const [declaradoPor, setDeclaradoPor] = useState(borrador?.declaradoPor ?? existente?.declarado_por ?? '')
   const [ubicacion, setUbicacion] = useState(
-    ubicacionFija ?? existente?.ubicacion ?? ''
+    ubicacionFija ?? borrador?.ubicacion ?? existente?.ubicacion ?? ''
   )
-  const [lectura, setLectura] = useState<number | ''>(existente?.lectura ?? '')
+  const [lectura, setLectura] = useState<number | ''>(borrador ? borrador.lectura : existente?.lectura ?? '')
   const [respuestas, setRespuestas] = useState<Record<string, Respuesta>>(() => {
+    if (borrador) return borrador.respuestas as Record<string, Respuesta>
     const inicial: Record<string, Respuesta> = {}
     for (const item of existente?.items ?? []) {
       inicial[item.clave] = {
@@ -127,6 +207,7 @@ export default function ChequeoDiarioForm({
   // opcionales, así que no hay forma de distinguirlo de un cero salvo no
   // mandando la fila.
   const [medidas, setMedidas] = useState<Record<string, number | ''>>(() => {
+    if (borrador) return borrador.medidas
     const inicial: Record<string, number | ''> = {}
     for (const d of existente?.desgaste ?? []) {
       inicial[`${d.tipo_pieza_id}|${d.etiqueta}`] = d.milimetros
@@ -136,8 +217,25 @@ export default function ChequeoDiarioForm({
   // El comentario final: la cabecera del chequeo ya tenía la columna (`nota`),
   // pero nadie la llenaba. Es lo que no cabe en ningún renglón —"la dejaron con
   // la caja sucia", "le falta la calcomanía"— y por eso es libre y opcional.
-  const [notaFinal, setNotaFinal] = useState(existente?.nota ?? '')
+  const [notaFinal, setNotaFinal] = useState(borrador?.notaFinal ?? existente?.nota ?? '')
   const [error, setError] = useState<string | null>(null)
+  // El chequeo ya estaba guardado cuando se intentó darlo de alta: la conexión
+  // se cortó antes de la confirmación. Se dice arriba para que no parezca que
+  // alguien más capturó la unidad.
+  const [yaEstaba, setYaEstaba] = useState(false)
+
+  // Cada cambio va al borrador del teléfono. Solo lo que cambió respecto a
+  // como se abrió: abrir una unidad ya revisada y cerrarla dejaría un
+  // "borrador" idéntico a lo guardado, ofreciéndose después como si alguien
+  // hubiera dejado algo a medias. Y hasta contestar el paso 1 no hay nada que
+  // valga la pena recuperar.
+  const capturado = { paso1, declaracion, declaradoPor, ubicacion, lectura, respuestas, medidas, notaFinal }
+  const comoSeAbrio = useRef(JSON.stringify(capturado))
+  const firma = JSON.stringify(capturado)
+  useEffect(() => {
+    if (paso1 === null || firma === comoSeAbrio.current) return
+    guardarBorrador(vehiculoId, JSON.parse(firma))
+  }, [vehiculoId, paso1, firma])
   // Una lectura menor que la registrada sí baja el odómetro de la unidad (el
   // chequeo es el único módulo donde retrocede), así que se pregunta antes de
   // mandarla. `true` = ya se confirmó y el próximo guardar pasa de largo.
@@ -148,20 +246,6 @@ export default function ChequeoDiarioForm({
   } = useOpcionesTexto(
     declarantes.data?.data, declaradoPor, existente?.declarado_por, etiquetaNueva
   )
-
-  if (isLoading) {
-    return <Center py="xl"><Loader /></Center>
-  }
-  if (isError || !formulario) {
-    return (
-      <Alert color="red" title="No se pudo cargar el chequeo">
-        <Group>
-          <Text size="sm">Revisa la conexión e inténtalo de nuevo.</Text>
-          <Button size="xs" variant="light" onClick={() => refetch()}>Reintentar</Button>
-        </Group>
-      </Alert>
-    )
-  }
 
   // Lo que esta unidad ya trae reportado de antes, por clave. En un mapa porque
   // se consulta una vez por renglón dibujado.
@@ -300,9 +384,22 @@ export default function ChequeoDiarioForm({
       const res = existente
         ? await actualizar.mutateAsync({ id: existente.id, payload })
         : await crear.mutateAsync(payload)
+      borrarBorrador(vehiculoId)
       onListo(res.avisos ?? [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo guardar el chequeo')
+      // Dar de alta un chequeo que ya existe: casi siempre es el propio, que sí
+      // entró aunque la respuesta se perdió en el camino. Se vuelve a pedir el
+      // formulario para que traiga el de hoy y el siguiente Guardar lo corrija
+      // en vez de chocar otra vez con el mismo 409. Lo capturado no se toca.
+      if (!existente && err instanceof ApiError && err.status === 409) {
+        await recargar()
+        qc.invalidateQueries({ queryKey: ['chequeos-patio'] })
+        qc.invalidateQueries({ queryKey: ['chequeos-hoy'] })
+        setYaEstaba(true)
+        setError(null)
+        return
+      }
+      setError(mensajeAlGuardar(err))
     } finally {
       setConfirmarBaja(false)
     }
@@ -312,7 +409,26 @@ export default function ChequeoDiarioForm({
 
   return (
     <Stack gap="md">
-      {existente && (
+      {borrador && (
+        <Alert color="violet" variant="light">
+          <Group justify="space-between" gap="xs" wrap="wrap">
+            <Text size="sm">
+              Recuperamos lo que capturaste a las {horaBorrador(borrador.guardado_en)} y no se
+              alcanzó a guardar.
+            </Text>
+            <Button size="compact-sm" variant="subtle" color="gray" onClick={onDescartarBorrador}>
+              Descartar
+            </Button>
+          </Group>
+        </Alert>
+      )}
+      {yaEstaba && existente ? (
+        <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
+          Esta unidad ya tenía chequeo de hoy, capturado por {existente.revisado_por}. Si fuiste
+          tú, sí se guardó: la conexión se cortó antes de confirmarlo. Lo que tienes en pantalla
+          sigue igual; con «Guardar corrección» reemplaza lo guardado.
+        </Alert>
+      ) : existente && (
         <Alert color="blue" variant="light">
           Esta unidad ya tiene chequeo de hoy, capturado por {existente.revisado_por}.
           Lo que guardes aquí lo corrige.
