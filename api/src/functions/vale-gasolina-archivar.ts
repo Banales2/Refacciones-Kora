@@ -40,7 +40,7 @@ function handler(accion: 'archivar' | 'restaurar') {
         await service.restaurar(id)
       } else {
         const { motivo } = Schema.parse(await req.json().catch(() => ({})))
-        await service.archivar(id, motivo ?? null)
+        await service.archivar(id, motivo ?? null, user.userRoles.includes('admin'))
       }
 
       await audit({

@@ -410,7 +410,7 @@ function ValesTabla({
 }) {
   // El vale se captura una vez; darlo por perdido es cosa de un editor.
   // Corregirlo también, salvo el practicante con los que él capturó.
-  const { puedeEditar, puedeCorregirCaptura } = usePermisos()
+  const { esAdmin, puedeEditar, puedeCorregirCaptura } = usePermisos()
   const restaurarMut = useArchivarVale()
 
   return (
@@ -481,11 +481,12 @@ function ValesTabla({
                       <IconPencil size={14} />
                     </ActionIcon>
                   )}
-                  {/* Archivar solo tiene sentido en lo que se perdió: un vale
-                      usado no se perdió, se gastó, y uno de hoy todavía puede
-                      aparecer esta tarde. */}
-                  {puedeEditar && v.estado === 'perdido' && (
-                    <Tooltip label="Darlo por perdido">
+                  {/* Archivar es para lo que se perdió: un vale usado no se
+                      perdió, se gastó. Uno sin usar todavía puede aparecer esta
+                      tarde, así que adelantarse a los dos días es del admin
+                      (la API también lo impone). */}
+                  {((puedeEditar && v.estado === 'perdido') || (esAdmin && v.estado === 'creado')) && (
+                    <Tooltip label={v.estado === 'creado' ? 'Archivar sin usar' : 'Darlo por perdido'}>
                       <ActionIcon variant="subtle" color="gray" size="sm"
                         aria-label={`Archivar el vale ${v.folio}`}
                         onClick={() => onArchivar(v)}>
@@ -780,15 +781,23 @@ export default function ValesGasolina({
       <Modal
         opened={archivando !== null}
         onClose={() => setArchivando(null)}
-        title="Dar el vale por perdido"
+        title={archivando?.estado === 'creado' ? 'Archivar el vale sin usar' : 'Dar el vale por perdido'}
         centered
       >
         {archivando && (
           <Stack gap="sm">
             <Text size="sm">
-              El vale <Text component="span" fw={600}>{archivando.folio}</Text> lleva{' '}
-              {archivando.dias_sin_usar} días sin usarse.
+              El vale <Text component="span" fw={600}>{archivando.folio}</Text>{' '}
+              {archivando.dias_sin_usar === 0
+                ? 'se entregó hoy'
+                : `lleva ${archivando.dias_sin_usar} día${archivando.dias_sin_usar === 1 ? '' : 's'} sin usarse`}.
             </Text>
+            {archivando.estado === 'creado' && (
+              <Alert color="yellow" variant="light">
+                Todavía está en plazo: el chofer aún puede cargarlo. Archívalo solo si sabes que
+                no se va a usar.
+              </Alert>
+            )}
             <Text size="xs" c="dimmed">
               No se borra: el folio se sigue resolviendo y la decisión queda firmada.
               Sale de la lista y deja de ofrecerse al capturar una recarga. Si aparece,

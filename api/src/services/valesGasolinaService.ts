@@ -1,7 +1,7 @@
 import * as repo from '../repositories/valesGasolinaRepo'
 import type { ValeGasolina } from '../repositories/valesGasolinaRepo'
 import type { ValeGasolinaCreate, ValeGasolinaUpdate } from '../schemas/valeGasolinaSchema'
-import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
+import { AppError, NotFoundError, ConflictError, ValidationError } from '../shared/errors'
 import * as archivadoRepo from '../repositories/archivadoRepo'
 import * as recargasRepo from '../repositories/recargasRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
@@ -95,10 +95,21 @@ export async function getAll(incluirArchivados = false): Promise<ValeGasolina[]>
  *
  * Un vale ya usado no se archiva: ese papel no se perdió, se gastó, y
  * archivarlo escondería la recarga que cuelga de él.
+ *
+ * Uno que todavía está en plazo (`creado`) solo lo archiva un admin: el
+ * editor archiva lo que ya se dio por perdido, y adelantarse a los dos días es
+ * sacar de la lista un papel que todavía puede cargarse esta tarde.
  */
-export async function archivar(id: number, motivo: string | null): Promise<void> {
+export async function archivar(id: number, motivo: string | null, esAdmin: boolean): Promise<void> {
   const vale = await repo.findById(id)
   if (!vale) throw new NotFoundError('Vale')
+  if (vale.estado === 'creado' && !esAdmin) {
+    throw new AppError(
+      `El vale ${vale.folio} todavía no se da por perdido. Solo un admin puede archivar ` +
+      'un vale sin usar antes de tiempo.',
+      403, 'FORBIDDEN',
+    )
+  }
   if (vale.estado === 'usado') {
     throw new ConflictError(
       `El vale ${vale.folio} ya se usó en una recarga, así que no se perdió. ` +
