@@ -18,6 +18,11 @@ const NS_CFDI = 'http://www.sat.gob.mx/cfd/4'
 const NS_TFD = 'http://www.sat.gob.mx/TimbreFiscalDigital'
 const NS_IF = 'https://www.interfactura.com/Schemas/Documentos'
 
+/** PASE, Servicios Electrónicos: el emisor de las facturas de casetas. */
+const RFC_PASE = 'ISD950921HE5'
+/** Clave SAT de los conceptos de peaje. */
+const CLAVE_PEAJE = '95111615'
+
 export interface CrucePase {
   renglon: number
   tag: string
@@ -123,6 +128,15 @@ export function leerFacturaPase(xml: string): FacturaPase {
 
   const comp = doc.getElementsByTagNameNS(NS_CFDI, 'Comprobante')[0]
   if (!comp) throw new XmlPaseError('No es un CFDI: falta el Comprobante.')
+  // PASE manda un complemento de pago por cada factura que se le paga, y la
+  // descarga del SAT los trae revueltos con las facturas. No tiene cruces ni
+  // importe: dice que se pagó una factura, no cobra nada.
+  if (comp.getAttribute('TipoDeComprobante') === 'P') {
+    throw new XmlPaseError(
+      'Es un complemento de pago (avisa que se pagó una factura), no una factura de casetas. ' +
+      'No hace falta importarlo.',
+    )
+  }
   const timbre = doc.getElementsByTagNameNS(NS_TFD, 'TimbreFiscalDigital')[0]
   if (!timbre) throw new XmlPaseError('El CFDI no está timbrado: falta el folio fiscal.')
   const emisor = doc.getElementsByTagNameNS(NS_CFDI, 'Emisor')[0]
@@ -130,9 +144,18 @@ export function leerFacturaPase(xml: string): FacturaPase {
   const encabezado = doc.getElementsByTagNameNS(NS_IF, 'Encabezado')[0]
   const cuerpos = Array.from(doc.getElementsByTagNameNS(NS_IF, 'Cuerpo'))
   if (!encabezado || cuerpos.length === 0) {
-    throw new XmlPaseError(
-      'El XML no trae el detalle de cruces de PASE (addenda de Interfactura). ' +
-      '¿Es una factura de casetas?',
+    // La misma factura bajada del SAT llega sin la addenda: el SAT guarda el
+    // CFDI y descarta lo demás. Trae un concepto por cruce, pero sin tag, fecha,
+    // hora ni clase, así que no hay cómo ligar el cruce a una unidad ni revisarlo.
+    // Se reconoce por el RFC de PASE o por la clave de peaje de sus conceptos.
+    const esPase = emisor?.getAttribute('Rfc') === RFC_PASE
+      || Array.from(doc.getElementsByTagNameNS(NS_CFDI, 'Concepto'))
+        .some((c) => c.getAttribute('ClaveProdServ') === CLAVE_PEAJE)
+    throw new XmlPaseError(esPase
+      ? 'Este es el XML que entrega el SAT: trae la factura de PASE pero no el detalle de ' +
+        'cada cruce (tag, fecha, hora y clase). Descarga el XML desde el portal de PASE, que sí lo trae.'
+      : 'El XML no trae el detalle de cruces de PASE (addenda de Interfactura). ' +
+        '¿Es una factura de casetas?',
     )
   }
 
