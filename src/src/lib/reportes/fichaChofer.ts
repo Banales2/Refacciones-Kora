@@ -1,12 +1,12 @@
 // La ficha que se le entrega al chofer: una hoja por unidad con todo lo que su
 // unidad trae abierto, separado en dos partes.
 //
-//   LO QUE TE TOCA RESOLVER. Lo que se arregla sin taller ni refacción —los
+//   LO QUE RESUELVES TÚ. Lo que se arregla sin taller ni refacción —los
 //   niveles, el extintor, los papeles, la basura de la cabina— y cargar
 //   combustible si el último chequeo la recibió con un cuarto o menos. Lleva
 //   casilla para palomear: es trabajo que se le pide.
 //
-//   PARA QUE ESTÉS ENTERADO. Todo lo demás: llantas, luces, golpes, fugas. No lo
+//   LO ATIENDE EL TALLER (PARA QUE ESTÉS ENTERADO). Todo lo demás: llantas, luces, golpes, fugas. No lo
 //   resuelve él, pero es su unidad y la maneja todos los días: tiene que saber
 //   que las llantas están dañadas o que un stop no prende, y avisar si empeora.
 //   Sin casilla, a propósito: palomear algo que no puede arreglar no significa
@@ -110,7 +110,7 @@ interface HojaVehiculo {
   vehiculo_id:     number
   vehiculo_nombre: string
   placas:          string | null
-  /** Lo que le toca: con casilla. */
+  /** Lo que resuelve el chofer: con casilla. */
   tuyas:           IncidenciaConVehiculo[]
   /** Lo que solo se le avisa: sin casilla. */
   avisos:          IncidenciaConVehiculo[]
@@ -210,18 +210,28 @@ export async function exportFichaChoferPdf(
     return
   }
 
-  // Primera hoja: el índice de lo que se va a repartir, por sucursal.
+  // Primera hoja: el índice de lo que se va a repartir, por sucursal. Las
+  // columnas antes decían "Le toca" y "Para avisarle", con un número suelto, y
+  // quien repartía las hojas no sabía qué estaba contando: ahora dicen quién lo
+  // resuelve, y el párrafo de arriba lo explica.
+  pdf.seccion(
+    'Resumen por unidad',
+    'Cuántos puntos abiertos trae cada unidad, según quién los resuelve. «Los resuelve el ' +
+    'chofer»: niveles, combustible, extintor, papeles y limpieza, que arregla él mismo sin ' +
+    'taller. «Los atiende el taller»: llantas, luces, golpes, fugas y lo demás; el chofer solo ' +
+    'tiene que estar enterado. Cada unidad tiene su hoja con el detalle.',
+  )
   for (const g of grupos) {
-    pdf.seccion(g.sucursal)
+    pdf.subseccion(g.sucursal)
     pdf.tabla({
-      head: ['Vehículo', 'Placas', 'Le toca', 'Para avisarle'],
+      head: ['Vehículo', 'Placas', 'Los resuelve el chofer', 'Los atiende el taller'],
       body: g.hojas.map((h) => [
         h.vehiculo_nombre, h.placas ?? '—',
         h.tuyas.length + (h.combustible ? 1 : 0), h.avisos.length,
       ]),
       columnStyles: {
-        2: { halign: 'center', cellWidth: 22 },
-        3: { halign: 'center', cellWidth: 28 },
+        2: { halign: 'center', cellWidth: 34 },
+        3: { halign: 'center', cellWidth: 34 },
       },
       fontSize: 9,
     })
@@ -235,7 +245,7 @@ export async function exportFichaChoferPdf(
         `${g.sucursal}${h.placas ? ` · Placas ${h.placas}` : ''}`,
       )
 
-      // ── Lo que le toca ──
+      // ── Lo que resuelve el chofer ──
       const tareas: (string | number)[][] = h.tuyas.map((i) =>
         ['', i.nombre, i.descripcion ?? '', formatFecha(i.fecha)])
       if (h.combustible) {
@@ -246,7 +256,7 @@ export async function exportFichaChoferPdf(
         ])
       }
 
-      tituloDeParte(pdf, 'Lo que te toca resolver')
+      tituloDeParte(pdf, 'Lo que resuelves tú')
       if (tareas.length) {
         pdf.parrafo(
           'Estos puntos los puedes resolver tú, sin taller: rellenar niveles, cargar combustible, ' +
@@ -268,13 +278,13 @@ export async function exportFichaChoferPdf(
           fontSize: 10,
         })
       } else {
-        pdf.nota('Por ahora no hay nada que te toque resolver en esta unidad.')
+        pdf.nota('Por ahora no hay nada que tengas que resolver tú en esta unidad.')
       }
 
       // ── Lo que solo se le avisa ──
       if (h.avisos.length) {
         pdf.espacio(4)
-        tituloDeParte(pdf, 'Para que estés enterado')
+        tituloDeParte(pdf, 'Lo atiende el taller (para que estés enterado)')
         pdf.parrafo(
           'Esto lo atiende el taller y no tienes que resolverlo, pero es tu unidad: tenlo en ' +
           'cuenta al manejarla. Si empeora o notas algo nuevo, avísale a tu supervisor.',
