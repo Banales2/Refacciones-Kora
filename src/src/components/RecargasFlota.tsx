@@ -23,9 +23,9 @@ import type { RecargaConVehiculo, RecargaEmergenciaPayload, RecargaPayload } fro
 import { usePermisos } from '../hooks/usePermisos'
 import { useVehiculo, useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import { useValesGasolina } from '../hooks/useValesGasolina'
-import { formatFecha } from '../lib/formato'
 import SelectCatalogo from './SelectCatalogo'
 import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCorto } from './OpcionVehiculo'
+import { opcionVale, renderOpcionVale, filtrarVales } from './OpcionVale'
 import {
   RecargaEmergenciaForm, RecargaForm, RecargasTabla, ResumenGrupo, recargaAFormulario,
   emergenciaAFormulario,
@@ -97,13 +97,7 @@ function NuevaRecarga({
     [valesQuery.data, valesUsados],
   )
   const vale = valesLibres.find((v) => String(v.id) === valeId)
-  const opcionesVale = valesLibres.map((v) => ({
-    value: String(v.id),
-    // El "perdido" se dice aquí: si el papel aparece y se gasta, quien lo
-    // captura merece ver que el sistema lo daba por extraviado.
-    label: `Vale ${v.folio} — ${formatFecha(v.fecha)} — ${v.conductor} — ${vehiculoLabelCorto(v)}` +
-           (v.estado === 'perdido' ? ' · dado por perdido' : ''),
-  }))
+  const opcionesVale = valesLibres.map(opcionVale)
 
   // El elegido se conserva en las opciones aunque la búsqueda activa —que
   // Mantine llena con su etiqueta al seleccionarlo— ya no lo devuelva.
@@ -158,6 +152,8 @@ function NuevaRecarga({
             label="Vale de gasolina"
             placeholder={opcionesVale.length ? 'Busca por folio, chofer o unidad' : 'No hay vales libres'}
             data={opcionesVale}
+            renderOption={renderOpcionVale}
+            filter={filtrarVales}
             required
             value={valeId}
             onChange={elegirVale}

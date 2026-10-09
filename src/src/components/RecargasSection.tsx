@@ -22,6 +22,7 @@ import { useGasolineras } from '../hooks/useGasolineras'
 import { useConductores } from '../hooks/useConductores'
 import { useValesGasolina } from '../hooks/useValesGasolina'
 import type { ValeGasolina } from '../hooks/useValesGasolina'
+import { opcionVale, renderOpcionVale, filtrarVales } from './OpcionVale'
 import { KM_MAX, validarKm } from '../lib/validaciones'
 import { FechaInput } from './FechaInput'
 import SelectCatalogo from './SelectCatalogo'
@@ -46,12 +47,6 @@ function formatKm(n: number) {
 
 function formatRendimiento(n: number) {
   return `${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km/L`
-}
-
-function formatFecha(iso: string) {
-  return new Date(`${iso.split('T')[0]}T12:00:00`).toLocaleDateString('es-MX', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
 }
 
 // Solo día + mes: dentro de un grupo el año ya lo da el encabezado.
@@ -166,15 +161,7 @@ export function RecargaForm({
   const valesLibres = (valesData?.data ?? [])
     .filter((v) => v.vehiculo_id === vehiculoId)
     .filter((v) => !valesUsados.has(v.id) || String(v.id) === initial?.vale_id)
-  const vales = valesLibres
-    .map((v) => ({
-      value: String(v.id),
-      // El "perdido" se dice aquí: si el papel aparece y se gasta, quien lo
-      // captura merece ver que el sistema lo daba por extraviado —puede que
-      // esté agarrando el folio equivocado—. Los archivados ni se listan.
-      label: `Vale ${v.folio} — ${formatFecha(v.fecha)} — ${v.conductor}` +
-             (v.estado === 'perdido' ? ' · dado por perdido' : ''),
-    }))
+  const vales = valesLibres.map(opcionVale)
 
   const preguntaProducto = familiaCombustible(combustibleVehiculo) === 'gasolina'
 
@@ -265,6 +252,8 @@ export function RecargaForm({
               label="Vale de gasolina"
               placeholder={vales.length ? 'Selecciona el vale usado' : 'No hay vales para este vehículo'}
               data={vales}
+              renderOption={renderOpcionVale}
+              filter={filtrarVales}
               required
               {...form.getInputProps('vale_id')}
               onChange={elegirVale}
