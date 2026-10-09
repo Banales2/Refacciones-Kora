@@ -6,6 +6,7 @@ import { fechaMexico } from '../shared/fechaMexico'
 import { moverExistencia, loteDeRecuperacion } from './inventarioSql'
 import * as descuadresRepo from './descuadresRepo'
 import * as unidadesRepo from './unidadesPiezaRepo'
+import { JOINS_HIJAS, SUCURSAL_SQL } from './vehiculosSql'
 
 // Un renglón que necesita el vehículo, junto con la pieza que usa para
 // cubrirlo. pieza_id es null mientras nadie la haya elegido: el renglón se sigue
@@ -138,8 +139,9 @@ export interface DatosMontaje {
 
 /**
  * A qué sucursal atribuirle un descuadre de esta unidad. `null` en los tipos que
- * no llevan sucursal —tractocamión, caja de tráiler, utilitario—, y entonces el
- * descuadre queda sin asignar hasta que alguien decida dónde entra.
+ * no llevan sucursal —tractocamión, caja de tráiler— y en las unidades de
+ * sucursal múltiple, y entonces el descuadre queda sin asignar hasta que
+ * alguien decida dónde entra.
  */
 async function sucursalDelVehiculo(
   tx: sql.Transaction, vehiculoId: number,
@@ -221,14 +223,13 @@ function aIso(v: unknown): string | null {
   return String(v).slice(0, 10)
 }
 
-// Dónde se hizo el trabajo. Sale de la tabla hija del vehículo, y solo camiones
-// y montacargas la tienen; en los demás tipos queda NULL hasta que exista el
-// inventario por sucursal y se decida de dónde sacarla.
+// Dónde se hizo el trabajo. Sale de la tabla hija del vehículo, y solo camiones,
+// montacargas y utilitarios la tienen; en los demás —y en los de sucursal
+// múltiple— queda NULL hasta que se decida de dónde sacarla.
 const SUCURSAL_DEL_VEHICULO = `
-  (SELECT COALESCE(c.sucursal_id, mc.sucursal_id)
+  (SELECT ${SUCURSAL_SQL}
    FROM vehiculos v
-   LEFT JOIN camiones    c  ON c.vehiculo_id  = v.id
-   LEFT JOIN montacargas mc ON mc.vehiculo_id = v.id
+   ${JOINS_HIJAS}
    WHERE v.id = @vehiculoId)`
 
 // Una pieza por (vehículo, tipo, etiqueta): volver a asignar reemplaza la

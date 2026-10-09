@@ -9,6 +9,7 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { Alcance, SIN_ACOTAR, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 import * as pendientes from './pendientesRepo'
+import { JOINS_HIJAS, SUCURSAL_SQL } from './vehiculosSql'
 import { PENDIENTE_COLS, type StatusPendiente } from './pendientesRepo'
 
 export type Severidad     = 'superficial' | 'moderada' | 'grave'
@@ -132,9 +133,8 @@ export async function findAllConVehiculo(): Promise<IncidenciaConVehiculo[]> {
     JOIN incidencias i ON i.id = p.id
     JOIN vehiculos v   ON v.id = p.vehiculo_id
     JOIN modelos mo    ON mo.id = v.modelo_id
-    LEFT JOIN camiones    c  ON c.vehiculo_id  = v.id
-    LEFT JOIN montacargas mc ON mc.vehiculo_id = v.id
-    LEFT JOIN sucursales  s  ON s.id = COALESCE(c.sucursal_id, mc.sucursal_id)
+    ${JOINS_HIJAS}
+    LEFT JOIN sucursales  s  ON s.id = ${SUCURSAL_SQL}
     ORDER BY i.fecha DESC, i.hora DESC
   `)
   return r.recordset

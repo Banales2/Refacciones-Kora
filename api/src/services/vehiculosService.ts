@@ -6,7 +6,7 @@ import * as dashboardService from './dashboardService'
 import { getPool } from '../shared/db'
 import {
   VehiculoQuery, VehiculoCreate, VehiculoUpdate, TipoVehiculo,
-  TIPOS_CON_SEGURO, TIPOS_CON_PERMISO,
+  TIPOS_CON_SEGURO, TIPOS_CON_PERMISO, TIPOS_CON_SUCURSAL,
 } from '../schemas/vehiculoSchema'
 import { NotFoundError, ConflictError, ValidationError } from '../shared/errors'
 import { Alcance, SIN_ACOTAR, exigirVehiculo } from '../shared/alcance'
@@ -16,20 +16,26 @@ function requireField(value: unknown, label: string) {
   if (value == null || value === '') throw new ValidationError(`${label} es requerido`)
 }
 
+// El kilometraje no se exige al dar de alta: una unidad nueva arranca en 0, y
+// sin dato el repositorio guarda 0 (`data.kilometraje ?? 0`). El formulario ya
+// lo trataba como opcional y omite el campo vacío, así que exigirlo aquí hacía
+// fallar justo el alta que el formulario dejaba pasar.
 function validateCreate(data: VehiculoCreate) {
   const t = data.tipo
+  // Una sucursal o múltiple, pero una de las dos: sin ninguna, la unidad no
+  // le aparece a ningún responsable.
+  if (TIPOS_CON_SUCURSAL.includes(t) && !data.sucursal_multiple) {
+    requireField(data.sucursal_id, 'Sucursal')
+  }
   if (t === 'camion') {
     requireField(data.combustible,  'Combustible')
     requireField(data.status,       'Status')
-    requireField(data.sucursal_id,  'Sucursal')
-    if (data.kilometraje == null)   throw new ValidationError('Kilometraje es requerido')
   }
   if (t === 'tractocamion') {
     requireField(data.combustible, 'Combustible')
     requireField(data.status,      'Status')
     requireField(data.ruta_id,     'Ruta')
     requireField(data.tonelaje,    'Tonelaje')
-    if (data.kilometraje == null)  throw new ValidationError('Kilometraje es requerido')
   }
   if (t === 'caja_trailer') {
     requireField(data.pies,    'Pies')
@@ -39,12 +45,10 @@ function validateCreate(data: VehiculoCreate) {
   if (t === 'utilitario') {
     requireField(data.combustible, 'Combustible')
     requireField(data.status,      'Status')
-    if (data.kilometraje == null) throw new ValidationError('Kilometraje es requerido')
   }
   if (t === 'montacargas') {
     requireField(data.combustible, 'Combustible')
     requireField(data.status,      'Status')
-    requireField(data.sucursal_id, 'Sucursal')
   }
 }
 
@@ -135,6 +139,14 @@ function validateDocumentos(tipo: TipoVehiculo, data: VehiculoUpdate) {
   }
   if (data.permiso_id != null && !TIPOS_CON_PERMISO.includes(tipo)) {
     throw new ValidationError('Este tipo de unidad no lleva permiso de circulación')
+  }
+  if (data.sucursal_multiple && !TIPOS_CON_SUCURSAL.includes(tipo)) {
+    throw new ValidationError('Este tipo de unidad no lleva sucursal')
+  }
+  // Quitarle lo múltiple sin decir a qué sucursal regresa la dejaría sin
+  // ninguna.
+  if (data.sucursal_multiple === false && data.sucursal_id === undefined) {
+    throw new ValidationError('Elige la sucursal de la unidad')
   }
 }
 

@@ -45,6 +45,11 @@ export interface VehiculoRow {
   ubicacion:    string | null
   sucursal_id:  number | null
   sucursal:     string | null
+  /**
+   * Rota entre sucursales en vez de tener una (migración 068). La ve cualquier
+   * responsable; `sucursal_id` llega en null.
+   */
+  sucursal_multiple: boolean
   tonelaje:     number | null
   // Tenencia: solo reparto y utilitarios. En los demás tipos llega null porque
   // no la pagan. Es nada más la fecha de vencimiento: no tiene folio.
@@ -76,6 +81,7 @@ export interface VehiculoCreatePayload {
   status?:       string
   ubicacion?:    string | null
   sucursal_id?:  number
+  sucursal_multiple?: boolean
   tonelaje?:     number
   tenencia_expiracion?: string | null
   ruta_id?:      number

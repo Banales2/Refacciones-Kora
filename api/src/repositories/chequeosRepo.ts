@@ -12,7 +12,7 @@ import { Alcance, SIN_ACOTAR, conAlcance, vehiculoEnAlcance } from '../shared/al
 import * as incidenciasRepo from './incidenciasRepo'
 import * as mantenimientoRepo from './mantenimientoRepo'
 import type { Severidad } from '../shared/chequeoItems'
-import { JOINS_HIJAS, EN_SEGUIMIENTO } from './vehiculosSql'
+import { JOINS_HIJAS, EN_SEGUIMIENTO, SUCURSAL_SQL } from './vehiculosSql'
 
 export type Resultado = 'ok' | 'falla' | 'na'
 
@@ -402,9 +402,8 @@ export async function findRango(params: {
     LEFT JOIN conductores co ON co.id = ch.conductor_id
     JOIN vehiculos v  ON v.id = ch.vehiculo_id
     JOIN modelos   mo ON mo.id = v.modelo_id
-    LEFT JOIN camiones    c  ON c.vehiculo_id  = v.id
-    LEFT JOIN montacargas mc ON mc.vehiculo_id = v.id
-    LEFT JOIN sucursales  s  ON s.id = COALESCE(c.sucursal_id, mc.sucursal_id)
+    ${JOINS_HIJAS}
+    LEFT JOIN sucursales  s  ON s.id = ${SUCURSAL_SQL}
     WHERE ${filtro}
     ORDER BY ch.fecha DESC, ch.id DESC
   `)
@@ -492,7 +491,7 @@ export async function findPatio(sucursalId: number, fecha: string): Promise<Unid
       ${JOINS_HIJAS}
       LEFT JOIN chequeos ch ON ch.vehiculo_id = v.id AND ch.fecha = @fecha
       WHERE ${EN_SEGUIMIENTO}
-        AND COALESCE(c.sucursal_id, mc.sucursal_id) = @suc
+        AND ${SUCURSAL_SQL} = @suc
       ORDER BY CASE WHEN ch.id IS NULL THEN 0 ELSE 1 END, nombre
     `)
   return r.recordset
@@ -533,7 +532,7 @@ export async function findVisitantes(
         AND ch.ubicacion = @ubic
         -- Las de base aquí ya salen en la otra lista; esta es para lo demás,
         -- traiga o no sucursal propia.
-        AND ISNULL(COALESCE(c.sucursal_id, mc.sucursal_id), -1) <> @suc
+        AND ISNULL(${SUCURSAL_SQL}, -1) <> @suc
       ORDER BY nombre
     `)
   return r.recordset

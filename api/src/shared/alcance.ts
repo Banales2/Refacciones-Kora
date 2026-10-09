@@ -34,8 +34,10 @@ export const SIN_ACOTAR: Alcance = { sucursalId: null }
 
 // Tipos de vehículo que no tienen base en ninguna sucursal y que cualquier
 // responsable ve: las unidades de translado pasan por todos los patios. Las
-// cajas y los utilitarios tampoco tienen sucursal, pero no se pidieron; si
-// hicieran falta, basta con agregarlos aquí.
+// cajas tampoco tienen sucursal, pero no se pidieron; si hicieran falta, basta
+// con agregarlas aquí. Cualquier otra unidad que rote entre patios se marca
+// como de sucursal múltiple (`vehiculos.sucursal_multiple`, migración 068) y
+// también la ve cualquier responsable.
 export const TIPOS_COMPARTIDOS = ['tractocamion'] as const
 
 // Un minuto: lo bastante corto para que una reasignación se note sin cerrar
@@ -111,7 +113,10 @@ export function vehiculoEnAlcance(columna: string): string {
     UNION ALL
     SELECT vehiculo_id FROM montacargas WHERE sucursal_id = @alcance
     UNION ALL
-    SELECT id FROM vehiculos WHERE tipo IN (${TIPOS_COMPARTIDOS.map((t) => `'${t}'`).join(',')})
+    SELECT vehiculo_id FROM vehiculos_utilitarios WHERE sucursal_id = @alcance
+    UNION ALL
+    SELECT id FROM vehiculos
+    WHERE tipo IN (${TIPOS_COMPARTIDOS.map((t) => `'${t}'`).join(',')}) OR sucursal_multiple = 1
   ))`
 }
 

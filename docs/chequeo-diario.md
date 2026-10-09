@@ -459,8 +459,4 @@ pena.
 **Fotos de los golpes.** Obligan a resolver almacenamiento de archivos y hacen
 lento justo el ítem que más se usa. Por ahora la incidencia captura el texto.
 
-**Los utilitarios no entran a la lista de base.** `vehiculos_utilitarios` no
-tiene `sucursal_id` —solo un `ubicacion` de texto libre— así que hoy caen en el
-grupo de buscar y agregar, junto a los tráilers. Si resulta que sí tienen base
-fija como el reparto, la columna es una migración chica y un `COALESCE` más en
-`findPatio`; si de verdad andan rotando, están donde deben.
+**Los utilitarios entran a la lista de base desde la migración 068.** Ya llevan `sucursal_id`, como camiones y montacargas, y salen en el recorrido de su sucursal. Los que rotan entre patios se marcan como de sucursal múltiple (`vehiculos.sucursal_multiple`): no tienen base, así que no salen en la lista de ninguna sucursal y se buscan y agregan como los tráilers; cualquier responsable los ve.

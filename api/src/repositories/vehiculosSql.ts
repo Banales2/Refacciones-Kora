@@ -91,6 +91,12 @@ export const JOINS_HIJAS = `
   LEFT JOIN montacargas           mc ON mc.vehiculo_id = v.id
 `
 
+// La sucursal del vehículo, que vive en la tabla hija: camiones, montacargas y
+// utilitarios (estos desde la migración 068). NULL en tractocamiones y cajas,
+// que no tienen base, y en las unidades de sucursal múltiple, que rotan. Pide
+// los alias de JOINS_HIJAS en el FROM.
+export const SUCURSAL_SQL = 'COALESCE(c.sucursal_id, mc.sucursal_id, u.sucursal_id)'
+
 // El combustible del vehículo, que también vive en la tabla hija (las cajas de
 // trailer no llevan). Pide los alias de JOINS_HIJAS en el FROM.
 export const COMBUSTIBLE_SQL = 'COALESCE(c.combustible, t.combustible, u.combustible, mc.combustible)'

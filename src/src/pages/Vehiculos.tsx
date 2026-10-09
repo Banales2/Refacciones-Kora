@@ -1571,9 +1571,10 @@ function VehiculoDetalle({
                   <InfoItem label="Combustible" value={vehiculo.combustible} />
                 </Grid.Col>
               )}
-              {(vehiculo.tipo === 'camion' || vehiculo.tipo === 'montacargas') && vehiculo.sucursal && (
+              {(vehiculo.tipo === 'camion' || vehiculo.tipo === 'montacargas' || vehiculo.tipo === 'utilitario')
+                && (vehiculo.sucursal || vehiculo.sucursal_multiple) && (
                 <Grid.Col span={{ base: 6, sm: 3 }}>
-                  <InfoItem label="Sucursal" value={vehiculo.sucursal} />
+                  <InfoItem label="Sucursal" value={sucursalDeUnidad(vehiculo)} />
                 </Grid.Col>
               )}
               {vehiculo.tipo === 'tractocamion' && (
@@ -1891,6 +1892,11 @@ function GroupHeader({ label, count }: { label: string; count: number }) {
   )
 }
 
+/** La sucursal como se dice en pantalla; las que rotan no tienen una. */
+function sucursalDeUnidad(v: Pick<VehiculoRow, 'sucursal' | 'sucursal_multiple'>): string | null {
+  return v.sucursal_multiple ? 'Múltiple (rota)' : v.sucursal
+}
+
 function VehiculosAgrupados({
   vehiculos, sucursales, onSelect, onEdit, km,
 }: {
@@ -1901,7 +1907,11 @@ function VehiculosAgrupados({
   km:         KmEditProps
 }) {
   const rutas       = vehiculos.filter(v => v.tipo === 'tractocamion' || v.tipo === 'caja_trailer')
-  const conSucursal = vehiculos.filter(v => v.tipo === 'camion' || v.tipo === 'montacargas')
+  const deReparto   = vehiculos.filter(v => v.tipo === 'camion' || v.tipo === 'montacargas')
+  // Las que rotan entre patios van aparte: no son de ninguna sucursal, pero
+  // tampoco les falta una, que es lo que dice "Sin sucursal".
+  const multiples   = deReparto.filter(v => v.sucursal_multiple)
+  const conSucursal = deReparto.filter(v => !v.sucursal_multiple)
   const unitarios   = vehiculos.filter(v => v.tipo === 'utilitario')
   const porSucursal = sucursales.map(s => ({ sucursal: s, items: conSucursal.filter(v => v.sucursal_id === s.id) }))
   const sinSucursal = conSucursal.filter(v => !sucursales.some(s => s.id === v.sucursal_id))
@@ -1910,6 +1920,7 @@ function VehiculosAgrupados({
     'rutas',
     ...porSucursal.map(({ sucursal }) => `suc-${sucursal.id}`),
     ...(sinSucursal.length ? ['sin-sucursal'] : []),
+    ...(multiples.length ? ['multiple'] : []),
     'unitarios',
   ]
 
@@ -1944,12 +1955,21 @@ function VehiculosAgrupados({
         </Accordion.Item>
       )}
 
+      {multiples.length > 0 && (
+        <Accordion.Item value="multiple">
+          <Accordion.Control><GroupHeader label="Sucursal múltiple (rotan)" count={multiples.length} /></Accordion.Control>
+          <Accordion.Panel>
+            <VehiculosTable items={multiples} showTipo onSelect={onSelect} onEdit={onEdit} km={km} />
+          </Accordion.Panel>
+        </Accordion.Item>
+      )}
+
       <Accordion.Item value="unitarios">
         <Accordion.Control><GroupHeader label="Vehículos utilitarios" count={unitarios.length} /></Accordion.Control>
         <Accordion.Panel>
           <VehiculosTable
             items={unitarios}
-            extraColumn={{ header: 'Ubicación', render: v => v.ubicacion }}
+            extraColumn={{ header: 'Sucursal', render: v => sucursalDeUnidad(v) ?? 'Sin asignar' }}
             onSelect={onSelect} onEdit={onEdit} km={km}
           />
         </Accordion.Panel>

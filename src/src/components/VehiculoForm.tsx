@@ -39,6 +39,11 @@ const TIPOS_CON_TENENCIA: TipoVehiculo[] = ['camion', 'utilitario']
 const COMBUSTIBLES = ['Diesel', 'Gasolina', 'Gas LP', 'Gas Natural', 'Eléctrico'].map((c) => ({ value: c, label: c }))
 const STATUSES     = ['Activo', 'Inactivo', 'Taller', 'Baja'].map((s) => ({ value: s, label: s }))
 
+// La opción de "sucursal" de las unidades que rotan entre patios. No es una
+// sucursal del catálogo —ver la migración 068—: viaja como `sucursal_multiple`
+// y la unidad se queda sin sucursal.
+const SUCURSAL_MULTIPLE = 'multiple'
+
 type FormVals = {
   tipo:         TipoVehiculo | ''
   modelo_id:    string
@@ -72,7 +77,8 @@ function init(v?: VehiculoRow): FormVals {
     kilometraje:  v?.kilometraje ?? '',
     status:       v?.status      ?? '',
     ubicacion:    v?.ubicacion   ?? '',
-    sucursal_id:  v?.sucursal_id != null ? String(v.sucursal_id) : '',
+    sucursal_id:  v?.sucursal_multiple ? SUCURSAL_MULTIPLE
+                : v?.sucursal_id != null ? String(v.sucursal_id) : '',
     tonelaje:     v?.tonelaje    ?? '',
     tenencia_expiracion: v?.tenencia_expiracion ? v.tenencia_expiracion.split('T')[0] : '',
     ruta_id:      v?.ruta_id     != null ? String(v.ruta_id)     : '',
@@ -91,11 +97,12 @@ function needsField(tipo: TipoVehiculo | '', check: 'combustible' | 'status' | '
   if (check === 'combustible') return t === 'camion' || t === 'tractocamion' || t === 'utilitario' || t === 'montacargas'
   if (check === 'status')      return t === 'camion' || t === 'tractocamion' || t === 'caja_trailer' || t === 'utilitario' || t === 'montacargas'
   if (check === 'km')          return t === 'camion' || t === 'tractocamion' || t === 'utilitario'
-  if (check === 'sucursal')    return t === 'camion' || t === 'montacargas'
+  if (check === 'sucursal')    return t === 'camion' || t === 'montacargas' || t === 'utilitario'
   if (check === 'ruta')        return t === 'tractocamion' || t === 'caja_trailer'
   if (check === 'tonelaje')    return t === 'tractocamion'
   if (check === 'pies')        return t === 'caja_trailer'
-  if (check === 'ubicacion')   return t === 'camion' || t === 'utilitario' || t === 'montacargas'
+  // El utilitario ya no: su lugar es la sucursal (migración 068).
+  if (check === 'ubicacion')   return t === 'camion' || t === 'montacargas'
   return false
 }
 
@@ -128,7 +135,10 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
   const permisosData   = permisosQuery.data
 
   const modelosOpts   = (modelosData?.data   ?? []).map((m) => ({ value: String(m.id), label: `${m.marca} ${m.nombre}${m.anio ? ` ${m.anio}` : ''}` }))
-  const sucursalesOpts = (sucursalesData?.data ?? []).map((s) => ({ value: String(s.id), label: s.nombre }))
+  const sucursalesOpts = [
+    ...(sucursalesData?.data ?? []).map((s) => ({ value: String(s.id), label: s.nombre })),
+    { value: SUCURSAL_MULTIPLE, label: 'Múltiple (rota entre sucursales)' },
+  ]
   const rutasOpts      = (rutasData?.data      ?? []).map((r) => ({ value: String(r.id), label: r.nombre }))
   // Las pólizas terminadas no se ofrecen: se archivaron porque ya no cubren a
   // nadie, y asignar una dejaría a la unidad con un seguro que no asegura. La
@@ -165,10 +175,11 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
       pies:        (v, vals) => needsField(vals.tipo, 'pies')        && (v === '' || v === null) ? 'Requerido' : null,
       // Al dar de alta es opcional: una unidad nueva arranca en cero, y exigir
       // el dato solo lograba que se tecleara cualquier cosa con tal de guardar.
-      // Al editar sigue siendo obligatorio, porque el campo ya trae el odómetro
-      // real y vaciarlo lo regresaría a cero sin que nadie lo pidiera.
+      // Al editar es obligatorio solo si la unidad ya traía lectura: ahí el
+      // campo tiene el odómetro real y vaciarlo lo regresaría a cero sin que
+      // nadie lo pidiera. Si no traía ninguna, vacío se guarda como 0.
       kilometraje: (v, vals) =>
-        isEdit && needsField(vals.tipo, 'km') && (v === '' || v === null) ? 'Requerido' :
+        isEdit && initial!.kilometraje != null && needsField(vals.tipo, 'km') && (v === '' || v === null) ? 'Requerido' :
         v !== '' && v !== null && !Number.isInteger(Number(v)) ? 'Solo números enteros' :
         validarKm(v),
     },
@@ -223,12 +234,11 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
   function submit(vals: FormVals) {
     const t = (isEdit ? initial!.tipo : vals.tipo) as TipoVehiculo
 
-    // Vacío significa "no lo capturaron", y el campo se omite del payload en
-    // vez de mandar un cero: así la regla de que eso vale 0 vive en un solo
-    // lugar —`data.kilometraje ?? 0` en vehiculosRepo— y no en dos que se
-    // pueden desincronizar. Al editar nunca está vacío: ahí es obligatorio.
+    // Vacío es "no lo capturaron" y se manda 0: una unidad sin lectura arranca
+    // en cero. Al editar una que ya tenía lectura no llega vacío, porque ahí la
+    // validación lo exige.
     const km = vals.kilometraje === '' || vals.kilometraje === null
-      ? {}
+      ? { kilometraje: 0 }
       : { kilometraje: Number(vals.kilometraje) }
     // El seguro y el permiso solo viajan para los tipos que los llevan: si
     // alguien eligió una póliza y luego cambió el tipo a caja de trailer, el
@@ -244,6 +254,12 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
       ...(llevaPermiso(t) ? { permiso_id: vals.permiso_id ? parseInt(vals.permiso_id) : null } : {}),
     }
 
+    // Una sucursal, o ninguna porque rota entre todas. Se manda la marca en los
+    // dos casos: al editar, elegir una sucursal le quita lo múltiple.
+    const sucursal = vals.sucursal_id === SUCURSAL_MULTIPLE
+      ? { sucursal_multiple: true }
+      : { sucursal_id: parseInt(vals.sucursal_id), sucursal_multiple: false }
+
     // Campos que aplican según el tipo de vehículo (el else final cubre 'utilitario')
     let extra: Record<string, unknown>
     if (t === 'camion') {
@@ -252,7 +268,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
         ...km,
         status:      vals.status,
         ubicacion:   vals.ubicacion || null,
-        sucursal_id: parseInt(vals.sucursal_id),
+        ...sucursal,
         tenencia_expiracion: vals.tenencia_expiracion || null,
       }
     } else if (t === 'tractocamion') {
@@ -274,12 +290,14 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
         combustible: vals.combustible,
         ubicacion:   vals.ubicacion || null,
         status:      vals.status,
-        sucursal_id: parseInt(vals.sucursal_id),
+        ...sucursal,
       }
     } else {
+      // Sin `ubicacion`: el utilitario ya no la captura, y mandarla vacía
+      // borraría la que traía de antes.
       extra = {
         combustible: vals.combustible,
-        ubicacion:   vals.ubicacion || null,
+        ...sucursal,
         status:      vals.status,
         ...km,
         tenencia_expiracion: vals.tenencia_expiracion || null,
@@ -446,14 +464,14 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               </Grid.Col>
               <Grid.Col span={6}>
                 <NumberInput decimalScale={1}
-                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit}
-                  description={isEdit ? undefined : 'Opcional. Si lo dejas vacío, la unidad arranca en 0.'}
+                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit && initial!.kilometraje != null}
+                  description={isEdit && initial!.kilometraje != null ? undefined : 'Opcional. Si lo dejas vacío, se guarda 0.'}
                   thousandSeparator="," allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
                 />
               </Grid.Col>
               <Grid.Col span={6}>
-                <SelectCatalogo estado={sucursalesQuery} nombre="sucursales" label="Sucursal" data={sucursalesOpts} placeholder="Sucursal" required nothingFoundMessage="Sin resultados" {...form.getInputProps('sucursal_id')} />
+                <SelectCatalogo estado={sucursalesQuery} nombre="sucursales" label="Sucursal" data={sucursalesOpts} placeholder="Sucursal" required nothingFoundMessage="Sin resultados" description={form.values.sucursal_id === SUCURSAL_MULTIPLE ? 'La ve cualquier responsable y no sale en el recorrido de ninguna sucursal: se busca y se agrega.' : undefined} {...form.getInputProps('sucursal_id')} />
               </Grid.Col>
               <Grid.Col span={12}>
                 <TextInput label="Ubicación" placeholder="Ubicación actual (opcional)" {...form.getInputProps('ubicacion')} />
@@ -478,8 +496,8 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               </Grid.Col>
               <Grid.Col span={6}>
                 <NumberInput decimalScale={1}
-                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit}
-                  description={isEdit ? undefined : 'Opcional. Si lo dejas vacío, la unidad arranca en 0.'}
+                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit && initial!.kilometraje != null}
+                  description={isEdit && initial!.kilometraje != null ? undefined : 'Opcional. Si lo dejas vacío, se guarda 0.'}
                   thousandSeparator="," allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
                 />
@@ -521,7 +539,7 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
                 <Select label="Status" data={STATUSES} placeholder="Estado" required {...form.getInputProps('status')} />
               </Grid.Col>
               <Grid.Col span={6}>
-                <SelectCatalogo estado={sucursalesQuery} nombre="sucursales" label="Sucursal" data={sucursalesOpts} placeholder="Sucursal" required nothingFoundMessage="Sin resultados" {...form.getInputProps('sucursal_id')} />
+                <SelectCatalogo estado={sucursalesQuery} nombre="sucursales" label="Sucursal" data={sucursalesOpts} placeholder="Sucursal" required nothingFoundMessage="Sin resultados" description={form.values.sucursal_id === SUCURSAL_MULTIPLE ? 'La ve cualquier responsable y no sale en el recorrido de ninguna sucursal: se busca y se agrega.' : undefined} {...form.getInputProps('sucursal_id')} />
               </Grid.Col>
               <Grid.Col span={6}>
                 <TextInput label="Ubicación" placeholder="Ubicación actual (opcional)" {...form.getInputProps('ubicacion')} />
@@ -543,14 +561,14 @@ export function VehiculoForm({ initial, isPending, error, onSubmit, onCancel, lo
               </Grid.Col>
               <Grid.Col span={6}>
                 <NumberInput decimalScale={1}
-                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit}
-                  description={isEdit ? undefined : 'Opcional. Si lo dejas vacío, la unidad arranca en 0.'}
+                  label="Kilometraje" placeholder="0" min={0} max={KM_MAX} required={isEdit && initial!.kilometraje != null}
+                  description={isEdit && initial!.kilometraje != null ? undefined : 'Opcional. Si lo dejas vacío, se guarda 0.'}
                   thousandSeparator="," allowNegative={false} clampBehavior="strict"
                   {...form.getInputProps('kilometraje')}
                 />
               </Grid.Col>
               <Grid.Col span={6}>
-                <TextInput label="Ubicación" placeholder="Ubicación actual (opcional)" {...form.getInputProps('ubicacion')} />
+                <SelectCatalogo estado={sucursalesQuery} nombre="sucursales" label="Sucursal" data={sucursalesOpts} placeholder="Sucursal" required nothingFoundMessage="Sin resultados" description={form.values.sucursal_id === SUCURSAL_MULTIPLE ? 'La ve cualquier responsable y no sale en el recorrido de ninguna sucursal: se busca y se agrega.' : undefined} {...form.getInputProps('sucursal_id')} />
               </Grid.Col>
             </Grid>
           </>

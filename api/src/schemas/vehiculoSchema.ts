@@ -17,6 +17,10 @@ export const TIPOS_CON_PERMISO: TipoVehiculo[] = ['camion', 'utilitario']
 // vencimiento — no trae folio.
 export const TIPOS_CON_TENENCIA: TipoVehiculo[] = ['camion', 'utilitario']
 
+// Los que tienen base en una sucursal, o rotan entre varias (sucursal
+// múltiple, migración 068). Tractocamiones y cajas no llevan sucursal.
+export const TIPOS_CON_SUCURSAL: TipoVehiculo[] = ['camion', 'utilitario', 'montacargas']
+
 // Motivos por los que una unidad necesita atención, para poder listarlas desde
 // la búsqueda. Los dos primeros son documentos que nunca se capturaron; los
 // otros dos, cosas que ya vencieron o están por vencer. Las unidades dadas de
@@ -73,7 +77,10 @@ export const VehiculoCreateSchema = z.object({
   status:      z.string().max(30).trim().optional(),
   // camion + montacargas
   ubicacion:   z.string().max(200).trim().nullable().optional(),
+  // camion + montacargas + utilitario (TIPOS_CON_SUCURSAL). Con
+  // `sucursal_multiple` no lleva sucursal: rota entre todas.
   sucursal_id: z.coerce.number().int().positive().optional(),
+  sucursal_multiple: z.boolean().optional(),
   // camion + utilitario: los únicos que pagan tenencia (TIPOS_CON_TENENCIA).
   tenencia_expiracion: z.string().date().nullable().optional(),
   // tractocamion
@@ -103,6 +110,9 @@ export const VehiculoCreateSchema = z.object({
     if (data.tenencia_expiracion != null && !TIPOS_CON_TENENCIA.includes(data.tipo)) {
       ctx.addIssue({ code: 'custom', message: 'Este tipo de unidad no paga tenencia', path: ['tenencia_expiracion'] })
     }
+    if (data.sucursal_multiple && !TIPOS_CON_SUCURSAL.includes(data.tipo)) {
+      ctx.addIssue({ code: 'custom', message: 'Este tipo de unidad no lleva sucursal', path: ['sucursal_multiple'] })
+    }
   })
 
 export const VehiculoUpdateSchema = z.object({
@@ -129,7 +139,10 @@ export const VehiculoUpdateSchema = z.object({
   kilometraje:  lecturaKm().optional(),
   status:       z.string().max(30).trim().optional(),
   ubicacion:    z.string().max(200).trim().nullable().optional(),
+  // Mandar una sucursal le quita lo múltiple; marcarla múltiple le quita la
+  // sucursal. Ver vehiculosRepo.update.
   sucursal_id:  z.coerce.number().int().positive().optional(),
+  sucursal_multiple: z.boolean().optional(),
   tonelaje:     z.coerce.number().int().positive().optional(),
   tenencia_expiracion: z.string().date().nullable().optional(),
   ruta_id:      z.coerce.number().int().positive().optional(),

@@ -4,11 +4,11 @@ import { SQL_KM } from '../shared/km'
 import { Alcance, SIN_ACOTAR, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 import {
   AlertaVehiculo, TipoVehiculo, VehiculoCreate, VehiculoUpdate,
-  TIPOS_CON_SEGURO, TIPOS_CON_PERMISO,
+  TIPOS_CON_SEGURO, TIPOS_CON_PERMISO, TIPOS_CON_SUCURSAL,
 } from '../schemas/vehiculoSchema'
 import {
   JOINS_HIJAS, EN_SEGUIMIENTO, PERMISO_ID_SQL, SEGURO_ID_SQL, SIN_SEGURO, SIN_TENENCIA,
-  conHoy,
+  SUCURSAL_SQL, conHoy,
 } from './vehiculosSql'
 
 export interface VehiculoRow {
@@ -56,6 +56,11 @@ export interface VehiculoRow {
   ubicacion:    string | null
   sucursal_id:  number | null
   sucursal:     string | null
+  /**
+   * Rota entre sucursales en vez de tener una (migración 068): la ve cualquier
+   * responsable, y `sucursal_id` va en null.
+   */
+  sucursal_multiple: boolean
   tonelaje:     number | null
   // Tenencia: la pagan reparto y utilitarios. Tractocamiones, cajas de trailer y
   // montacargas no, por eso vive en las dos tablas hijas y no en `vehiculos`.
@@ -98,7 +103,7 @@ function conAlertas(row: VehiculoRowSql): VehiculoRow {
   const alertas: AlertaDocumento[] = []
   if (alerta_sin_seguro)   alertas.push('sin_seguro')
   if (alerta_sin_tenencia) alertas.push('sin_tenencia')
-  return { ...resto, uso_personal: !!resto.uso_personal, alertas }
+  return { ...resto, uso_personal: !!resto.uso_personal, sucursal_multiple: !!resto.sucursal_multiple, alertas }
 }
 
 // ── Shared SQL fragments ──────────────────────────────────────────────────────
@@ -111,7 +116,7 @@ const KM_REINICIADO = `
 
 const SELECT_COLS = `
   v.id, v.tipo, v.modelo_id, v.fecha_compra,
-  v.numero_serie AS serie, v.placas, v.categoria, v.uso_personal,
+  v.numero_serie AS serie, v.placas, v.categoria, v.uso_personal, v.sucursal_multiple,
   m.marca, m.nombre AS modelo,
   CASE WHEN v.tipo='camion'       THEN c.status       WHEN v.tipo='tractocamion' THEN t.status
        WHEN v.tipo='caja_trailer' THEN ct.status      WHEN v.tipo='utilitario'   THEN u.status
@@ -130,7 +135,7 @@ const SELECT_COLS = `
        ELSE NULL END AS combustible,
   CASE WHEN v.tipo='camion'       THEN c.ubicacion     WHEN v.tipo='utilitario'   THEN u.ubicacion
        WHEN v.tipo='montacargas'  THEN mc.ubicacion    ELSE NULL END AS ubicacion,
-  COALESCE(c.sucursal_id, mc.sucursal_id) AS sucursal_id, s.nombre AS sucursal,
+  ${SUCURSAL_SQL} AS sucursal_id, s.nombre AS sucursal,
   t.tonelaje,
   CONVERT(char(10),
     CASE WHEN v.tipo='camion'     THEN c.tenencia_expiracion
@@ -153,7 +158,7 @@ const JOINS = `
   FROM vehiculos v
   JOIN modelos m ON m.id = v.modelo_id
   ${JOINS_HIJAS}
-  LEFT JOIN sucursales           s  ON s.id = COALESCE(c.sucursal_id, mc.sucursal_id)
+  LEFT JOIN sucursales           s  ON s.id = ${SUCURSAL_SQL}
   LEFT JOIN rutas                r  ON r.id = COALESCE(t.ruta_id, ct.ruta_id)
   LEFT JOIN seguros              seg ON seg.id = ${SEGURO_ID_SQL}
   LEFT JOIN permisos_circulacion per ON per.id = ${PERMISO_ID_SQL}
@@ -293,8 +298,11 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
       .input('fechaCompra',  sql.Date,          data.fecha_compra ?? null)
       .input('categoria',    sql.NVarChar(60),  data.categoria ?? null)
       .input('personal',     sql.Bit,           data.uso_personal ?? false)
-      .query('INSERT INTO vehiculos (modelo_id, tipo, numero_serie, placas, fecha_compra, categoria, uso_personal) OUTPUT INSERTED.id VALUES (@modelo_id, @tipo, @serie, @placas, @fechaCompra, @categoria, @personal)')
+      .input('multiple',     sql.Bit,           !!data.sucursal_multiple)
+      .query('INSERT INTO vehiculos (modelo_id, tipo, numero_serie, placas, fecha_compra, categoria, uso_personal, sucursal_multiple) OUTPUT INSERTED.id VALUES (@modelo_id, @tipo, @serie, @placas, @fechaCompra, @categoria, @personal, @multiple)')
     const vid = vRes.recordset[0].id
+    // La de sucursal múltiple no tiene sucursal: rota entre todas.
+    const sucursalId = data.sucursal_multiple ? null : data.sucursal_id ?? null
 
     // Seguro y permiso van en la tabla hija, y solo en las de los tipos que los
     // llevan: la columna ni existe en las demás. El servicio ya rechazó el
@@ -308,7 +316,7 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
         .input('km',          SQL_KM,           data.kilometraje ?? 0)
         .input('status',      sql.NVarChar(30),  data.status!)
         .input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null)
-        .input('sucursal',    sql.Int,           data.sucursal_id!)
+        .input('sucursal',    sql.Int,           sucursalId)
         .input('tenenciaExp', sql.Date,          data.tenencia_expiracion ?? null)
         .query('INSERT INTO camiones (vehiculo_id,combustible,kilometraje,status,ubicacion,sucursal_id,tenencia_expiracion,seguro_id,permiso_id) VALUES (@vid,@combustible,@km,@status,@ubicacion,@sucursal,@tenenciaExp,@seguroId,@permisoId)')
     } else if (data.tipo === 'tractocamion') {
@@ -332,7 +340,7 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
         .input('combustible', sql.NVarChar(30),  data.combustible!)
         .input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null)
         .input('status',      sql.NVarChar(30),  data.status!)
-        .input('sucursal',    sql.Int,           data.sucursal_id!)
+        .input('sucursal',    sql.Int,           sucursalId)
         .query('INSERT INTO montacargas (vehiculo_id,combustible,ubicacion,status,sucursal_id,seguro_id) VALUES (@vid,@combustible,@ubicacion,@status,@sucursal,@seguroId)')
     } else {
       await sub
@@ -341,7 +349,8 @@ export async function create(data: VehiculoCreate): Promise<VehiculoRow> {
         .input('status',      sql.NVarChar(30),  data.status!)
         .input('km',          SQL_KM,           data.kilometraje ?? 0)
         .input('tenenciaExp', sql.Date,          data.tenencia_expiracion ?? null)
-        .query('INSERT INTO vehiculos_utilitarios (vehiculo_id,combustible,ubicacion,status,kilometraje,tenencia_expiracion,seguro_id,permiso_id) VALUES (@vid,@combustible,@ubicacion,@status,@km,@tenenciaExp,@seguroId,@permisoId)')
+        .input('sucursal',    sql.Int,           sucursalId)
+        .query('INSERT INTO vehiculos_utilitarios (vehiculo_id,combustible,ubicacion,status,kilometraje,tenencia_expiracion,seguro_id,permiso_id,sucursal_id) VALUES (@vid,@combustible,@ubicacion,@status,@km,@tenenciaExp,@seguroId,@permisoId,@sucursal)')
     }
 
     await tx.commit()
@@ -497,6 +506,16 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
   if ('fecha_compra' in data)         { baseReq.input('fechaCompra', sql.Date,          data.fecha_compra ?? null); baseSets.push('fecha_compra=@fechaCompra') }
   if ('categoria' in data)            { baseReq.input('categoria',   sql.NVarChar(60),  data.categoria ?? null);    baseSets.push('categoria=@categoria') }
   if (data.uso_personal !== undefined) { baseReq.input('personal',  sql.Bit,           data.uso_personal);         baseSets.push('uso_personal=@personal') }
+
+  // Sucursal y múltiple se excluyen: marcarla múltiple le quita la sucursal, y
+  // mandarle una sucursal le quita lo múltiple. Así nunca quedan las dos, ni
+  // ninguna por un formulario que solo mandó una.
+  const conSucursal = TIPOS_CON_SUCURSAL.includes(tipo)
+  const aMultiple = conSucursal && data.sucursal_multiple === true
+  const aSucursal = conSucursal && !aMultiple && data.sucursal_id !== undefined
+  if (aMultiple || aSucursal) {
+    baseReq.input('multiple', sql.Bit, aMultiple); baseSets.push('sucursal_multiple=@multiple')
+  }
   if (baseSets.length) await baseReq.query(`UPDATE vehiculos SET ${baseSets.join(',')} WHERE id=@id`)
 
   // Update subtable
@@ -513,13 +532,15 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
   if ('permiso_id' in data && TIPOS_CON_PERMISO.includes(tipo)) {
     sub.input('permisoId', sql.Int, data.permiso_id ?? null); subSets.push('permiso_id=@permisoId')
   }
+  if (aMultiple || aSucursal) {
+    sub.input('sucursal', sql.Int, aMultiple ? null : data.sucursal_id); subSets.push('sucursal_id=@sucursal')
+  }
 
   if (tipo === 'camion') {
     if (data.combustible  !== undefined) { sub.input('combustible', sql.NVarChar(30),  data.combustible);  subSets.push('combustible=@combustible') }
     if (data.kilometraje  !== undefined) { sub.input('km',          SQL_KM,           data.kilometraje);  subSets.push('kilometraje=@km') }
     if (data.status       !== undefined) { sub.input('status',      sql.NVarChar(30),  data.status);       subSets.push('status=@status') }
     if ('ubicacion' in data)             { sub.input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null); subSets.push('ubicacion=@ubicacion') }
-    if (data.sucursal_id  !== undefined) { sub.input('sucursal',    sql.Int,           data.sucursal_id);  subSets.push('sucursal_id=@sucursal') }
     if ('tenencia_expiracion' in data)   { sub.input('tenenciaExp', sql.Date,          data.tenencia_expiracion ?? null); subSets.push('tenencia_expiracion=@tenenciaExp') }
     if (subSets.length) await sub.query(`UPDATE camiones SET ${subSets.join(',')} WHERE vehiculo_id=@vid`)
   } else if (tipo === 'tractocamion') {
@@ -539,7 +560,6 @@ export async function update(id: number, tipo: TipoVehiculo, data: VehiculoUpdat
     if (data.combustible !== undefined) { sub.input('combustible', sql.NVarChar(30),  data.combustible);  subSets.push('combustible=@combustible') }
     if ('ubicacion' in data)            { sub.input('ubicacion',   sql.NVarChar(200), data.ubicacion ?? null); subSets.push('ubicacion=@ubicacion') }
     if (data.status      !== undefined) { sub.input('status',      sql.NVarChar(30),  data.status);       subSets.push('status=@status')       }
-    if (data.sucursal_id !== undefined) { sub.input('sucursal',    sql.Int,           data.sucursal_id);  subSets.push('sucursal_id=@sucursal') }
     if (subSets.length) await sub.query(`UPDATE montacargas SET ${subSets.join(',')} WHERE vehiculo_id=@vid`)
   } else {
     if (data.combustible  !== undefined) { sub.input('combustible', sql.NVarChar(30),  data.combustible);  subSets.push('combustible=@combustible') }
