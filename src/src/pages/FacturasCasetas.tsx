@@ -127,10 +127,22 @@ function SelectVehiculo({
 
 // ── Importar ─────────────────────────────────────────────────────────────────
 
+interface ArchivoPase {
+  nombre:  string
+  factura: FacturaPase | null
+  /** Por qué no se puede importar: no se leyó, o los cruces no suman el total. */
+  error:   string | null
+  estado:  'pendiente' | 'importando' | 'importada' | 'duplicada' | 'rechazada'
+  mensaje: string | null
+  /** La factura ya guardada, para abrirla desde aquí. */
+  id:      number | null
+}
+
 /**
- * Lee el XML y enseña lo que trae ANTES de guardar: folio, periodo, cuántos
- * cruces y cuánto suman, y qué tags no están en el catálogo. Si el archivo no
- * se puede leer entero, se dice por qué y no se ofrece importar.
+ * Lee los XML —uno o varios, como en las facturas de gasolinera— y enseña lo
+ * que trae cada uno ANTES de guardar: folio, periodo, cuántos cruces y si suman
+ * el total, y qué tags no están en el catálogo. El que no se puede leer entero,
+ * o no cuadra, dice por qué y se queda fuera; los demás se importan igual.
  */
 function ImportarModal({
   abierto, onClose, onImportada,
@@ -139,110 +151,181 @@ function ImportarModal({
   onClose: () => void
   onImportada: (id: number) => void
 }) {
-  const [archivo, setArchivo] = useState<File | null>(null)
-  const [leida, setLeida] = useState<FacturaPase | null>(null)
-  const [errorLectura, setErrorLectura] = useState<string | null>(null)
+  const [archivos, setArchivos] = useState<ArchivoPase[]>([])
+  const [trabajando, setTrabajando] = useState(false)
   const importar = useImportarFacturaCasetas()
   const { data: tagsData } = useTagsCasetas()
 
-  async function elegir(f: File | null) {
-    setArchivo(f)
-    setLeida(null)
-    setErrorLectura(null)
+  async function elegir(files: File[]) {
     importar.reset()
-    if (!f) return
-    try {
-      setLeida(leerFacturaPase(await f.text()))
-    } catch (e) {
-      setErrorLectura(e instanceof XmlPaseError ? e.message : 'No se pudo leer el archivo.')
-    }
+    const leidos = await Promise.all(files.map(async (f): Promise<ArchivoPase> => {
+      const base = { nombre: f.name, estado: 'pendiente' as const, mensaje: null, id: null }
+      try {
+        const factura = leerFacturaPase(await f.text())
+        const cuadra = Math.abs(sumar(factura.cruces, (c) => c.total) - factura.total) < 0.01
+        return {
+          ...base, factura,
+          error: cuadra ? null : 'Los cruces no suman el total de la factura. El archivo parece incompleto.',
+        }
+      } catch (e) {
+        return { ...base, factura: null, error: e instanceof XmlPaseError ? e.message : 'No se pudo leer el archivo.' }
+      }
+    }))
+    // El mismo XML dos veces es una sola factura.
+    const vistos = new Set<string>()
+    setArchivos(leidos.filter((a) => {
+      if (!a.factura) return true
+      if (vistos.has(a.factura.uuid)) return false
+      vistos.add(a.factura.uuid)
+      return true
+    }))
   }
 
   function cerrar() {
-    void elegir(null)
+    setArchivos([])
+    importar.reset()
     onClose()
   }
 
   const conocidos = new Set((tagsData?.data ?? []).map((t) => t.tag))
-  const tags = leida ? [...new Set(leida.cruces.map((c) => c.tag))] : []
-  const nuevos = tags.filter((t) => !conocidos.has(t))
-  const sumaCruces = leida ? sumar(leida.cruces, (c) => c.total) : 0
-  const cuadra = leida !== null && Math.abs(sumaCruces - leida.total) < 0.01
-  const yaImportada = importar.error instanceof ApiError && importar.error.code === FACTURA_DUPLICADA
+  const listas = archivos.filter((a) => a.factura && !a.error && a.estado === 'pendiente')
+  // Los tags nuevos de todo lo que se va a importar, sin repetir: dos facturas
+  // del mismo mes traen casi los mismos.
+  const nuevos = [...new Set(listas.flatMap((a) => a.factura!.cruces.map((c) => c.tag)))]
+    .filter((t) => !conocidos.has(t))
+  const actualizar = (nombre: string, cambio: Partial<ArchivoPase>) =>
+    setArchivos((p) => p.map((x) => x.nombre === nombre ? { ...x, ...cambio } : x))
+
+  async function importarTodas() {
+    setTrabajando(true)
+    // Una por una y no en paralelo: los tags nuevos de la primera se dan de alta
+    // con ella, y la siguiente ya los encuentra en lugar de chocar por crearlos.
+    const hechas: number[] = []
+    for (const a of listas) {
+      actualizar(a.nombre, { estado: 'importando' })
+      try {
+        const r = await importar.mutateAsync(a.factura!)
+        hechas.push(r.data.id)
+        actualizar(a.nombre, { estado: 'importada', mensaje: 'Importada', id: r.data.id })
+      } catch (e) {
+        const duplicada = e instanceof ApiError && e.code === FACTURA_DUPLICADA
+        actualizar(a.nombre, { estado: duplicada ? 'duplicada' : 'rechazada', mensaje: (e as Error).message })
+      }
+    }
+    setTrabajando(false)
+    // Con un solo archivo se abre como antes: es lo que se quería revisar. Con
+    // varios se queda la tabla, que dice qué entró y qué no.
+    if (archivos.length === 1 && hechas.length === 1) {
+      cerrar()
+      onImportada(hechas[0])
+    }
+  }
 
   return (
-    <Modal opened={abierto} onClose={cerrar} size="lg" title={<Text fw={700}>Importar factura de PASE</Text>}>
+    <Modal opened={abierto} onClose={cerrar} size="xl" title={<Text fw={700}>Importar facturas de PASE</Text>}>
       <Stack gap="sm">
         <Text size="xs" c="dimmed">
-          El XML de la factura, no el PDF: el XML trae cada cruce con su tag, caseta,
-          clase y hora en su propio campo.
+          Los XML de las facturas, uno o varios; no el PDF: el XML trae cada cruce con su
+          tag, caseta, clase y hora en su propio campo.
         </Text>
 
         <FileInput
-          label="Archivo XML" placeholder="Elige el .xml de la factura"
-          accept=".xml,application/xml,text/xml" clearable
+          multiple clearable label="Archivos XML" placeholder="Elige los .xml de las facturas"
+          accept=".xml,application/xml,text/xml"
           leftSection={<IconFileImport size={16} />}
-          value={archivo} onChange={(f) => void elegir(f)}
+          onChange={(fs) => void elegir(fs ?? [])}
+          disabled={trabajando}
         />
 
-        {errorLectura && (
-          <Alert color="red" title="No se puede importar este archivo">{errorLectura}</Alert>
+        {archivos.length > 0 && (
+          <Table.ScrollContainer minWidth={720}>
+            <Table withTableBorder striped>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Folio</Table.Th>
+                  <Table.Th>Periodo</Table.Th>
+                  <Table.Th style={{ textAlign: 'center' }}>Cruces</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Total</Table.Th>
+                  <Table.Th w={200}>Estado</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {archivos.map((a) => {
+                  const f = a.factura
+                  return (
+                    <Table.Tr key={a.nombre}>
+                      <Table.Td>
+                        {f ? (
+                          <>
+                            <Text size="sm" fw={500}>{f.serie ? `${f.serie}-` : ''}{f.folio}</Text>
+                            <Text size="xs" c="dimmed">{formatFecha(f.fecha_emision)}</Text>
+                          </>
+                        ) : (
+                          <Text size="sm" c="dimmed">{a.nombre}</Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        {f && (
+                          <>
+                            <Text size="sm">{f.periodo ?? 'Sin periodo'}</Text>
+                            {f.periodo && !f.periodo_desde && (
+                              <Text size="xs" c="orange">
+                                No se entendieron las fechas: no se avisará de cruces fuera del periodo.
+                              </Text>
+                            )}
+                          </>
+                        )}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'center' }}>{f?.cruces.length ?? '—'}</Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {f && <Text size="sm" fw={600}>{formatMXN(f.total)}</Text>}
+                      </Table.Td>
+                      <Table.Td>
+                        {a.error ? (
+                          <Text size="xs" c="red">{a.error}</Text>
+                        ) : a.estado === 'importada' ? (
+                          <Group gap={6} wrap="nowrap">
+                            <Badge size="sm" color="green" variant="light" leftSection={<IconCheck size={11} />}>
+                              Importada
+                            </Badge>
+                            {archivos.length > 1 && a.id != null && (
+                              <Button size="compact-xs" variant="subtle"
+                                onClick={() => { const id = a.id!; cerrar(); onImportada(id) }}>
+                                Ver
+                              </Button>
+                            )}
+                          </Group>
+                        ) : a.estado === 'duplicada' ? (
+                          <Text size="xs" c="yellow.8">{a.mensaje}</Text>
+                        ) : a.estado === 'rechazada' ? (
+                          <Text size="xs" c="red">{a.mensaje}</Text>
+                        ) : a.estado === 'importando' ? (
+                          <Text size="xs" c="dimmed">Importando…</Text>
+                        ) : (
+                          <Tooltip label="Los cruces suman el total de la factura">
+                            <Badge size="sm" color="gray" variant="light">Lista</Badge>
+                          </Tooltip>
+                        )}
+                      </Table.Td>
+                    </Table.Tr>
+                  )
+                })}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
         )}
 
-        {leida && (
-          <Card withBorder padding="sm">
-            <Stack gap={6}>
-              <Group justify="space-between">
-                <Text fw={600}>{leida.serie ? `${leida.serie}-` : ''}{leida.folio}</Text>
-                <Text size="sm" c="dimmed">{leida.emisor}</Text>
-              </Group>
-              <Text size="sm">{leida.periodo ?? 'Sin periodo'}</Text>
-              {leida.periodo && !leida.periodo_desde && (
-                <Text size="xs" c="orange">
-                  No se entendieron las fechas del periodo: no se avisará de cruces fuera de él.
-                </Text>
-              )}
-              <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs" mt={4}>
-                <div><Text size="xs" c="dimmed">Cruces</Text><Text fw={600}>{leida.cruces.length}</Text></div>
-                <div><Text size="xs" c="dimmed">Tags</Text><Text fw={600}>{tags.length}</Text></div>
-                <div><Text size="xs" c="dimmed">Total</Text><Text fw={600}>{formatMXN(leida.total)}</Text></div>
-                <div>
-                  <Text size="xs" c="dimmed">Suma de cruces</Text>
-                  <Text fw={600} c={cuadra ? 'green.7' : 'red.7'}>{formatMXN(sumaCruces)}</Text>
-                </div>
-              </SimpleGrid>
-              {nuevos.length > 0 && (
-                <Text size="xs" c="dimmed">
-                  {nuevos.length} tag(s) nuevo(s) se darán de alta sin unidad: {nuevos.join(', ')}.
-                  Después se les asigna en la pestaña Tags.
-                </Text>
-              )}
-            </Stack>
-          </Card>
-        )}
-
-        {leida && !cuadra && (
-          <Alert color="red" variant="light">
-            Los cruces no suman el total de la factura. El archivo parece incompleto.
-          </Alert>
-        )}
-
-        {importar.error && (
-          <Alert color={yaImportada ? 'yellow' : 'red'} title={yaImportada ? 'Ya está importada' : 'No se pudo importar'}>
-            {(importar.error as Error).message}
-          </Alert>
+        {nuevos.length > 0 && (
+          <Text size="xs" c="dimmed">
+            {nuevos.length} tag(s) nuevo(s) se darán de alta sin unidad: {nuevos.join(', ')}.
+            Después se les asigna en la pestaña Tags.
+          </Text>
         )}
 
         <Group justify="flex-end">
-          <Button variant="default" onClick={cerrar}>Cancelar</Button>
-          <Button
-            disabled={!leida || !cuadra}
-            loading={importar.isPending}
-            onClick={() => leida && importar.mutate(leida, {
-              onSuccess: (r) => { cerrar(); onImportada(r.data.id) },
-            })}
-          >
-            Importar {leida ? `${leida.cruces.length} cruces` : ''}
+          <Button variant="default" onClick={cerrar} disabled={trabajando}>Cerrar</Button>
+          <Button disabled={listas.length === 0} loading={trabajando} onClick={() => void importarTodas()}>
+            Importar {listas.length > 0 ? listas.length : ''} factura{listas.length === 1 ? '' : 's'}
           </Button>
         </Group>
       </Stack>
