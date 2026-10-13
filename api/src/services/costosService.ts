@@ -21,8 +21,15 @@ const KM_ENTRE_CARGAS_MAX = 5_000
 const TRAMOS_MIN_RENDIMIENTO = 3
 /** Qué tan abajo del promedio de su modelo tiene que estar para marcarse. */
 const RENDIMIENTO_BAJO_PCT = -15
-/** Sobreprecio por litro contra el promedio del periodo que amerita revisión. */
-const PRECIO_LITRO_ALTO_PCT = 15
+/**
+ * Qué tan lejos de la mediana de su combustible tiene que estar el litro de
+ * una carga para marcarse, hacia arriba o hacia abajo. Hacia abajo casi siempre
+ * es un dígito mal capturado en el costo o en los litros, y esa carga ya no
+ * entra al precio de su gasolinera: una sola la volvía "la más barata".
+ */
+const PRECIO_LITRO_ATIPICO_PCT = 15
+/** Cargas mínimas de un combustible en un mes para que su mediana sirva de vara. */
+const CARGAS_MIN_MEDIANA = 3
 /** Ventana en la que repetir el mismo servicio es retrabajo, no mantenimiento. */
 const DIAS_RETRABAJO = 30
 /** Tope de renglones de anomalías que se devuelven (van ordenadas por impacto). */
@@ -60,6 +67,57 @@ function diasEntre(a: string, b: string): number {
 function ratio(numerador: number, denominador: number): number | null {
   if (!denominador || denominador <= 0) return null
   return numerador / denominador
+}
+
+function mediana(valores: number[]): number | null {
+  if (valores.length === 0) return null
+  const o = [...valores].sort((a, b) => a - b)
+  const m = Math.floor(o.length / 2)
+  return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2
+}
+
+/**
+ * El precio contra el que se juzga cada carga: la mediana de su combustible en
+ * su mes. Mediana y no promedio porque el promedio lo arrastra justo la carga
+ * mal capturada que se quiere detectar. Por mes porque el precio se mueve a lo
+ * largo de un año; si ese mes hubo muy pocas cargas, la del combustible en
+ * todo el conjunto. Sin producto no hay vara: Magna y Premium revueltas.
+ */
+function referenciasDePrecio(recargas: repo.RecargaCosto[]): (r: repo.RecargaCosto) => number | null {
+  const porMes = new Map<string, number[]>()
+  const porProducto = new Map<string, number[]>()
+  for (const r of recargas) {
+    if (r.producto == null || !(r.litros > 0)) continue
+    const precio = r.costo / r.litros
+    const kMes = `${r.fecha.slice(0, 7)}|${r.producto}`
+    porMes.set(kMes, [...(porMes.get(kMes) ?? []), precio])
+    porProducto.set(r.producto, [...(porProducto.get(r.producto) ?? []), precio])
+  }
+  const cache = new Map<string, number | null>()
+  return (r) => {
+    if (r.producto == null) return null
+    const kMes = `${r.fecha.slice(0, 7)}|${r.producto}`
+    if (!cache.has(kMes)) {
+      const delMes = porMes.get(kMes) ?? []
+      const delProducto = porProducto.get(r.producto) ?? []
+      cache.set(kMes,
+        delMes.length >= CARGAS_MIN_MEDIANA ? mediana(delMes)
+        : delProducto.length >= CARGAS_MIN_MEDIANA ? mediana(delProducto)
+        : null)
+    }
+    return cache.get(kMes)!
+  }
+}
+
+/** Qué tanto se aleja el litro de la carga de su referencia, en %. null si no se puede juzgar. */
+function desviacionPrecio(r: repo.RecargaCosto, referencia: number | null): number | null {
+  const precio = ratio(r.costo, r.litros)
+  if (precio == null || referencia == null || referencia <= 0) return null
+  return ((precio - referencia) / referencia) * 100
+}
+
+function esAtipica(desviacion: number | null): boolean {
+  return desviacion != null && Math.abs(desviacion) >= PRECIO_LITRO_ATIPICO_PCT
 }
 
 function redondear(n: number | null, decimales = 2): number | null {
@@ -108,9 +166,22 @@ export interface GasolineraCosto {
   recargas:      number
   litros:        number
   costo:         number
+  /** Sin las cargas atípicas: con ellas, un dígito mal capturado decidía el renglón. */
   precio_litro:  number | null
   /** Cuánto se pagó de más aquí contra la más barata del periodo, en el mismo combustible. */
   sobreprecio:   number
+  /** Cargas con el litro muy lejos de la mediana: cuentan en litros y gasto, no en el precio. */
+  atipicas:      number
+}
+
+/** El litro de una gasolinera y un combustible en un mes, para ver cómo se mueve. */
+export interface PrecioMensual {
+  mes:           string   // 'YYYY-MM'
+  gasolinera_id: number
+  gasolinera:    string
+  producto:      string
+  recargas:      number
+  precio_litro:  number | null
 }
 
 export interface PrecioProducto {
@@ -118,12 +189,15 @@ export interface PrecioProducto {
   litros:       number
   costo:        number
   precio_litro: number | null
+  /** El litro de la gasolinera más barata del periodo: contra él se mide el sobreprecio. */
+  precio_minimo: number | null
 }
 
 export type TipoAnomalia =
   | 'rendimiento_bajo'
   | 'odometro_retrocede'
   | 'precio_alto'
+  | 'precio_bajo'
   | 'carga_duplicada'
   | 'sin_vale'
   | 'sin_odometro'
@@ -193,6 +267,8 @@ export interface AnalisisCostos {
   precios_litro:      PrecioProducto[]
   vehiculos:          VehiculoCosto[]
   gasolineras:        GasolineraCosto[]
+  /** Últimos 12 meses sin importar el periodo elegido, igual que el gasto mensual. */
+  precios_mensuales:  PrecioMensual[]
   gasto_mensual:      repo.GastoMes[]
   ahorro_refacciones: OportunidadAhorro[]
   anomalias:          Anomalia[]
@@ -233,12 +309,16 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   const dias  = Math.max(1, diasEntre(start, end))
   const desdeGasto = addDias(hoy, -30 * MESES_GASTO)
 
-  const [recargas, mantenimientos, compras, gastoMensual, flota] = await Promise.all([
+  // Desde el día 1 para que el primer mes de la tendencia no salga a medias.
+  const desdePrecios = `${desdeGasto.slice(0, 7)}-01`
+
+  const [recargas, mantenimientos, compras, gastoMensual, flota, recargasAnio] = await Promise.all([
     repo.findRecargasEnRango(start, end),
     repo.findMantenimientosEnRango(start, end),
     repo.findComprasComparadas(start, end),
     repo.findGastoMensual(desdeGasto),
     repo.findFlotaEnOperacion(),
+    repo.findRecargasEnRango(desdePrecios, addDias(hoy, 1)),
   ])
 
   const acum = new Map<number, Acumulado>()
@@ -258,8 +338,8 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   const costoCombustible = recargas.reduce((s, r) => s + r.costo, 0)
   const precioLitroFlota = ratio(costoCombustible, litrosTotales)
 
-  // El promedio de cada combustible es contra el que se juzga cada carga: con
-  // todos revueltos, la Premium salía "cara" solo por ser Premium.
+  // El litro de cada combustible por separado: con todos revueltos, la Premium
+  // salía "cara" solo por ser Premium.
   const porProducto = new Map<string, { litros: number; costo: number }>()
   for (const r of recargas) {
     const p = r.producto ?? SIN_PRODUCTO
@@ -268,10 +348,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     e.costo  += r.costo
     porProducto.set(p, e)
   }
-  const precioDe = (producto: string | null): number | null => {
-    const e = producto != null ? porProducto.get(producto) : undefined
-    return e ? ratio(e.costo, e.litros) : null
-  }
+  const referenciaDe = referenciasDePrecio(recargas)
 
   let previa: repo.RecargaCosto | null = null
   // Litros de emergencia cargados desde la última carga normal de la unidad.
@@ -347,18 +424,27 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       })
     }
 
-    // Sobreprecio por litro contra el promedio del mismo combustible. Sin
-    // producto no se sabe contra qué compararla y no se juzga.
+    // El litro contra la mediana de su combustible en su mes. Sin producto no
+    // se sabe contra qué compararla y no se juzga.
     const precio = ratio(r.costo, r.litros)
-    const promedio = precioDe(r.producto)
-    if (precio != null && promedio != null) {
-      const desviacion = ((precio - promedio) / promedio) * 100
-      if (desviacion >= PRECIO_LITRO_ALTO_PCT) {
+    const referencia = referenciaDe(r)
+    const desviacion = desviacionPrecio(r, referencia)
+    if (precio != null && referencia != null && desviacion != null) {
+      if (desviacion >= PRECIO_LITRO_ATIPICO_PCT) {
         anomalias.push({
           key: `precio-${r.id}`, tipo: 'precio_alto', severidad: 'media',
           vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, fecha: r.fecha,
-          detalle: `${r.producto} a $${precio.toFixed(2)}/L en ${r.gasolinera}, ${desviacion.toFixed(0)}% arriba del promedio de ${r.producto} en la flota`,
-          monto: (precio - promedio) * r.litros,
+          detalle: `${r.producto} a $${precio.toFixed(2)}/L en ${r.gasolinera}, ${desviacion.toFixed(0)}% arriba de lo que costó el ${r.producto} ese mes`,
+          monto: (precio - referencia) * r.litros,
+        })
+      } else if (desviacion <= -PRECIO_LITRO_ATIPICO_PCT) {
+        // Nadie vende el litro un 15 % abajo: es el costo o los litros mal
+        // capturados. El monto es lo que faltaría si los litros están bien.
+        anomalias.push({
+          key: `precio_bajo-${r.id}`, tipo: 'precio_bajo', severidad: 'media',
+          vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, fecha: r.fecha,
+          detalle: `${r.producto} a $${precio.toFixed(2)}/L en ${r.gasolinera} (${r.litros.toFixed(2)} L por $${r.costo.toFixed(2)}), ${Math.abs(desviacion).toFixed(0)}% abajo de lo que costó el ${r.producto} ese mes. Revisa el costo y los litros contra el ticket`,
+          monto: (referencia - precio) * r.litros,
         })
       }
     }
@@ -486,7 +572,9 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   // ── Gasolineras ──
   // Un renglón por gasolinera y combustible: la que despacha Diesel y Premium
   // no es "cara" ni "barata" en general, lo es en cada uno.
-  const porGasolinera = new Map<string, GasolineraCosto>()
+  // El litro de cada renglón sale solo de las cargas que no son atípicas;
+  // litros y gasto sí las cuentan todas, porque se pagaron igual.
+  const porGasolinera = new Map<string, GasolineraCosto & { _litros: number; _costo: number }>()
   for (const r of recargas) {
     // La de emergencia se cargó donde se pudo: no dice nada de a qué
     // gasolinera conviene mandar a la flota.
@@ -495,15 +583,22 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     const clave = `${r.gasolinera_id}|${producto}`
     const g = porGasolinera.get(clave) ?? {
       gasolinera_id: r.gasolinera_id, gasolinera: r.gasolinera ?? '', producto,
-      recargas: 0, litros: 0, costo: 0, precio_litro: null, sobreprecio: 0,
+      recargas: 0, litros: 0, costo: 0, precio_litro: null, sobreprecio: 0, atipicas: 0,
+      _litros: 0, _costo: 0,
     }
     g.recargas += 1
     g.litros   += r.litros
     g.costo    += r.costo
+    if (esAtipica(desviacionPrecio(r, referenciaDe(r)))) {
+      g.atipicas += 1
+    } else {
+      g._litros += r.litros
+      g._costo  += r.costo
+    }
     porGasolinera.set(clave, g)
   }
   const gasolineras = [...porGasolinera.values()]
-  for (const g of gasolineras) g.precio_litro = redondear(ratio(g.costo, g.litros))
+  for (const g of gasolineras) g.precio_litro = redondear(ratio(g._costo, g._litros))
 
   // El sobreprecio se mide contra la gasolinera más barata a la que ya se va,
   // en el mismo combustible: es un ahorro alcanzable —basta mandar ahí las
@@ -512,7 +607,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   // carga barata de casualidad. Lo que no tiene producto no se compara.
   const precioMinimo = new Map<string, number>()
   for (const g of gasolineras) {
-    if (g.producto === SIN_PRODUCTO || g.recargas < 3 || g.precio_litro == null) continue
+    if (g.producto === SIN_PRODUCTO || g.recargas - g.atipicas < 3 || g.precio_litro == null) continue
     const min = precioMinimo.get(g.producto)
     if (min == null || g.precio_litro < min) precioMinimo.set(g.producto, g.precio_litro)
   }
@@ -520,17 +615,42 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   for (const g of gasolineras) {
     const min = precioMinimo.get(g.producto)
     if (min == null || g.precio_litro == null) continue
-    g.sobreprecio = redondear(Math.max(0, (g.precio_litro - min) * g.litros), 2)!
+    g.sobreprecio = redondear(Math.max(0, (g.precio_litro - min) * g._litros), 2)!
     ahorroCombustible += g.sobreprecio
   }
   // Agrupadas por combustible y, dentro de cada uno, la más cara arriba.
   gasolineras.sort((a, b) =>
     ordenProducto(a.producto).localeCompare(ordenProducto(b.producto)) ||
     (b.precio_litro ?? 0) - (a.precio_litro ?? 0))
-  for (const g of gasolineras) {
-    g.litros = redondear(g.litros, 3)!
-    g.costo  = redondear(g.costo, 2)!
+  const gasolinerasSalida: GasolineraCosto[] = gasolineras.map(({ _litros, _costo, ...g }) => ({
+    ...g,
+    litros: redondear(g.litros, 3)!,
+    costo:  redondear(g.costo, 2)!,
+  }))
+
+  // ── El litro mes por mes ──
+  // Con su propia vara: la mediana de cada mes sale de las cargas del año, no
+  // solo de las del periodo elegido. Sin producto no entra: revuelve Magna y
+  // Premium y su línea subiría y bajaría por la mezcla, no por el precio.
+  const referenciaAnio = referenciasDePrecio(recargasAnio)
+  const porMes = new Map<string, PrecioMensual & { _litros: number; _costo: number }>()
+  for (const r of recargasAnio) {
+    if (r.gasolinera_id == null || r.producto == null) continue
+    if (esAtipica(desviacionPrecio(r, referenciaAnio(r)))) continue
+    const mes = r.fecha.slice(0, 7)
+    const clave = `${mes}|${r.gasolinera_id}|${r.producto}`
+    const e = porMes.get(clave) ?? {
+      mes, gasolinera_id: r.gasolinera_id, gasolinera: r.gasolinera ?? '', producto: r.producto,
+      recargas: 0, precio_litro: null, _litros: 0, _costo: 0,
+    }
+    e.recargas += 1
+    e._litros  += r.litros
+    e._costo   += r.costo
+    porMes.set(clave, e)
   }
+  const preciosMensuales: PrecioMensual[] = [...porMes.values()]
+    .map(({ _litros, _costo, ...e }) => ({ ...e, precio_litro: redondear(ratio(_costo, _litros)) }))
+    .sort((a, b) => a.mes.localeCompare(b.mes) || a.gasolinera.localeCompare(b.gasolinera))
 
   // ── Refacciones: lo pagado contra el mejor precio cotizado ──
   // Se agrupa por refacción, no por compra: lo accionable es "esta pieza
@@ -594,6 +714,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       litros:       redondear(e.litros, 3)!,
       costo:        redondear(e.costo, 2)!,
       precio_litro: redondear(ratio(e.costo, e.litros)),
+      precio_minimo: precioMinimo.get(producto) ?? null,
     }))
     .sort((a, b) => ordenProducto(a.producto).localeCompare(ordenProducto(b.producto)))
 
@@ -618,7 +739,8 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     },
     precios_litro: preciosLitro,
     vehiculos,
-    gasolineras,
+    gasolineras: gasolinerasSalida,
+    precios_mensuales: preciosMensuales,
     gasto_mensual: gastoMensual,
     ahorro_refacciones: ahorroRefacciones,
     anomalias: anomalias.slice(0, MAX_ANOMALIAS),

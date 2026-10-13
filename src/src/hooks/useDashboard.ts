@@ -329,8 +329,21 @@ export interface GasolineraCosto {
   recargas:      number
   litros:        number
   costo:         number
+  /** Sin las cargas atípicas, que sí cuentan en litros y gasto. */
   precio_litro:  number | null
   sobreprecio:   number
+  /** Cargas con el litro a más de 15 % de la mediana: casi siempre, mal capturadas. */
+  atipicas:      number
+}
+
+/** El litro de una gasolinera y un combustible en un mes. */
+export interface PrecioMensual {
+  mes:           string   // 'YYYY-MM'
+  gasolinera_id: number
+  gasolinera:    string
+  producto:      string
+  recargas:      number
+  precio_litro:  number | null
 }
 
 export interface PrecioProducto {
@@ -338,10 +351,12 @@ export interface PrecioProducto {
   litros:       number
   costo:        number
   precio_litro: number | null
+  /** El de la gasolinera más barata del periodo; contra él se mide el sobreprecio. */
+  precio_minimo: number | null
 }
 
 export type TipoAnomalia =
-  | 'rendimiento_bajo' | 'odometro_retrocede' | 'precio_alto'
+  | 'rendimiento_bajo' | 'odometro_retrocede' | 'precio_alto' | 'precio_bajo'
   | 'carga_duplicada'  | 'sin_vale'           | 'sin_odometro'
 
 export interface Anomalia {
@@ -407,6 +422,8 @@ export interface AnalisisCostos {
   precios_litro:      PrecioProducto[]
   vehiculos:          VehiculoCosto[]
   gasolineras:        GasolineraCosto[]
+  /** Últimos 12 meses, sin importar el periodo elegido. */
+  precios_mensuales:  PrecioMensual[]
   gasto_mensual:      GastoMes[]
   ahorro_refacciones: OportunidadAhorro[]
   anomalias:          Anomalia[]

@@ -15,6 +15,7 @@ const ANOMALIA_LABEL: Record<TipoAnomalia, string> = {
   rendimiento_bajo:   'Rendimiento bajo',
   odometro_retrocede: 'Odómetro inconsistente',
   precio_alto:        'Precio por litro alto',
+  precio_bajo:        'Precio por litro sospechosamente bajo',
   carga_duplicada:    'Dos cargas el mismo día',
   sin_vale:           'Carga sin vale',
   sin_odometro:       'Carga sin kilometraje',

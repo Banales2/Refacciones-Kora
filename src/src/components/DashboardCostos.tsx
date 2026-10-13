@@ -5,11 +5,12 @@
 // una comparación contra una referencia —el mismo modelo, la otra gasolinera,
 // el otro proveedor, el servicio anterior— y termina en pesos, porque un
 // porcentaje no autoriza una decisión y una cifra en pesos sí.
+import { useMemo, useState } from 'react'
 import {
   Alert, Badge, Card, Center, Group, Loader, Progress, SegmentedControl, SimpleGrid,
   Stack, Table, Text, Tooltip,
 } from '@mantine/core'
-import { AreaChart, BarChart } from '@mantine/charts'
+import { AreaChart, BarChart, LineChart } from '@mantine/charts'
 import {
   IconAlertTriangle, IconCashBanknote, IconDiscount2, IconDroplet,
   IconGasStation, IconRoad,
@@ -75,7 +76,11 @@ const ANOMALIA_META: Record<TipoAnomalia, { label: string; color: string; ayuda:
   },
   precio_alto: {
     label: 'Precio por litro alto', color: 'orange',
-    ayuda: 'Se pagó el litro muy por encima del promedio del periodo.',
+    ayuda: 'Se pagó el litro muy por encima de lo que costó ese combustible el mismo mes.',
+  },
+  precio_bajo: {
+    label: 'Precio por litro sospechosamente bajo', color: 'orange',
+    ayuda: 'Nadie vende el litro tan barato: casi siempre es un dígito mal capturado en el costo o en los litros. Corrígelo contra el ticket; mientras tanto no entra al precio de su gasolinera.',
   },
   carga_duplicada: {
     label: 'Dos cargas el mismo día', color: 'orange',
@@ -143,6 +148,192 @@ export default function DashboardCostos({
   )
 }
 
+// ─── Gasolineras ────────────────────────────────────────────────────────────
+
+// Un color fijo por gasolinera, asignado por id: el color sigue a la
+// gasolinera y no a su lugar en la gráfica, así que cambiar de combustible no
+// la repinta. Validada para daltonismo sobre fondo claro y oscuro. De la
+// séptima en adelante salen en gris; con más gasolineras habría que agrupar.
+const COLORES_GASOLINERA = ['blue.7', 'orange.8', 'teal.7', 'grape.7', 'red.8', 'indigo.7']
+
+function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
+  const t = data.totales
+
+  // Ya vienen en orden (Diesel, Magna, Premium y al final lo que no se sabe).
+  const productos = useMemo(
+    () => [...new Set(data.gasolineras.map((g) => g.producto))],
+    [data.gasolineras],
+  )
+  // Arranca en el combustible donde más litros se cargan: es donde está el dinero.
+  const masCargado = useMemo(
+    () => [...data.precios_litro]
+      .filter((p) => p.producto !== SIN_PRODUCTO && productos.includes(p.producto))
+      .sort((a, b) => b.litros - a.litros)[0]?.producto ?? productos[0],
+    [data.precios_litro, productos],
+  )
+  const [elegido, setElegido] = useState<string | null>(null)
+  const producto = elegido != null && productos.includes(elegido) ? elegido : masCargado
+
+  const colorDe = useMemo(() => {
+    const ids = [...new Set([
+      ...data.gasolineras.map((g) => g.gasolinera_id),
+      ...data.precios_mensuales.map((p) => p.gasolinera_id),
+    ])].sort((a, b) => a - b)
+    return (id: number) => COLORES_GASOLINERA[ids.indexOf(id)] ?? 'gray.6'
+  }, [data.gasolineras, data.precios_mensuales])
+
+  if (data.gasolineras.length === 0) {
+    return (
+      <Seccion titulo="Precio por litro por gasolinera">
+        <Vacio>Sin recargas registradas en el periodo.</Vacio>
+      </Seccion>
+    )
+  }
+
+  const renglones = data.gasolineras.filter((g) => g.producto === producto)
+  const minimo = data.precios_litro.find((p) => p.producto === producto)?.precio_minimo ?? null
+
+  // La diferencia contra la más barata y no el precio: entre $26.99 y $27.90
+  // hay 3 %, y en barras que arrancan en cero se ven idénticas. La diferencia
+  // sí arranca en cero de verdad.
+  const diferencias = minimo == null ? [] : renglones
+    .filter((g) => g.precio_litro != null)
+    .map((g) => ({ gasolinera: g.gasolinera, diferencia: Math.round((g.precio_litro! - minimo) * 100) / 100 }))
+    .sort((a, b) => b.diferencia - a.diferencia)
+
+  const mensual = data.precios_mensuales.filter((p) => p.producto === producto && p.precio_litro != null)
+  const meses = [...new Set(mensual.map((p) => p.mes))].sort()
+  const series = [...new Map(mensual.map((p) => [p.gasolinera_id, p.gasolinera])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([id, nombre]) => ({ name: nombre, color: colorDe(id) }))
+  const tendencia = meses.map((mes) => {
+    const fila: Record<string, string | number> = { mes: formatMes(mes) }
+    for (const p of mensual) if (p.mes === mes) fila[p.gasolinera] = p.precio_litro!
+    return fila
+  })
+
+  return (
+    <Seccion
+      titulo="Precio por litro por gasolinera"
+      descripcion="Lo que costó el litro en cada una durante el periodo. El sobreprecio es lo que se pagó de más contra la más barata de las que ya se visitan con regularidad (al menos tres cargas), en el mismo combustible: un ahorro que solo requiere cambiar a dónde se manda a cargar. Las cargas con el litro a más de 15 % de lo normal no entran al precio —casi siempre son un dígito mal capturado— y aparecen en Anomalías."
+      accion={t.ahorro_combustible > 0 && (
+        <Tooltip label="Sobreprecio de todos los combustibles juntos" withArrow>
+          <Badge color="teal" variant="light" size="lg">{formatMXN(t.ahorro_combustible)}</Badge>
+        </Tooltip>
+      )}
+    >
+      <Stack gap="md">
+        <Group justify="space-between" align="center" wrap="wrap">
+          <SegmentedControl size="xs" value={producto} onChange={setElegido} data={productos} />
+          {minimo != null && (
+            <Text size="sm" c="dimmed">
+              La más barata en {producto}: <Text component="span" fw={600} c="var(--mantine-color-text)">${minimo.toFixed(2)}/L</Text>
+            </Text>
+          )}
+        </Group>
+
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+          <div>
+            <Text size="sm" fw={500} mb={4}>Cuánto más cuesta el litro que en la más barata</Text>
+            {producto === SIN_PRODUCTO ? (
+              <Vacio>Sin combustible especificado no se compara: puede ser Magna o Premium.</Vacio>
+            ) : diferencias.length === 0 ? (
+              <Vacio>Todavía ninguna gasolinera tiene tres cargas de {producto} en el periodo para servir de referencia.</Vacio>
+            ) : (
+              <BarChart
+                h={Math.max(160, diferencias.length * 40)}
+                data={diferencias}
+                dataKey="gasolinera"
+                orientation="vertical"
+                yAxisProps={{ width: 150 }}
+                series={[{ name: 'diferencia', color: 'cyan.6', label: 'Más que la más barata' }]}
+                valueFormatter={(v) => (v > 0 ? `+$${v.toFixed(2)}/L` : v < 0 ? `−$${Math.abs(v).toFixed(2)}/L` : 'La más barata')}
+                gridAxis="x"
+              />
+            )}
+          </div>
+          <div>
+            <Text size="sm" fw={500} mb={4}>Cómo se ha movido, mes por mes (últimos 12 meses)</Text>
+            {producto === SIN_PRODUCTO ? (
+              <Vacio>Sin combustible especificado no hay tendencia: la mezcla movería la línea, no el precio.</Vacio>
+            ) : meses.length === 0 ? (
+              <Vacio>Sin cargas de {producto} en los últimos 12 meses.</Vacio>
+            ) : (
+              <>
+                <LineChart
+                  h={240}
+                  data={tendencia}
+                  dataKey="mes"
+                  series={series}
+                  withLegend={series.length > 1}
+                  legendProps={{ verticalAlign: 'bottom' }}
+                  connectNulls
+                  curveType="linear"
+                  strokeWidth={2}
+                  yAxisProps={{ domain: ['dataMin - 0.5', 'dataMax + 0.5'], width: 60 }}
+                  valueFormatter={(v) => `$${v.toFixed(2)}`}
+                />
+                {meses.length === 1 && (
+                  <Text size="xs" c="dimmed" mt={4}>Con un solo mes de cargas todavía no hay tendencia.</Text>
+                )}
+              </>
+            )}
+          </div>
+        </SimpleGrid>
+
+        <Table.ScrollContainer minWidth={560}>
+          <Table striped withTableBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Gasolinera</Table.Th>
+                <Table.Th style={{ textAlign: 'center' }}>Cargas</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Litros</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Gasto</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>$/L</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Sobreprecio</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {renglones.map((g) => (
+                <Table.Tr key={`${g.gasolinera_id}-${g.producto}`}>
+                  <Table.Td fw={500}>{g.gasolinera}</Table.Td>
+                  <Table.Td style={{ textAlign: 'center' }}>{g.recargas}</Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>{formatLitros(g.litros)}</Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>{formatMXN(g.costo)}</Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
+                    <Group gap={6} justify="flex-end" wrap="nowrap">
+                      {g.atipicas > 0 && (
+                        <Tooltip
+                          withArrow multiline w={260}
+                          label={`${g.atipicas === 1 ? 'Una carga' : `${g.atipicas} cargas`} con el litro muy lejos de lo normal no ${g.atipicas === 1 ? 'entra' : 'entran'} a este precio, aunque sí a litros y gasto. ${g.atipicas === 1 ? 'Está' : 'Están'} en Anomalías.`}
+                        >
+                          <Badge size="xs" variant="light" color="orange">
+                            {g.atipicas} {g.atipicas === 1 ? 'atípica' : 'atípicas'}
+                          </Badge>
+                        </Tooltip>
+                      )}
+                      {g.precio_litro != null ? `$${g.precio_litro.toFixed(2)}` : <Guion />}
+                    </Group>
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
+                    {g.sobreprecio > 0
+                      ? <Text size="sm" c="orange" fw={600}>{formatMXN(g.sobreprecio)}</Text>
+                      // Sin referencia (sin producto, o nadie con tres cargas) no
+                      // se comparó con nadie: no es "la más barata", es no saberlo.
+                      : minimo == null || g.precio_litro == null
+                        ? <Guion />
+                        : <Badge size="sm" variant="light" color="teal">La más barata</Badge>}
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      </Stack>
+    </Seccion>
+  )
+}
+
 function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
   data: AnalisisCostos
   ventana: VentanaCostos
@@ -162,10 +353,6 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
     'Mano de obra': g.mano_obra,
     'Refacciones': g.refacciones,
   }))
-
-  const gasolinerasChart = data.gasolineras
-    .filter((g) => g.precio_litro != null)
-    .map((g) => ({ gasolinera: `${g.gasolinera} · ${g.producto}`, precio: g.precio_litro! }))
 
   // Solo las unidades con suficientes cargas para que el km/L signifique algo;
   // el backend ya deja en null las que no llegan, aquí solo se filtran.
@@ -325,67 +512,7 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
       </Seccion>
 
       {/* ── Gasolineras ── */}
-      <Seccion
-        titulo="Precio por litro por gasolinera"
-        descripcion="Lo que costó el litro en cada una durante el periodo, por combustible. El sobreprecio es lo que se pagó de más contra la más barata de las que ya se visitan con regularidad, en el mismo combustible — un ahorro que solo requiere cambiar a dónde se manda a cargar. Las cargas sin combustible especificado no se comparan."
-        accion={t.ahorro_combustible > 0 && (
-          <Badge color="teal" variant="light" size="lg">{formatMXN(t.ahorro_combustible)}</Badge>
-        )}
-      >
-        {data.gasolineras.length === 0 ? (
-          <Vacio>Sin recargas registradas en el periodo.</Vacio>
-        ) : (
-          <Stack gap="md">
-            <BarChart
-              h={Math.max(180, gasolinerasChart.length * 34)}
-              data={gasolinerasChart}
-              dataKey="gasolinera"
-              orientation="vertical"
-              yAxisProps={{ width: 150 }}
-              series={[{ name: 'precio', color: 'cyan.6', label: 'Precio por litro' }]}
-              valueFormatter={(v) => `$${v.toFixed(2)}`}
-              gridAxis="x"
-            />
-            <Table.ScrollContainer minWidth={560}>
-              <Table striped withTableBorder>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Gasolinera</Table.Th>
-                    <Table.Th>Combustible</Table.Th>
-                    <Table.Th style={{ textAlign: 'center' }}>Cargas</Table.Th>
-                    <Table.Th style={{ textAlign: 'right' }}>Litros</Table.Th>
-                    <Table.Th style={{ textAlign: 'right' }}>Gasto</Table.Th>
-                    <Table.Th style={{ textAlign: 'right' }}>$/L</Table.Th>
-                    <Table.Th style={{ textAlign: 'right' }}>Sobreprecio</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {data.gasolineras.map((g) => (
-                    <Table.Tr key={`${g.gasolinera_id}-${g.producto}`}>
-                      <Table.Td fw={500}>{g.gasolinera}</Table.Td>
-                      <Table.Td>{g.producto}</Table.Td>
-                      <Table.Td style={{ textAlign: 'center' }}>{g.recargas}</Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}>{formatLitros(g.litros)}</Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}>{formatMXN(g.costo)}</Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}>
-                        {g.precio_litro != null ? `$${g.precio_litro.toFixed(2)}` : <Guion />}
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}>
-                        {g.sobreprecio > 0
-                          ? <Text size="sm" c="orange" fw={600}>{formatMXN(g.sobreprecio)}</Text>
-                          // Sin combustible especificado no se comparó con nadie.
-                          : g.producto === SIN_PRODUCTO
-                            ? <Guion />
-                            : <Badge size="sm" variant="light" color="teal">La más barata</Badge>}
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            </Table.ScrollContainer>
-          </Stack>
-        )}
-      </Seccion>
+      <SeccionGasolineras data={data} />
 
       {/* ── Costo por kilómetro ── */}
       <Seccion
