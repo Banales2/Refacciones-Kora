@@ -163,21 +163,56 @@ function mismaCantidad(a: number, b: number): boolean {
   return Math.round(a * 1000) === Math.round(b * 1000)
 }
 
+/**
+ * Cuántos litros pueden diferir el renglón y el ticket cuando el dinero
+ * coincide al centavo. Cubre el ticket capturado a dos decimales (71.45 contra
+ * 71.454), el redondeo de la gasolinera (370.138 contra 370.137) y un dígito
+ * cambiado (62.155 contra 62.185); no da para confundir dos cargas distintas.
+ */
+const LITROS_TOLERANCIA_POR_IMPORTE = 0.1
+
+/** Mismo dinero, en centavos. */
+function mismoImporte(a: number, b: number): boolean {
+  return Math.round(a * 100) === Math.round(b * 100)
+}
+
 export interface RenglonSugerido extends RenglonFactura {
   /** Lo que el sistema propone, si el renglón no está casado ya. */
   sugerido_ticket_id: number | null
+  /**
+   * Por qué lo propone: litros exactos, o el mismo dinero con IVA y litros
+   * casi iguales. El segundo se enseña distinto: los litros no cuadran del
+   * todo y alguien tiene que mirarlo.
+   */
+  sugerido_por: 'cantidad' | 'importe' | null
+  /**
+   * Tickets idénticos a este renglón pero registrados con otra gasolinera:
+   * casi seguro la recarga se capturó en la estación equivocada. Solo en los
+   * renglones que no casaron ni tienen propuesta. Ver
+   * `repo.ticketsEnOtraGasolinera`.
+   */
+  en_otra_gasolinera: Omit<repo.TicketEnOtraGasolinera, 'renglon_id'>[]
 }
 
 /**
- * Propone qué ticket corresponde a cada renglón, por CANTIDAD exacta.
+ * Propone qué ticket corresponde a cada renglón: primero por CANTIDAD exacta,
+ * luego por IMPORTE CON IVA exacto.
  *
- * POR QUÉ NO POR IMPORTE: el importe del renglón suele venir sin IVA y el costo
- * de la recarga es lo que se pagó en la bomba, que sí lo incluye. "El más
- * cercano" casaría cosas equivocadas con toda confianza. Los litros son el mismo
- * número de los dos lados y con tres decimales prácticamente no se repiten.
+ * Los litros son el mismo número de los dos lados y con tres decimales
+ * prácticamente no se repiten, así que van primero. Pero el ticket a veces se
+ * captura a dos decimales o con un dígito cambiado, y ese renglón se quedaba
+ * sin proponer aunque la carga sí estuviera en el sistema.
  *
- * Lo que no case por cantidad se queda sin proponer y lo resuelve una persona:
- * es preferible a inventar un emparejamiento que nadie va a revisar.
+ * Para esos, el dinero: el importe del papel viene SIN IVA y el ticket es lo
+ * que se pagó en la bomba, CON IVA, así que se compara el renglón con su IVA
+ * (`importe_con_iva`), que da el ticket al centavo. Solo con el IVA del propio
+ * renglón —el de un XML—: repartido o sacado de la tasa es una estimación y no
+ * cuadra al centavo. Y solo al centavo y con los litros casi iguales; "el más
+ * cercano" casaría cosas equivocadas con toda confianza.
+ *
+ * Lo que no case de ninguna de las dos formas se queda sin proponer y lo
+ * resuelve una persona: es preferible a inventar un emparejamiento que nadie va
+ * a revisar.
  *
  * En empate —dos tickets con los mismos litros— gana el más reciente de los que
  * quedaron registrados hasta la fecha de la factura, que es el que cae en el
@@ -196,30 +231,66 @@ export async function candidatas(facturaId: number): Promise<{
   const rens = await repo.renglones(facturaId)
   const tickets = await repo.candidatas(facturaId)
 
-  const sugeridos: RenglonSugerido[] = rens.map((r) => ({ ...r, sugerido_ticket_id: null }))
+  const sugeridos: RenglonSugerido[] = rens.map((r) => ({
+    ...r, sugerido_ticket_id: null, sugerido_por: null, en_otra_gasolinera: [],
+  }))
 
-  if (factura.conciliada_en !== null) {
-    return { factura, renglones: sugeridos, tickets }
-  }
+  if (factura.conciliada_en === null) proponer(sugeridos, tickets)
 
-  const tomados = new Set(
-    sugeridos.map((r) => r.ticket_id).filter((id): id is number => id !== null),
+  // También en la ya conciliada: sus renglones sin casar son justo los que se
+  // sellaron como "nadie la capturó", y puede que sí, en otra gasolinera.
+  const pendientes = new Set(
+    sugeridos.filter((r) => r.ticket_id === null && r.sugerido_ticket_id === null).map((r) => r.id),
   )
-
-  for (const r of sugeridos) {
-    if (r.ticket_id !== null) continue
-    const iguales = tickets.filter(
-      (c) => !tomados.has(c.id) && mismaCantidad(c.litros, r.cantidad),
-    )
-    // Vienen del más reciente al más viejo.
-    const match = iguales.find((c) => c.dias_despues === 0) ?? iguales[0]
-    if (match) {
-      r.sugerido_ticket_id = match.id
-      tomados.add(match.id)
+  if (pendientes.size > 0) {
+    const ajenos = await repo.ticketsEnOtraGasolinera(facturaId, LITROS_TOLERANCIA_POR_IMPORTE)
+    for (const r of sugeridos) {
+      if (!pendientes.has(r.id)) continue
+      r.en_otra_gasolinera = ajenos
+        .filter((a) => a.renglon_id === r.id)
+        .map(({ renglon_id: _, ...a }) => a)
     }
   }
 
   return { factura, renglones: sugeridos, tickets }
+}
+
+function proponer(sugeridos: RenglonSugerido[], tickets: TicketCandidato[]): void {
+  const tomados = new Set(
+    sugeridos.map((r) => r.ticket_id).filter((id): id is number => id !== null),
+  )
+
+  // Vienen del más reciente al más viejo; gana el registrado hasta la fecha de
+  // la factura sobre el de los días de gracia.
+  const elegir = (iguales: TicketCandidato[]) =>
+    iguales.find((c) => c.dias_despues === 0) ?? iguales[0]
+
+  // Dos pasadas y no una: un renglón que casa por importe no debe llevarse el
+  // ticket que otro renglón tenía por litros exactos.
+  for (const r of sugeridos) {
+    if (r.ticket_id !== null) continue
+    const match = elegir(tickets.filter(
+      (c) => !tomados.has(c.id) && mismaCantidad(c.litros, r.cantidad),
+    ))
+    if (match) {
+      r.sugerido_ticket_id = match.id
+      r.sugerido_por = 'cantidad'
+      tomados.add(match.id)
+    }
+  }
+  for (const r of sugeridos) {
+    if (r.ticket_id !== null || r.sugerido_ticket_id !== null || r.iva_estimado) continue
+    const match = elegir(tickets.filter(
+      (c) => !tomados.has(c.id)
+        && mismoImporte(c.costo, r.importe_con_iva)
+        && Math.abs(c.litros - r.cantidad) <= LITROS_TOLERANCIA_POR_IMPORTE,
+    ))
+    if (match) {
+      r.sugerido_ticket_id = match.id
+      r.sugerido_por = 'importe'
+      tomados.add(match.id)
+    }
+  }
 }
 
 export interface ResultadoConciliacion {
@@ -228,7 +299,7 @@ export interface ResultadoConciliacion {
   casados: number
   /** Renglones del papel que no corresponden a ninguna recarga capturada. */
   sin_casar: number
-  /** Lo que valen esos renglones: el gasto que no está registrado. */
+  /** Lo que valen esos renglones, con IVA: el gasto que no está registrado. */
   importe_sin_casar: number
   /** Litros de esos renglones. */
   cantidad_sin_casar: number
@@ -282,7 +353,9 @@ export async function conciliar(
     renglones: rens.length,
     casados: rens.length - sinCasar.length,
     sin_casar: sinCasar.length,
-    importe_sin_casar: aCentavos(sinCasar.reduce((s, r) => s + r.importe, 0)),
+    // Con IVA: es lo que se le va a pagar a la gasolinera por esas cargas, y lo
+    // que valdrían capturadas como recarga.
+    importe_sin_casar: aCentavos(sinCasar.reduce((s, r) => s + r.importe_con_iva, 0)),
     cantidad_sin_casar: Math.round(sinCasar.reduce((s, r) => s + r.cantidad, 0) * 1000) / 1000,
   }
 

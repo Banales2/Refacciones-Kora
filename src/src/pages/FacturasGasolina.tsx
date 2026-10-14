@@ -371,7 +371,9 @@ function CuadreFactura({
   const usadas = new Set(Object.values(eleccion).filter((v): v is number => v !== null))
 
   const sinCasar = renglones.filter((r) => eleccion[r.id] == null)
-  const importeSinCasar = sinCasar.reduce((s, r) => s + r.importe, 0)
+  const enOtraGasolinera = sinCasar.filter((r) => r.en_otra_gasolinera.length > 0).length
+  // Con IVA: es lo que se le paga a la gasolinera por esas cargas.
+  const importeSinCasar = sinCasar.reduce((s, r) => s + r.importe_con_iva, 0)
 
   const pendienteConfirmar =
     conciliar.error instanceof ApiError && conciliar.error.code === RENGLONES_SIN_CASAR
@@ -428,12 +430,13 @@ function CuadreFactura({
         </Alert>
       ) : (
         <Text size="xs" c="dimmed">
-          El sistema ya emparejó los renglones que pudo, por cantidad exacta. Los
-          demás se eligen a mano.
+          El sistema ya emparejó los renglones que pudo: por litros exactos, o por
+          el mismo importe con IVA cuando los litros difieren por poco. Los demás
+          se eligen a mano.
           {(factura.iva != null || factura.tasa_iva != null) && (
-            <> Ojo: los importes del papel son <b>sin IVA</b> y el costo de la
-            recarga es lo que se pagó en la bomba, <b>con IVA</b>; por eso el
-            cuadre va por litros y no por importe.</>
+            <> El papel imprime los importes <b>sin IVA</b> y el ticket es lo que
+            se pagó en la bomba, <b>con IVA</b>; por eso cada renglón se enseña
+            con su IVA, para compararlo con el ticket.</>
           )}
         </Text>
       )}
@@ -482,6 +485,22 @@ function CuadreFactura({
             recarga capturada. Si no es que falta elegirles la recarga, son cargas
             que ocurrieron y que nadie registró.
           </Text>
+          {enOtraGasolinera > 0 && (
+            <Text size="sm" mt={4}>
+              <b>{enOtraGasolinera}</b> de ellos sí {enOtraGasolinera === 1 ? 'parece estar capturado' : 'parecen estar capturados'},
+              pero con otra gasolinera: abajo dice cuál.
+            </Text>
+          )}
+        </Alert>
+      )}
+
+      {cerrada && enOtraGasolinera > 0 && (
+        <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
+          <Text size="sm">
+            {enOtraGasolinera} renglón(es) sellados como "nadie la capturó" sí
+            {enOtraGasolinera === 1 ? ' parece estar capturado' : ' parecen estar capturados'}, pero
+            con otra gasolinera. Corrige la recarga y reabre la factura para casarlo.
+          </Text>
         </Alert>
       )}
 
@@ -495,7 +514,7 @@ function CuadreFactura({
             <Table.Tr>
               <Table.Th>Descripción</Table.Th>
               <Table.Th style={{ textAlign: 'right' }}>Litros</Table.Th>
-              <Table.Th style={{ textAlign: 'right' }}>Importe</Table.Th>
+              <Table.Th style={{ textAlign: 'right' }}>Importe con IVA</Table.Th>
               <Table.Th>Recarga del sistema</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -507,6 +526,15 @@ function CuadreFactura({
               const opciones = tickets
                 .filter((c) => !usadas.has(c.id) || c.id === elegida)
                 .map((c) => ({ value: String(c.id), label: etiquetaTicket(c) }))
+              const ticket = elegida !== null ? porId.get(elegida) : undefined
+              // Lo que la gasolinera cobra contra lo que dice el ticket, los dos
+              // con IVA. Con el IVA estimado no se señala: no cuadra al centavo
+              // aunque esté bien.
+              const diferencia = ticket && !r.iva_estimado
+                ? Math.round((r.importe_con_iva - ticket.costo) * 100) / 100
+                : 0
+              const otrosLitros = ticket && Math.round(ticket.litros * 1000) !== Math.round(r.cantidad * 1000)
+              const porImporte = r.sugerido_por === 'importe' && elegida === r.sugerido_ticket_id
 
               return (
                 <Table.Tr key={r.id}>
@@ -517,7 +545,16 @@ function CuadreFactura({
                     <Text size="sm" fw={500}>{r.cantidad}</Text>
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
-                    <Text size="sm">{formatMXN(r.importe)}</Text>
+                    {r.iva_estimado ? (
+                      <Tooltip label="El papel no trae el IVA de cada renglón: se repartió el de la factura, y en combustible no es exacto (el IVA no se cobra sobre el IEPS)." multiline w={260}>
+                        <Text size="sm">≈ {formatMXN(r.importe_con_iva)}</Text>
+                      </Tooltip>
+                    ) : (
+                      <Text size="sm">{formatMXN(r.importe_con_iva)}</Text>
+                    )}
+                    {r.importe_con_iva !== r.importe && (
+                      <Text size="xs" c="dimmed">sin IVA {formatMXN(r.importe)}</Text>
+                    )}
                   </Table.Td>
                   <Table.Td>
                     <Select
@@ -531,11 +568,33 @@ function CuadreFactura({
                         if (conciliar.error) conciliar.reset()
                       }}
                     />
-                    {elegida !== null && porId.get(elegida) && (
+                    {ticket && (
                       <Text size="xs" c="dimmed" mt={2}>
-                        {porId.get(elegida)!.conductor}
-                        {porId.get(elegida)!.vale_folio
-                          ? ` · vale ${porId.get(elegida)!.vale_folio}` : ''}
+                        {ticket.conductor}
+                        {ticket.vale_folio ? ` · vale ${ticket.vale_folio}` : ''}
+                      </Text>
+                    )}
+                    {elegida === null && r.en_otra_gasolinera.map((a) => (
+                      <Text key={a.ticket_id} size="xs" c="orange.7" fw={500} mt={2}>
+                        Parece capturada como <b>{a.gasolinera}</b>: {formatFecha(a.fecha)} ·{' '}
+                        {a.litros} L · {formatMXN(a.costo)} · {a.vehiculo} ({a.conductor}).
+                        Corrige la gasolinera de esa recarga y vuelve a abrir la factura.
+                      </Text>
+                    ))}
+                    {porImporte && (
+                      <Badge size="xs" variant="light" color="blue" mt={2}>
+                        Propuesto por importe con IVA
+                      </Badge>
+                    )}
+                    {ticket && otrosLitros && (
+                      <Text size="xs" c="orange.7" mt={2}>
+                        El ticket dice {ticket.litros} L y la factura {r.cantidad} L.
+                      </Text>
+                    )}
+                    {diferencia !== 0 && (
+                      <Text size="xs" c="orange.7" fw={500} mt={2}>
+                        La factura cobra {formatMXN(Math.abs(diferencia))}{' '}
+                        {diferencia > 0 ? 'más' : 'menos'} que el ticket ({formatMXN(ticket!.costo)}).
                       </Text>
                     )}
                   </Table.Td>

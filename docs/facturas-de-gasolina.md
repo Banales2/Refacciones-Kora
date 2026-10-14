@@ -55,30 +55,46 @@ ella, **marcado como estimado**. Al abrirlas, el cuadre pide el IVA del papel
 se rellenó nada al migrar: `subtotal × 0.16` sería guardar el mismo error con
 otro nombre.
 
-## Se empareja por cantidad, no por importe
+## Se empareja por litros, y luego por importe con IVA
 
 Es lo único no evidente:
 
-- El **importe del renglón suele venir sin IVA**.
+- El **importe del renglón viene sin IVA**.
 - **`recargas_combustible.costo` es lo que se pagó en la bomba**, que sí lo
   incluye.
 
-Compararlos da 16% de diferencia **siempre**. Los litros, en cambio, son el mismo
-número de los dos lados —el IVA no cambia cuánto se despachó— y con tres
-decimales prácticamente no se repiten: 219.37, 27.23, 335.65, 364.35, 57.91,
-247.26.
+Puestos lado a lado, siempre parecía que la gasolinera cobraba de menos. Por eso
+el cuadre enseña cada renglón **con su IVA** (`importe_con_iva`), que es lo
+comparable con el ticket. Con el IVA del propio renglón —lo trae todo XML— da el
+ticket **al centavo** (comprobado con los 15 renglones casados en octubre de
+2026). Sin él se estima: el IVA de la factura capturada a mano se reparte por
+importe, y en las capturadas con tasa sale de `× (1 + tasa)`. Ninguna de las dos
+es exacta por lo del IEPS, y la pantalla las marca con "≈".
 
-Por eso **no se propone nada por importe**, ni siquiera "el más cercano": casaría
-cosas equivocadas con toda confianza. Lo que no case por cantidad exacta se queda
-sin proponer y lo resuelve una persona — preferible a inventar un emparejamiento
-que nadie va a revisar.
+La propuesta va en dos pasadas:
+
+1. **Litros exactos.** Son el mismo número de los dos lados —el IVA no cambia
+   cuánto se despachó— y con tres decimales prácticamente no se repiten.
+2. **Mismo importe con IVA, al centavo, y litros a menos de 0.1 L.** Es para el
+   ticket capturado a dos decimales (71.45 contra 71.454), el redondeo de la
+   gasolinera (370.138 contra 370.137) o un dígito cambiado (62.155 contra
+   62.185). Solo con el IVA del renglón, nunca con uno estimado, y nunca "el más
+   cercano": casaría cosas equivocadas con toda confianza. La pantalla la marca
+   como *Propuesto por importe con IVA* y dice qué litros trae cada lado.
+
+Lo que no case de ninguna de las dos formas se queda sin proponer y lo resuelve
+una persona — preferible a inventar un emparejamiento que nadie va a revisar.
+
+Ya casado, si el renglón con IVA y el ticket no dan lo mismo, la pantalla lo
+dice: "la factura cobra $1.00 más que el ticket". Es la gasolinera cobrando
+distinto de lo que marcó la bomba.
 
 En empate —dos recargas con los mismos litros— gana la más reciente, que es la
 que cae dentro del periodo que la factura cobra. Se puede cambiar a mano.
 
 ## Las candidatas
 
-> Las de **su gasolinera**, con fecha **hasta 3 días después** de la de la
+> Las de **su gasolinera**, con fecha **hasta 7 días después** de la de la
 > factura, que **ningún renglón de ninguna otra factura** haya reclamado.
 
 El corte por fecha no tiene límite inferior a propósito: una carga de hace tres
@@ -90,8 +106,12 @@ escondería justo cuando aparece la factura atrasada que la cobra.
 La fecha de la recarga es la de **captura**, y no siempre la de la carga: la del
 sábado se registra el lunes, la de un puente el martes. Con el corte exacto, esa
 recarga ni aparecía como opción y su renglón salía como "carga que nadie
-capturó" aunque sí se capturó. Por eso el corte admite `DIAS_DE_GRACIA` (3) días
-después de la factura (`facturasGasolinaRepo.ts`).
+capturó" aunque sí se capturó. Por eso el corte admite `DIAS_DE_GRACIA` (7) días
+después de la factura (`facturasGasolinaRepo.ts`). Eran 3 y se quedaban cortos:
+en octubre de 2026 había cargas registradas 4 días después de su factura.
+
+El mismo margen limita cuánto se puede mover la fecha de una recarga ya
+conciliada (ver "El candado").
 
 Esos tickets se distinguen en el desplegable —"registrada 2 días después de la
 factura"— y **en empate de litros pierden** contra uno registrado hasta la fecha
@@ -135,6 +155,25 @@ negocio, es una señal: por debajo la factura simplemente viene en camino.
 
 Esas mismas recargas son las candidatas de la próxima factura de su gasolinera,
 así que la lista se vacía sola conforme se concilia.
+
+## Capturada en la gasolinera equivocada
+
+Un renglón que no casa con nada de su gasolinera busca, además, un ticket
+**idéntico registrado con otra**: los mismos litros a tres decimales, o el
+mismo importe con IVA al centavo y litros a menos de 0.1 L (con el IVA del
+propio renglón). Solo tickets que ninguna factura cobra y con fecha a menos de
+`DIAS_DE_GRACIA` de la factura, antes o después: entre estaciones, dos cargas
+redondas al mismo precio sí pueden coincidir, y la ventana lo vuelve
+improbable.
+
+No se propone: se avisa en el renglón ("parece capturada como Dakota") y en la
+cabecera, también en las facturas ya conciliadas, cuyos renglones sin casar son
+justo los que se sellaron como "nadie la capturó". El arreglo es corregir la
+gasolinera de la recarga; entonces sale como candidata normal. Si la factura ya
+estaba conciliada, hay que reabrirla.
+
+En octubre de 2026 encontró dos cargas de Vázquez capturadas como Dakota
+(factura G-44650), sin un solo falso positivo en las demás facturas.
 
 ## El renglón sin recarga es el producto
 

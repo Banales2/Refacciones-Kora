@@ -54,18 +54,42 @@ export interface RenglonFactura {
   id:             number
   descripcion:    string | null
   cantidad:       number
+  /** Como lo imprime el papel: en combustible, sin IVA. */
   importe:        number
+  /** Con su IVA: lo comparable con el costo del ticket, que se pagó con IVA. */
+  importe_con_iva: number
+  /** El IVA del renglón no viene en el papel: se repartió o salió de la tasa. */
+  iva_estimado:   boolean
   ticket_id:      number | null
   recarga_id:     number | null
   recarga_fecha:  string | null
   ticket_litros:  number | null
-  /** Lo que se pagó en la bomba. No comparable con `importe` si hay tasa. */
+  /** Lo que se pagó en la bomba, con IVA: se compara con `importe_con_iva`. */
   ticket_costo:   number | null
   vehiculo:       string | null
   conductor:      string | null
   vale_folio:     string | null
   /** Lo que el sistema propone para un renglón todavía sin casar. */
   sugerido_ticket_id: number | null
+  /** Litros exactos, o el mismo importe con IVA y litros casi iguales. */
+  sugerido_por:   'cantidad' | 'importe' | null
+  /**
+   * Tickets idénticos a este renglón registrados con otra gasolinera: casi
+   * seguro la recarga se capturó en la estación equivocada. Solo se avisa.
+   */
+  en_otra_gasolinera: TicketEnOtraGasolinera[]
+}
+
+/** Un ticket de otra gasolinera idéntico a un renglón sin casar. */
+export interface TicketEnOtraGasolinera {
+  ticket_id:  number
+  recarga_id: number
+  gasolinera: string
+  fecha:      string
+  litros:     number
+  costo:      number
+  vehiculo:   string
+  conductor:  string
 }
 
 /** Un ticket de recarga que algún renglón podría estar cobrando. */

@@ -59,13 +59,21 @@ export interface RenglonFactura {
   id: number
   descripcion: string | null
   cantidad: number
+  /** Como lo imprime el papel: en combustible, sin IVA. */
   importe: number
+  /**
+   * El renglón con su IVA: lo que de verdad cobra, y lo único comparable con
+   * el costo del ticket, que es lo que se pagó en la bomba. Ver `CON_IVA_SQL`.
+   */
+  importe_con_iva: number
+  /** El IVA del renglón no viene en el papel y se repartió o salió de la tasa. */
+  iva_estimado: boolean
   ticket_id: number | null
   recarga_id: number | null
   // Lo del ticket casado, para enseñarlo junto al renglón.
   recarga_fecha: string | null
   ticket_litros: number | null
-  /** Lo que se pagó en la bomba. No es comparable con `importe` si hay tasa. */
+  /** Lo que se pagó en la bomba, con IVA: se compara con `importe_con_iva`. */
   ticket_costo: number | null
   vehiculo: string | null
   conductor: string | null
@@ -80,9 +88,13 @@ export interface RenglonFactura {
  * La fecha de la recarga es la de captura, y no siempre la de la carga: la del
  * sábado se registra el lunes, la de un puente el martes. Con el corte exacto,
  * esa recarga ni aparecía como opción y su renglón salía como "carga que nadie
- * capturó" aunque sí se capturó. Tres días cubren el fin de semana y un puente.
+ * capturó" aunque sí se capturó.
+ *
+ * Eran tres (fin de semana y un puente) y se quedaban cortos: en octubre de
+ * 2026 había cargas registradas cuatro días después de su factura que no
+ * salían como opción. Siete cubren una semana de captura atrasada.
  */
-export const DIAS_DE_GRACIA = 3
+export const DIAS_DE_GRACIA = 7
 
 export interface TicketCandidato {
   /** El del ticket: es lo que se casa. */
@@ -349,18 +361,50 @@ export async function crearImportada(
   }
 }
 
+/**
+ * El renglón con su IVA, para ponerlo junto al costo del ticket.
+ *
+ * El importe del papel viene sin IVA y el ticket es lo que se pagó en la bomba,
+ * con IVA: lado a lado, siempre parecía que la gasolinera cobraba de menos.
+ * Con el IVA del propio renglón (lo trae todo XML importado), importe + IVA da
+ * el ticket al centavo. Sin él:
+ *
+ *   - capturada a mano con el IVA del papel → se reparte por importe. Es
+ *     estimación: el IVA no se cobra sobre el IEPS, que va por litro.
+ *   - capturada con tasa (antes de la 065) → importe × (1 + tasa). Da de más,
+ *     por lo mismo.
+ *   - sin IVA ni tasa → los importes ya lo incluían (migración 020).
+ */
+const CON_IVA_SQL = `
+  CAST(CASE
+    WHEN fr.iva IS NOT NULL      THEN fr.importe + fr.iva
+    WHEN f.iva IS NOT NULL       THEN fr.importe + f.iva * fr.importe / NULLIF(s.subtotal, 0)
+    WHEN f.tasa_iva IS NOT NULL  THEN fr.importe * (1 + f.tasa_iva / 100)
+    ELSE fr.importe
+  END AS DECIMAL(18, 2))
+`
+
 /** Los renglones de la factura con lo que se sepa de su recarga casada. */
 export async function renglones(facturaId: number): Promise<RenglonFactura[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id', sql.Int, facturaId)
     .query(`
-      SELECT fr.id, fr.descripcion, fr.cantidad, fr.importe, fr.ticket_id, fr.recarga_id,
+      SELECT fr.id, fr.descripcion, fr.cantidad, fr.importe,
+             ${CON_IVA_SQL} AS importe_con_iva,
+             CAST(CASE WHEN fr.iva IS NULL AND (f.iva IS NOT NULL OR f.tasa_iva IS NOT NULL)
+                       THEN 1 ELSE 0 END AS BIT) AS iva_estimado,
+             fr.ticket_id, fr.recarga_id,
              CONVERT(char(10), rc.fecha, 23) AS recarga_fecha,
              t.litros AS ticket_litros, t.costo AS ticket_costo,
              CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
              co.nombre AS conductor, vg.folio AS vale_folio
       FROM facturas_gasolina_renglones fr
+      JOIN facturas_gasolina f ON f.id = fr.factura_id
+      CROSS APPLY (
+        SELECT SUM(x.importe) AS subtotal
+        FROM facturas_gasolina_renglones x WHERE x.factura_id = fr.factura_id
+      ) s
       LEFT JOIN recargas_combustible_tickets t ON t.id = fr.ticket_id
       LEFT JOIN recargas_combustible rc ON rc.id = fr.recarga_id
       LEFT JOIN vehiculos    v  ON v.id  = rc.vehiculo_id
@@ -425,6 +469,79 @@ export async function candidatas(
   return r.recordset.map((c) => ({
     ...c, litros: Number(c.litros), costo: Number(c.costo),
   })) as TicketCandidato[]
+}
+
+/** Un ticket de otra gasolinera idéntico a un renglón sin casar. */
+export interface TicketEnOtraGasolinera {
+  renglon_id: number
+  ticket_id:  number
+  recarga_id: number
+  gasolinera: string
+  fecha:      string
+  litros:     number
+  costo:      number
+  vehiculo:   string
+  conductor:  string
+}
+
+/**
+ * Tickets registrados con OTRA gasolinera que son idénticos a un renglón sin
+ * casar de esta factura: lo más probable es que alguien eligió la estación
+ * equivocada al capturar la recarga. En octubre de 2026 dos cargas de
+ * Vázquez estaban capturadas como Dakota, y su factura las daba por "nadie
+ * las capturó".
+ *
+ * Idéntico es lo mismo que pide la propuesta normal: litros iguales a tres
+ * decimales, o el mismo importe con IVA al centavo y litros a menos de
+ * `litrosTolerancia` — esto último solo con el IVA del propio renglón, que es
+ * el que da el ticket exacto. Y con un corte de fecha alrededor de la factura,
+ * porque entre estaciones dos cargas redondas ($2,000 al mismo precio) sí
+ * pueden coincidir; dentro de una semana es mucho menos probable.
+ *
+ * No se proponen: solo se avisan. Arreglarlo es corregir la gasolinera de la
+ * recarga, y entonces sale como candidata normal.
+ */
+export async function ticketsEnOtraGasolinera(
+  facturaId: number, litrosTolerancia: number,
+): Promise<TicketEnOtraGasolinera[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id',     sql.Int, facturaId)
+    .input('gracia', sql.Int, DIAS_DE_GRACIA)
+    .input('tol',    sql.Decimal(10, 3), litrosTolerancia)
+    .query(`
+      SELECT fr.id AS renglon_id, t.id AS ticket_id, t.recarga_id,
+             g.nombre AS gasolinera,
+             CONVERT(char(10), rc.fecha, 23) AS fecha,
+             t.litros, t.costo,
+             CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
+             co.nombre AS conductor
+      FROM facturas_gasolina_renglones fr
+      JOIN facturas_gasolina f ON f.id = fr.factura_id
+      JOIN recargas_combustible rc
+        ON rc.gasolinera_id <> f.gasolinera_id
+       AND rc.fecha BETWEEN DATEADD(day, -@gracia, f.fecha) AND DATEADD(day, @gracia, f.fecha)
+      JOIN recargas_combustible_tickets t ON t.recarga_id = rc.id
+      JOIN gasolineras  g  ON g.id  = rc.gasolinera_id
+      JOIN vehiculos    v  ON v.id  = rc.vehiculo_id
+      JOIN modelos      mo ON mo.id = v.modelo_id
+      JOIN conductores  co ON co.id = rc.conductor_id
+      WHERE fr.factura_id = @id
+        AND fr.ticket_id IS NULL
+        AND (
+          ROUND(t.litros, 3) = ROUND(fr.cantidad, 3)
+          OR (fr.iva IS NOT NULL
+              AND ABS(t.costo - ROUND(fr.importe + fr.iva, 2)) < 0.005
+              AND ABS(t.litros - fr.cantidad) <= @tol)
+        )
+        -- Si otra factura ya lo cobra, ese ticket está bien donde está.
+        AND NOT EXISTS (
+          SELECT 1 FROM facturas_gasolina_renglones otro WHERE otro.ticket_id = t.id
+        )
+      ORDER BY fr.id, rc.fecha DESC, t.id`)
+  return r.recordset.map((c) => ({
+    ...c, litros: Number(c.litros), costo: Number(c.costo),
+  })) as TicketEnOtraGasolinera[]
 }
 
 export interface Casado {
