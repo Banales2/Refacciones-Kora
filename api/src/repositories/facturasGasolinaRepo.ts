@@ -129,16 +129,9 @@ const TOTAL_SQL = `
   ) AS DECIMAL(18, 2))
 `
 
-const SELECT_FACTURA = `
-  SELECT f.id, f.gasolinera_id, g.nombre AS gasolinera, f.folio,
-         CONVERT(char(10), f.fecha, 23) AS fecha,
-         f.tasa_iva, f.iva, f.capturado_por,
-         CONVERT(varchar(19), f.conciliada_en, 126) AS conciliada_en,
-         f.conciliada_por, f.nota,
-         s.renglones, s.casados, s.subtotal,
-         ${TOTAL_SQL} AS total,
-         CAST(CASE WHEN f.iva IS NULL AND f.tasa_iva IS NOT NULL THEN 1 ELSE 0 END AS BIT)
-           AS total_estimado
+// Aparte del SELECT porque el listado filtra por el total y por cuántos
+// renglones casaron, y el conteo necesita las mismas columnas que el filtro.
+const FROM_FACTURA = `
   FROM facturas_gasolina f
   JOIN gasolineras g ON g.id = f.gasolinera_id
   CROSS APPLY (
@@ -150,6 +143,29 @@ const SELECT_FACTURA = `
   ) s
 `
 
+const SELECT_FACTURA = `
+  SELECT f.id, f.gasolinera_id, g.nombre AS gasolinera, f.folio,
+         CONVERT(char(10), f.fecha, 23) AS fecha,
+         f.tasa_iva, f.iva, f.capturado_por,
+         CONVERT(varchar(19), f.conciliada_en, 126) AS conciliada_en,
+         f.conciliada_por, f.nota,
+         s.renglones, s.casados, s.subtotal,
+         ${TOTAL_SQL} AS total,
+         CAST(CASE WHEN f.iva IS NULL AND f.tasa_iva IS NOT NULL THEN 1 ELSE 0 END AS BIT)
+           AS total_estimado
+  ${FROM_FACTURA}
+`
+
+/**
+ * "9990", "$9,990.00" o "370.137" → número; lo demás → null. Con un número se
+ * busca también por dinero y litros: es como se pregunta por una factura
+ * cuando se tiene el ticket en la mano.
+ */
+function comoNumero(texto: string): number | null {
+  const limpio = texto.replace(/[$,\s]/g, '')
+  return /^\d+(\.\d+)?$/.test(limpio) ? Number(limpio) : null
+}
+
 export interface FacturaGasolinaQuery {
   page: number
   pageSize: number
@@ -158,11 +174,14 @@ export interface FacturaGasolinaQuery {
   desde?: string
   hasta?: string
   por_conciliar?: boolean
+  estado?: 'por_conciliar' | 'conciliada' | 'con_faltantes'
+  total_min?: number
+  total_max?: number
 }
 
 export async function findAll(
   p: FacturaGasolinaQuery,
-): Promise<{ data: FacturaGasolina[]; total: number }> {
+): Promise<{ data: FacturaGasolina[]; total: number; suma: number }> {
   const pool = await getPool()
   const req = pool.request()
     .input('offset', sql.Int, (p.page - 1) * p.pageSize)
@@ -174,12 +193,54 @@ export async function findAll(
     where.push('f.gasolinera_id = @gid')
   }
   if (p.search) {
-    req.input('search', `%${p.search}%`)
-    where.push('(f.folio LIKE @search OR g.nombre LIKE @search)')
+    req.input('search', sql.NVarChar(110), `%${p.search.trim()}%`)
+    // Folio, gasolinera, UUID, y lo que se sabe de las recargas que ya casaron:
+    // unidad, placas, chofer y vale. Lo que trae el ticket en la mano.
+    const opciones = [
+      'f.folio LIKE @search', 'g.nombre LIKE @search', 'f.uuid LIKE @search',
+      `EXISTS (
+        SELECT 1 FROM facturas_gasolina_renglones rb
+        JOIN recargas_combustible rcb ON rcb.id = rb.recarga_id
+        JOIN vehiculos   vb ON vb.id = rcb.vehiculo_id
+        JOIN modelos     mb ON mb.id = vb.modelo_id
+        JOIN conductores cb ON cb.id = rcb.conductor_id
+        LEFT JOIN vales_gasolina vgb ON vgb.id = rcb.vale_id
+        WHERE rb.factura_id = f.id
+          AND (vb.numero_serie LIKE @search OR vb.placas LIKE @search
+               OR CONCAT(mb.marca, ' ', mb.nombre) LIKE @search
+               OR cb.nombre LIKE @search OR vgb.folio LIKE @search))`,
+    ]
+    // Con un número, también el dinero y los litros: el total, o un renglón
+    // por su importe —con o sin IVA, porque el ticket trae el que se pagó y el
+    // papel el de antes— o por sus litros.
+    const numero = comoNumero(p.search)
+    if (numero !== null) {
+      req.input('num', sql.Decimal(18, 6), numero)
+      opciones.push(
+        `ABS(${TOTAL_SQL} - @num) < 0.01`,
+        `EXISTS (
+          SELECT 1 FROM facturas_gasolina_renglones rn
+          WHERE rn.factura_id = f.id
+            AND (ABS(rn.importe - @num) < 0.01
+                 OR ABS(rn.importe + COALESCE(rn.iva, 0) - @num) < 0.01
+                 OR ABS(rn.cantidad - @num) < 0.01))`,
+      )
+    }
+    where.push(`(${opciones.join(' OR ')})`)
   }
   if (p.desde) { req.input('desde', sql.Date, p.desde); where.push('f.fecha >= @desde') }
   if (p.hasta) { req.input('hasta', sql.Date, p.hasta); where.push('f.fecha <= @hasta') }
-  if (p.por_conciliar) where.push('f.conciliada_en IS NULL')
+  if (p.total_min !== undefined) {
+    req.input('tmin', sql.Decimal(18, 2), p.total_min)
+    where.push(`${TOTAL_SQL} >= @tmin`)
+  }
+  if (p.total_max !== undefined) {
+    req.input('tmax', sql.Decimal(18, 2), p.total_max)
+    where.push(`${TOTAL_SQL} <= @tmax`)
+  }
+  if (p.por_conciliar || p.estado === 'por_conciliar') where.push('f.conciliada_en IS NULL')
+  if (p.estado === 'conciliada') where.push('f.conciliada_en IS NOT NULL')
+  if (p.estado === 'con_faltantes') where.push('s.casados < s.renglones')
   const filtro = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
   const r = await req.query(`
@@ -188,15 +249,16 @@ export async function findAll(
     ORDER BY f.fecha DESC, f.id DESC
     OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
 
-    SELECT COUNT(*) AS total
-    FROM facturas_gasolina f
-    JOIN gasolineras g ON g.id = f.gasolinera_id
+    SELECT COUNT(*) AS total, COALESCE(SUM(${TOTAL_SQL}), 0) AS suma
+    ${FROM_FACTURA}
     ${filtro};
   `)
 
+  const resumen = (r.recordsets[1] as unknown as { total: number; suma: number }[])[0]
   return {
     data: r.recordsets[0] as unknown as FacturaGasolina[],
-    total: (r.recordsets[1] as unknown as { total: number }[])[0].total,
+    total: resumen.total,
+    suma: Number(resumen.suma),
   }
 }
 

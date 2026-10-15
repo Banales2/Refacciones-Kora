@@ -17,6 +17,9 @@ export async function facturasGasolinaList(
       desde: req.query.get('desde') ?? undefined,
       hasta: req.query.get('hasta') ?? undefined,
       por_conciliar: req.query.get('por_conciliar') ?? undefined,
+      estado: req.query.get('estado') ?? undefined,
+      total_min: req.query.get('total_min') ?? undefined,
+      total_max: req.query.get('total_max') ?? undefined,
     })
     const r = await service.getAll(params)
     return {
@@ -24,6 +27,8 @@ export async function facturasGasolinaList(
       jsonBody: {
         data: r.data,
         pagination: { page: r.page, pageSize: r.pageSize, total: r.total },
+        /** Lo que suman TODAS las que pasan el filtro, no solo esta página. */
+        suma: r.suma,
       },
     }
   } catch (err) { return handleError(err, ctx) }

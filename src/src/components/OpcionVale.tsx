@@ -21,7 +21,7 @@ export type OpcionVale = {
   busqueda: string
 }
 
-function normalizar(s: string): string {
+export function normalizar(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
 

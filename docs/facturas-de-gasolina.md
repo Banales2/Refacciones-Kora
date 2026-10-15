@@ -269,7 +269,7 @@ pegó.
 
 | Ruta | Rol | Qué hace |
 |---|---|---|
-| `GET /facturas-gasolina` | admin, editor, lector | Lista, con `?por_conciliar=1` |
+| `GET /facturas-gasolina` | admin, editor, lector | Lista. Filtros: `gasolinera_id`, `desde`/`hasta`, `total_min`/`total_max`, `estado` (`por_conciliar`, `conciliada`, `con_faltantes`) y `search`. Devuelve también `suma`, el total de todo lo filtrado |
 | `POST /facturas-gasolina` | admin, editor | Alta a mano: cabecera y renglones |
 | `POST /facturas-gasolina/importar` | admin, editor | Alta desde el XML |
 | `PUT /facturas-gasolina/{id}/iva` | admin, editor | Pone el IVA del papel a una capturada con tasa |
@@ -293,6 +293,19 @@ Dos pestañas: **Facturas** y **Recargas sin factura**.
 La primera lista con estado (`Por conciliar`, `Cuadrada`, `N sin capturar`), y al
 abrir una factura: tres tarjetas —total, renglones casados, importe sin capturar— y la
 tabla de renglones con un desplegable de recargas por cada uno.
+
+**Buscar.** Se filtra por gasolinera, fechas, rango del total y estado. El
+buscador encuentra por folio, gasolinera, UUID y por lo de las recargas ya
+casadas (unidad, placas, chofer, vale); y si lo que se escribe es un número
+—"9990", "$1,870.22", "370.137"— también por el total, por el importe de un
+renglón con o sin IVA, o por sus litros. Es como se busca con el ticket en la
+mano.
+
+**El desplegable de recargas** usa el formato de los vales (`OpcionTicket.tsx`):
+litros, costo y fecha arriba; chofer, unidad, vale y "ticket 2 de 3" abajo. Las
+que coinciden con el renglón van primero con su etiqueta —*Mismos litros* o
+*Mismo importe*, con el mismo criterio que la propuesta—, y las registradas
+después de la factura llevan "+N días". Se busca por palabras en todo eso.
 
 **También se ven desde el catálogo**: en Catálogos → Gasolineras, al abrir una
 estación el cajón tiene dos pestañas. *Recargas* dice lo que la flota cargó ahí,

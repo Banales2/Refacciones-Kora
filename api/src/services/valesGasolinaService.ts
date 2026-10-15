@@ -76,6 +76,21 @@ async function resolverCreador(
   return cuenta.email.trim()
 }
 
+// Un vale es de alguien si quedó a su nombre (`creado_por`: entregó el papel)
+// o si él lo capturó (`capturado_por`). Espejo de `esValePropio` en el frontend.
+export function esValePropio(
+  vale: Pick<ValeGasolina, 'creado_por' | 'capturado_por'>, usuario: string,
+): boolean {
+  const u = usuario.trim().toLowerCase()
+  return [vale.creado_por, vale.capturado_por].some((c) => !!c && c.trim().toLowerCase() === u)
+}
+
+function exigirValePropio(vale: ValeGasolina, usuario: string): void {
+  if (!esValePropio(vale, usuario)) {
+    throw new AppError('Solo puedes archivar los vales que entregaste o capturaste', 403, 'FORBIDDEN')
+  }
+}
+
 export async function getById(id: number): Promise<ValeGasolina> {
   const vale = await repo.findById(id)
   if (!vale) throw new NotFoundError('Vale')
@@ -99,10 +114,17 @@ export async function getAll(incluirArchivados = false): Promise<ValeGasolina[]>
  * Uno que todavía está en plazo (`creado`) solo lo archiva un admin: el
  * editor archiva lo que ya se dio por perdido, y adelantarse a los dos días es
  * sacar de la lista un papel que todavía puede cargarse esta tarde.
+ *
+ * `soloPropiosDe`: el responsable archiva solo sus vales —los que quedaron a su
+ * nombre o los que él capturó—, que son los papeles por los que tiene que
+ * responder. Con las mismas reglas del editor.
  */
-export async function archivar(id: number, motivo: string | null, esAdmin: boolean): Promise<void> {
+export async function archivar(
+  id: number, motivo: string | null, esAdmin: boolean, soloPropiosDe?: string,
+): Promise<void> {
   const vale = await repo.findById(id)
   if (!vale) throw new NotFoundError('Vale')
+  if (soloPropiosDe !== undefined) exigirValePropio(vale, soloPropiosDe)
   if (vale.estado === 'creado' && !esAdmin) {
     throw new AppError(
       `El vale ${vale.folio} todavía no se da por perdido. Solo un admin puede archivar ` +
@@ -122,9 +144,10 @@ export async function archivar(id: number, motivo: string | null, esAdmin: boole
 }
 
 /** Apareció. Vuelve a la lista y se puede volver a gastar. */
-export async function restaurar(id: number): Promise<void> {
+export async function restaurar(id: number, soloPropiosDe?: string): Promise<void> {
   const vale = await repo.findById(id)
   if (!vale) throw new NotFoundError('Vale')
+  if (soloPropiosDe !== undefined) exigirValePropio(vale, soloPropiosDe)
   if (!(await archivadoRepo.restaurar('vales_gasolina', id))) {
     throw new ConflictError(`El vale ${vale.folio} no estaba archivado`)
   }

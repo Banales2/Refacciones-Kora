@@ -13,7 +13,8 @@ import * as service from '../services/valesGasolinaService'
  * El mecanismo es el mismo que archivar un catálogo (migración 033) y usa el
  * mismo repositorio, pero no la misma puerta: archivar una sucursal es de
  * admin porque cambia el catálogo de toda la empresa; dar por perdido un papel
- * de gasolina es trabajo de todos los días de quien lleva los vales.
+ * de gasolina es trabajo de todos los días de quien lleva los vales —incluido
+ * el responsable de sucursal, con los suyos—.
  *
  * Son dos rutas POST y no un DELETE por lo de siempre: la API no expone ese
  * verbo en ninguna parte para poder bloquearlo entero en el borde. Ver
@@ -31,16 +32,20 @@ function handler(accion: 'archivar' | 'restaurar') {
     req: HttpRequest, ctx: InvocationContext,
   ): Promise<HttpResponseInit> {
     try {
-      const user = requireRole(req, 'admin', 'editor')
+      // El responsable también, pero solo sus propios vales: es quien sale a
+      // preguntar por el papel en su sucursal y sabe cuándo ya no va a aparecer.
+      const user = requireRole(req, 'admin', 'editor', 'responsable')
       const id = parseInt(req.params.id, 10)
       if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
+      const esAdmin = user.userRoles.includes('admin')
+      const soloPropios = !esAdmin && !user.userRoles.includes('editor') ? user.userDetails : undefined
 
       const antes = await capturar('vales_gasolina', id)
       if (accion === 'restaurar') {
-        await service.restaurar(id)
+        await service.restaurar(id, soloPropios)
       } else {
         const { motivo } = Schema.parse(await req.json().catch(() => ({})))
-        await service.archivar(id, motivo ?? null, user.userRoles.includes('admin'))
+        await service.archivar(id, motivo ?? null, esAdmin, soloPropios)
       }
 
       await audit({

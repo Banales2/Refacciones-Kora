@@ -18,8 +18,8 @@ export const RENGLONES_SIN_CASAR = 'RENGLONES_SIN_CASAR'
 export const FACTURA_CONCILIADA = 'FACTURA_CONCILIADA'
 
 export async function getAll(p: repo.FacturaGasolinaQuery) {
-  const { data, total } = await repo.findAll(p)
-  return { data, total, page: p.page, pageSize: p.pageSize }
+  const { data, total, suma } = await repo.findAll(p)
+  return { data, total, suma, page: p.page, pageSize: p.pageSize }
 }
 
 export async function crear(

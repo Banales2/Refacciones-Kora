@@ -61,6 +61,13 @@ export interface Permisos {
    */
   puedeCorregirCaptura: (capturadoPor: string | null) => boolean
   /**
+   * Si puede dar por perdido un vale (o restaurarlo), sin contar el plazo de
+   * los dos días, que es aparte. El editor, cualquiera; el responsable, solo
+   * los suyos: a su nombre o capturados por él. Espejo de `esValePropio` de la
+   * API.
+   */
+  puedeArchivarVale: (vale: { creado_por: string; capturado_por: string | null }) => boolean
+  /**
    * Si puede modificar lo que ya existe. El practicante da de alta pero no
    * corrige: si se equivocó, lo arregla un editor. La excepción son sus propios
    * vales y recargas; ver `puedeCorregirCaptura`.
@@ -162,6 +169,13 @@ export function usePermisos(): Permisos {
       if (!esPracticante) return !esResponsable
       return !!capturadoPor && !!user
         && capturadoPor.toLowerCase() === user.userDetails.toLowerCase()
+    },
+    puedeArchivarVale: (vale) => {
+      if (esPracticante || rol === 'lector') return false
+      if (!esResponsable) return true
+      const u = user?.userDetails.trim().toLowerCase()
+      return !!u && [vale.creado_por, vale.capturado_por]
+        .some((c) => !!c && c.trim().toLowerCase() === u)
     },
     puedeEditar: !esPracticante && !esResponsable,
     puedeDarDeAlta: !esResponsable,

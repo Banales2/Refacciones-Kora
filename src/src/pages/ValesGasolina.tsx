@@ -408,9 +408,10 @@ function ValesTabla({
   onArchivar: (v: ValeGasolina) => void
   onNavigateConductor?: (id: number) => void
 }) {
-  // El vale se captura una vez; darlo por perdido es cosa de un editor.
-  // Corregirlo también, salvo el practicante con los que él capturó.
-  const { esAdmin, puedeEditar, puedeCorregirCaptura } = usePermisos()
+  // El vale se captura una vez; darlo por perdido es cosa de un editor, o del
+  // responsable con los suyos. Corregirlo también es del editor, salvo el
+  // practicante con los que él capturó.
+  const { esAdmin, puedeArchivarVale, puedeCorregirCaptura } = usePermisos()
   const restaurarMut = useArchivarVale()
 
   return (
@@ -485,7 +486,7 @@ function ValesTabla({
                       perdió, se gastó. Uno sin usar todavía puede aparecer esta
                       tarde, así que adelantarse a los dos días es del admin
                       (la API también lo impone). */}
-                  {((puedeEditar && v.estado === 'perdido') || (esAdmin && v.estado === 'creado')) && (
+                  {((puedeArchivarVale(v) && v.estado === 'perdido') || (esAdmin && v.estado === 'creado')) && (
                     <Tooltip label={v.estado === 'creado' ? 'Archivar sin usar' : 'Darlo por perdido'}>
                       <ActionIcon variant="subtle" color="gray" size="sm"
                         aria-label={`Archivar el vale ${v.folio}`}
@@ -494,7 +495,7 @@ function ValesTabla({
                       </ActionIcon>
                     </Tooltip>
                   )}
-                  {puedeEditar && v.estado === 'archivado' && (
+                  {puedeArchivarVale(v) && v.estado === 'archivado' && (
                     <Tooltip label="Apareció: devolverlo a la lista">
                       <ActionIcon variant="subtle" color="teal" size="sm"
                         aria-label={`Restaurar el vale ${v.folio}`}

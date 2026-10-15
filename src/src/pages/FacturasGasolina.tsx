@@ -29,7 +29,7 @@
 import { useState } from 'react'
 import {
   Alert, Badge, Button, Card, Center, Group, Loader, Modal, NumberInput,
-  Pagination, Select, Stack, Switch, Table, Tabs, Text, Textarea, TextInput,
+  Pagination, SegmentedControl, Select, Stack, Table, Tabs, Text, Textarea, TextInput,
   Tooltip,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
@@ -42,11 +42,14 @@ import {
   useReabrirFacturaGasolina, useRecargasSinFacturar, PRODUCTOS, RENGLONES_SIN_CASAR,
 } from '../hooks/useFacturasGasolina'
 import type {
-  Candidatas, FacturaGasolina, Producto, RenglonNuevo, TicketCandidato,
+  Candidatas, FacturaGasolina, Producto, RenglonNuevo,
 } from '../hooks/useFacturasGasolina'
 import { useGasolineras } from '../hooks/useGasolineras'
 import ImportarFacturasGasolina from '../components/ImportarFacturasGasolina'
 import { SelectCatalogo } from '../components/SelectCatalogo'
+import {
+  filtrarTickets, opcionTicket, ordenarTickets, renderOpcionTicket,
+} from '../components/OpcionTicket'
 import { FechaInput } from '../components/FechaInput'
 import { ApiError } from '../lib/api'
 import { formatMXN, formatFecha } from '../lib/formato'
@@ -323,20 +326,6 @@ function numeroTicket(t: { ticket_n: number; tickets: number }): string {
 }
 
 /**
- * Cómo se describe un ticket en el desplegable de cada renglón. La registrada
- * después de la factura se dice: es la del sábado capturada el lunes, o una carga
- * de después que no le toca a esta factura, y quien concilia es quien lo sabe.
- */
-function etiquetaTicket(t: TicketCandidato): string {
-  const n = numeroTicket(t)
-  const despues = t.dias_despues > 0
-    ? ` · registrada ${t.dias_despues} día${t.dias_despues === 1 ? '' : 's'} después de la factura`
-    : ''
-  return `${formatFecha(t.fecha)} · ${t.litros} L · ${formatMXN(t.costo)} · ${t.vehiculo}` +
-    (n ? ` · ${n}` : '') + despues
-}
-
-/**
  * El cuadre, ya con los renglones y las candidatas en la mano.
  *
  * Vive aparte del modal porque la propuesta del servidor es estado INICIAL, no
@@ -523,9 +512,9 @@ function CuadreFactura({
               const elegida = eleccion[r.id] ?? null
               // Se ofrecen las libres más la ya elegida por este renglón: sin
               // eso, la propia elección desaparecería de su desplegable.
-              const opciones = tickets
+              const opciones = ordenarTickets(tickets
                 .filter((c) => !usadas.has(c.id) || c.id === elegida)
-                .map((c) => ({ value: String(c.id), label: etiquetaTicket(c) }))
+                .map((c) => opcionTicket(c, r)))
               const ticket = elegida !== null ? porId.get(elegida) : undefined
               // Lo que la gasolinera cobra contra lo que dice el ticket, los dos
               // con IVA. Con el IVA estimado no se señala: no cuadra al centavo
@@ -562,6 +551,11 @@ function CuadreFactura({
                       placeholder="Sin capturar"
                       disabled={cerrada || !esAdmin}
                       data={opciones}
+                      renderOption={renderOpcionTicket}
+                      filter={filtrarTickets}
+                      nothingFoundMessage="Ningún ticket coincide"
+                      maxDropdownHeight={320}
+                      comboboxProps={{ width: 460, position: 'bottom-start' }}
                       value={elegida !== null ? String(elegida) : null}
                       onChange={(v) => {
                         setEleccion((p) => ({ ...p, [r.id]: v ? Number(v) : null }))
@@ -822,11 +816,21 @@ function SinFacturarPanel() {
   )
 }
 
+type EstadoFiltro = '' | 'por_conciliar' | 'conciliada' | 'con_faltantes'
+
 export default function FacturasGasolina() {
   const [search, setSearch] = useState('')
   const [debounced] = useDebouncedValue(search, 300)
-  const [porConciliar, setPorConciliar] = useState(false)
+  const [estado, setEstado] = useState<EstadoFiltro>('')
+  const [gasolineraId, setGasolineraId] = useState<string | null>(null)
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
+  const [totalMin, setTotalMin] = useState<number | string>('')
+  const [totalMax, setTotalMax] = useState<number | string>('')
+  const [debMin] = useDebouncedValue(totalMin, 400)
+  const [debMax] = useDebouncedValue(totalMax, 400)
   const [page, setPage] = useState(1)
+  const gasolineras = useGasolineras()
   const [nueva, setNueva] = useState(false)
   const [importando, setImportando] = useState(false)
   const [conciliando, setConciliando] = useState<number | null>(null)
@@ -835,15 +839,27 @@ export default function FacturasGasolina() {
 
   const { data, isLoading, isError } = useFacturasGasolina({
     page, pageSize: PAGE_SIZE,
-    search: debounced || undefined,
-    por_conciliar: porConciliar || undefined,
+    search: debounced.trim() || undefined,
+    estado: estado || undefined,
+    gasolinera_id: gasolineraId ? Number(gasolineraId) : undefined,
+    desde: desde || undefined,
+    hasta: hasta || undefined,
+    total_min: debMin === '' ? undefined : Number(debMin),
+    total_max: debMax === '' ? undefined : Number(debMax),
   })
 
   const facturas = data?.data ?? []
   const total = data?.pagination.total ?? 0
+  const suma = data?.suma ?? 0
   const paginas = Math.ceil(total / PAGE_SIZE)
+  const hayFiltros = !!(debounced.trim() || estado || gasolineraId || desde || hasta
+    || totalMin !== '' || totalMax !== '')
 
   function filtrar(fn: () => void) { fn(); setPage(1) }
+  function limpiar() {
+    setSearch(''); setEstado(''); setGasolineraId(null); setDesde(''); setHasta('')
+    setTotalMin(''); setTotalMax(''); setPage(1)
+  }
 
   return (
     <Stack gap="md">
@@ -879,17 +895,50 @@ export default function FacturasGasolina() {
         <Tabs.Panel value="facturas" pt="md">
           <Stack gap="md">
       <TextInput
-        placeholder="Buscar por folio o gasolinera…"
+        placeholder="Folio, gasolinera, unidad, chofer, vale… o un monto o litros: 9990, 370.137"
         leftSection={<IconSearch size={16} />}
         value={search}
         onChange={(e) => filtrar(() => setSearch(e.currentTarget.value))}
       />
-      <Switch
-        size="xs"
-        label="Solo las que faltan por conciliar"
-        checked={porConciliar}
-        onChange={(e) => filtrar(() => setPorConciliar(e.currentTarget.checked))}
-      />
+      <Group gap="sm" align="flex-end" wrap="wrap">
+        <SelectCatalogo
+          label="Gasolinera" nombre="gasolineras" estado={gasolineras}
+          placeholder="Todas" clearable size="xs" w={200}
+          data={(gasolineras.data?.data ?? []).map((g) => ({ value: String(g.id), label: g.nombre }))}
+          value={gasolineraId} onChange={(v) => filtrar(() => setGasolineraId(v))}
+        />
+        <FechaInput
+          label="Desde" size="xs" w={140} clearable
+          value={desde} onChange={(v) => filtrar(() => setDesde(v ?? ''))}
+        />
+        <FechaInput
+          label="Hasta" size="xs" w={140} clearable
+          value={hasta} onChange={(v) => filtrar(() => setHasta(v ?? ''))}
+        />
+        <NumberInput
+          label="Total desde" size="xs" w={130} min={0} prefix="$" thousandSeparator=","
+          hideControls value={totalMin} onChange={(v) => filtrar(() => setTotalMin(v))}
+        />
+        <NumberInput
+          label="Total hasta" size="xs" w={130} min={0} prefix="$" thousandSeparator=","
+          hideControls value={totalMax} onChange={(v) => filtrar(() => setTotalMax(v))}
+        />
+      </Group>
+      <Group gap="sm" justify="space-between" wrap="wrap">
+        <SegmentedControl
+          size="xs" value={estado}
+          onChange={(v) => filtrar(() => setEstado(v as EstadoFiltro))}
+          data={[
+            { value: '', label: 'Todas' },
+            { value: 'por_conciliar', label: 'Por conciliar' },
+            { value: 'conciliada', label: 'Conciliadas' },
+            { value: 'con_faltantes', label: 'Con renglones sin casar' },
+          ]}
+        />
+        {hayFiltros && (
+          <Button size="compact-xs" variant="subtle" onClick={limpiar}>Quitar filtros</Button>
+        )}
+      </Group>
 
       {isError ? (
         <Alert color="red" title="Error">No se pudieron cargar las facturas.</Alert>
@@ -898,14 +947,16 @@ export default function FacturasGasolina() {
       ) : !facturas.length ? (
         <Center py="xl">
           <Text c="dimmed">
-            {debounced || porConciliar
+            {hayFiltros
               ? 'Ninguna factura coincide con el filtro.'
               : 'Todavía no hay facturas de gasolinera registradas.'}
           </Text>
         </Center>
       ) : (
         <>
-          <Text size="xs" c="dimmed">{total} factura{total === 1 ? '' : 's'}</Text>
+          <Text size="xs" c="dimmed">
+            {total} factura{total === 1 ? '' : 's'} · suman {formatMXN(suma)}
+          </Text>
           <Table withTableBorder striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>

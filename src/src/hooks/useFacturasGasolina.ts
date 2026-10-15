@@ -121,11 +121,18 @@ export interface FacturasGasolinaFiltros {
   desde?:         string
   hasta?:         string
   por_conciliar?: boolean
+  /** `con_faltantes`: con renglones sin casar, abiertas o ya selladas. */
+  estado?:        'por_conciliar' | 'conciliada' | 'con_faltantes'
+  /** Rango del total del papel, con IVA. */
+  total_min?:     number
+  total_max?:     number
 }
 
 interface FacturasGasolinaResponse {
   data: FacturaGasolina[]
   pagination: { page: number; pageSize: number; total: number }
+  /** Lo que suman todas las que pasan el filtro, no solo la página. */
+  suma: number
 }
 
 export function useFacturasGasolina(filtros: FacturasGasolinaFiltros, enabled = true) {

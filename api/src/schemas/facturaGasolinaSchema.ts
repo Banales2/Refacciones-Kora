@@ -146,6 +146,14 @@ export const FacturaGasolinaQuerySchema = z.object({
     .union([z.boolean(), z.string()])
     .transform((v) => v === true || v === 'true' || v === '1')
     .optional(),
+  /**
+   * `con_faltantes`: con renglones sin casar, abiertas o ya selladas. Son las
+   * cargas que la gasolinera cobra y nadie capturó.
+   */
+  estado: z.enum(['por_conciliar', 'conciliada', 'con_faltantes']).optional(),
+  /** Rango del total del papel (con IVA). */
+  total_min: z.coerce.number().min(0).optional(),
+  total_max: z.coerce.number().min(0).optional(),
 })
 
 /** Los tickets que ninguna factura ha reclamado. Reusa los filtros del listado. */
