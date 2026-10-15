@@ -489,18 +489,17 @@ export async function renglones(facturaId: number): Promise<RenglonFactura[]> {
  * El corte por fecha no tiene límite inferior a propósito: una carga de hace
  * tres meses que nadie facturó sigue siendo candidata legítima, y poner una
  * ventana la escondería justo cuando aparece la factura atrasada que la cobra.
+ * Por lo mismo no lleva TOP: un tope por cantidad es una ventana por la puerta
+ * de atrás, y se comía justo los más viejos. Lo que acota la lista es que lo ya
+ * facturado sale solo.
  */
-export async function candidatas(
-  facturaId: number, limite = 400,
-): Promise<TicketCandidato[]> {
+export async function candidatas(facturaId: number): Promise<TicketCandidato[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('id',     sql.Int, facturaId)
-    .input('limite', sql.Int, limite)
     .input('gracia', sql.Int, DIAS_DE_GRACIA)
     .query(`
-      SELECT TOP (@limite)
-             t.id, t.recarga_id, t.ticket_n, t.tickets,
+      SELECT t.id, t.recarga_id, t.ticket_n, t.tickets,
              CONVERT(char(10), rc.fecha, 23) AS fecha,
              t.litros, t.costo,
              CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
@@ -612,20 +611,69 @@ export interface Casado {
 }
 
 /**
- * Guarda a qué ticket corresponde cada renglón.
+ * Por qué un renglón no puede casarse con el ticket que mandaron. Son las
+ * mismas reglas que deciden si un ticket es candidato (ver `candidatas`): la
+ * pantalla solo ofrece esos, pero la API no puede fiarse de la pantalla, y el
+ * candado de las recargas conciliadas supone que nunca se casó un ticket de
+ * otra gasolinera.
+ */
+export type RechazoCasado =
+  | { motivo: 'renglon_ajeno';    renglon_id: number }
+  | { motivo: 'ticket_no_existe'; renglon_id: number; cantidad: number }
+  | { motivo: 'otra_gasolinera';  renglon_id: number; cantidad: number; gasolinera: string | null }
+  | { motivo: 'fuera_del_corte';  renglon_id: number; cantidad: number; fecha: string }
+  | { motivo: 'ya_facturado';     renglon_id: number; cantidad: number; folio: string }
+
+export type ResultadoGuardar =
+  | { estado: 'no_existe' }
+  | { estado: 'ya_conciliada' }
+  | { estado: 'rechazado'; rechazo: RechazoCasado }
+  /** Guardó los casados pero no selló: quedan renglones sin casar y no se confirmó. */
+  | { estado: 'sin_casar' }
+  | { estado: 'sellada' }
+
+/**
+ * Guarda a qué ticket corresponde cada renglón y, si se puede, sella la factura.
  *
  * Se sueltan todos primero y luego se asignan: lo que manda la pantalla es la
  * verdad completa, y calcular la diferencia contra lo que había solo agrega una
- * forma de equivocarse. El UNIQUE de `ticket_id` es quien impide de verdad que
- * dos renglones se lleven el mismo ticket. La recarga se copia del ticket.
+ * forma de equivocarse. La recarga se copia del ticket.
+ *
+ * TODO EN UNA TRANSACCIÓN, con la factura bloqueada desde el principio. Antes
+ * eran tres pasos sueltos —¿está sellada?, guardar, sellar— y dos admins a la
+ * vez podían terminar con la factura sellada por uno y los casados del otro:
+ * el segundo guardaba encima justo después del sello, y aunque a él le salía
+ * el 409, el daño ya estaba hecho.
+ *
+ * Cada ticket se valida contra las reglas de `candidatas`: de la gasolinera de
+ * la factura, hasta su fecha más los días de gracia y sin otra factura que lo
+ * cobre. El primero que no cumpla deshace todo.
+ *
+ * Con renglones sin casar y sin `confirmarSinCasar` los casados SÍ se guardan
+ * —el trabajo no se pierde— y la factura se queda abierta.
  */
-export async function guardarCasados(
+export async function guardarYSellar(
   facturaId: number, casados: Casado[],
-): Promise<void> {
+  sello: { confirmarSinCasar: boolean; quien: string; nota: string | null },
+): Promise<ResultadoGuardar> {
   const pool = await getPool()
   const tx = pool.transaction()
   await tx.begin()
   try {
+    const f = await tx.request()
+      .input('id', sql.Int, facturaId)
+      .query(`
+        SELECT conciliada_en FROM facturas_gasolina WITH (UPDLOCK, HOLDLOCK)
+        WHERE id = @id`)
+    if (f.recordset.length === 0) {
+      await tx.rollback()
+      return { estado: 'no_existe' }
+    }
+    if (f.recordset[0].conciliada_en !== null) {
+      await tx.rollback()
+      return { estado: 'ya_conciliada' }
+    }
+
     await tx.request()
       .input('id', sql.Int, facturaId)
       .query(`
@@ -634,23 +682,96 @@ export async function guardarCasados(
 
     for (const c of casados) {
       if (c.ticket_id === null) continue
-      await tx.request()
-        .input('rid', sql.Int, c.renglon_id)
-        .input('fid', sql.Int, facturaId)
-        .input('tid', sql.Int, c.ticket_id)
+      const u = await tx.request()
+        .input('rid',    sql.Int, c.renglon_id)
+        .input('fid',    sql.Int, facturaId)
+        .input('tid',    sql.Int, c.ticket_id)
+        .input('gracia', sql.Int, DIAS_DE_GRACIA)
         .query(`
           UPDATE fr
           SET ticket_id = t.id, recarga_id = t.recarga_id
           FROM facturas_gasolina_renglones fr
+          JOIN facturas_gasolina f ON f.id = fr.factura_id
           JOIN recargas_combustible_tickets t ON t.id = @tid
-          WHERE fr.id = @rid AND fr.factura_id = @fid`)
+          JOIN recargas_combustible rc ON rc.id = t.recarga_id
+          WHERE fr.id = @rid AND fr.factura_id = @fid
+            AND rc.gasolinera_id = f.gasolinera_id
+            AND rc.fecha <= DATEADD(day, @gracia, f.fecha)
+            AND NOT EXISTS (
+              SELECT 1 FROM facturas_gasolina_renglones otro
+              WHERE otro.ticket_id = t.id AND otro.factura_id <> @fid
+            )`)
+      if ((u.rowsAffected[0] ?? 0) === 0) {
+        const rechazo = await porQueNoCasa(tx, facturaId, c.renglon_id, c.ticket_id)
+        await tx.rollback()
+        return { estado: 'rechazado', rechazo }
+      }
     }
 
+    const pendientes = await tx.request()
+      .input('id', sql.Int, facturaId)
+      .query(`
+        SELECT COUNT(*) AS n FROM facturas_gasolina_renglones
+        WHERE factura_id = @id AND ticket_id IS NULL`)
+    if (pendientes.recordset[0].n > 0 && !sello.confirmarSinCasar) {
+      await tx.commit()
+      return { estado: 'sin_casar' }
+    }
+
+    await tx.request()
+      .input('id',    sql.Int,           facturaId)
+      .input('quien', sql.NVarChar(120), sello.quien)
+      .input('nota',  sql.NVarChar(255), sello.nota)
+      .query(`
+        UPDATE facturas_gasolina
+        SET conciliada_en = SYSUTCDATETIME(), conciliada_por = @quien, nota = @nota
+        WHERE id = @id`)
     await tx.commit()
+    return { estado: 'sellada' }
   } catch (err) {
     await tx.rollback()
     throw err
   }
+}
+
+/** Qué regla de `candidatas` no cumple el ticket. Corre dentro de la transacción. */
+async function porQueNoCasa(
+  tx: sql.Transaction, facturaId: number, renglonId: number, ticketId: number,
+): Promise<RechazoCasado> {
+  const r = await tx.request()
+    .input('rid',    sql.Int, renglonId)
+    .input('fid',    sql.Int, facturaId)
+    .input('tid',    sql.Int, ticketId)
+    .input('gracia', sql.Int, DIAS_DE_GRACIA)
+    .query(`
+      SELECT fr.cantidad,
+             t.id AS ticket_id,
+             CASE WHEN rc.gasolinera_id IS NULL OR rc.gasolinera_id <> f.gasolinera_id
+                  THEN 1 ELSE 0 END AS otra_gasolinera,
+             g.nombre AS gasolinera,
+             CASE WHEN rc.fecha > DATEADD(day, @gracia, f.fecha) THEN 1 ELSE 0 END AS fuera_del_corte,
+             CONVERT(char(10), rc.fecha, 23) AS fecha,
+             (SELECT TOP 1 otra.folio
+                FROM facturas_gasolina_renglones otro
+                JOIN facturas_gasolina otra ON otra.id = otro.factura_id
+               WHERE otro.ticket_id = @tid AND otro.factura_id <> @fid) AS folio
+      FROM facturas_gasolina_renglones fr
+      JOIN facturas_gasolina f ON f.id = fr.factura_id
+      LEFT JOIN recargas_combustible_tickets t ON t.id = @tid
+      LEFT JOIN recargas_combustible rc ON rc.id = t.recarga_id
+      LEFT JOIN gasolineras g ON g.id = rc.gasolinera_id
+      WHERE fr.id = @rid AND fr.factura_id = @fid`)
+  const d = r.recordset[0]
+  if (!d) return { motivo: 'renglon_ajeno', renglon_id: renglonId }
+  const cantidad = Number(d.cantidad)
+  if (d.ticket_id === null) return { motivo: 'ticket_no_existe', renglon_id: renglonId, cantidad }
+  if (d.otra_gasolinera) {
+    return { motivo: 'otra_gasolinera', renglon_id: renglonId, cantidad, gasolinera: d.gasolinera }
+  }
+  if (d.fuera_del_corte) {
+    return { motivo: 'fuera_del_corte', renglon_id: renglonId, cantidad, fecha: d.fecha }
+  }
+  return { motivo: 'ya_facturado', renglon_id: renglonId, cantidad, folio: d.folio ?? '?' }
 }
 
 /**
@@ -664,21 +785,6 @@ export async function setIva(facturaId: number, iva: number): Promise<boolean> {
     .input('iva', sql.Decimal(18, 2), iva)
     .query(`
       UPDATE facturas_gasolina SET iva = @iva
-      WHERE id = @id AND conciliada_en IS NULL`)
-  return (r.rowsAffected[0] ?? 0) > 0
-}
-
-export async function sellar(
-  facturaId: number, quien: string, nota: string | null,
-): Promise<boolean> {
-  const pool = await getPool()
-  const r = await pool.request()
-    .input('id',    sql.Int,           facturaId)
-    .input('quien', sql.NVarChar(120), quien)
-    .input('nota',  sql.NVarChar(255), nota)
-    .query(`
-      UPDATE facturas_gasolina
-      SET conciliada_en = SYSUTCDATETIME(), conciliada_por = @quien, nota = @nota
       WHERE id = @id AND conciliada_en IS NULL`)
   return (r.rowsAffected[0] ?? 0) > 0
 }

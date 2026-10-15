@@ -99,7 +99,9 @@ que cae dentro del periodo que la factura cobra. Se puede cambiar a mano.
 
 El corte por fecha no tiene límite inferior a propósito: una carga de hace tres
 meses que nadie facturó sigue siendo candidata legítima, y poner una ventana la
-escondería justo cuando aparece la factura atrasada que la cobra.
+escondería justo cuando aparece la factura atrasada que la cobra. Tampoco hay
+tope por cantidad: había un `TOP 400` que, ordenado del más nuevo al más viejo,
+dejaba fuera justo a esas cargas viejas.
 
 ### Los días de gracia
 
@@ -183,7 +185,20 @@ su importe, que la gasolinera está cobrando y que nadie registró.
 Sellar con renglones sin casar es legítimo —la recarga puede capturarse la semana
 que viene y entonces se reabre— pero exige `confirmar_sin_casar`, así que no pasa
 por descuido. La API responde 409 `RENGLONES_SIN_CASAR` con cuántos son y cuánto
-valen.
+valen. Los casados sí se quedan guardados: el trabajo no se pierde.
+
+Conciliar es **una sola transacción** con la factura bloqueada
+(`guardarYSellar` en `facturasGasolinaRepo.ts`): revisar que no esté sellada,
+guardar los casados y sellar. Eran tres pasos sueltos, y dos admins a la vez
+podían dejar la factura sellada por uno con los casados del otro.
+
+Ahí mismo se valida cada ticket con las reglas de las candidatas —de la
+gasolinera de la factura, dentro del corte, sin otra factura que lo cobre—, y el
+primero que no cumpla deshace todo con un 400 que dice cuál renglón y por qué.
+La pantalla solo ofrece candidatas, pero el candado depende de que nunca se case
+un ticket de otra gasolinera, y eso no puede quedar en manos del cliente. Un
+casado que dejó de ser candidato (la recarga cambió de gasolinera con la factura
+abierta) también se rechaza: hay que soltarlo o corregir la recarga.
 
 ## El candado
 

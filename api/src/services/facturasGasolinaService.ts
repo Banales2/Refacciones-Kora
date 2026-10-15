@@ -319,16 +319,6 @@ export interface ResultadoConciliacion {
 export async function conciliar(
   facturaId: number, datos: ConciliarGasolina, quien: string,
 ): Promise<ResultadoConciliacion> {
-  const factura = await repo.findById(facturaId)
-  if (!factura) throw new NotFoundError('Factura')
-
-  if (factura.conciliada_en !== null) {
-    throw new AppError(
-      'Esta factura ya fue conciliada. Reábrela para volver a cuadrarla.',
-      409, FACTURA_CONCILIADA,
-    )
-  }
-
   // Dos renglones no pueden llevarse el mismo ticket. El índice único lo
   // rechazaría de todos modos, pero con un error de constraint que no dice cuál.
   const vistos = new Set<number>()
@@ -344,10 +334,23 @@ export async function conciliar(
     renglon_id: c.renglon_id,
     ticket_id: c.ticket_id ?? null,
   }))
-  await repo.guardarCasados(facturaId, casados)
+  // Revisar, guardar y sellar van juntos en una transacción: ver `guardarYSellar`.
+  const r = await repo.guardarYSellar(facturaId, casados, {
+    confirmarSinCasar: datos.confirmar_sin_casar === true,
+    quien,
+    nota: datos.nota?.trim() || null,
+  })
+  if (r.estado === 'no_existe') throw new NotFoundError('Factura')
+  if (r.estado === 'ya_conciliada') {
+    throw new AppError(
+      'Esta factura ya fue conciliada. Reábrela para volver a cuadrarla.',
+      409, FACTURA_CONCILIADA,
+    )
+  }
+  if (r.estado === 'rechazado') throw new ValidationError(mensajeRechazo(r.rechazo))
 
   const rens = await repo.renglones(facturaId)
-  const sinCasar = rens.filter((r) => r.ticket_id === null)
+  const sinCasar = rens.filter((x) => x.ticket_id === null)
   const resultado: ResultadoConciliacion = {
     factura_id: facturaId,
     renglones: rens.length,
@@ -355,11 +358,11 @@ export async function conciliar(
     sin_casar: sinCasar.length,
     // Con IVA: es lo que se le va a pagar a la gasolinera por esas cargas, y lo
     // que valdrían capturadas como recarga.
-    importe_sin_casar: aCentavos(sinCasar.reduce((s, r) => s + r.importe_con_iva, 0)),
-    cantidad_sin_casar: Math.round(sinCasar.reduce((s, r) => s + r.cantidad, 0) * 1000) / 1000,
+    importe_sin_casar: aCentavos(sinCasar.reduce((s, x) => s + x.importe_con_iva, 0)),
+    cantidad_sin_casar: Math.round(sinCasar.reduce((s, x) => s + x.cantidad, 0) * 1000) / 1000,
   }
 
-  if (sinCasar.length > 0 && !datos.confirmar_sin_casar) {
+  if (r.estado === 'sin_casar') {
     throw new AppError(
       `${sinCasar.length} renglón(es) de la factura no corresponden a ninguna recarga ` +
       `capturada, por ${resultado.importe_sin_casar.toFixed(2)}. Son cargas que la ` +
@@ -368,12 +371,25 @@ export async function conciliar(
     )
   }
 
-  const sellada = await repo.sellar(facturaId, quien, datos.nota?.trim() || null)
-  if (!sellada) {
-    throw new AppError('Alguien más acaba de conciliar esta factura', 409, FACTURA_CONCILIADA)
-  }
-
   return resultado
+}
+
+/** Qué decirle a quien concilia cuando un ticket no puede ir en ese renglón. */
+function mensajeRechazo(r: repo.RechazoCasado): string {
+  if (r.motivo === 'renglon_ajeno') return 'Uno de los renglones no es de esta factura.'
+  const renglon = `El renglón de ${r.cantidad} L`
+  switch (r.motivo) {
+    case 'ticket_no_existe':
+      return `${renglon} apunta a un ticket que ya no existe. Vuelve a abrir la factura.`
+    case 'otra_gasolinera':
+      return `${renglon} apunta a una recarga registrada en ${r.gasolinera ?? 'otra gasolinera (o de emergencia)'}. ` +
+        'Corrige la gasolinera de la recarga si de verdad es de esta.'
+    case 'fuera_del_corte':
+      return `${renglon} apunta a una recarga del ${r.fecha}, que queda después de la factura ` +
+        `más los ${repo.DIAS_DE_GRACIA} días de gracia.`
+    case 'ya_facturado':
+      return `${renglon} apunta a un ticket que ya cobra la factura ${r.folio}.`
+  }
 }
 
 /**
