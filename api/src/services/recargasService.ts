@@ -11,7 +11,7 @@ import { familiaCombustible, type ProductoRecarga } from '../shared/combustible'
 // pregunta: es Diesel. A la de gasolina se le pregunta Magna o Premium, y si no
 // viene (la PWA que no se ha recargado) queda sin saberse, como las de antes.
 // Las de gas o eléctricas no llevan producto. Ver la migración 063.
-async function productoPara(
+export async function productoPara(
   vehiculoId: number, pedido: 'Magna' | 'Premium' | undefined,
 ): Promise<ProductoRecarga | null> {
   const combustible = await repo.combustibleDelVehiculo(vehiculoId)

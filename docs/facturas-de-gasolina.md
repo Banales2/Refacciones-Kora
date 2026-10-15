@@ -200,6 +200,38 @@ un ticket de otra gasolinera, y eso no puede quedar en manos del cliente. Un
 casado que dejó de ser candidato (la recarga cambió de gasolinera con la factura
 abierta) también se rechaza: hay que soltarlo o corregir la recarga.
 
+## Registrar lo que nadie reportó
+
+A veces el ticket de la bomba llega a la oficina junto con el vale, y el renglón
+sin casar es exactamente esa carga. En vez de ir a capturarla a otra pantalla, el
+renglón tiene **Registrar recarga no reportada** (solo admin, solo con la factura
+abierta; la sellada se reabre primero). Hay dos casos:
+
+- **El vale sí estaba registrado**: se elige, y trae la unidad y el chofer. Se
+  registra solo la recarga, que queda señalada como no reportada por el chofer.
+- **El vale tampoco estaba**: se captura ahí mismo —folio, encargado que lo
+  entregó, sucursal, fecha y unidad— y queda señalado como no registrado por ese
+  encargado.
+
+La gasolinera es la de la factura y no se pregunta. Litros, costo y producto
+arrancan con los del renglón y se corrigen con el ticket en la mano. El
+kilometraje es **opcional**: el ticket no siempre lo trae, y sin él la recarga no
+avanza el odómetro ni cuenta para el rendimiento. Valen las reglas de siempre (el
+vale es de esa unidad, no se usó, no está cancelado, el folio no se repite) y las
+de la conciliación (la fecha no puede pasar de la de la factura más los días de
+gracia, ni ser anterior al vale).
+
+Todo va en una transacción con la factura bloqueada, y la recarga nueva queda
+**casada con el renglón**. La marca es `desde_factura_id` en la recarga y en el
+vale nuevo (migración 069): un vale que ya estaba no se marca, porque el
+encargado sí cumplió.
+
+### La pestaña Sin reportar
+
+Junta lo que se registró así, **por chofer** (las recargas que no avisó) y **por
+encargado** (los vales que no registró), con filtro de fechas y exportación a PDF
+y Excel. Es la lista que se le lleva a cada uno.
+
 ## El candado
 
 Un ticket que ya entró en una factura **conciliada** no puede cambiar de `litros`
@@ -292,6 +324,8 @@ pegó.
 | `POST /facturas-gasolina/{id}/conciliar` | **admin** | Guarda los emparejamientos y sella |
 | `POST /facturas-gasolina/{id}/reabrir` | **admin** | Suelta el sello |
 | `GET /facturas-gasolina/sin-facturar` | admin, editor, lector | Los tickets que ninguna factura ha reclamado |
+| `POST /facturas-gasolina/{id}/renglones/{renglonId}/registrar` | **admin** | Registra la recarga no reportada (y su vale, si faltaba) y la casa con el renglón |
+| `GET /facturas-gasolina/sin-reportar` | admin, editor, lector | Lo registrado desde factura. Filtros: `desde`/`hasta` |
 
 Conciliar es solo admin, igual que revisar una factura de refacciones: es el
 segundo par de ojos sobre lo capturado.
@@ -303,7 +337,7 @@ segundo par de ojos sobre lo capturado.
 
 `src/src/pages/FacturasGasolina.tsx`, en **Operación → Facturas de gas**.
 
-Dos pestañas: **Facturas** y **Recargas sin factura**.
+Tres pestañas: **Facturas**, **Recargas sin factura** y **Sin reportar**.
 
 La primera lista con estado (`Por conciliar`, `Cuadrada`, `N sin capturar`), y al
 abrir una factura: tres tarjetas —total, renglones casados, importe sin capturar— y la

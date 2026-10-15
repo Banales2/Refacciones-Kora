@@ -11,23 +11,23 @@ function todayIso() {
 // La bomba despacha con milésimas de litro y el ticket las imprime así; la
 // columna guarda DECIMAL(10,3), así que un cuarto decimal se redondearía en
 // silencio y lo capturado dejaría de cuadrar con el papel: se rechaza.
-const litros = z.coerce
+export const litros = z.coerce
   .number()
   .positive('Debe ser mayor a 0')
   // El margen absorbe la representación binaria (45.678 * 1000 = 45677.999…).
   .refine((v) => Math.abs(v * 1000 - Math.round(v * 1000)) < 1e-6, 'Máximo 3 decimales')
 
-const fecha = z
+export const fecha = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato inválido (YYYY-MM-DD)')
   .refine((v) => v <= todayIso(), 'No puede ser una fecha futura')
 
-const costo = z.coerce.number().min(0, 'No puede ser negativo')
+export const costo = z.coerce.number().min(0, 'No puede ser negativo')
 
 // Solo se pregunta en las unidades de gasolina; en las de Diesel lo pone el
 // servicio. Es opcional para la PWA que no se ha recargado, que no lo manda:
 // esa recarga queda sin producto, como las de antes. Ver la migración 063.
-const producto = z.enum(GASOLINAS, { message: 'Elige Magna o Premium' })
+export const producto = z.enum(GASOLINAS, { message: 'Elige Magna o Premium' })
 
 // Los trailers tienen varios tanques y la bomba imprime un ticket por tanque;
 // la gasolinera los factura por separado. Ver la migración 059.

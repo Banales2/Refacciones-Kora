@@ -42,10 +42,12 @@ import {
   useReabrirFacturaGasolina, useRecargasSinFacturar, PRODUCTOS, RENGLONES_SIN_CASAR,
 } from '../hooks/useFacturasGasolina'
 import type {
-  Candidatas, FacturaGasolina, Producto, RenglonNuevo,
+  Candidatas, FacturaGasolina, Producto, RenglonFactura, RenglonNuevo,
 } from '../hooks/useFacturasGasolina'
 import { useGasolineras } from '../hooks/useGasolineras'
 import ImportarFacturasGasolina from '../components/ImportarFacturasGasolina'
+import RegistrarDesdeFacturaModal from '../components/RegistrarDesdeFacturaModal'
+import SinReportarPanel from '../components/SinReportarPanel'
 import { SelectCatalogo } from '../components/SelectCatalogo'
 import {
   filtrarTickets, opcionTicket, ordenarTickets, renderOpcionTicket,
@@ -355,6 +357,10 @@ function CuadreFactura({
     ),
   )
   const [nota, setNota] = useState(factura.nota ?? '')
+  // El renglón cuya recarga se está registrando (llegó el ticket con el vale), y
+  // los que ya se registraron aquí, para señalarlos hasta cerrar.
+  const [registrando, setRegistrando] = useState<RenglonFactura | null>(null)
+  const [registrados, setRegistrados] = useState<Record<number, boolean>>({})
 
   const porId = new Map(tickets.map((t) => [t.id, t]))
   const usadas = new Set(Object.values(eleccion).filter((v): v is number => v !== null))
@@ -398,7 +404,8 @@ function CuadreFactura({
               {factura.casados < factura.renglones && (
                 <Text size="sm" mt={4}>
                   Los otros {factura.renglones - factura.casados} son cargas que la
-                  gasolinera cobra y que nadie capturó.
+                  gasolinera cobra y que nadie capturó. Si llegó el ticket, reábrela
+                  y regístrala desde su renglón.
                 </Text>
               )}
               {factura.nota && <Text size="xs" c="dimmed" mt={4}>Nota: {factura.nota}</Text>}
@@ -568,6 +575,22 @@ function CuadreFactura({
                         {ticket.vale_folio ? ` · vale ${ticket.vale_folio}` : ''}
                       </Text>
                     )}
+                    {registrados[r.id] && elegida !== null && (
+                      <Badge size="xs" variant="light" color="grape" mt={2}>
+                        Registrada desde la factura · sin reportar
+                      </Badge>
+                    )}
+                    {/* Llegó el ticket con el vale y la recarga no está: se
+                        registra aquí mismo y queda casada con este renglón. */}
+                    {elegida === null && !cerrada && esAdmin && (
+                      <Button
+                        size="compact-xs" variant="subtle" color="grape" mt={2}
+                        leftSection={<IconPlus size={12} />}
+                        onClick={() => setRegistrando(r)}
+                      >
+                        Registrar recarga no reportada
+                      </Button>
+                    )}
                     {elegida === null && r.en_otra_gasolinera.map((a) => (
                       <Text key={a.ticket_id} size="xs" c="orange.7" fw={500} mt={2}>
                         Parece capturada como <b>{a.gasolinera}</b>: {formatFecha(a.fecha)} ·{' '}
@@ -632,6 +655,20 @@ function CuadreFactura({
               {(conciliar.error as Error).message}
             </Alert>
           ) : null}
+
+          <RegistrarDesdeFacturaModal
+            factura={factura}
+            renglon={registrando}
+            onClose={() => setRegistrando(null)}
+            onRegistrada={(renglonId, res) => {
+              // La API ya lo casó; aquí solo se refleja, para que el siguiente
+              // "Conciliar" lo mande igual y no lo suelte.
+              setEleccion((p) => ({ ...p, [renglonId]: res.ticket_id }))
+              setRegistrados((p) => ({ ...p, [renglonId]: true }))
+              setRegistrando(null)
+              if (conciliar.error) conciliar.reset()
+            }}
+          />
 
           <Group justify="flex-end">
             <Button variant="default" onClick={onClose}>Cerrar</Button>
@@ -890,6 +927,7 @@ export default function FacturasGasolina() {
         <Tabs.List>
           <Tabs.Tab value="facturas">Facturas</Tabs.Tab>
           <Tabs.Tab value="sin-facturar">Recargas sin factura</Tabs.Tab>
+          <Tabs.Tab value="sin-reportar">Sin reportar</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="facturas" pt="md">
@@ -1009,6 +1047,12 @@ export default function FacturasGasolina() {
 
         <Tabs.Panel value="sin-facturar" pt="md">
           <SinFacturarPanel />
+        </Tabs.Panel>
+
+        {/* Lo que destapó la factura: recargas que el chofer no reportó y vales
+            que el encargado no registró. */}
+        <Tabs.Panel value="sin-reportar" pt="md">
+          <SinReportarPanel />
         </Tabs.Panel>
       </Tabs>
 

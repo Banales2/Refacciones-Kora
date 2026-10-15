@@ -40,7 +40,7 @@ async function cambiosParaLaRecarga(
 
 // Chofer y vehículo se validan aquí para devolver un 404 con mensaje claro en
 // vez de dejar que reviente la restricción de llave foránea con un 500.
-async function validarReferencias(
+export async function validarReferencias(
   conductorId?: number, vehiculoId?: number, sucursalId?: number
 ): Promise<void> {
   if (sucursalId !== undefined && !(await repo.sucursalExists(sucursalId))) {
@@ -64,7 +64,7 @@ export async function getCuentas(sucursalUsuario: number | null): Promise<repo.C
 // se le ofrecen: un texto libre dejaría registrar vales a nombre de cualquiera,
 // y el correo se toma tal como está en `usuarios` para que los vales de una
 // persona no queden repartidos entre dos grafías del mismo correo.
-async function resolverCreador(
+export async function resolverCreador(
   elegido: string | undefined, usuarioSesion: string, sucursalUsuario: number | null,
 ): Promise<string> {
   if (!elegido || elegido.toLowerCase() === usuarioSesion.toLowerCase()) return usuarioSesion

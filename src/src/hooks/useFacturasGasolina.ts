@@ -351,3 +351,86 @@ export function useReabrirFacturaGasolina() {
     onSuccess: () => invalidar(qc),
   })
 }
+
+// ── Registrar desde la factura ────────────────────────────────────────────────
+
+/**
+ * La recarga que el chofer no reportó, dada de alta desde el renglón que la
+ * cobra. El vale es el que ya estaba (`vale_id`) o el que el encargado tampoco
+ * registró (`vale_nuevo`). Ver la migración 069.
+ */
+export interface RegistrarDesdeFacturaPayload {
+  vale_id?: number
+  vale_nuevo?: { folio: string; sucursal_id?: number; fecha: string; creado_por?: string }
+  vehiculo_id:  number
+  conductor_id: number
+  fecha:        string
+  litros:       number
+  costo:        number
+  kilometraje?: number | null
+  producto?:    'Magna' | 'Premium'
+}
+
+export interface Registrada {
+  recarga_id: number
+  vale_id:    number
+  ticket_id:  number
+  vale_nuevo: boolean
+}
+
+/** Solo admin, y solo en una factura abierta. La recarga queda casada con el renglón. */
+export function useRegistrarDesdeFactura() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ factura_id, renglon_id, ...body }:
+      RegistrarDesdeFacturaPayload & { factura_id: number; renglon_id: number }) =>
+      api.post<{ data: Registrada }>(
+        `/facturas-gasolina/${factura_id}/renglones/${renglon_id}/registrar`, body,
+      ),
+    onSuccess: () => {
+      invalidar(qc)
+      qc.invalidateQueries({ queryKey: ['vales-gasolina'] })
+      qc.invalidateQueries({ queryKey: ['vehiculos'] })
+    },
+  })
+}
+
+/**
+ * Una recarga que el chofer no reportó y salió al cuadrar la factura. Si
+ * `vale_sin_registrar`, el encargado tampoco registró el vale.
+ */
+export interface SinReportar {
+  recarga_id:   number
+  fecha:        string
+  litros:       number
+  costo:        number
+  producto:     string | null
+  vehiculo:     string
+  placas:       string | null
+  conductor_id: number
+  conductor:    string
+  gasolinera:   string | null
+  factura_id:   number
+  factura_folio: string
+  vale_id:      number | null
+  vale_folio:   string | null
+  vale_fecha:   string | null
+  vale_sin_registrar: boolean
+  encargado:        string | null
+  encargado_nombre: string | null
+  sucursal:     string | null
+  capturado_por: string | null
+}
+
+export function useSinReportar(filtros: { desde?: string; hasta?: string }, enabled = true) {
+  return useQuery({
+    queryKey: ['facturas-gasolina', 'sin-reportar', filtros],
+    queryFn: () => {
+      const qs = new URLSearchParams()
+      if (filtros.desde) qs.set('desde', filtros.desde)
+      if (filtros.hasta) qs.set('hasta', filtros.hasta)
+      return api.get<{ data: SinReportar[] }>(`/facturas-gasolina/sin-reportar?${qs}`)
+    },
+    enabled,
+  })
+}

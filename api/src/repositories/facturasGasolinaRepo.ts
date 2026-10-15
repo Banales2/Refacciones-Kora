@@ -1,5 +1,7 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
+import { SQL_KM } from '../shared/km'
+import type { ProductoRecarga } from '../shared/combustible'
 
 // Las facturas de la gasolinera y a qué recarga corresponde cada renglón.
 //
@@ -919,4 +921,225 @@ export async function ticketsConciliados(
       JOIN recargas_combustible_tickets t ON t.id = fr.ticket_id
       WHERE fr.recarga_id = @id AND f.conciliada_en IS NOT NULL`)
   return r.recordset.map((x) => ({ ...x, litros: Number(x.litros) }))
+}
+
+// ── Registrar desde la factura ────────────────────────────────────────────────
+
+/** El vale que el encargado tampoco registró, ya resuelto por el servicio. */
+export interface ValeNuevoDesdeFactura {
+  folio:         string
+  creado_por:    string
+  capturado_por: string
+  sucursal_id:   number
+  fecha:         string
+}
+
+export interface RegistroDesdeFactura {
+  renglonId:    number
+  /** El vale que ya estaba registrado, o null si va en `valeNuevo`. */
+  valeId:       number | null
+  valeNuevo:    ValeNuevoDesdeFactura | null
+  vehiculoId:   number
+  conductorId:  number
+  fecha:        string
+  litros:       number
+  costo:        number
+  kilometraje:  number | null
+  producto:     ProductoRecarga | null
+  capturadoPor: string
+}
+
+export type ResultadoRegistro =
+  | { estado: 'no_existe' }
+  | { estado: 'ya_conciliada' }
+  | { estado: 'renglon_ajeno' }
+  | { estado: 'renglon_casado' }
+  | { estado: 'folio_repetido' }
+  | { estado: 'vale_usado' }
+  | { estado: 'registrada'; recarga_id: number; vale_id: number; ticket_id: number }
+
+/**
+ * Da de alta la recarga que nadie reportó —y su vale, si tampoco estaba— y la
+ * casa con el renglón que la destapó. Todo en una transacción con la factura
+ * bloqueada, igual que `guardarYSellar`: la factura no puede sellarse a media
+ * alta, ni el renglón llevarse otro ticket mientras tanto.
+ *
+ * La recarga y el vale nuevo quedan marcados con la factura (`desde_factura_id`,
+ * migración 069): de esa marca sale el reporte de omisiones. Un vale que ya
+ * estaba registrado no se marca: el encargado sí cumplió.
+ *
+ * La gasolinera es la de la factura: es la que está cobrando la carga.
+ */
+export async function registrarDesdeFactura(
+  facturaId: number, d: RegistroDesdeFactura,
+): Promise<ResultadoRegistro> {
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  const salir = async (r: ResultadoRegistro) => { await tx.rollback(); return r }
+  try {
+    const f = await tx.request()
+      .input('id', sql.Int, facturaId)
+      .query(`
+        SELECT conciliada_en, gasolinera_id FROM facturas_gasolina WITH (UPDLOCK, HOLDLOCK)
+        WHERE id = @id`)
+    if (f.recordset.length === 0) return salir({ estado: 'no_existe' })
+    if (f.recordset[0].conciliada_en !== null) return salir({ estado: 'ya_conciliada' })
+    const gasolineraId = f.recordset[0].gasolinera_id as number
+
+    const ren = await tx.request()
+      .input('rid', sql.Int, d.renglonId)
+      .input('fid', sql.Int, facturaId)
+      .query(`
+        SELECT ticket_id FROM facturas_gasolina_renglones WITH (UPDLOCK)
+        WHERE id = @rid AND factura_id = @fid`)
+    if (ren.recordset.length === 0) return salir({ estado: 'renglon_ajeno' })
+    if (ren.recordset[0].ticket_id !== null) return salir({ estado: 'renglon_casado' })
+
+    let valeId = d.valeId
+    if (d.valeNuevo) {
+      // El índice único del folio lo detendría igual, con un error ilegible.
+      const rep = await tx.request()
+        .input('folio', sql.NVarChar(30), d.valeNuevo.folio)
+        .query('SELECT 1 FROM vales_gasolina WITH (UPDLOCK, HOLDLOCK) WHERE folio = @folio')
+      if (rep.recordset.length > 0) return salir({ estado: 'folio_repetido' })
+      const v = await tx.request()
+        .input('folio',         sql.NVarChar(30),  d.valeNuevo.folio)
+        .input('creado_por',    sql.NVarChar(120), d.valeNuevo.creado_por)
+        .input('capturado_por', sql.NVarChar(120), d.valeNuevo.capturado_por)
+        .input('conductor_id',  sql.Int,  d.conductorId)
+        .input('vehiculo_id',   sql.Int,  d.vehiculoId)
+        .input('sucursal_id',   sql.Int,  d.valeNuevo.sucursal_id)
+        .input('fecha',         sql.Date, d.valeNuevo.fecha)
+        .input('fid',           sql.Int,  facturaId)
+        .query(`
+          INSERT INTO vales_gasolina
+            (folio, creado_por, capturado_por, conductor_id, vehiculo_id, sucursal_id, fecha, desde_factura_id)
+          OUTPUT INSERTED.id
+          VALUES (@folio, @creado_por, @capturado_por, @conductor_id, @vehiculo_id, @sucursal_id, @fecha, @fid)`)
+      valeId = v.recordset[0].id as number
+    } else {
+      // El servicio ya lo revisó; aquí se repite bajo el candado por si otra
+      // recarga lo gastó entre tanto. UQ_recargas_vale es la última palabra.
+      const usado = await tx.request()
+        .input('vid', sql.Int, valeId)
+        .query('SELECT 1 FROM recargas_combustible WITH (UPDLOCK, HOLDLOCK) WHERE vale_id = @vid')
+      if (usado.recordset.length > 0) return salir({ estado: 'vale_usado' })
+    }
+
+    const r = await tx.request()
+      .input('vehiculo_id',   sql.Int, d.vehiculoId)
+      .input('gasolinera_id', sql.Int, gasolineraId)
+      .input('conductor_id',  sql.Int, d.conductorId)
+      .input('vale_id',       sql.Int, valeId)
+      .input('fecha',         sql.Date, d.fecha)
+      .input('litros',        sql.Decimal(10, 3), d.litros)
+      .input('costo',         sql.Decimal(18, 2), d.costo)
+      .input('kilometraje',   SQL_KM, d.kilometraje)
+      .input('producto',      sql.NVarChar(10), d.producto)
+      .input('capturado_por', sql.NVarChar(120), d.capturadoPor)
+      .input('fid',           sql.Int, facturaId)
+      .query(`
+        INSERT INTO recargas_combustible
+          (vehiculo_id, gasolinera_id, conductor_id, vale_id, fecha, litros, costo,
+           kilometraje, producto, capturado_por, desde_factura_id)
+        OUTPUT INSERTED.id
+        VALUES (@vehiculo_id, @gasolinera_id, @conductor_id, @vale_id, @fecha, @litros, @costo,
+                @kilometraje, @producto, @capturado_por, @fid)`)
+    const recargaId = r.recordset[0].id as number
+
+    const t = await tx.request()
+      .input('rid',    sql.Int, recargaId)
+      .input('litros', sql.Decimal(10, 3), d.litros)
+      .input('costo',  sql.Decimal(18, 2), d.costo)
+      .query(`
+        INSERT INTO recargas_combustible_tickets (recarga_id, litros, costo)
+        OUTPUT INSERTED.id
+        VALUES (@rid, @litros, @costo)`)
+    const ticketId = t.recordset[0].id as number
+
+    await tx.request()
+      .input('rid', sql.Int, d.renglonId)
+      .input('tid', sql.Int, ticketId)
+      .input('cid', sql.Int, recargaId)
+      .query(`
+        UPDATE facturas_gasolina_renglones SET ticket_id = @tid, recarga_id = @cid
+        WHERE id = @rid`)
+
+    await tx.commit()
+    return { estado: 'registrada', recarga_id: recargaId, vale_id: valeId!, ticket_id: ticketId }
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+}
+
+/**
+ * Una recarga que el chofer no reportó y salió al cuadrar la factura. Si
+ * `vale_sin_registrar`, el encargado tampoco registró el vale.
+ */
+export interface SinReportar {
+  recarga_id:   number
+  fecha:        string
+  litros:       number
+  costo:        number
+  producto:     string | null
+  vehiculo:     string
+  placas:       string | null
+  conductor_id: number
+  conductor:    string
+  gasolinera:   string | null
+  factura_id:   number
+  factura_folio: string
+  vale_id:      number | null
+  vale_folio:   string | null
+  vale_fecha:   string | null
+  vale_sin_registrar: boolean
+  /** A nombre de quién está el vale: quien lo entregó. */
+  encargado:        string | null
+  encargado_nombre: string | null
+  sucursal:     string | null
+  /** Quién lo registró desde la factura. */
+  capturado_por: string | null
+}
+
+/** Las omisiones: recargas registradas desde una factura, de la más nueva a la más vieja. */
+export async function sinReportar(p: { desde?: string; hasta?: string }): Promise<SinReportar[]> {
+  const pool = await getPool()
+  const req = pool.request()
+  const where = ['r.desde_factura_id IS NOT NULL']
+  if (p.desde) { req.input('desde', sql.Date, p.desde); where.push('r.fecha >= @desde') }
+  if (p.hasta) { req.input('hasta', sql.Date, p.hasta); where.push('r.fecha <= @hasta') }
+  const r = await req.query(`
+    SELECT r.id AS recarga_id, CONVERT(char(10), r.fecha, 23) AS fecha,
+           r.litros, r.costo, r.producto,
+           CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo, v.placas,
+           r.conductor_id, co.nombre AS conductor,
+           g.nombre AS gasolinera,
+           f.id AS factura_id, f.folio AS factura_folio,
+           vg.id AS vale_id, vg.folio AS vale_folio,
+           CONVERT(char(10), vg.fecha, 23) AS vale_fecha,
+           CAST(CASE WHEN vg.desde_factura_id IS NOT NULL THEN 1 ELSE 0 END AS BIT)
+             AS vale_sin_registrar,
+           vg.creado_por AS encargado, enc.nombre AS encargado_nombre,
+           s.nombre AS sucursal,
+           r.capturado_por
+    FROM recargas_combustible r
+    JOIN facturas_gasolina f ON f.id = r.desde_factura_id
+    JOIN vehiculos   v  ON v.id  = r.vehiculo_id
+    JOIN modelos     mo ON mo.id = v.modelo_id
+    JOIN conductores co ON co.id = r.conductor_id
+    LEFT JOIN gasolineras    g  ON g.id  = r.gasolinera_id
+    LEFT JOIN vales_gasolina vg ON vg.id = r.vale_id
+    LEFT JOIN sucursales     s  ON s.id  = vg.sucursal_id
+    -- APPLY y no JOIN: nada garantiza que el correo no se repita en usuarios.
+    OUTER APPLY (
+      SELECT TOP 1 NULLIF(LTRIM(RTRIM(u.nombre)), '') AS nombre
+      FROM usuarios u WHERE LTRIM(RTRIM(u.email)) = vg.creado_por
+    ) enc
+    WHERE ${where.join(' AND ')}
+    ORDER BY r.fecha DESC, r.id DESC`)
+  return r.recordset.map((x) => ({
+    ...x, litros: Number(x.litros), costo: Number(x.costo),
+  })) as SinReportar[]
 }
