@@ -9,6 +9,8 @@ export interface Proveedor extends CamposArchivado {
   contacto: string | null
   // Número telefónico tal como se captura, con o sin separadores.
   telefono: string | null
+  /** Con él se reconocen sus facturas al importar el XML. Migración 070. */
+  rfc?:     string | null
 }
 
 // Por defecto solo lo que está en uso. `incluirArchivados` es para la pantalla

@@ -43,6 +43,14 @@ export interface Factura {
   subtotal:     number
   /** La parte del subtotal que es mano de obra. 0 en una factura de refacciones. */
   subtotal_mano_obra: number
+  /**
+   * Lo que cobra el papel sin ser refacción ni mano de obra —el casco de una
+   * batería, un flete—. Gasto sin lote. Migración 070.
+   */
+  subtotal_cargos?: number
+  cargos?: { descripcion: string; importe: number }[]
+  /** Folio fiscal, si se importó del XML. */
+  uuid?: string | null
   /** Cuántos servicios de taller cobra este papel. */
   mano_obra:    number
   /** Cuántos de esos servicios ya están sellados. */

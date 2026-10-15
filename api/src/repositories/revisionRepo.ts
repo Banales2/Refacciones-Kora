@@ -84,6 +84,8 @@ export interface CabeceraParaRevision {
   subtotal: number
   /** La parte del subtotal que es mano de obra. */
   subtotal_mano_obra: number
+  /** La parte del subtotal que son cargos sin lote (070). */
+  subtotal_cargos: number
 }
 
 export async function leerCabecera(facturaId: number): Promise<CabeceraParaRevision | null> {
@@ -99,11 +101,18 @@ export async function leerCabecera(facturaId: number): Promise<CabeceraParaRevis
              + COALESCE((SELECT SUM(m.costo)
                          FROM facturas_mano_obra fmo
                          JOIN mantenimiento m ON m.id = fmo.mantenimiento_id
-                         WHERE fmo.factura_id = f.id), 0) AS subtotal,
+                         WHERE fmo.factura_id = f.id), 0)
+             -- Los cargos (070) son del papel y de lo capturado a la vez: se
+             -- importan una sola vez y no hay contra qué compararlos. Cuentan en
+             -- el subtotal porque el descuento y el IVA son del documento entero.
+             + COALESCE((SELECT SUM(fc.importe) FROM facturas_cargos fc
+                         WHERE fc.factura_id = f.id), 0) AS subtotal,
              COALESCE((SELECT SUM(m.costo)
                        FROM facturas_mano_obra fmo
                        JOIN mantenimiento m ON m.id = fmo.mantenimiento_id
-                       WHERE fmo.factura_id = f.id), 0) AS subtotal_mano_obra
+                       WHERE fmo.factura_id = f.id), 0) AS subtotal_mano_obra,
+             COALESCE((SELECT SUM(fc.importe) FROM facturas_cargos fc
+                       WHERE fc.factura_id = f.id), 0) AS subtotal_cargos
       FROM facturas f
       WHERE f.id = @id`)
   return (r.recordset[0] as CabeceraParaRevision) ?? null

@@ -281,9 +281,12 @@ export async function getCuadre(facturaId: number, tasas?: Tasas): Promise<Cuadr
     })
   }
 
+  // Los cargos (070) están en las dos columnas por igual: se importan una vez
+  // del XML y no hay transcripción contra qué medirlos.
   const subtotalPapel = aCentavos(
     renglones.reduce((s, r) => s + importePapel(r), 0)
-    + manoObra.reduce((s, r) => s + r.importe, 0),
+    + manoObra.reduce((s, r) => s + r.importe, 0)
+    + Number(factura.subtotal_cargos),
   )
 
   return {

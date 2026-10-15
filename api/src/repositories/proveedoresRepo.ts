@@ -8,9 +8,11 @@ export interface Proveedor extends CamposArchivado {
   contacto: string | null
   // Número telefónico tal como se captura, con o sin separadores.
   telefono: string | null
+  /** Con él se reconocen sus facturas al importar el XML. Migración 070. */
+  rfc:      string | null
 }
 
-const COLS = 'id, nombre, contacto, telefono'
+const COLS = 'id, nombre, contacto, telefono, rfc'
 const OUT  = COLS.split(', ').map((c) => `INSERTED.${c}`).join(', ') +
              ', INSERTED.archivado_en, INSERTED.archivado_motivo'
 const COLS_LEER = `${COLS}, ${COLS_ARCHIVADO}`

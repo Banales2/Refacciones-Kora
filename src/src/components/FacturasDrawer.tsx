@@ -16,7 +16,7 @@ import {
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
-  IconSearch, IconAlertTriangle, IconPencil, IconScale, IconFilePlus,
+  IconSearch, IconAlertTriangle, IconPencil, IconScale, IconFilePlus, IconFileImport,
 } from '@tabler/icons-react'
 import {
   useFacturas, useSetTotalesFactura, useSetFolioFactura, useSetFolioLote, FOLIO_EXISTENTE,
@@ -27,6 +27,7 @@ import { usePermisos } from '../hooks/usePermisos'
 import { EstadoRevision, SelloFactura } from './RevisionFactura'
 import CuadreFacturaModal from './CuadreFactura'
 import FacturaHalladaModal from './FacturaHalladaModal'
+import ImportarFacturasRefacciones from './ImportarFacturasRefacciones'
 import { ApiError } from '../lib/api'
 import { FechaInput } from './FechaInput'
 import { formatMXN, formatFecha } from '../lib/formato'
@@ -370,6 +371,7 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
   const [porRevisar, setPorRevisar] = useState(false)
   const [cuadrando, setCuadrando] = useState<{ id: number; folio: string } | null>(null)
   const [hallada, setHallada] = useState(false)
+  const [importando, setImportando] = useState(false)
   const [page, setPage] = useState(1)
 
   // Revisar es cosa de admin: es el segundo par de ojos, y que lo haga
@@ -378,6 +380,8 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
   // que van a contestar 403.
   const { user } = useAuth()
   const esAdmin = user?.userRoles.includes('admin') ?? false
+  // Importar es dar de alta compras: los mismos roles que el alta de compra.
+  const puedeImportar = esAdmin || (user?.userRoles.includes('editor') ?? false)
 
   const { data, isLoading, isError } = useFacturas(
     {
@@ -443,15 +447,26 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
           {/* Para el papel que nadie capturó: no aparece en esta lista porque no
               existe como fila, así que el único que puede meterlo es quien lo
               tiene en la mano. Ver `FacturaHalladaModal`. */}
-          {esAdmin && (
-            <Button
-              size="compact-xs" variant="subtle" color="orange"
-              leftSection={<IconFilePlus size={14} />}
-              onClick={() => setHallada(true)}
-            >
-              Factura que no está en el sistema
-            </Button>
-          )}
+          <Group gap="xs">
+            {puedeImportar && (
+              <Button
+                size="compact-xs" variant="light"
+                leftSection={<IconFileImport size={14} />}
+                onClick={() => setImportando(true)}
+              >
+                Importar XML
+              </Button>
+            )}
+            {esAdmin && (
+              <Button
+                size="compact-xs" variant="subtle" color="orange"
+                leftSection={<IconFilePlus size={14} />}
+                onClick={() => setHallada(true)}
+              >
+                Factura que no está en el sistema
+              </Button>
+            )}
+          </Group>
         </Group>
 
         {isError ? (
@@ -486,6 +501,11 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
                           {/* Nadie la capturó: apareció al revisar el fajo de
                               papeles. Se marca porque es el error más caro y
                               hay que poder contarlas aparte. */}
+                          {f.uuid && (
+                            <Tooltip label={`Importada del XML · ${f.uuid}`}>
+                              <Badge size="xs" variant="light" color="blue">XML</Badge>
+                            </Tooltip>
+                          )}
                           {f.hallada_en_revision && (
                             <Tooltip label="Nadie la había capturado: apareció al revisar">
                               <Badge size="xs" variant="light" color="orange">
@@ -557,6 +577,20 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
                         </Table>
                       </Table.ScrollContainer>
 
+                      {/* Lo que cobra el papel sin ser refacción: no tiene lote,
+                          pero es gasto y entra en el total. */}
+                      {(f.cargos?.length ?? 0) > 0 && (
+                        <Stack gap={2}>
+                          <Text size="xs" fw={600}>Otros cargos</Text>
+                          {f.cargos!.map((c, i) => (
+                            <Group key={i} justify="space-between">
+                              <Text size="xs" c="dimmed">{c.descripcion}</Text>
+                              <Text size="xs">{formatMXN(c.importe)}</Text>
+                            </Group>
+                          ))}
+                        </Stack>
+                      )}
+
                       {/* Todos los bloques se remontan por factura (`key`): lo
                           tecleado en una no debe arrastrarse a la siguiente. */}
                       {esAdmin && f.cabecera_revisada_en === null && (
@@ -598,6 +632,8 @@ export function FacturasPanel({ activo = true }: { activo?: boolean }) {
             )}
           </>
         )}
+
+      <ImportarFacturasRefacciones abierto={importando} onClose={() => setImportando(false)} />
 
       <FacturaHalladaModal
         abierto={hallada}

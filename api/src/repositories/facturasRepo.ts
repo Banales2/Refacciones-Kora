@@ -51,6 +51,13 @@ export interface Factura {
   subtotal: number
   /** La parte del subtotal que es mano de obra. 0 en una factura de refacciones. */
   subtotal_mano_obra: number
+  /**
+   * La parte del subtotal que no es refacción ni mano de obra: el casco de una
+   * batería, un flete. Gasto real sin lote. Migración 070.
+   */
+  subtotal_cargos: number
+  /** Folio fiscal, si se importó del XML. */
+  uuid: string | null
   /** Cuántos servicios de taller cobra este papel. */
   mano_obra: number
   /** Cuántos de esos servicios ya están sellados. */
@@ -88,6 +95,7 @@ export interface Factura {
    */
   cerrada: boolean
   detalle: FacturaRenglon[]
+  cargos: { descripcion: string; importe: number }[]
 }
 
 export interface FacturaCabecera {
@@ -222,7 +230,7 @@ export async function findAll(
     SELECT f.id, f.folio AS num_factura, f.proveedor_id, pr.nombre AS proveedor,
            CONVERT(char(10), f.fecha_compra, 23) AS fecha_compra,
            f.tasa_iva, f.descuento_pct, f.comprado_por, f.autorizado_por,
-           f.historica, f.hallada_en_revision,
+           f.historica, f.hallada_en_revision, f.uuid,
            CONVERT(varchar(19), f.cabecera_revisada_en, 126) AS cabecera_revisada_en,
            f.cabecera_revisada_por, f.revision_nota,
            (SELECT COUNT(*) FROM lotes_pieza l WHERE l.factura_id = f.id) AS renglones,
@@ -241,10 +249,14 @@ export async function findAll(
              JOIN mantenimiento m ON m.id = fmo.mantenimiento_id
              WHERE fmo.factura_id = f.id AND m.revisado_en IS NOT NULL) AS mano_obra_revisada,
            COALESCE(mob.total, 0) AS subtotal_mano_obra,
+           COALESCE(car.total, 0) AS subtotal_cargos,
            COALESCE((SELECT SUM(l.costo_unitario * l.cantidad_inicial)
                      FROM lotes_pieza l WHERE l.factura_id = f.id), 0)
-           + COALESCE(mob.total, 0) AS subtotal
+           + COALESCE(mob.total, 0) + COALESCE(car.total, 0) AS subtotal
     FROM facturas f
+    OUTER APPLY (
+      SELECT SUM(fc.importe) AS total FROM facturas_cargos fc WHERE fc.factura_id = f.id
+    ) car
     OUTER APPLY (
       SELECT SUM(m.costo) AS total
       FROM facturas_mano_obra fmo
@@ -271,6 +283,7 @@ export async function findAll(
       && (f.renglones as number) === (f.renglones_revisados as number)
       && (f.mano_obra as number) === (f.mano_obra_revisada as number),
     detalle: [],
+    cargos: [],
   })) as Factura[]
   const total = (result.recordsets[1] as unknown as { total: number }[])[0].total
 
@@ -316,6 +329,23 @@ export async function findAll(
     })
   }
   for (const f of facturas) f.detalle = porFactura.get(f.id) ?? []
+
+  // Los cargos solo de las que tienen: casi ninguna.
+  const conCargos = facturas.filter((f) => Number(f.subtotal_cargos) > 0)
+  if (conCargos.length > 0) {
+    const carReq = pool.request()
+    const cIds = conCargos.map((f, i) => {
+      carReq.input(`c${i}`, sql.Int, f.id)
+      return `@c${i}`
+    })
+    const car = await carReq.query(`
+      SELECT factura_id, descripcion, importe FROM facturas_cargos
+      WHERE factura_id IN (${cIds.join(', ')}) ORDER BY id`)
+    for (const c of car.recordset) {
+      facturas.find((f) => f.id === c.factura_id)?.cargos
+        .push({ descripcion: c.descripcion, importe: Number(c.importe) })
+    }
+  }
 
   return { data: facturas, total }
 }
