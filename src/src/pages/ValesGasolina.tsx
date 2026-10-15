@@ -453,7 +453,7 @@ function ValesTabla({
               <Table.Td>
                 <Badge size="xs" variant="light" color={est.color}>{est.label}</Badge>
                 {/* Debajo, lo que la etiqueta no alcanza a decir: dónde se gastó,
-                    cuánto lleva esperando, o por qué se dio por perdido. */}
+                    cuánto lleva esperando, o por qué se canceló. */}
                 {v.estado === 'usado' && v.recarga_fecha && (
                   <Text size="xs" c="dimmed">
                     {formatFecha(v.recarga_fecha)}
@@ -482,23 +482,23 @@ function ValesTabla({
                       <IconPencil size={14} />
                     </ActionIcon>
                   )}
-                  {/* Archivar es para lo que se perdió: un vale usado no se
+                  {/* Cancelar es para lo que se perdió: un vale usado no se
                       perdió, se gastó. Uno sin usar todavía puede aparecer esta
                       tarde, así que adelantarse a los dos días es del admin
                       (la API también lo impone). */}
                   {((puedeArchivarVale(v) && v.estado === 'perdido') || (esAdmin && v.estado === 'creado')) && (
-                    <Tooltip label={v.estado === 'creado' ? 'Archivar sin usar' : 'Darlo por perdido'}>
+                    <Tooltip label="Cancelar vale">
                       <ActionIcon variant="subtle" color="gray" size="sm"
-                        aria-label={`Archivar el vale ${v.folio}`}
+                        aria-label={`Cancelar el vale ${v.folio}`}
                         onClick={() => onArchivar(v)}>
                         <IconArchive size={14} />
                       </ActionIcon>
                     </Tooltip>
                   )}
                   {puedeArchivarVale(v) && v.estado === 'archivado' && (
-                    <Tooltip label="Apareció: devolverlo a la lista">
+                    <Tooltip label="Apareció: quitar la cancelación">
                       <ActionIcon variant="subtle" color="teal" size="sm"
-                        aria-label={`Restaurar el vale ${v.folio}`}
+                        aria-label={`Quitar la cancelación del vale ${v.folio}`}
                         loading={restaurarMut.isPending && restaurarMut.variables?.id === v.id}
                         onClick={() => restaurarMut.mutate({ id: v.id, accion: 'restaurar' })}>
                         <IconArchiveOff size={14} />
@@ -776,13 +776,14 @@ export default function ValesGasolina({
 
       <ReporteValesSinUsarModal opened={reporteOpen} onClose={() => setReporteOpen(false)} />
 
-      {/* Dar por perdido. Se pregunta el motivo porque es una decisión, no un
-          hecho: dentro de un mes, quien lea "archivado" a secas no va a saber
+      {/* Cancelar el vale ("Dar por perdido" se confundía con el estado Perdido,
+          que es solo el plazo vencido). Se pregunta el motivo porque es una
+          decisión, no un hecho: dentro de un mes, quien lea "cancelado" a secas no va a saber
           si el papel se extravió, se mojó o el chofer lo tiró. */}
       <Modal
         opened={archivando !== null}
         onClose={() => setArchivando(null)}
-        title={archivando?.estado === 'creado' ? 'Archivar el vale sin usar' : 'Dar el vale por perdido'}
+        title="Cancelar el vale"
         centered
       >
         {archivando && (
@@ -795,14 +796,14 @@ export default function ValesGasolina({
             </Text>
             {archivando.estado === 'creado' && (
               <Alert color="yellow" variant="light">
-                Todavía está en plazo: el chofer aún puede cargarlo. Archívalo solo si sabes que
+                Todavía está en plazo: el chofer aún puede cargarlo. Cancélalo solo si sabes que
                 no se va a usar.
               </Alert>
             )}
             <Text size="xs" c="dimmed">
               No se borra: el folio se sigue resolviendo y la decisión queda firmada.
               Sale de la lista y deja de ofrecerse al capturar una recarga. Si aparece,
-              se restaura.
+              se le quita la cancelación.
             </Text>
             <Textarea
               label="¿Qué pasó?"
@@ -817,7 +818,7 @@ export default function ValesGasolina({
               <Alert color="red" title="Error">{(archivarMut.error as Error).message}</Alert>
             )}
             <Group justify="flex-end">
-              <Button variant="default" onClick={() => setArchivando(null)}>Cancelar</Button>
+              <Button variant="default" onClick={() => setArchivando(null)}>Volver</Button>
               <Button
                 color="orange"
                 loading={archivarMut.isPending}
@@ -830,7 +831,7 @@ export default function ValesGasolina({
                   { onSuccess: () => setArchivando(null) },
                 )}
               >
-                Darlo por perdido
+                Cancelar vale
               </Button>
             </Group>
           </Stack>

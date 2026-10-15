@@ -87,7 +87,7 @@ export function esValePropio(
 
 function exigirValePropio(vale: ValeGasolina, usuario: string): void {
   if (!esValePropio(vale, usuario)) {
-    throw new AppError('Solo puedes archivar los vales que entregaste o capturaste', 403, 'FORBIDDEN')
+    throw new AppError('Solo puedes cancelar los vales que entregaste o capturaste', 403, 'FORBIDDEN')
   }
 }
 
@@ -127,19 +127,19 @@ export async function archivar(
   if (soloPropiosDe !== undefined) exigirValePropio(vale, soloPropiosDe)
   if (vale.estado === 'creado' && !esAdmin) {
     throw new AppError(
-      `El vale ${vale.folio} todavía no se da por perdido. Solo un admin puede archivar ` +
+      `El vale ${vale.folio} todavía está en plazo. Solo un admin puede cancelar ` +
       'un vale sin usar antes de tiempo.',
       403, 'FORBIDDEN',
     )
   }
   if (vale.estado === 'usado') {
     throw new ConflictError(
-      `El vale ${vale.folio} ya se usó en una recarga, así que no se perdió. ` +
-      'Los vales que se archivan son los que nadie va a poder entregar.'
+      `El vale ${vale.folio} ya se usó en una recarga, así que no se puede cancelar. ` +
+      'Los vales que se cancelan son los que nadie va a poder cargar.'
     )
   }
   if (!(await archivadoRepo.archivar('vales_gasolina', id, motivo))) {
-    throw new ConflictError(`El vale ${vale.folio} ya estaba archivado`)
+    throw new ConflictError(`El vale ${vale.folio} ya estaba cancelado`)
   }
 }
 
@@ -149,7 +149,7 @@ export async function restaurar(id: number, soloPropiosDe?: string): Promise<voi
   if (!vale) throw new NotFoundError('Vale')
   if (soloPropiosDe !== undefined) exigirValePropio(vale, soloPropiosDe)
   if (!(await archivadoRepo.restaurar('vales_gasolina', id))) {
-    throw new ConflictError(`El vale ${vale.folio} no estaba archivado`)
+    throw new ConflictError(`El vale ${vale.folio} no estaba cancelado`)
   }
 }
 

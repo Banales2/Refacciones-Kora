@@ -45,8 +45,9 @@ el usuario. Con guiones. Roles válidos: `admin`, `editor`, `lector`,
 `responsable` es el responsable de una sucursal. Ve la flota de su sucursal y
 las unidades de translado, hace el chequeo diario, reporta incidencias (sin
 editarlas ni atenderlas: atender es registrar el mantenimiento), entrega vales
-(y da por perdidos o restaura los suyos —a su nombre o capturados por él—, con
-la misma regla del editor: solo los que ya pasaron el plazo),
+(y cancela o quita la cancelación de los suyos —a su nombre o capturados por
+él—, con la misma regla del editor: solo los que ya pasaron el plazo; por dentro
+es el archivado de `vale-gasolina-archivar`),
 registra cargas de gasolina, da de alta choferes (sin editarlos) y consulta el
 inventario de su sucursal, choferes y permisos. Sí mueve inventario: envía traspasos desde su sucursal, acepta o
 rechaza los que llegan a ella y cancela los que salieron de ella; la otra punta

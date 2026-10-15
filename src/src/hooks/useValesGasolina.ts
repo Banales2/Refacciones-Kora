@@ -10,7 +10,9 @@ import { api } from '../lib/api'
  *   creado    se entregó y todavía no se gasta.
  *   usado     tiene una recarga colgando.
  *   perdido   lleva dos días sin usarse y nadie sabe de él.
- *   archivado alguien aceptó que no va a aparecer.
+ *   archivado alguien lo canceló: aceptó que no va a aparecer. En pantalla se
+ *             llama "Cancelado" para no confundirlo con el perdido, que es
+ *             solo el plazo vencido; por dentro sigue siendo el archivado.
  *
  * Los tres primeros los calcula la API al leer; el último es el único que se
  * guarda, porque no es un hecho derivable sino la decisión de una persona.
@@ -21,7 +23,7 @@ export const ESTADO_VALE: Record<EstadoVale, { label: string; color: string }> =
   creado:    { label: 'Sin usar',   color: 'blue'   },
   usado:     { label: 'Usado',      color: 'green'  },
   perdido:   { label: 'Perdido',    color: 'red'    },
-  archivado: { label: 'Archivado',  color: 'gray'   },
+  archivado: { label: 'Cancelado',  color: 'gray'   },
 }
 
 export interface ValeGasolina {

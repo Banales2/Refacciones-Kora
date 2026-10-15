@@ -59,7 +59,7 @@ export default function ReporteValesSinUsarModal({
       ) : (
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            Los vales entregados que todavía no se cargan: sin usar y perdidos. Los archivados no
+            Los vales entregados que todavía no se cargan: sin usar y perdidos. Los cancelados no
             entran.
           </Text>
           <Select

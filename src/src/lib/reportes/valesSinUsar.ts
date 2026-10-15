@@ -108,7 +108,7 @@ export async function exportValesSinUsarPdf(vales: ValeGasolina[], sucursal: str
 
   pdf.seccion(
     'Vales por sucursal',
-    'Del más viejo al más nuevo. Un vale se da por perdido cuando lleva dos días o más sin usarse.',
+    'Del más viejo al más nuevo. Un vale cuenta como perdido cuando lleva dos días o más sin usarse.',
   )
   for (const g of grupos) {
     pdf.subseccion(`${g.sucursal} · ${g.vales.length} vale${g.vales.length !== 1 ? 's' : ''}`)

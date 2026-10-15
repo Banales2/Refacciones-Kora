@@ -48,7 +48,7 @@ async function validarVale(
   }
   if (await repo.valeArchivado(valeId)) {
     throw new ConflictError(
-      'Ese vale se dio por perdido y está archivado. Si apareció, restáuralo en ' +
+      'Ese vale está cancelado. Si apareció, quítale la cancelación en ' +
       'Vales de gasolina y vuelve a intentarlo.'
     )
   }
