@@ -48,6 +48,7 @@ import { useGasolineras } from '../hooks/useGasolineras'
 import ImportarFacturasGasolina from '../components/ImportarFacturasGasolina'
 import RegistrarDesdeFacturaModal from '../components/RegistrarDesdeFacturaModal'
 import SinReportarPanel from '../components/SinReportarPanel'
+import ValeEnFacturas from '../components/ValeEnFacturas'
 import { SelectCatalogo } from '../components/SelectCatalogo'
 import {
   filtrarTickets, opcionTicket, ordenarTickets, renderOpcionTicket,
@@ -938,6 +939,9 @@ export default function FacturasGasolina() {
         value={search}
         onChange={(e) => filtrar(() => setSearch(e.currentTarget.value))}
       />
+      {/* Si lo buscado es el folio de un vale: en qué factura salió su carga,
+          aunque esa factura no se haya conciliado todavía. */}
+      <ValeEnFacturas texto={debounced} onAbrir={setConciliando} />
       <Group gap="sm" align="flex-end" wrap="wrap">
         <SelectCatalogo
           label="Gasolinera" nombre="gasolineras" estado={gasolineras}

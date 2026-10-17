@@ -2,6 +2,7 @@ import * as sql from 'mssql'
 import { getPool } from '../shared/db'
 import { SQL_KM } from '../shared/km'
 import type { ProductoRecarga } from '../shared/combustible'
+import { estadoDelVale, type EstadoVale } from '../shared/vales'
 
 // Las facturas de la gasolinera y a qué recarga corresponde cada renglón.
 //
@@ -1142,4 +1143,164 @@ export async function sinReportar(p: { desde?: string; hasta?: string }): Promis
   return r.recordset.map((x) => ({
     ...x, litros: Number(x.litros), costo: Number(x.costo),
   })) as SinReportar[]
+}
+
+// ── Buscar por vale ───────────────────────────────────────────────────────────
+
+/** Una factura que cobra (o probablemente cobra) un ticket del vale. */
+export interface FacturaDelTicket {
+  factura_id: number
+  folio: string
+  fecha: string
+  conciliada: boolean
+}
+
+export interface TicketDelVale {
+  ticket_id: number
+  ticket_n: number
+  tickets: number
+  litros: number
+  costo: number
+  /** La factura cuyo renglón ya está casado con este ticket. */
+  casado_en: FacturaDelTicket | null
+  /**
+   * Si nadie lo ha casado: las facturas abiertas de su gasolinera, dentro del
+   * corte, con un renglón libre que la propuesta del cuadre le daría —mismos
+   * litros, o mismo importe con IVA—. La propuesta no se guarda hasta conciliar.
+   */
+  posibles: FacturaDelTicket[]
+}
+
+export interface ValeEncontrado {
+  vale_id: number
+  folio: string
+  estado: EstadoVale
+  fecha: string
+  conductor: string
+  vehiculo: string
+  recarga_id: number | null
+  recarga_fecha: string | null
+  gasolinera: string | null
+  emergencia: boolean
+  tickets: TicketDelVale[]
+}
+
+/**
+ * Los vales cuyo folio contiene el texto, con su recarga y la factura que la
+ * cobra. Es la pregunta "este vale, ¿en qué factura salió?", con el vale en la
+ * mano. Tope de 10: un folio que se busca es casi siempre uno.
+ *
+ * `litrosTolerancia` es la de la propuesta por importe; se pasa para que las
+ * dos no se desfasen.
+ */
+export async function buscarPorVale(
+  texto: string, litrosTolerancia: number,
+): Promise<ValeEncontrado[]> {
+  const pool = await getPool()
+  const v = await pool.request()
+    .input('q', sql.NVarChar(40), `%${texto}%`)
+    .input('exacto', sql.NVarChar(40), texto)
+    .query(`
+      SELECT TOP 10 vg.id AS vale_id, vg.folio, ${estadoDelVale('vg')} AS estado,
+             CONVERT(char(10), vg.fecha, 23) AS fecha,
+             c.nombre AS conductor,
+             CONCAT(m.marca, ' ', m.nombre, ' — ', ve.numero_serie) AS vehiculo,
+             rc.id AS recarga_id, CONVERT(char(10), rc.fecha, 23) AS recarga_fecha,
+             g.nombre AS gasolinera, CAST(COALESCE(rc.emergencia, 0) AS BIT) AS emergencia
+      FROM vales_gasolina vg
+      JOIN conductores c  ON c.id = vg.conductor_id
+      JOIN vehiculos   ve ON ve.id = vg.vehiculo_id
+      JOIN modelos     m  ON m.id = ve.modelo_id
+      LEFT JOIN recargas_combustible rc ON rc.vale_id = vg.id
+      LEFT JOIN gasolineras g ON g.id = rc.gasolinera_id
+      WHERE vg.folio LIKE @q
+      -- El folio exacto primero: buscar "123" no debe enterrar al 123 bajo el 1234.
+      ORDER BY CASE WHEN vg.folio = @exacto THEN 0 ELSE 1 END, vg.fecha DESC`)
+  const vales = v.recordset as Omit<ValeEncontrado, 'tickets'>[]
+  const recargas = vales.map((x) => x.recarga_id).filter((x): x is number => x !== null)
+  if (recargas.length === 0) return vales.map((x) => ({ ...x, tickets: [] }))
+
+  const t = await pool.request()
+    .input('ids', sql.NVarChar(sql.MAX), recargas.join(','))
+    .input('gracia', sql.Int, DIAS_DE_GRACIA)
+    .input('tol', sql.Decimal(10, 3), litrosTolerancia)
+    .query(`
+      SELECT t.id AS ticket_id, t.recarga_id, t.ticket_n, t.tickets, t.litros, t.costo,
+             fc.id AS casado_id, fc.folio AS casado_folio,
+             CONVERT(char(10), fc.fecha, 23) AS casado_fecha,
+             CAST(CASE WHEN fc.conciliada_en IS NOT NULL THEN 1 ELSE 0 END AS BIT) AS casado_conciliada,
+             fp.id AS posible_id, fp.folio AS posible_folio,
+             CONVERT(char(10), fp.fecha, 23) AS posible_fecha,
+             CAST(CASE WHEN fp.conciliada_en IS NOT NULL THEN 1 ELSE 0 END AS BIT) AS posible_conciliada
+      FROM (
+        SELECT id, recarga_id, litros, costo,
+               ROW_NUMBER() OVER (PARTITION BY recarga_id ORDER BY id) AS ticket_n,
+               COUNT(*) OVER (PARTITION BY recarga_id) AS tickets
+        FROM recargas_combustible_tickets
+        WHERE recarga_id IN (SELECT CAST(value AS INT) FROM STRING_SPLIT(@ids, ','))
+      ) t
+      JOIN recargas_combustible rc ON rc.id = t.recarga_id
+      OUTER APPLY (
+        SELECT TOP 1 f.id, f.folio, f.fecha, f.conciliada_en
+        FROM facturas_gasolina_renglones fr
+        JOIN facturas_gasolina f ON f.id = fr.factura_id
+        WHERE fr.ticket_id = t.id
+      ) fc
+      -- Solo si nadie lo ha casado, y solo facturas abiertas: en una conciliada
+      -- el renglón libre ya se selló como "nadie la capturó", y no hay propuesta
+      -- que aplicar. Las mismas reglas que las candidatas —su gasolinera, hasta
+      -- la fecha de la factura más los días de gracia— y las dos pasadas de la
+      -- propuesta: litros iguales a tres decimales, o el mismo importe con IVA
+      -- al centavo y litros dentro de la tolerancia. El importe solo cuenta si
+      -- no es estimado: con el IVA del propio renglón, o sin IVA en absoluto.
+      OUTER APPLY (
+        SELECT f.id, f.folio, f.fecha, f.conciliada_en
+        FROM facturas_gasolina f
+        WHERE fc.id IS NULL
+          AND f.conciliada_en IS NULL
+          AND f.gasolinera_id = rc.gasolinera_id
+          AND rc.fecha <= DATEADD(day, @gracia, f.fecha)
+          AND EXISTS (
+            SELECT 1 FROM facturas_gasolina_renglones fr
+            WHERE fr.factura_id = f.id AND fr.ticket_id IS NULL
+              AND (
+                ROUND(fr.cantidad, 3) = ROUND(t.litros, 3)
+                OR (ABS(t.litros - fr.cantidad) <= @tol
+                    AND (
+                      (fr.iva IS NOT NULL
+                        AND ABS(t.costo - ROUND(fr.importe + fr.iva, 2)) < 0.005)
+                      OR (fr.iva IS NULL AND f.iva IS NULL AND f.tasa_iva IS NULL
+                        AND ABS(t.costo - ROUND(fr.importe, 2)) < 0.005)
+                    ))
+              ))
+      ) fp
+      ORDER BY t.recarga_id, t.id, fp.fecha`)
+
+  const porRecarga = new Map<number, Map<number, TicketDelVale>>()
+  for (const r of t.recordset) {
+    let tickets = porRecarga.get(r.recarga_id)
+    if (!tickets) { tickets = new Map(); porRecarga.set(r.recarga_id, tickets) }
+    let tk = tickets.get(r.ticket_id)
+    if (!tk) {
+      tk = {
+        ticket_id: r.ticket_id, ticket_n: r.ticket_n, tickets: r.tickets,
+        litros: Number(r.litros), costo: Number(r.costo),
+        casado_en: r.casado_id != null
+          ? { factura_id: r.casado_id, folio: r.casado_folio, fecha: r.casado_fecha, conciliada: r.casado_conciliada }
+          : null,
+        posibles: [],
+      }
+      tickets.set(r.ticket_id, tk)
+    }
+    if (r.posible_id != null) {
+      tk.posibles.push({
+        factura_id: r.posible_id, folio: r.posible_folio, fecha: r.posible_fecha,
+        conciliada: r.posible_conciliada,
+      })
+    }
+  }
+  return vales.map((x) => ({
+    ...x,
+    tickets: x.recarga_id != null ? [...(porRecarga.get(x.recarga_id)?.values() ?? [])] : [],
+  }))
 }

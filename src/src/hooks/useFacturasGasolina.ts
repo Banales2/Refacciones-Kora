@@ -434,3 +434,49 @@ export function useSinReportar(filtros: { desde?: string; hasta?: string }, enab
     enabled,
   })
 }
+
+// ── Buscar por vale ───────────────────────────────────────────────────────────
+
+export interface FacturaDelTicket {
+  factura_id: number
+  folio:      string
+  fecha:      string
+  conciliada: boolean
+}
+
+export interface TicketDelVale {
+  ticket_id: number
+  ticket_n:  number
+  tickets:   number
+  litros:    number
+  costo:     number
+  /** La factura cuyo renglón ya está casado con este ticket. */
+  casado_en: FacturaDelTicket | null
+  /** Si nadie lo ha casado: las abiertas de su gasolinera con un renglón libre que la propuesta le daría. */
+  posibles:  FacturaDelTicket[]
+}
+
+export interface ValeEncontrado {
+  vale_id:       number
+  folio:         string
+  estado:        'creado' | 'usado' | 'perdido' | 'archivado'
+  fecha:         string
+  conductor:     string
+  vehiculo:      string
+  recarga_id:    number | null
+  recarga_fecha: string | null
+  gasolinera:    string | null
+  emergencia:    boolean
+  tickets:       TicketDelVale[]
+}
+
+/** Con el vale en la mano: su recarga y la factura que la cobra. */
+export function useBuscarPorVale(texto: string) {
+  const q = texto.trim()
+  return useQuery({
+    queryKey: ['facturas-gasolina', 'por-vale', q],
+    queryFn: () => api.get<{ data: ValeEncontrado[] }>(
+      `/facturas-gasolina/por-vale?q=${encodeURIComponent(q)}`),
+    enabled: q.length >= 2,
+  })
+}

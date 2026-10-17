@@ -404,3 +404,10 @@ export async function reabrir(facturaId: number): Promise<void> {
   if (!factura) throw new NotFoundError('Factura')
   await repo.reabrir(facturaId)
 }
+
+/** El vale con su recarga y la factura que la cobra, o las que probablemente. */
+export async function buscarPorVale(texto: string) {
+  const t = texto.trim()
+  if (t.length < 2) return []
+  return repo.buscarPorVale(t, LITROS_TOLERANCIA_POR_IMPORTE)
+}
