@@ -68,8 +68,8 @@ export interface Hallazgo {
   caseta:    string | null
   monto:     number
   detalle:   string
-  /** Solo en `cobrado_antes`: el mismo cruce como viene en la otra factura. */
-  otra?:     CruceEnOtra
+  /** Solo en `cobrado_antes`: el mismo cruce en las otras facturas, de la más vieja a la más nueva. */
+  otras?:    CruceEnOtra[]
 }
 
 export interface CruceEnOtra {
@@ -78,7 +78,7 @@ export interface CruceEnOtra {
   folio:         string
   periodo:       string | null
   fecha_emision: string
-  /** Si la otra se emitió antes que esta: la que se reclama es la más nueva. */
+  /** Si la otra se emitió antes que esta. */
   anterior:      boolean
   revisada:      boolean
   renglon:       number

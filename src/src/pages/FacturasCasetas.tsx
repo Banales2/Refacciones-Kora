@@ -340,57 +340,78 @@ function folioDe(f: { serie: string | null; folio: string }): string {
 }
 
 /**
- * El cruce repetido como viene en cada factura, lado a lado: es lo que se le
- * enseña a PASE al reclamar. Lo que no coincide se marca, porque un cruce con
- * otra clase u otro importe ya no es exactamente el mismo cobro.
+ * El cruce repetido como viene en cada factura, en el orden en que se emitieron:
+ * es lo que se le enseña a PASE al reclamar. La primera es el cobro legítimo y
+ * las demás son las repetidas. Lo que no coincide con la primera se marca,
+ * porque un cruce con otra clase u otro importe ya no es exactamente el mismo
+ * cobro.
  */
 function ComparaCobradoAntes({
-  esta, otra, onAbrir,
-}: { esta: CruceCaseta; otra: CruceEnOtra; onAbrir: (id: number) => void }) {
-  const filas: [string, string, string][] = [
-    ['Partida', String(esta.renglon), String(otra.renglon)],
-    ['Fecha y hora', fechaHora(esta.fecha_hora), fechaHora(otra.fecha_hora)],
-    ['Clase', String(esta.clase), String(otra.clase)],
-    ['Total', formatMXN(esta.total), formatMXN(otra.total)],
+  esta, otras, onAbrir,
+}: { esta: CruceCaseta; otras: CruceEnOtra[]; onAbrir: (id: number) => void }) {
+  type Columna = { titulo: string; sub: string | null; facturaId: number | null } &
+    Pick<CruceCaseta, 'renglon' | 'fecha_hora' | 'clase' | 'total'>
+  const deOtra = (o: CruceEnOtra): Columna => ({
+    titulo: folioDe(o), facturaId: o.factura_id,
+    sub: `${o.periodo ?? formatFecha(o.fecha_emision.slice(0, 10))}${o.revisada ? ' · revisada' : ''}`,
+    renglon: o.renglon, fecha_hora: o.fecha_hora, clase: o.clase, total: o.total,
+  })
+  const columnas: Columna[] = [
+    ...otras.filter((o) => o.anterior).map(deOtra),
+    { titulo: 'Esta factura', sub: null, facturaId: null, ...esta },
+    ...otras.filter((o) => !o.anterior).map(deOtra),
   ]
-  const nueva = otra.anterior ? 'esta' : 'otra'
+  const filas: [string, (c: Columna) => string, boolean][] = [
+    ['Partida', (c) => String(c.renglon), false],
+    ['Fecha y hora', (c) => fechaHora(c.fecha_hora), true],
+    ['Clase', (c) => String(c.clase), true],
+    ['Total', (c) => formatMXN(c.total), true],
+  ]
   return (
     <Stack gap={6} mt={4}>
-      <Table withTableBorder fz="xs" verticalSpacing={2} horizontalSpacing="xs">
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th />
-            <Table.Th>
-              Esta factura{nueva === 'esta' && <Badge ml={4} size="xs" color="red" variant="light">repetido</Badge>}
-            </Table.Th>
-            <Table.Th>
-              {folioDe(otra)}{nueva === 'otra' && <Badge ml={4} size="xs" color="red" variant="light">repetido</Badge>}
-              <Text size="xs" c="dimmed" fw={400}>
-                {otra.periodo ?? formatFecha(otra.fecha_emision.slice(0, 10))}
-                {otra.revisada && ' · revisada'}
-              </Text>
-            </Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {filas.map(([etiqueta, a, b]) => (
-            <Table.Tr key={etiqueta}>
-              <Table.Td c="dimmed">{etiqueta}</Table.Td>
-              <Table.Td>{a}</Table.Td>
-              <Table.Td c={etiqueta !== 'Partida' && a !== b ? 'red' : undefined} fw={etiqueta !== 'Partida' && a !== b ? 700 : undefined}>
-                {b}
-              </Table.Td>
+      <Table.ScrollContainer minWidth={120 + 140 * columnas.length}>
+        <Table withTableBorder fz="xs" verticalSpacing={2} horizontalSpacing="xs">
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th />
+              {columnas.map((c, i) => (
+                <Table.Th key={i}>
+                  {c.titulo}
+                  <Badge ml={4} size="xs" variant="light" color={i === 0 ? 'gray' : 'red'}>
+                    {i === 0 ? 'primer cobro' : 'repetido'}
+                  </Badge>
+                  {c.sub && <Text size="xs" c="dimmed" fw={400}>{c.sub}</Text>}
+                </Table.Th>
+              ))}
             </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-      <Group justify="flex-end">
-        <Button
-          size="compact-xs" variant="subtle" rightSection={<IconArrowRight size={14} />}
-          onClick={() => onAbrir(otra.factura_id)}
-        >
-          Abrir factura {folioDe(otra)}
-        </Button>
+          </Table.Thead>
+          <Table.Tbody>
+            {filas.map(([etiqueta, valor, compara]) => (
+              <Table.Tr key={etiqueta}>
+                <Table.Td c="dimmed">{etiqueta}</Table.Td>
+                {columnas.map((c, i) => {
+                  const distinto = compara && i > 0 && valor(c) !== valor(columnas[0])
+                  return (
+                    <Table.Td key={i} c={distinto ? 'red' : undefined} fw={distinto ? 700 : undefined}>
+                      {valor(c)}
+                    </Table.Td>
+                  )
+                })}
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+      <Group justify="flex-end" gap="xs">
+        {otras.map((o) => (
+          <Button
+            key={o.factura_id}
+            size="compact-xs" variant="subtle" rightSection={<IconArrowRight size={14} />}
+            onClick={() => onAbrir(o.factura_id)}
+          >
+            Abrir {folioDe(o)}
+          </Button>
+        ))}
       </Group>
     </Stack>
   )
@@ -417,10 +438,16 @@ function TarjetaHallazgo({
           </Text>
           {h.caseta && <Text size="xs" c="dimmed">{h.caseta}</Text>}
           <Text size="xs">{h.detalle}</Text>
-          {h.otra && cruce && <ComparaCobradoAntes esta={cruce} otra={h.otra} onAbrir={onAbrir} />}
+          {h.otras && cruce && <ComparaCobradoAntes esta={cruce} otras={h.otras} onAbrir={onAbrir} />}
         </Stack>
-        <Tooltip label={h.grupo === 'cobro' ? 'Lo que pudo cobrarse de más' : 'Lo que suman esos cruces'}>
-          <Text size="sm" fw={700} style={{ whiteSpace: 'nowrap' }}>{formatMXN(h.monto)}</Text>
+        <Tooltip label={
+          h.tipo === 'cobrado_antes' && h.monto === 0
+            ? 'Aquí fue el primer cobro: lo de más está en las otras facturas'
+            : h.grupo === 'cobro' ? 'Lo que pudo cobrarse de más' : 'Lo que suman esos cruces'
+        }>
+          <Text size="sm" fw={700} c={h.monto === 0 ? 'dimmed' : undefined} style={{ whiteSpace: 'nowrap' }}>
+            {formatMXN(h.monto)}
+          </Text>
         </Tooltip>
       </Group>
     </Card>

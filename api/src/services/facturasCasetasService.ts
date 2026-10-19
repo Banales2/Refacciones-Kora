@@ -151,10 +151,11 @@ export interface Hallazgo {
   monto: number
   detalle: string
   /**
-   * Solo en `cobrado_antes`: el mismo cruce como viene en la otra factura, para
-   * ponerlos lado a lado sin ir a buscarla.
+   * Solo en `cobrado_antes`: el mismo cruce como viene en cada una de las otras
+   * facturas, de la más vieja a la más nueva, para ponerlos lado a lado sin ir a
+   * buscarlas.
    */
-  otra?: CruceEnOtra
+  otras?: CruceEnOtra[]
 }
 
 export interface CruceEnOtra {
@@ -163,7 +164,7 @@ export interface CruceEnOtra {
   folio: string
   periodo: string | null
   fecha_emision: string
-  /** Si la otra se emitió antes que esta: la que se reclama es la más nueva. */
+  /** Si la otra se emitió antes que esta. */
   anterior: boolean
   revisada: boolean
   renglon: number
@@ -245,27 +246,35 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
 
   // ── Lo que PASE pudo cobrar de más ──
 
+  // Un hallazgo por cruce, con todas las facturas donde vuelve a venir. La
+  // primera vez que se cobró es el cobro legítimo; cada vez que aparece después
+  // es un cobro de más. Así, de tres facturas con el mismo cruce, la primera
+  // muestra el hallazgo en $0 y las otras dos lo cuentan.
+  const otrasPorRenglon = new Map<number, CruceEnOtra[]>()
   for (const o of cobrados) {
-    const c = porRenglon.get(o.renglon)
-    if (!c) continue
-    // La consulta es simétrica: la factura vieja también ve a la nueva. Se dice
-    // cuál fue primero para que se reclame la que cobró de nuevo.
     const anterior = o.fecha_emision < factura.fecha_emision
       || (o.fecha_emision === factura.fecha_emision && o.factura_id < factura.id)
-    const folio = o.serie ? `${o.serie}-${o.folio}` : o.folio
+    otrasPorRenglon.set(o.renglon, [...(otrasPorRenglon.get(o.renglon) ?? []), {
+      factura_id: o.factura_id, serie: o.serie, folio: o.folio, periodo: o.periodo,
+      fecha_emision: o.fecha_emision, anterior, revisada: !!o.revisada,
+      renglon: o.renglon_otra, fecha_hora: o.fecha_hora_otra,
+      clase: o.clase_otra, total: o.total_otra,
+    }])
+  }
+  const folioDe = (o: CruceEnOtra) => `${o.serie ? `${o.serie}-` : ''}${o.folio} (partida ${o.renglon})`
+  for (const [renglon, otras] of otrasPorRenglon) {
+    const c = porRenglon.get(renglon)
+    if (!c) continue
+    const primera = otras.find((o) => o.anterior)
+    const despues = otras.filter((o) => !o.anterior)
     agregar({
       tipo: 'cobrado_antes', renglones: [c.renglon], tag: c.tag, vehiculo: c.vehiculo,
-      caseta: c.descripcion, monto: c.total,
-      detalle: anterior
-        ? `El mismo cruce ya venía en la factura ${folio}, partida ${o.renglon_otra}.`
-        : `El mismo cruce vuelve a venir en la factura ${folio}, partida ${o.renglon_otra}, ` +
-          'emitida después: el cobro repetido está en esa.',
-      otra: {
-        factura_id: o.factura_id, serie: o.serie, folio: o.folio, periodo: o.periodo,
-        fecha_emision: o.fecha_emision, anterior, revisada: !!o.revisada,
-        renglon: o.renglon_otra, fecha_hora: o.fecha_hora_otra,
-        clase: o.clase_otra, total: o.total_otra,
-      },
+      caseta: c.descripcion, monto: primera ? c.total : 0,
+      detalle: primera
+        ? `El mismo cruce ya se había cobrado en la factura ${folioDe(primera)}.`
+        : `Aquí se cobró por primera vez; se volvió a cobrar en ${despues.map(folioDe).join(', ')}. ` +
+          'Lo cobrado de más está en esa(s).',
+      otras,
     })
   }
 

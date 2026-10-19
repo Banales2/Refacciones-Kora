@@ -54,7 +54,7 @@ preguntas distintas:
 
 | | grupo | qué es | el dinero que se enseña |
 |---|---|---|---|
-| **Ya cobrado en otra factura** | cobro | mismo tag, caseta y hora al segundo en otra factura | el cruce entero |
+| **Ya cobrado en otra factura** | cobro | mismo tag, caseta y hora al segundo en otra factura | el cruce entero; $0 en la factura donde se cobró primero |
 | **Posible doble cobro** | cobro | mismo tag y caseta con menos de 60 min | el menor de los dos |
 | **Clase arriba de la habitual** | cobro | el tag pagó en esa caseta una clase mayor que la que suele pagar | lo que pagó por encima de lo **más caro** que ha pagado en su clase habitual |
 | **Ajuste de PASE** | cobro | clase 0 o "AJUSTE …" | el cargo |
@@ -62,11 +62,12 @@ preguntas distintas:
 | **Tag sin unidad** | uso | nadie ha dicho de qué unidad es | lo que suman sus cruces |
 | **Caseta que el tag no cruzaba** | uso | con 30+ cruces en otras facturas, nunca por esta caseta | lo que suman |
 
-El hallazgo **Ya cobrado en otra factura** trae el cruce como viene en la otra
-factura y los pone lado a lado (partida, hora, clase, total), marca cuál de las
-dos es la más nueva —la que cobró de nuevo y se reclama— y lleva un botón para
-abrir la otra sin cerrar el detalle. Sale en las dos facturas, porque la
-consulta es simétrica.
+El hallazgo **Ya cobrado en otra factura** sale una vez por cruce, en todas las
+facturas donde viene. Pone el cruce lado a lado tal como aparece en cada factura
+(partida, hora, clase, total), en orden de emisión, y trae un botón para abrir
+cada una sin cerrar el detalle. **La primera vez que se cobró no cuenta**: ahí
+el hallazgo vale $0. Cada factura posterior cuenta el cruce entero como cobrado
+de más. Con tres facturas, se reclaman dos.
 
 **Ninguno es una conclusión.** Un tráiler que paga clase 9 donde siempre paga 5
 puede llevar doble caja ese día; quien lo sabe es quien revisa.
