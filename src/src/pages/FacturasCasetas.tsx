@@ -26,7 +26,7 @@ import {
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
-  IconAlertTriangle, IconArrowRight, IconCheck, IconFileImport, IconLockOpen, IconPencil, IconPlus,
+  IconAlertTriangle, IconArrowRight, IconCheck, IconFileImport, IconFileTypePdf, IconLockOpen, IconPencil, IconPlus,
   IconSearch,
 } from '@tabler/icons-react'
 import {
@@ -39,7 +39,8 @@ import type {
   CasetaSinTarifa, CorreccionDeClase, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas,
   TarifaTramo, TarifasDeCaseta, ValoresTarifa, Hallazgo, TagCaseta, TipoHallazgo,
 } from '../hooks/useFacturasCasetas'
-import { useVehiculos } from '../hooks/useVehiculos'
+import { fetchTodosLosVehiculos, useVehiculos } from '../hooks/useVehiculos'
+import { exportTagsCasetasToPdf } from '../lib/exportTagsCasetas'
 import { FechaInput } from '../components/FechaInput'
 import { usePermisos } from '../hooks/usePermisos'
 import { ApiError } from '../lib/api'
@@ -1080,8 +1081,25 @@ function TagsPanel() {
   const { puedeEditar } = usePermisos()
   const { data, isLoading, isError } = useTagsCasetas()
   const [nuevo, setNuevo] = useState(false)
+  const [exportando, setExportando] = useState(false)
+  const [errorPdf, setErrorPdf] = useState<string | null>(null)
   const tags = data?.data ?? []
   const sinUnidad = tags.filter((t) => t.vehiculo_id === null).length
+
+  // La flota se pide al momento: es para las placas y para saber qué unidades
+  // no tienen tag, y la pestaña no la necesita para nada más.
+  async function exportarPdf() {
+    setExportando(true)
+    setErrorPdf(null)
+    try {
+      const vehiculos = await fetchTodosLosVehiculos()
+      await exportTagsCasetasToPdf(tags, vehiculos.data)
+    } catch (e) {
+      setErrorPdf((e as Error).message || 'No se pudo generar el PDF.')
+    } finally {
+      setExportando(false)
+    }
+  }
 
   return (
     <Stack gap="md">
@@ -1090,12 +1108,22 @@ function TagsPanel() {
           De qué unidad es cada tag. Al asignarlo, sus cruces que no tenían unidad
           pasan a la nueva; los que ya tenían una se quedan con ella.
         </Text>
-        {puedeEditar && (
-          <Button variant="light" leftSection={<IconPlus size={16} />} onClick={() => setNuevo(true)}>
-            Registrar tag
+        <Group gap="xs">
+          <Button
+            variant="default" leftSection={<IconFileTypePdf size={16} />}
+            loading={exportando} disabled={!tags.length} onClick={exportarPdf}
+          >
+            PDF
           </Button>
-        )}
+          {puedeEditar && (
+            <Button variant="light" leftSection={<IconPlus size={16} />} onClick={() => setNuevo(true)}>
+              Registrar tag
+            </Button>
+          )}
+        </Group>
       </Group>
+
+      {errorPdf && <Alert color="red" onClose={() => setErrorPdf(null)} withCloseButton>{errorPdf}</Alert>}
 
       {sinUnidad > 0 && (
         <Alert color="grape" variant="light" icon={<IconAlertTriangle size={16} />}>
