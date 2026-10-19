@@ -317,6 +317,42 @@ export async function cobradosAntes(facturaId: number): Promise<CobradoAntes[]> 
   return r.recordset as CobradoAntes[]
 }
 
+/** Las clasificaciones del operador, en el orden de su tabla. */
+export const CATEGORIAS = [
+  'moto', 'auto', 'autobus', 'camion_2_4', 'camion_5_6', 'camion_7_9', 'eje_ligero', 'eje_pesado',
+] as const
+export type Categoria = typeof CATEGORIAS[number]
+
+/** Un tramo que una caseta puede cobrar, con una de sus vigencias. */
+export type TarifaTramo = {
+  caseta: string
+  tramo_id: number
+  autopista: string
+  tramo: string
+  vigente_desde: string
+} & Record<Categoria, number | null>
+
+/**
+ * Las tarifas de los tramos que pueden cobrar las casetas de esta factura,
+ * todas las vigencias: la que aplica a cada cruce depende de su fecha, y eso lo
+ * decide el service. Ver `db/migrations/071_tarifas_de_casetas.sql`.
+ */
+export async function tarifasDeFactura(facturaId: number): Promise<TarifaTramo[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, facturaId)
+    .query(`
+      SELECT ct.caseta, t.id AS tramo_id, t.autopista, t.nombre AS tramo,
+             CONVERT(char(10), ta.vigente_desde, 23) AS vigente_desde,
+             ta.moto, ta.auto, ta.autobus, ta.camion_2_4, ta.camion_5_6, ta.camion_7_9,
+             ta.eje_ligero, ta.eje_pesado
+      FROM casetas_tramos ct
+      JOIN tramos_casetas t   ON t.id = ct.tramo_id
+      JOIN tarifas_casetas ta ON ta.tramo_id = t.id
+      WHERE ct.caseta IN (SELECT DISTINCT caseta FROM facturas_casetas_cruces WHERE factura_id = @id)`)
+  return r.recordset as TarifaTramo[]
+}
+
 export async function revisar(id: number, quien: string, nota: string | null): Promise<boolean> {
   const pool = await getPool()
   const r = await pool.request()

@@ -9,8 +9,9 @@
 // HALLAZGOS: lo que hay que mirar, con el dinero en juego al lado, separados en
 // dos preguntas que no se suman:
 //
-//   cobro   lo que PASE pudo cobrar de más: cruces repetidos, clase arriba de la
-//           habitual, ajustes y cruces de fuera del periodo
+//   cobro   lo que PASE pudo cobrar de más: cruces repetidos, importes que no
+//           son de ningún tramo, clase arriba de la habitual, ajustes y cruces
+//           de fuera del periodo
 //   uso     cómo se usan las unidades: tags sin unidad, casetas que el tag nunca
 //           había cruzado
 //
@@ -33,7 +34,7 @@ import {
   useRevisarFacturaCasetas, useTagsCasetas,
 } from '../hooks/useFacturasCasetas'
 import type {
-  CruceCaseta, CruceEnOtra, DetalleFacturaCasetas, Hallazgo, TagCaseta, TipoHallazgo,
+  CasetaSinTarifa, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas, Hallazgo, TagCaseta, TipoHallazgo,
 } from '../hooks/useFacturasCasetas'
 import { useVehiculos } from '../hooks/useVehiculos'
 import { usePermisos } from '../hooks/usePermisos'
@@ -50,6 +51,7 @@ const CRUCES_POR_PAGINA = 50
 
 const TITULO_HALLAZGO: Record<TipoHallazgo, string> = {
   cobrado_antes: 'Ya cobrado en otra factura',
+  fuera_de_tarifa: 'Fuera de tarifa',
   doble_cobro: 'Posible doble cobro',
   clase_mayor: 'Clase arriba de la habitual',
   ajuste: 'Ajuste de PASE',
@@ -60,6 +62,7 @@ const TITULO_HALLAZGO: Record<TipoHallazgo, string> = {
 
 const COLOR_HALLAZGO: Record<TipoHallazgo, string> = {
   cobrado_antes: 'red',
+  fuera_de_tarifa: 'red',
   doble_cobro: 'red',
   clase_mayor: 'orange',
   ajuste: 'yellow',
@@ -437,6 +440,7 @@ function ComparaDobleCobro({ cruces }: { cruces: CruceCaseta[] }) {
     ['Partida', (c) => String(c.renglon), false],
     ['Fecha y hora', (c) => `${formatFecha(c.fecha_hora.slice(0, 10))} ${c.fecha_hora.slice(11, 19)}`, false],
     ['Desde el anterior', (c, i) => (i === 0 ? '—' : lapso(orden[i - 1].fecha_hora, c.fecha_hora)), false],
+    ['Tramo', (c) => c.tramo ?? 'sin tarifa', true],
     ['Carril', (c) => c.carril ?? '—', true],
     ['Evento', (c) => c.evento ?? '—', true],
     ['Clase', (c) => String(c.clase), true],
@@ -515,9 +519,28 @@ function TarjetaHallazgo({
   )
 }
 
+/**
+ * Lo que no se revisó contra precio: sin esto, "nada fuera de tarifa" se lee
+ * como que todo cuadró, cuando una parte ni se miró.
+ */
+function SinTarifa({ casetas }: { casetas: CasetaSinTarifa[] }) {
+  if (casetas.length === 0) return null
+  const cruces = sumar(casetas, (c) => c.cruces)
+  return (
+    <Text size="xs" c="dimmed">
+      Sin tarifa cargada, no se revisó contra precio: {cruces} cruce{cruces === 1 ? '' : 's'} por{' '}
+      {formatMXN(sumar(casetas, (c) => c.total))} en{' '}
+      {casetas.map((c) => `${c.descripcion.replace(/^PEAJE /i, '')} (${c.caseta})`).join(', ')}.
+    </Text>
+  )
+}
+
 function Hallazgos({
-  hallazgos, cruces, onAbrir,
-}: { hallazgos: Hallazgo[]; cruces: CruceCaseta[]; onAbrir: (id: number) => void }) {
+  hallazgos, cruces, sinTarifa, onAbrir,
+}: {
+  hallazgos: Hallazgo[]; cruces: CruceCaseta[]; sinTarifa: CasetaSinTarifa[]
+  onAbrir: (id: number) => void
+}) {
   const porRenglon = new Map(cruces.map((c) => [c.renglon, c]))
   const tarjeta = (h: Hallazgo, key: string) => (
     <TarjetaHallazgo
@@ -530,9 +553,12 @@ function Hallazgos({
 
   if (hallazgos.length === 0) {
     return (
-      <Alert color="green" variant="light" icon={<IconCheck size={16} />}>
-        No hay nada fuera de lo normal en esta factura.
-      </Alert>
+      <Stack gap="xs">
+        <Alert color="green" variant="light" icon={<IconCheck size={16} />}>
+          No hay nada fuera de lo normal en esta factura.
+        </Alert>
+        <SinTarifa casetas={sinTarifa} />
+      </Stack>
     )
   }
 
@@ -550,6 +576,7 @@ function Hallazgos({
           ? <Text size="sm" c="dimmed">Nada.</Text>
           : uso.map((h, i) => tarjeta(h, `u${i}`))}
       </Stack>
+      <SinTarifa casetas={sinTarifa} />
     </Stack>
   )
 }
@@ -600,7 +627,8 @@ function Cruces({ cruces }: { cruces: CruceCaseta[] }) {
 
   const q = buscar.trim().toUpperCase()
   const filtrados = cruces.filter((c) =>
-    (!tag || c.tag === tag) && (!q || c.descripcion.toUpperCase().includes(q)))
+    (!tag || c.tag === tag)
+    && (!q || c.descripcion.toUpperCase().includes(q) || !!c.tramo?.toUpperCase().includes(q)))
   const paginas = Math.ceil(filtrados.length / CRUCES_POR_PAGINA)
   const visibles = filtrados.slice((page - 1) * CRUCES_POR_PAGINA, page * CRUCES_POR_PAGINA)
 
@@ -640,7 +668,10 @@ function Cruces({ cruces }: { cruces: CruceCaseta[] }) {
                   <Text size="sm">{c.vehiculo ?? 'Sin unidad'}</Text>
                   <Text size="xs" c="dimmed" ff="monospace">{c.tag}</Text>
                 </Table.Td>
-                <Table.Td>{c.descripcion}</Table.Td>
+                <Table.Td>
+                  {c.descripcion}
+                  {c.tramo && <Text size="xs" c="dimmed">{c.tramo}</Text>}
+                </Table.Td>
                 <Table.Td style={{ textAlign: 'center' }}>{c.clase}</Table.Td>
                 <Table.Td style={{ textAlign: 'right' }}>{formatMXN(c.total)}</Table.Td>
               </Table.Tr>
@@ -727,7 +758,7 @@ function DetalleModal({
               <Tabs.Tab value="unidades">Por unidad</Tabs.Tab>
               <Tabs.Tab value="cruces">Cruces</Tabs.Tab>
             </Tabs.List>
-            <Tabs.Panel value="hallazgos" pt="md"><Hallazgos hallazgos={d.hallazgos} cruces={d.cruces} onAbrir={abrirOtra} /></Tabs.Panel>
+            <Tabs.Panel value="hallazgos" pt="md"><Hallazgos hallazgos={d.hallazgos} cruces={d.cruces} sinTarifa={d.sin_tarifa} onAbrir={abrirOtra} /></Tabs.Panel>
             <Tabs.Panel value="unidades" pt="md"><PorUnidad detalle={d} /></Tabs.Panel>
             <Tabs.Panel value="cruces" pt="md"><Cruces cruces={d.cruces} /></Tabs.Panel>
           </Tabs>

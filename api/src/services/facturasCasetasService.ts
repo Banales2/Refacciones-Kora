@@ -1,5 +1,7 @@
 import * as repo from '../repositories/facturasCasetasRepo'
-import type { CruceRow, FacturaCasetas, HistorialTag } from '../repositories/facturasCasetasRepo'
+import type {
+  Categoria, CruceRow, FacturaCasetas, HistorialTag, TarifaTramo,
+} from '../repositories/facturasCasetasRepo'
 import type { FacturaCasetasImport, TagCreate, TagUpdate } from '../schemas/facturaCasetasSchema'
 import { AppError, ConflictError, NotFoundError, ValidationError, esLlaveDuplicada } from '../shared/errors'
 import { aCentavos } from '../shared/totales'
@@ -12,6 +14,8 @@ import { aCentavos } from '../shared/totales'
 //
 //   el documento      que los cruces sumen lo impreso, cruces repetidos, ajustes
 //                     y cruces de fuera del periodo
+//   las tarifas       que el importe sea el de algún tramo que esa caseta
+//                     cobra, y cuál tramo fue (ver la 071)
 //   la historia       la clase que el tag suele pagar en esa caseta, y las
 //                     casetas que nunca cruza
 //
@@ -19,7 +23,7 @@ import { aCentavos } from '../shared/totales'
 // dinero que está en juego al lado. Un tráiler que cruza clase 9 donde siempre
 // paga 5 puede llevar doble caja ese día; quien lo sabe es quien revisa.
 //
-// Ver `db/migrations/064_facturas_de_casetas.sql`.
+// Ver `db/migrations/064_facturas_de_casetas.sql` y `071_tarifas_de_casetas.sql`.
 
 /** Ya se importó una factura con ese UUID. */
 export const FACTURA_DUPLICADA = 'FACTURA_DUPLICADA'
@@ -46,6 +50,36 @@ const MIN_HISTORIA_CASETA = 30
 
 /** La tolerancia al comparar sumas contra lo impreso: un centavo. */
 const TOLERANCIA = 0.01
+
+/**
+ * La clase de PASE y las clasificaciones del operador que puede ser. Sale de la
+ * factura de septiembre de 2026 contra las tarifas de IDEAL: la clase es el
+ * número de ejes, con 1 para el automóvil. De 2 a 4 no se distingue el autobús
+ * del camión, así que vale cualquiera de los dos.
+ *
+ * Las casetas EASYTRIP cobran clase 1 a los tractocamiones; si se cargan sus
+ * tarifas, esta tabla no les sirve.
+ */
+const CATEGORIAS_DE_CLASE: Record<number, Categoria[]> = {
+  1: ['auto'],
+  2: ['autobus', 'camion_2_4'], 3: ['autobus', 'camion_2_4'], 4: ['autobus', 'camion_2_4'],
+  5: ['camion_5_6'], 6: ['camion_5_6'],
+  7: ['camion_7_9'], 8: ['camion_7_9'], 9: ['camion_7_9'],
+}
+
+const NOMBRE_CATEGORIA: Record<Categoria, string> = {
+  moto: 'motocicleta',
+  auto: 'automóvil',
+  autobus: 'autobús 2-4 ejes',
+  camion_2_4: 'camión 2-4 ejes',
+  camion_5_6: 'camión 5-6 ejes',
+  camion_7_9: 'camión 7-9 ejes',
+  eje_ligero: 'eje excedente ligero',
+  eje_pesado: 'eje excedente pesado',
+}
+
+/** Las clasificaciones entre las que un ajuste puede corregir, de menor a mayor. */
+const ESCALA: Categoria[] = ['auto', 'autobus', 'camion_2_4', 'camion_5_6', 'camion_7_9']
 
 export async function getAll(p: {
   page: number; pageSize: number; search?: string; por_revisar?: boolean
@@ -127,8 +161,8 @@ function duplicada(folio: string): AppError {
 // ── Revisar ──────────────────────────────────────────────────────────────────
 
 export type TipoHallazgo =
-  | 'cobrado_antes' | 'doble_cobro' | 'clase_mayor' | 'ajuste' | 'fuera_de_periodo'
-  | 'tag_sin_unidad' | 'caseta_inusual'
+  | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_mayor' | 'ajuste'
+  | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
 
 /**
  * De qué lado está el problema. Son dos preguntas distintas y no se suman:
@@ -183,15 +217,28 @@ export interface ResumenUnidad {
   casetas: number
 }
 
+/** El cruce con el tramo que su importe identifica, si la caseta tiene tarifa. */
+export type CruceConTramo = CruceRow & { tramo: string | null }
+
+/** Las casetas de la factura sin tarifa cargada: lo que no se pudo revisar. */
+export interface CasetaSinTarifa {
+  caseta: string
+  descripcion: string
+  cruces: number
+  total: number
+}
+
 export interface DetalleFactura {
   factura: FacturaCasetas
-  cruces: CruceRow[]
+  cruces: CruceConTramo[]
   hallazgos: Hallazgo[]
   por_unidad: ResumenUnidad[]
+  sin_tarifa: CasetaSinTarifa[]
 }
 
 const GRUPO: Record<TipoHallazgo, GrupoHallazgo> = {
   cobrado_antes: 'cobro',
+  fuera_de_tarifa: 'cobro',
   doble_cobro: 'cobro',
   clase_mayor: 'cobro',
   ajuste: 'cobro',
@@ -206,6 +253,54 @@ function minutos(a: CruceRow, b: CruceRow): number {
 }
 function esAjuste(c: CruceRow): boolean {
   return c.clase === 0 || /^AJUSTE\b/i.test(c.descripcion)
+}
+function pesos(n: number): string { return `$${n.toFixed(2)}` }
+function iguales(a: number, b: number): boolean { return Math.abs(a - b) <= TOLERANCIA }
+
+/**
+ * Las tarifas vigentes el día del cruce, una por tramo, de los tramos que su
+ * caseta puede cobrar. Vacío si la caseta no tiene tarifa cargada.
+ */
+function vigentes(porCaseta: Map<string, TarifaTramo[]>, c: CruceRow): TarifaTramo[] {
+  const fecha = fechaDe(c)
+  const porTramo = new Map<number, TarifaTramo>()
+  for (const t of porCaseta.get(c.caseta) ?? []) {
+    if (t.vigente_desde > fecha) continue
+    const actual = porTramo.get(t.tramo_id)
+    if (!actual || t.vigente_desde > actual.vigente_desde) porTramo.set(t.tramo_id, t)
+  }
+  return [...porTramo.values()]
+}
+
+/** Los importes válidos para la clase del cruce: un tramo y una clasificación cada uno. */
+function validas(ts: TarifaTramo[], clase: number) {
+  return ts.flatMap((t) => (CATEGORIAS_DE_CLASE[clase] ?? []).flatMap((cat) =>
+    t[cat] === null ? [] : [{ tramo: t.tramo, categoria: cat, total: Number(t[cat]) }]))
+}
+
+/**
+ * Lo que un ajuste puede ser: la diferencia entre dos clasificaciones de un
+ * tramo (el carril leyó menos ejes y lo corrigieron) o el cobro de un eje
+ * excedente. Vacío si no cuadra con nada.
+ */
+function explicarAjuste(ts: TarifaTramo[], total: number): string[] {
+  const r: string[] = []
+  for (const t of ts) {
+    for (let i = 0; i < ESCALA.length; i++) {
+      for (let j = i + 1; j < ESCALA.length; j++) {
+        const de = t[ESCALA[i]]
+        const a = t[ESCALA[j]]
+        if (de === null || a === null || !iguales(Number(a) - Number(de), total)) continue
+        r.push(`corrección de ${NOMBRE_CATEGORIA[ESCALA[i]]} (${pesos(Number(de))}) a ` +
+          `${NOMBRE_CATEGORIA[ESCALA[j]]} (${pesos(Number(a))}) en ${t.tramo}`)
+      }
+    }
+    for (const eje of ['eje_ligero', 'eje_pesado'] as const) {
+      const v = t[eje]
+      if (v !== null && iguales(Number(v), total)) r.push(`${NOMBRE_CATEGORIA[eje]} en ${t.tramo}`)
+    }
+  }
+  return r
 }
 
 /**
@@ -238,6 +333,10 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
   const cruces = await repo.cruces(facturaId)
   const historial = await repo.historialDeTags(facturaId)
   const cobrados = await repo.cobradosAntes(facturaId)
+  const tarifas = new Map<string, TarifaTramo[]>()
+  for (const t of await repo.tarifasDeFactura(facturaId)) {
+    tarifas.set(t.caseta, [...(tarifas.get(t.caseta) ?? []), t])
+  }
 
   const hallazgos: Hallazgo[] = []
   const agregar = (h: Omit<Hallazgo, 'grupo'>) =>
@@ -278,9 +377,46 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
     })
   }
 
+  // Contra la tarifa: el importe dice por qué tramo se cobró. Si no es el de
+  // ningún tramo que la caseta cobra, es un hallazgo; si es más caro que todos,
+  // lo de más es contra el más caro, porque cualquiera de los válidos pudo ser.
+  const tramoDe = new Map<number, string[]>()
+  const sinTarifa = new Map<string, CasetaSinTarifa>()
+  for (const c of cruces) {
+    if (esAjuste(c)) continue
+    const ts = vigentes(tarifas, c)
+    if (ts.length === 0) {
+      const s = sinTarifa.get(c.caseta)
+        ?? { caseta: c.caseta, descripcion: c.descripcion, cruces: 0, total: 0 }
+      s.cruces++
+      s.total += c.total
+      sinTarifa.set(c.caseta, s)
+      continue
+    }
+    const vs = validas(ts, c.clase)
+    if (vs.length === 0) continue
+    const coinciden = vs.filter((v) => iguales(v.total, c.total))
+    if (coinciden.length > 0) {
+      tramoDe.set(c.renglon, [...new Set(coinciden.map((v) => v.tramo))])
+      continue
+    }
+    const maximo = Math.max(...vs.map((v) => v.total))
+    const minimo = Math.min(...vs.map((v) => v.total))
+    const cercana = [...vs].sort((a, b) => Math.abs(a.total - c.total) - Math.abs(b.total - c.total))[0]
+    const clases = [...new Set(vs.map((v) => NOMBRE_CATEGORIA[v.categoria]))].join(' o ')
+    agregar({
+      tipo: 'fuera_de_tarifa', renglones: [c.renglon], tag: c.tag, vehiculo: c.vehiculo,
+      caseta: c.descripcion, monto: c.total > maximo ? c.total - maximo : 0,
+      detalle: `Clase ${c.clase} (${clases}): ningún tramo que cobra esta caseta cuesta ` +
+        `${pesos(c.total)}. Lo más cercano: ${cercana.tramo}, ${pesos(cercana.total)}.` +
+        (c.total < minimo ? ' Cobró menos que cualquier tarifa: revisa que la tarifa cargada sea la de esa fecha.' : ''),
+    })
+  }
+
   // Por tag y caseta antes que por hora: si el tag pasa por otra caseta en
   // medio, los dos cruces de la primera siguen quedando juntos.
-  const ordenados = [...cruces].sort(
+  // Los ajustes no entran: una corrección no es un cobro repetido.
+  const ordenados = cruces.filter((c) => !esAjuste(c)).sort(
     (a, b) => a.tag.localeCompare(b.tag) || a.caseta.localeCompare(b.caseta)
       || a.fecha_hora.localeCompare(b.fecha_hora),
   )
@@ -289,12 +425,21 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
   // par por cada dos seguidos: tres lecturas del carril son un solo problema.
   // De más es todo menos un cruce, y se descuenta el más caro: ese pudo ser el
   // legítimo, y así no se reclama de más.
+  //
+  // Con tarifa, dos cruces de tramos distintos tampoco se encadenan: es un
+  // recorrido en dos partes (salió en La Peñita y volvió a entrar), no un cobro
+  // repetido.
+  const dosTramos = (a: CruceRow, b: CruceRow) => {
+    const ta = tramoDe.get(a.renglon)
+    const tb = tramoDe.get(b.renglon)
+    return !!ta && !!tb && !ta.some((t) => tb.includes(t))
+  }
   const rafagas: CruceRow[][] = []
   for (let i = 0; i < ordenados.length; i++) {
     const a = ordenados[i - 1]
     const b = ordenados[i]
     const sigue = a && a.tag === b.tag && a.caseta === b.caseta
-      && minutos(a, b) < DOBLE_COBRO_MINUTOS
+      && minutos(a, b) < DOBLE_COBRO_MINUTOS && !dosTramos(a, b)
     if (sigue) rafagas[rafagas.length - 1].push(b)
     else rafagas.push([b])
   }
@@ -331,10 +476,18 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
 
   for (const c of cruces) {
     if (esAjuste(c)) {
+      const ts = vigentes(tarifas, c)
+      const explicaciones = explicarAjuste(ts, c.total)
       agregar({
         tipo: 'ajuste', renglones: [c.renglon], tag: c.tag, vehiculo: c.vehiculo,
         caseta: c.descripcion, monto: c.total,
-        detalle: `Ajuste de PASE del ${fechaDe(c)}. Pide el detalle de qué corrige.`,
+        detalle: `Ajuste de PASE del ${fechaDe(c)}. ` + (
+          explicaciones.length > 0
+            ? `Cuadra con ${explicaciones.join(', o con ')}. Revisa que la unidad sea de esa clase.`
+            : ts.length > 0
+              ? 'No cuadra con ninguna diferencia de tarifas de esta caseta. Pide el detalle de qué corrige.'
+              : 'Pide el detalle de qué corrige.'
+        ),
       })
       continue
     }
@@ -392,7 +545,15 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
     }
   }
 
-  return { factura, cruces, hallazgos, por_unidad: resumenPorUnidad(cruces) }
+  return {
+    factura,
+    cruces: cruces.map((c) => ({ ...c, tramo: tramoDe.get(c.renglon)?.join(' / ') ?? null })),
+    hallazgos,
+    por_unidad: resumenPorUnidad(cruces),
+    sin_tarifa: [...sinTarifa.values()]
+      .map((s) => ({ ...s, total: aCentavos(s.total) }))
+      .sort((a, b) => b.total - a.total),
+  }
 }
 
 /**

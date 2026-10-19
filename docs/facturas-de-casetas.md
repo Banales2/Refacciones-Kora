@@ -54,10 +54,11 @@ preguntas distintas:
 
 | | grupo | qué es | el dinero que se enseña |
 |---|---|---|---|
+| **Fuera de tarifa** | cobro | el importe no es el de ningún tramo que esa caseta cobra, para su clase | lo que pasa del tramo más caro; $0 si cobró menos o queda entre dos |
 | **Ya cobrado en otra factura** | cobro | mismo tag, caseta y hora al segundo en otra factura | el cruce entero; $0 en la factura donde se cobró primero |
-| **Posible doble cobro** | cobro | mismo tag y caseta con menos de 60 min entre un cruce y el siguiente | todos menos el más caro |
+| **Posible doble cobro** | cobro | mismo tag y caseta con menos de 60 min entre un cruce y el siguiente, y no son dos tramos distintos | todos menos el más caro |
 | **Clase arriba de la habitual** | cobro | el tag pagó en esa caseta una clase mayor que la que suele pagar | lo que pagó por encima de lo **más caro** que ha pagado en su clase habitual |
-| **Ajuste de PASE** | cobro | clase 0 o "AJUSTE …" | el cargo |
+| **Ajuste de PASE** | cobro | clase 0 o "AJUSTE …"; con tarifa, dice qué corrección de clase o eje excedente cuadra | el cargo |
 | **Fuera del periodo** | cobro | cruce con fecha fuera de las del periodo | el cruce |
 | **Tag sin unidad** | uso | nadie ha dicho de qué unidad es | lo que suman sus cruces |
 | **Caseta que el tag no cruzaba** | uso | con 30+ cruces en otras facturas, nunca por esta caseta | lo que suman |
@@ -78,6 +79,49 @@ de más. Con tres facturas, se reclaman dos.
 
 **Ninguno es una conclusión.** Un tráiler que paga clase 9 donde siempre paga 5
 puede llevar doble caja ese día; quien lo sabe es quien revisa.
+
+## Las tarifas
+
+Ver `db/migrations/071_tarifas_de_casetas.sql`.
+
+```
+tramos_casetas         autopista + tramo, como lo publica el operador
+  tarifas_casetas      tramo + vigencia -> tarifa por clasificación (con IVA)
+casetas_tramos         código de caseta de PASE -> tramos que puede cobrar
+```
+
+**La tarifa es del tramo, no de la caseta.** En un sistema cerrado se paga
+según por dónde se entró: en La Peñita un camión de 5 ejes paga $193 (Capomo →
+La Peñita), $1,871 (La Peñita → Aeropuerto) o $2,038 (Capomo → Aeropuerto). Por
+eso una caseta apunta a varios tramos, y **el importe dice cuál fue**: sale
+debajo de la caseta en la pestaña Cruces y en la comparación del doble cobro.
+
+Con eso se separan tres cosas que antes se confundían:
+
+- **un cobro fuera de tarifa**: ningún tramo de esa caseta cuesta eso;
+- **dos tramos seguidos en la misma caseta** (salió en La Peñita y volvió a
+  entrar): ya no es doble cobro. En septiembre era el único falso positivo;
+- **un ajuste que es una corrección**: el de $227 en Plan de Barrancas es $596 −
+  $369, de camión 2-4 ejes a 5-6. Los ajustes tampoco entran al doble cobro.
+
+**La clase de PASE es el número de ejes**, con 1 para el automóvil (sale de
+cruzar septiembre contra las tarifas): 1 automóvil, 2-4 autobús o camión 2-4
+ejes, 5-6 camión 5-6, 7-9 camión 7-9. Las casetas EASYTRIP no siguen esta
+regla (cobran clase 1 a los tractocamiones); si se cargan, hay que revisarla.
+
+**Vigencia.** Cada aumento es una fila nueva con su fecha; un cruce se revisa
+contra la tarifa vigente el día que cruzó. La primera tanda se cargó con
+vigencia 2026-01-01 porque las páginas no dicen desde cuándo rige.
+
+**Lo que no tiene tarifa no se revisa contra precio**, y la pestaña de
+hallazgos lo dice (casetas, cruces y dinero), para que "nada fuera de tarifa" no
+se lea como que todo cuadró.
+
+Primera tanda (sitio de IDEAL, consultado el 2026-10-19): Guadalajara - Tepic
+(Arenal 155, Plan de Barrancas 156, Sta. Ma. del Oro 157, Chapala 325, Santa
+Cecilia 405) y Las Varas - Vallarta (La Peñita 406, Vallarta 468, Florida 469,
+Bucerías Aux. 1 520). Con la factura de septiembre explica 253 de 255 cruces;
+los otros dos son Arenal clase 3-4 a $278 contra $287 publicados.
 
 ### Por qué la clase se compara así
 

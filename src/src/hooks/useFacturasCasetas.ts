@@ -52,11 +52,13 @@ export interface CruceCaseta {
   importe:       number
   iva:           number
   total:         number
+  /** El tramo que su importe identifica; null si la caseta no tiene tarifa cargada. */
+  tramo:         string | null
 }
 
 export type TipoHallazgo =
-  | 'cobrado_antes' | 'doble_cobro' | 'clase_mayor' | 'ajuste' | 'fuera_de_periodo'
-  | 'tag_sin_unidad' | 'caseta_inusual'
+  | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_mayor' | 'ajuste'
+  | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
 
 export interface Hallazgo {
   tipo:      TipoHallazgo
@@ -102,6 +104,15 @@ export interface DetalleFacturaCasetas {
   cruces:     CruceCaseta[]
   hallazgos:  Hallazgo[]
   por_unidad: ResumenUnidad[]
+  /** Las casetas de la factura sin tarifa cargada: lo que no se pudo revisar contra precio. */
+  sin_tarifa: CasetaSinTarifa[]
+}
+
+export interface CasetaSinTarifa {
+  caseta:      string
+  descripcion: string
+  cruces:      number
+  total:       number
 }
 
 export interface TagCaseta {
