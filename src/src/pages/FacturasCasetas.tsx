@@ -25,7 +25,7 @@ import {
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
-  IconAlertTriangle, IconCheck, IconFileImport, IconLockOpen, IconPlus, IconSearch,
+  IconAlertTriangle, IconArrowRight, IconCheck, IconFileImport, IconLockOpen, IconPlus, IconSearch,
 } from '@tabler/icons-react'
 import {
   FACTURA_DUPLICADA, useActualizarTagCaseta, useCrearTagCaseta, useFacturaCasetas,
@@ -33,7 +33,7 @@ import {
   useRevisarFacturaCasetas, useTagsCasetas,
 } from '../hooks/useFacturasCasetas'
 import type {
-  CruceCaseta, DetalleFacturaCasetas, Hallazgo, TagCaseta, TipoHallazgo,
+  CruceCaseta, CruceEnOtra, DetalleFacturaCasetas, Hallazgo, TagCaseta, TipoHallazgo,
 } from '../hooks/useFacturasCasetas'
 import { useVehiculos } from '../hooks/useVehiculos'
 import { usePermisos } from '../hooks/usePermisos'
@@ -335,7 +335,70 @@ function ImportarModal({
 
 // ── El detalle ───────────────────────────────────────────────────────────────
 
-function TarjetaHallazgo({ h }: { h: Hallazgo }) {
+function folioDe(f: { serie: string | null; folio: string }): string {
+  return f.serie ? `${f.serie}-${f.folio}` : f.folio
+}
+
+/**
+ * El cruce repetido como viene en cada factura, lado a lado: es lo que se le
+ * enseña a PASE al reclamar. Lo que no coincide se marca, porque un cruce con
+ * otra clase u otro importe ya no es exactamente el mismo cobro.
+ */
+function ComparaCobradoAntes({
+  esta, otra, onAbrir,
+}: { esta: CruceCaseta; otra: CruceEnOtra; onAbrir: (id: number) => void }) {
+  const filas: [string, string, string][] = [
+    ['Partida', String(esta.renglon), String(otra.renglon)],
+    ['Fecha y hora', fechaHora(esta.fecha_hora), fechaHora(otra.fecha_hora)],
+    ['Clase', String(esta.clase), String(otra.clase)],
+    ['Total', formatMXN(esta.total), formatMXN(otra.total)],
+  ]
+  const nueva = otra.anterior ? 'esta' : 'otra'
+  return (
+    <Stack gap={6} mt={4}>
+      <Table withTableBorder fz="xs" verticalSpacing={2} horizontalSpacing="xs">
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th />
+            <Table.Th>
+              Esta factura{nueva === 'esta' && <Badge ml={4} size="xs" color="red" variant="light">repetido</Badge>}
+            </Table.Th>
+            <Table.Th>
+              {folioDe(otra)}{nueva === 'otra' && <Badge ml={4} size="xs" color="red" variant="light">repetido</Badge>}
+              <Text size="xs" c="dimmed" fw={400}>
+                {otra.periodo ?? formatFecha(otra.fecha_emision.slice(0, 10))}
+                {otra.revisada && ' · revisada'}
+              </Text>
+            </Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {filas.map(([etiqueta, a, b]) => (
+            <Table.Tr key={etiqueta}>
+              <Table.Td c="dimmed">{etiqueta}</Table.Td>
+              <Table.Td>{a}</Table.Td>
+              <Table.Td c={etiqueta !== 'Partida' && a !== b ? 'red' : undefined} fw={etiqueta !== 'Partida' && a !== b ? 700 : undefined}>
+                {b}
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+      <Group justify="flex-end">
+        <Button
+          size="compact-xs" variant="subtle" rightSection={<IconArrowRight size={14} />}
+          onClick={() => onAbrir(otra.factura_id)}
+        >
+          Abrir factura {folioDe(otra)}
+        </Button>
+      </Group>
+    </Stack>
+  )
+}
+
+function TarjetaHallazgo({
+  h, cruce, onAbrir,
+}: { h: Hallazgo; cruce?: CruceCaseta; onAbrir: (id: number) => void }) {
   return (
     <Card withBorder padding="sm" radius="md">
       <Group justify="space-between" align="flex-start" wrap="nowrap">
@@ -354,6 +417,7 @@ function TarjetaHallazgo({ h }: { h: Hallazgo }) {
           </Text>
           {h.caseta && <Text size="xs" c="dimmed">{h.caseta}</Text>}
           <Text size="xs">{h.detalle}</Text>
+          {h.otra && cruce && <ComparaCobradoAntes esta={cruce} otra={h.otra} onAbrir={onAbrir} />}
         </Stack>
         <Tooltip label={h.grupo === 'cobro' ? 'Lo que pudo cobrarse de más' : 'Lo que suman esos cruces'}>
           <Text size="sm" fw={700} style={{ whiteSpace: 'nowrap' }}>{formatMXN(h.monto)}</Text>
@@ -363,7 +427,13 @@ function TarjetaHallazgo({ h }: { h: Hallazgo }) {
   )
 }
 
-function Hallazgos({ hallazgos }: { hallazgos: Hallazgo[] }) {
+function Hallazgos({
+  hallazgos, cruces, onAbrir,
+}: { hallazgos: Hallazgo[]; cruces: CruceCaseta[]; onAbrir: (id: number) => void }) {
+  const porRenglon = new Map(cruces.map((c) => [c.renglon, c]))
+  const tarjeta = (h: Hallazgo, key: string) => (
+    <TarjetaHallazgo key={key} h={h} cruce={porRenglon.get(h.renglones[0])} onAbrir={onAbrir} />
+  )
   const cobro = hallazgos.filter((h) => h.grupo === 'cobro')
   const uso = hallazgos.filter((h) => h.grupo === 'uso')
 
@@ -381,13 +451,13 @@ function Hallazgos({ hallazgos }: { hallazgos: Hallazgo[] }) {
         <Text size="sm" fw={600}>Lo que PASE pudo cobrar de más</Text>
         {cobro.length === 0
           ? <Text size="sm" c="dimmed">Nada.</Text>
-          : cobro.map((h, i) => <TarjetaHallazgo key={`c${i}`} h={h} />)}
+          : cobro.map((h, i) => tarjeta(h, `c${i}`))}
       </Stack>
       <Stack gap="xs">
         <Text size="sm" fw={600}>Cómo se usan las unidades</Text>
         {uso.length === 0
           ? <Text size="sm" c="dimmed">Nada.</Text>
-          : uso.map((h, i) => <TarjetaHallazgo key={`u${i}`} h={h} />)}
+          : uso.map((h, i) => tarjeta(h, `u${i}`))}
       </Stack>
     </Stack>
   )
@@ -496,7 +566,9 @@ function Cruces({ cruces }: { cruces: CruceCaseta[] }) {
   )
 }
 
-function DetalleModal({ facturaId, onClose }: { facturaId: number | null; onClose: () => void }) {
+function DetalleModal({
+  facturaId, onClose, onAbrir,
+}: { facturaId: number | null; onClose: () => void; onAbrir: (id: number) => void }) {
   const { esAdmin } = usePermisos()
   const { data, isLoading, isError } = useFacturaCasetas(facturaId)
   const revisar = useRevisarFacturaCasetas()
@@ -507,11 +579,22 @@ function DetalleModal({ facturaId, onClose }: { facturaId: number | null; onClos
   const cobro = d ? sumar(d.hallazgos.filter((h) => h.grupo === 'cobro'), (h) => h.monto) : 0
   const uso = d ? d.hallazgos.filter((h) => h.grupo === 'uso').length : 0
 
-  function cerrar() {
+  function limpiar() {
     setNota('')
     revisar.reset()
     reabrir.reset()
+  }
+
+  function cerrar() {
+    limpiar()
     onClose()
+  }
+
+  // Saltar a la otra factura del cruce repetido sin cerrar el modal: la nota a
+  // medio escribir era de esta.
+  function abrirOtra(id: number) {
+    limpiar()
+    onAbrir(id)
   }
 
   return (
@@ -553,7 +636,7 @@ function DetalleModal({ facturaId, onClose }: { facturaId: number | null; onClos
               <Tabs.Tab value="unidades">Por unidad</Tabs.Tab>
               <Tabs.Tab value="cruces">Cruces</Tabs.Tab>
             </Tabs.List>
-            <Tabs.Panel value="hallazgos" pt="md"><Hallazgos hallazgos={d.hallazgos} /></Tabs.Panel>
+            <Tabs.Panel value="hallazgos" pt="md"><Hallazgos hallazgos={d.hallazgos} cruces={d.cruces} onAbrir={abrirOtra} /></Tabs.Panel>
             <Tabs.Panel value="unidades" pt="md"><PorUnidad detalle={d} /></Tabs.Panel>
             <Tabs.Panel value="cruces" pt="md"><Cruces cruces={d.cruces} /></Tabs.Panel>
           </Tabs>
@@ -710,7 +793,7 @@ function FacturasPanel() {
       <ImportarModal
         abierto={importando} onClose={() => setImportando(false)} onImportada={setAbierta}
       />
-      <DetalleModal facturaId={abierta} onClose={() => setAbierta(null)} />
+      <DetalleModal facturaId={abierta} onClose={() => setAbierta(null)} onAbrir={setAbierta} />
     </Stack>
   )
 }

@@ -1,7 +1,7 @@
 import * as repo from '../repositories/facturasCasetasRepo'
 import type { CruceRow, FacturaCasetas, HistorialTag } from '../repositories/facturasCasetasRepo'
 import type { FacturaCasetasImport, TagCreate, TagUpdate } from '../schemas/facturaCasetasSchema'
-import { AppError, ConflictError, NotFoundError, ValidationError } from '../shared/errors'
+import { AppError, ConflictError, NotFoundError, ValidationError, esLlaveDuplicada } from '../shared/errors'
 import { aCentavos } from '../shared/totales'
 
 // Las facturas de casetas de PASE: importarlas y decir qué hay que mirar.
@@ -68,11 +68,7 @@ export async function getAll(p: {
  */
 export async function importar(data: FacturaCasetasImport, capturadoPor: string): Promise<number> {
   const existente = await repo.findByUuid(data.uuid)
-  if (existente) {
-    throw new AppError(
-      `Esta factura ya está importada (folio ${existente.folio}).`, 409, FACTURA_DUPLICADA,
-    )
-  }
+  if (existente) throw duplicada(existente.folio)
 
   const partidas = data.cruces.map((c) => c.renglon).sort((a, b) => a - b)
   const faltantes: number[] = []
@@ -111,7 +107,21 @@ export async function importar(data: FacturaCasetasImport, capturadoPor: string)
     }
   }
 
-  return repo.crear(data, capturadoPor)
+  try {
+    return await repo.crear(data, capturadoPor)
+  } catch (err) {
+    // Dos personas importando el mismo XML a la vez pasan las dos la consulta de
+    // arriba; la segunda choca con la UNIQUE del UUID. Es el mismo duplicado y
+    // debe decirse igual, no como un error interno.
+    if (esLlaveDuplicada(err, 'UQ_facturas_casetas_uuid')) {
+      throw duplicada((await repo.findByUuid(data.uuid))?.folio ?? data.folio)
+    }
+    throw err
+  }
+}
+
+function duplicada(folio: string): AppError {
+  return new AppError(`Esta factura ya está importada (folio ${folio}).`, 409, FACTURA_DUPLICADA)
 }
 
 // ── Revisar ──────────────────────────────────────────────────────────────────
@@ -140,6 +150,26 @@ export interface Hallazgo {
    */
   monto: number
   detalle: string
+  /**
+   * Solo en `cobrado_antes`: el mismo cruce como viene en la otra factura, para
+   * ponerlos lado a lado sin ir a buscarla.
+   */
+  otra?: CruceEnOtra
+}
+
+export interface CruceEnOtra {
+  factura_id: number
+  serie: string | null
+  folio: string
+  periodo: string | null
+  fecha_emision: string
+  /** Si la otra se emitió antes que esta: la que se reclama es la más nueva. */
+  anterior: boolean
+  revisada: boolean
+  renglon: number
+  fecha_hora: string
+  clase: number
+  total: number
 }
 
 export interface ResumenUnidad {
@@ -218,10 +248,24 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
   for (const o of cobrados) {
     const c = porRenglon.get(o.renglon)
     if (!c) continue
+    // La consulta es simétrica: la factura vieja también ve a la nueva. Se dice
+    // cuál fue primero para que se reclame la que cobró de nuevo.
+    const anterior = o.fecha_emision < factura.fecha_emision
+      || (o.fecha_emision === factura.fecha_emision && o.factura_id < factura.id)
+    const folio = o.serie ? `${o.serie}-${o.folio}` : o.folio
     agregar({
       tipo: 'cobrado_antes', renglones: [c.renglon], tag: c.tag, vehiculo: c.vehiculo,
       caseta: c.descripcion, monto: c.total,
-      detalle: `El mismo cruce ya venía en la factura ${o.folio}, partida ${o.renglon_otra}.`,
+      detalle: anterior
+        ? `El mismo cruce ya venía en la factura ${folio}, partida ${o.renglon_otra}.`
+        : `El mismo cruce vuelve a venir en la factura ${folio}, partida ${o.renglon_otra}, ` +
+          'emitida después: el cobro repetido está en esa.',
+      otra: {
+        factura_id: o.factura_id, serie: o.serie, folio: o.folio, periodo: o.periodo,
+        fecha_emision: o.fecha_emision, anterior, revisada: !!o.revisada,
+        renglon: o.renglon_otra, fecha_hora: o.fecha_hora_otra,
+        clase: o.clase_otra, total: o.total_otra,
+      },
     })
   }
 

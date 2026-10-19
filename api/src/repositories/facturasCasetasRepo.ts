@@ -279,8 +279,16 @@ export async function historialDeTags(facturaId: number): Promise<HistorialTag[]
 export interface CobradoAntes {
   renglon: number
   factura_id: number
+  serie: string | null
   folio: string
+  periodo: string | null
+  fecha_emision: string
+  /** Si la otra factura ya se marcó como revisada: quizá ya se reclamó ahí. */
+  revisada: boolean
   renglon_otra: number
+  fecha_hora_otra: string
+  clase_otra: number
+  total_otra: number
 }
 
 /**
@@ -293,13 +301,19 @@ export async function cobradosAntes(facturaId: number): Promise<CobradoAntes[]> 
   const r = await pool.request()
     .input('id', sql.Int, facturaId)
     .query(`
-      SELECT c.renglon, o.factura_id, f.folio, o.renglon AS renglon_otra
+      SELECT c.renglon, o.factura_id, f.serie, f.folio, f.periodo,
+             CONVERT(varchar(19), f.fecha_emision, 126) AS fecha_emision,
+             CAST(CASE WHEN f.revisada_en IS NULL THEN 0 ELSE 1 END AS bit) AS revisada,
+             o.renglon AS renglon_otra,
+             CONVERT(varchar(19), o.fecha_hora, 126) AS fecha_hora_otra,
+             o.clase AS clase_otra, o.total AS total_otra
       FROM facturas_casetas_cruces c
       JOIN facturas_casetas_cruces o
         ON o.tag = c.tag AND o.caseta = c.caseta AND o.fecha_hora = c.fecha_hora
        AND o.factura_id <> c.factura_id
       JOIN facturas_casetas f ON f.id = o.factura_id
-      WHERE c.factura_id = @id`)
+      WHERE c.factura_id = @id
+      ORDER BY c.renglon, f.fecha_emision`)
   return r.recordset as CobradoAntes[]
 }
 

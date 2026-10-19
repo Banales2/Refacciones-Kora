@@ -44,6 +44,16 @@ function esViolacionDeCheck(err: unknown): boolean {
   return /CHECK constraint/i.test(mensaje)
 }
 
+/**
+ * 2627 (UNIQUE/PK) o 2601 (índice único). Con `constraint`, solo si el choque es
+ * con esa: un service la usa para traducir SU duplicado a su propio código.
+ */
+export function esLlaveDuplicada(err: unknown, constraint?: string): boolean {
+  const n = (err as { number?: number } | null)?.number
+  if (n !== 2627 && n !== 2601) return false
+  return !constraint || ((err as { message?: string }).message ?? '').includes(constraint)
+}
+
 export function handleError(err: unknown, context: InvocationContext): HttpResponseInit {
   if (err instanceof AuthError) return { status: err.status, jsonBody: { error: err.message } }
   // 429 lleva Retry-After para que el cliente sepa cuánto esperar.
@@ -79,6 +89,14 @@ export function handleError(err: unknown, context: InvocationContext): HttpRespo
         error: 'La base de datos rechazó un valor de este registro.',
         code: 'VALIDATION_ERROR',
       },
+    }
+  }
+  // Un duplicado que el service no tradujo: sigue siendo un conflicto del
+  // usuario, no una falla, y el mensaje de SQL Server nombra tablas.
+  if (esLlaveDuplicada(err)) {
+    return {
+      status: 409,
+      jsonBody: { error: 'Ya existe un registro con esos datos.', code: 'CONFLICT' },
     }
   }
   context.error('Error no manejado:', err)

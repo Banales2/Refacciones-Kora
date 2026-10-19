@@ -29,7 +29,9 @@ equivocaba en silencio. La API vuelve a comprobar, antes de escribir nada:
 - que las partidas vayan de 1 a N sin huecos ni repetidas,
 - que en cada cruce importe + IVA = total,
 - que los cruces sumen el subtotal, el IVA y el total impresos, al centavo,
-- que ese UUID no se haya importado ya (409 `FACTURA_DUPLICADA`).
+- que ese UUID no se haya importado ya (409 `FACTURA_DUPLICADA`). Si dos
+  personas importan el mismo XML a la vez, la segunda choca con la UNIQUE del
+  UUID y recibe el mismo 409, no un error interno.
 
 Si algo falla no se guarda nada: media factura sería peor que ninguna.
 
@@ -59,6 +61,12 @@ preguntas distintas:
 | **Fuera del periodo** | cobro | cruce con fecha fuera de las del periodo | el cruce |
 | **Tag sin unidad** | uso | nadie ha dicho de qué unidad es | lo que suman sus cruces |
 | **Caseta que el tag no cruzaba** | uso | con 30+ cruces en otras facturas, nunca por esta caseta | lo que suman |
+
+El hallazgo **Ya cobrado en otra factura** trae el cruce como viene en la otra
+factura y los pone lado a lado (partida, hora, clase, total), marca cuál de las
+dos es la más nueva —la que cobró de nuevo y se reclama— y lleva un botón para
+abrir la otra sin cerrar el detalle. Sale en las dos facturas, porque la
+consulta es simétrica.
 
 **Ninguno es una conclusión.** Un tráiler que paga clase 9 donde siempre paga 5
 puede llevar doble caja ese día; quien lo sabe es quien revisa.
