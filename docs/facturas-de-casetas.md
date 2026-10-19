@@ -55,10 +55,11 @@ preguntas distintas:
 | | grupo | qué es | el dinero que se enseña |
 |---|---|---|---|
 | **Fuera de tarifa** | cobro | el importe no es el de ningún tramo que esa caseta cobra, para su clase | lo que pasa del tramo más caro; $0 si cobró menos o queda entre dos |
-| **Ya cobrado en otra factura** | cobro | mismo tag, caseta y hora al segundo en otra factura | el cruce entero; $0 en la factura donde se cobró primero |
+| **Corregido después** | cobro | un ajuste de otra factura corrige este cruce (misma hora) | $0: el ajuste se revisa en su factura |
+| **Ya cobrado en otra factura** | cobro | mismo tag, caseta y hora al segundo en otra factura (sin contar ajustes) | el cruce entero; $0 en la factura donde se cobró primero |
 | **Posible doble cobro** | cobro | mismo tag y caseta con menos de 60 min entre un cruce y el siguiente, y no son dos tramos distintos | todos menos el más caro |
 | **Clase arriba de la habitual** | cobro | el tag pagó en esa caseta una clase mayor que la que suele pagar | lo que pagó por encima de lo **más caro** que ha pagado en su clase habitual |
-| **Ajuste de PASE** | cobro | clase 0 o "AJUSTE …"; con tarifa, dice qué corrección de clase o eje excedente cuadra | el cargo |
+| **Ajuste de PASE** | cobro | clase 0 o "AJUSTE …"; con tarifa, busca el cruce que corrige | $0 si la corrección deja la tarifa que el tag suele pagar; lo de encima si la pasa; el cargo entero si no se sabe |
 | **Fuera del periodo** | cobro | cruce con fecha fuera de las del periodo | el cruce |
 | **Tag sin unidad** | uso | nadie ha dicho de qué unidad es | lo que suman sus cruces |
 | **Caseta que el tag no cruzaba** | uso | con 30+ cruces en otras facturas, nunca por esta caseta | lo que suman |
@@ -103,6 +104,36 @@ Con eso se separan tres cosas que antes se confundían:
   entrar): ya no es doble cobro. En septiembre era el único falso positivo;
 - **un ajuste que es una corrección**: el de $227 en Plan de Barrancas es $596 −
   $369, de camión 2-4 ejes a 5-6. Los ajustes tampoco entran al doble cobro.
+
+### Los ajustes son correcciones de clase
+
+El caso típico: el carril cobra un tráiler como automóvil (clase 1, $214 en
+Arenal) y días después PASE manda la diferencia como **AJUSTE con clase 0**
+($199, para llegar a los $413 de camión 5-6). **PASE fecha el ajuste con la hora del
+cruce que corrige** (en agosto: partida 37 a las 15:30 en clase 1 por $151, y
+el ajuste de $101 en otra factura, a las 15:30, clase 0: $252 en total). Así se
+liga:
+
+1. el cruce del mismo tag, en la misma caseta y **a la misma hora**, en
+   cualquier factura. Si existe, es ese, haya tarifa o no;
+2. si no, con tarifa: de los cruces de los 15 días antes, el más cercano cuyo
+   importe es la tarifa de una clasificación y que **con el ajuste sube exacto**
+   a la de una clasificación mayor del mismo tramo.
+
+Por la misma hora, el ajuste y su original se veían como **"Ya cobrado en otra
+factura"**: la consulta ahora deja fuera los ajustes de los dos lados. En la
+factura del cruce original sale **"Corregido después"** con el ajuste y un botón
+para abrir su factura.
+
+Encontrado, la tarjeta pone la cuenta —original, ajuste, en qué quedó— contra
+**la clase que ese tag suele pagar en esa caseta**. Si la suma es esa tarifa, la
+corrección es correcta y el hallazgo vale **$0**: no se confunde con un cobro de
+más. Sin tarifa cargada, se compara contra **lo más que el tag ha pagado en su
+clase habitual en esa caseta**. Si la pasa, lo de encima es el monto. Sin historia del tag se queda el
+cargo entero, para que alguien confirme la clase de la unidad.
+
+Si no se encuentra el original (todavía no se importa la factura donde vino),
+el ajuste dice con qué diferencias de tarifas cuadra, sin monto en $0.
 
 **La clase de PASE es el número de ejes**, con 1 para el automóvil (sale de
 cruzar septiembre contra las tarifas): 1 automóvil, 2-4 autobús o camión 2-4

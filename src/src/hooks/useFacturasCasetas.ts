@@ -58,7 +58,7 @@ export interface CruceCaseta {
 
 export type TipoHallazgo =
   | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_mayor' | 'ajuste'
-  | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
+  | 'corregido' | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
 
 export interface Hallazgo {
   tipo:      TipoHallazgo
@@ -72,6 +72,31 @@ export interface Hallazgo {
   detalle:   string
   /** Solo en `cobrado_antes`: el mismo cruce en las otras facturas, de la más vieja a la más nueva. */
   otras?:    CruceEnOtra[]
+  /** Solo en `ajuste`: el cruce que corrige, cuando se encontró. */
+  corrige?:  CorreccionDeClase
+  /** Solo en `corregido`: la factura donde vino el ajuste. */
+  ajuste_en?: { factura_id: number; serie: string | null; folio: string }
+}
+
+export interface CorreccionDeClase {
+  factura_id:     number
+  serie:          string | null
+  folio:          string
+  misma_factura:  boolean
+  renglon:        number
+  fecha_hora:     string
+  clase:          number
+  total:          number
+  /** Con tarifa: el tramo y las clasificaciones de antes y después; sin tarifa, null. */
+  tramo:          string | null
+  de:             string | null
+  a:              string | null
+  /** Original + ajuste. */
+  suma:           number
+  clase_habitual: number | null
+  /** Lo que debió quedar según la clase que el tag suele pagar ahí; null si no hay historia. */
+  esperado:       number | null
+  segun:          'tarifa' | 'historial' | null
 }
 
 export interface CruceEnOtra {

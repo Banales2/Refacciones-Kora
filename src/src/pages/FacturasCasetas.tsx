@@ -34,7 +34,7 @@ import {
   useRevisarFacturaCasetas, useTagsCasetas,
 } from '../hooks/useFacturasCasetas'
 import type {
-  CasetaSinTarifa, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas, Hallazgo, TagCaseta, TipoHallazgo,
+  CasetaSinTarifa, CorreccionDeClase, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas, Hallazgo, TagCaseta, TipoHallazgo,
 } from '../hooks/useFacturasCasetas'
 import { useVehiculos } from '../hooks/useVehiculos'
 import { usePermisos } from '../hooks/usePermisos'
@@ -55,6 +55,7 @@ const TITULO_HALLAZGO: Record<TipoHallazgo, string> = {
   doble_cobro: 'Posible doble cobro',
   clase_mayor: 'Clase arriba de la habitual',
   ajuste: 'Ajuste de PASE',
+  corregido: 'Corregido después',
   fuera_de_periodo: 'Fuera del periodo',
   tag_sin_unidad: 'Tag sin unidad',
   caseta_inusual: 'Caseta que el tag no cruzaba',
@@ -66,6 +67,7 @@ const COLOR_HALLAZGO: Record<TipoHallazgo, string> = {
   doble_cobro: 'red',
   clase_mayor: 'orange',
   ajuste: 'yellow',
+  corregido: 'gray',
   fuera_de_periodo: 'yellow',
   tag_sin_unidad: 'grape',
   caseta_inusual: 'blue',
@@ -481,6 +483,66 @@ function ComparaDobleCobro({ cruces }: { cruces: CruceCaseta[] }) {
   )
 }
 
+/**
+ * El ajuste debajo del cruce que corrige, como una cuenta: lo que se cobró, lo
+ * que se agregó y en qué quedó, contra lo que ese tag suele pagar ahí. Si
+ * cuadra, la corrección es correcta y no se reclama nada.
+ */
+function ComparaAjuste({
+  ajuste, k, onAbrir,
+}: { ajuste: CruceCaseta; k: CorreccionDeClase; onAbrir: (id: number) => void }) {
+  const arriba = k.esperado !== null && k.suma - k.esperado > 0.01
+  return (
+    <Stack gap={6} mt={4}>
+      <Table withTableBorder fz="xs" verticalSpacing={2} horizontalSpacing="xs">
+        <Table.Tbody>
+          <Table.Tr>
+            <Table.Td c="dimmed">
+              Cruce original · partida {k.renglon}{k.misma_factura ? '' : ` de ${folioDe(k)}`}
+            </Table.Td>
+            <Table.Td>{fechaHora(k.fecha_hora)} · clase {k.clase}{k.de ? ` · ${k.de}` : ''}</Table.Td>
+            <Table.Td style={{ textAlign: 'right' }}>{formatMXN(k.total)}</Table.Td>
+          </Table.Tr>
+          <Table.Tr>
+            <Table.Td c="dimmed">Ajuste · partida {ajuste.renglon}</Table.Td>
+            <Table.Td>{fechaHora(ajuste.fecha_hora)}{k.a ? ` · a ${k.a}` : ''}</Table.Td>
+            <Table.Td style={{ textAlign: 'right' }}>+ {formatMXN(ajuste.total)}</Table.Td>
+          </Table.Tr>
+          <Table.Tr>
+            <Table.Td fw={600}>Quedó pagado</Table.Td>
+            <Table.Td c="dimmed">{k.a ? `tarifa de ${k.a} en ${k.tramo}` : ''}</Table.Td>
+            <Table.Td fw={700} style={{ textAlign: 'right' }}>{formatMXN(k.suma)}</Table.Td>
+          </Table.Tr>
+          {k.esperado !== null && (
+            <Table.Tr>
+              <Table.Td c="dimmed">Lo que el tag suele pagar</Table.Td>
+              <Table.Td c="dimmed">
+                clase {k.clase_habitual} en esta caseta
+                {k.segun === 'historial' && ' · lo más que ha pagado (sin tarifa cargada)'}
+              </Table.Td>
+              <Table.Td
+                c={arriba ? 'red' : 'green'} fw={700} style={{ textAlign: 'right' }}
+              >
+                {formatMXN(k.esperado)}
+              </Table.Td>
+            </Table.Tr>
+          )}
+        </Table.Tbody>
+      </Table>
+      {!k.misma_factura && (
+        <Group justify="flex-end">
+          <Button
+            size="compact-xs" variant="subtle" rightSection={<IconArrowRight size={14} />}
+            onClick={() => onAbrir(k.factura_id)}
+          >
+            Abrir {folioDe(k)}
+          </Button>
+        </Group>
+      )}
+    </Stack>
+  )
+}
+
 function TarjetaHallazgo({
   h, cruces, onAbrir,
 }: { h: Hallazgo; cruces: CruceCaseta[]; onAbrir: (id: number) => void }) {
@@ -504,11 +566,26 @@ function TarjetaHallazgo({
           <Text size="xs">{h.detalle}</Text>
           {h.otras && cruces[0] && <ComparaCobradoAntes esta={cruces[0]} otras={h.otras} onAbrir={onAbrir} />}
           {h.tipo === 'doble_cobro' && cruces.length > 1 && <ComparaDobleCobro cruces={cruces} />}
+          {h.corrige && cruces[0] && <ComparaAjuste ajuste={cruces[0]} k={h.corrige} onAbrir={onAbrir} />}
+          {h.ajuste_en && (
+            <Group justify="flex-end">
+              <Button
+                size="compact-xs" variant="subtle" rightSection={<IconArrowRight size={14} />}
+                onClick={() => onAbrir(h.ajuste_en!.factura_id)}
+              >
+                Abrir {folioDe(h.ajuste_en)}
+              </Button>
+            </Group>
+          )}
         </Stack>
         <Tooltip label={
           h.tipo === 'cobrado_antes' && h.monto === 0
             ? 'Aquí fue el primer cobro: lo de más está en las otras facturas'
-            : h.grupo === 'cobro' ? 'Lo que pudo cobrarse de más' : 'Lo que suman esos cruces'
+            : h.tipo === 'ajuste' && h.monto === 0
+              ? 'La corrección deja la tarifa que el tag suele pagar: no hay nada que reclamar'
+              : h.tipo === 'corregido'
+                ? 'El ajuste se revisa en su factura'
+                : h.grupo === 'cobro' ? 'Lo que pudo cobrarse de más' : 'Lo que suman esos cruces'
         }>
           <Text size="sm" fw={700} c={h.monto === 0 ? 'dimmed' : undefined} style={{ whiteSpace: 'nowrap' }}>
             {formatMXN(h.monto)}

@@ -1,6 +1,6 @@
 import * as repo from '../repositories/facturasCasetasRepo'
 import type {
-  Categoria, CruceRow, FacturaCasetas, HistorialTag, TarifaTramo,
+  CandidatoDeAjuste, Categoria, CruceRow, FacturaCasetas, HistorialTag, TarifaTramo,
 } from '../repositories/facturasCasetasRepo'
 import type { FacturaCasetasImport, TagCreate, TagUpdate } from '../schemas/facturaCasetasSchema'
 import { AppError, ConflictError, NotFoundError, ValidationError, esLlaveDuplicada } from '../shared/errors'
@@ -162,7 +162,7 @@ function duplicada(folio: string): AppError {
 
 export type TipoHallazgo =
   | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_mayor' | 'ajuste'
-  | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
+  | 'corregido' | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
 
 /**
  * De qué lado está el problema. Son dos preguntas distintas y no se suman:
@@ -190,6 +190,44 @@ export interface Hallazgo {
    * buscarlas.
    */
   otras?: CruceEnOtra[]
+  /** Solo en `ajuste`: el cruce que corrige, cuando se encontró. */
+  corrige?: CorreccionDeClase
+  /** Solo en `corregido`: la factura donde vino el ajuste. */
+  ajuste_en?: { factura_id: number; serie: string | null; folio: string }
+}
+
+/**
+ * Un ajuste puesto junto al cruce que corrige. El caso típico: el carril cobró
+ * un tráiler como automóvil y días después PASE manda la diferencia con clase 0.
+ */
+export interface CorreccionDeClase {
+  factura_id: number
+  serie: string | null
+  folio: string
+  /** Si el cruce original viene en esta misma factura. */
+  misma_factura: boolean
+  renglon: number
+  fecha_hora: string
+  clase: number
+  total: number
+  /**
+   * Con tarifa: el tramo y las clasificaciones de antes y después. Sin tarifa
+   * no se sabe a qué clase se corrigió, solo cuánto quedó pagado.
+   */
+  tramo: string | null
+  de: string | null
+  a: string | null
+  /** Original + ajuste: lo que quedó pagado por ese cruce. */
+  suma: number
+  /** La clase que el tag suele pagar en esa caseta; null si no hay historia. */
+  clase_habitual: number | null
+  /**
+   * Lo que debió quedar: la tarifa de la clase habitual o, sin tarifa, lo más
+   * que el tag ha pagado en esa clase ahí. null si no hay historia.
+   */
+  esperado: number | null
+  /** De dónde sale `esperado`. */
+  segun: 'tarifa' | 'historial' | null
 }
 
 export interface CruceEnOtra {
@@ -242,6 +280,7 @@ const GRUPO: Record<TipoHallazgo, GrupoHallazgo> = {
   doble_cobro: 'cobro',
   clase_mayor: 'cobro',
   ajuste: 'cobro',
+  corregido: 'cobro',
   fuera_de_periodo: 'cobro',
   tag_sin_unidad: 'uso',
   caseta_inusual: 'uso',
@@ -276,6 +315,29 @@ function vigentes(porCaseta: Map<string, TarifaTramo[]>, c: CruceRow): TarifaTra
 function validas(ts: TarifaTramo[], clase: number) {
   return ts.flatMap((t) => (CATEGORIAS_DE_CLASE[clase] ?? []).flatMap((cat) =>
     t[cat] === null ? [] : [{ tramo: t.tramo, categoria: cat, total: Number(t[cat]) }]))
+}
+
+/**
+ * El cruce que un ajuste corrige: el más cercano en el tiempo cuyo importe es
+ * la tarifa de una clasificación de algún tramo, y que con el ajuste sube
+ * exacto a la tarifa de una clasificación mayor del mismo tramo.
+ */
+function buscarCorreccion(candidatos: CandidatoDeAjuste[], ts: TarifaTramo[], total: number) {
+  for (const o of candidatos) {
+    for (const t of ts) {
+      for (let i = 0; i < ESCALA.length; i++) {
+        const de = t[ESCALA[i]]
+        if (de === null || !iguales(Number(de), o.total)) continue
+        for (let j = i + 1; j < ESCALA.length; j++) {
+          const a = t[ESCALA[j]]
+          if (a !== null && iguales(Number(a) - Number(de), total)) {
+            return { original: o, tarifa: t, de: ESCALA[i], a: ESCALA[j] }
+          }
+        }
+      }
+    }
+  }
+  return null
 }
 
 /**
@@ -333,6 +395,11 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
   const cruces = await repo.cruces(facturaId)
   const historial = await repo.historialDeTags(facturaId)
   const cobrados = await repo.cobradosAntes(facturaId)
+  const candidatos = new Map<number, CandidatoDeAjuste[]>()
+  for (const o of await repo.candidatosDeAjustes(facturaId)) {
+    candidatos.set(o.renglon, [...(candidatos.get(o.renglon) ?? []), o])
+  }
+  const ajustesDespues = await repo.ajustesDeCruces(facturaId)
   const tarifas = new Map<string, TarifaTramo[]>()
   for (const t of await repo.tarifasDeFactura(facturaId)) {
     tarifas.set(t.caseta, [...(tarifas.get(t.caseta) ?? []), t])
@@ -477,6 +544,61 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
   for (const c of cruces) {
     if (esAjuste(c)) {
       const ts = vigentes(tarifas, c)
+      const cs = candidatos.get(c.renglon) ?? []
+      // PASE fecha el ajuste con la hora del cruce que corrige: si hay uno a la
+      // misma hora, es ese, haya tarifa o no. Si no, las tarifas dicen cuál.
+      const exacto = cs.find((o) => o.segundos === 0)
+      const porTarifa = buscarCorreccion(exacto ? [exacto] : cs, ts, c.total)
+      const o = porTarifa?.original ?? exacto
+      if (o) {
+        // Contra la clase que el tag suele pagar ahí: si el original más el
+        // ajuste da esa tarifa, la corrección es correcta y no hay nada que
+        // reclamar. Si da más, lo de encima es cobro de más. Sin tarifa, contra
+        // lo más que el tag ha pagado en esa clase en esa caseta.
+        const suma = aCentavos(o.total + c.total)
+        const h = habitual.get(`${c.tag}|${c.caseta}`)
+        let esperado: number | null = null
+        let segun: CorreccionDeClase['segun'] = null
+        if (h && porTarifa) {
+          const t = porTarifa.tarifa
+          const vs = (CATEGORIAS_DE_CLASE[h.clase] ?? [])
+            .flatMap((cat) => (t[cat] === null ? [] : [Number(t[cat])]))
+          if (vs.length > 0) { esperado = Math.max(...vs); segun = 'tarifa' }
+        }
+        if (h && esperado === null) { esperado = Number(h.total_maximo); segun = 'historial' }
+        const misma = o.factura_id === factura.id
+        const folio = `${o.serie ? `${o.serie}-` : ''}${o.folio}`
+        const cobro = porTarifa
+          ? `se cobró como ${NOMBRE_CATEGORIA[porTarifa.de]} (${pesos(o.total)}) y con el ajuste queda en ` +
+            `${pesos(suma)}, la tarifa de ${NOMBRE_CATEGORIA[porTarifa.a]} en ${porTarifa.tarifa.tramo}.`
+          : `se cobró en clase ${o.clase} (${pesos(o.total)}) y con el ajuste queda en ${pesos(suma)}.`
+        const cuadra = esperado !== null && (iguales(suma, esperado) || suma < esperado)
+        agregar({
+          tipo: 'ajuste', renglones: [c.renglon], tag: c.tag, vehiculo: c.vehiculo,
+          caseta: c.descripcion,
+          monto: esperado === null ? c.total : Math.max(0, suma - esperado),
+          detalle: `Corrige la partida ${o.renglon_original} ` +
+            `${misma ? 'de esta factura' : `de la factura ${folio}`}, del ${o.fecha_hora.slice(0, 10)}` +
+            `${o.segundos === 0 ? ', a la misma hora' : ''}: ${cobro} ` + (
+            esperado === null
+              ? 'El tag no tiene historia en esta caseta: revisa que la unidad sea de esa clase.'
+              : cuadra
+                ? `El tag suele pagar clase ${h!.clase} aquí` +
+                  `${segun === 'historial' ? ` (hasta ${pesos(esperado)})` : ''}: la corrección es correcta.`
+                : `El tag suele pagar clase ${h!.clase} aquí (${pesos(esperado)}): quedó ` +
+                  `${pesos(suma - esperado)} arriba.`
+          ),
+          corrige: {
+            factura_id: o.factura_id, serie: o.serie, folio: o.folio, misma_factura: misma,
+            renglon: o.renglon_original, fecha_hora: o.fecha_hora, clase: o.clase, total: o.total,
+            tramo: porTarifa?.tarifa.tramo ?? null,
+            de: porTarifa ? NOMBRE_CATEGORIA[porTarifa.de] : null,
+            a: porTarifa ? NOMBRE_CATEGORIA[porTarifa.a] : null,
+            suma, clase_habitual: h?.clase ?? null, esperado, segun,
+          },
+        })
+        continue
+      }
       const explicaciones = explicarAjuste(ts, c.total)
       agregar({
         tipo: 'ajuste', renglones: [c.renglon], tag: c.tag, vehiculo: c.vehiculo,
@@ -501,6 +623,21 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
           'Revisa que no venga también en la anterior.',
       })
     }
+  }
+
+  // La vuelta del ajuste: el cruce de esta factura que después se corrigió en
+  // otra. No es dinero de más aquí; el ajuste se revisa en su factura.
+  for (const a of ajustesDespues) {
+    const c = porRenglon.get(a.renglon)
+    if (!c) continue
+    agregar({
+      tipo: 'corregido', renglones: [c.renglon], tag: c.tag, vehiculo: c.vehiculo,
+      caseta: c.descripcion, monto: 0,
+      detalle: `PASE lo corrigió después con un ajuste de ${pesos(a.total_ajuste)} en la factura ` +
+        `${a.serie ? `${a.serie}-` : ''}${a.folio}, partida ${a.renglon_ajuste}: quedó en ` +
+        `${pesos(aCentavos(c.total + a.total_ajuste))}.`,
+      ajuste_en: { factura_id: a.factura_id, serie: a.serie, folio: a.folio },
+    })
   }
 
   // ── Cómo se usan las unidades ──

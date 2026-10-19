@@ -295,6 +295,9 @@ export interface CobradoAntes {
  * Los cruces de esta factura que ya estaban en otra: mismo tag, misma caseta y
  * misma hora al segundo. No hay dos cruces así; si aparece, PASE lo cobró dos
  * veces.
+ *
+ * Los ajustes no cuentan, de ningún lado: PASE fecha el ajuste con la hora del
+ * cruce que corrige, así que se veían como el mismo cruce cobrado dos veces.
  */
 export async function cobradosAntes(facturaId: number): Promise<CobradoAntes[]> {
   const pool = await getPool()
@@ -311,10 +314,86 @@ export async function cobradosAntes(facturaId: number): Promise<CobradoAntes[]> 
       JOIN facturas_casetas_cruces o
         ON o.tag = c.tag AND o.caseta = c.caseta AND o.fecha_hora = c.fecha_hora
        AND o.factura_id <> c.factura_id
+       AND o.clase > 0 AND o.descripcion NOT LIKE 'AJUSTE%'
       JOIN facturas_casetas f ON f.id = o.factura_id
       WHERE c.factura_id = @id
+        AND c.clase > 0 AND c.descripcion NOT LIKE 'AJUSTE%'
       ORDER BY c.renglon, f.fecha_emision`)
   return r.recordset as CobradoAntes[]
+}
+
+/** Un cruce que un ajuste de esta factura puede estar corrigiendo. */
+export interface CandidatoDeAjuste {
+  /** La partida del ajuste, en esta factura. */
+  renglon: number
+  factura_id: number
+  serie: string | null
+  folio: string
+  renglon_original: number
+  fecha_hora: string
+  clase: number
+  total: number
+  /** Qué tan lejos está del ajuste: el más cercano es el más probable. */
+  segundos: number
+}
+
+/**
+ * Los cruces que cada ajuste de esta factura puede corregir: del mismo tag, en
+ * la misma caseta, en cualquier factura, de los 15 días antes del ajuste (o del
+ * día siguiente). PASE fecha el ajuste con la hora del cruce que corrige, así
+ * que el de `segundos = 0` es el original; los demás quedan para cuando no hay
+ * uno a la misma hora y las tarifas dicen cuál costó la clase baja.
+ */
+export async function candidatosDeAjustes(facturaId: number): Promise<CandidatoDeAjuste[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, facturaId)
+    .query(`
+      SELECT a.renglon, o.factura_id, f.serie, f.folio, o.renglon AS renglon_original,
+             CONVERT(varchar(19), o.fecha_hora, 126) AS fecha_hora, o.clase, o.total,
+             ABS(DATEDIFF(second, o.fecha_hora, a.fecha_hora)) AS segundos
+      FROM facturas_casetas_cruces a
+      JOIN facturas_casetas_cruces o
+        ON o.tag = a.tag AND o.caseta = a.caseta AND o.clase > 0
+       AND o.descripcion NOT LIKE 'AJUSTE%'
+       AND o.fecha_hora BETWEEN DATEADD(day, -15, a.fecha_hora) AND DATEADD(day, 1, a.fecha_hora)
+      JOIN facturas_casetas f ON f.id = o.factura_id
+      WHERE a.factura_id = @id AND (a.clase = 0 OR a.descripcion LIKE 'AJUSTE%')
+      ORDER BY a.renglon, segundos`)
+  return r.recordset as CandidatoDeAjuste[]
+}
+
+/** Un cruce de esta factura que PASE corrigió con un ajuste en otra. */
+export interface AjusteDeCruce {
+  renglon: number
+  factura_id: number
+  serie: string | null
+  folio: string
+  renglon_ajuste: number
+  total_ajuste: number
+}
+
+/**
+ * Los ajustes de OTRAS facturas a cruces de esta: mismo tag, misma caseta y la
+ * misma hora al segundo. Es la vuelta del ajuste: en la factura del cruce
+ * original no se veía que después llegó la corrección.
+ */
+export async function ajustesDeCruces(facturaId: number): Promise<AjusteDeCruce[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, facturaId)
+    .query(`
+      SELECT c.renglon, a.factura_id, f.serie, f.folio,
+             a.renglon AS renglon_ajuste, a.total AS total_ajuste
+      FROM facturas_casetas_cruces c
+      JOIN facturas_casetas_cruces a
+        ON a.tag = c.tag AND a.caseta = c.caseta AND a.fecha_hora = c.fecha_hora
+       AND a.factura_id <> c.factura_id
+       AND (a.clase = 0 OR a.descripcion LIKE 'AJUSTE%')
+      JOIN facturas_casetas f ON f.id = a.factura_id
+      WHERE c.factura_id = @id AND c.clase > 0 AND c.descripcion NOT LIKE 'AJUSTE%'
+      ORDER BY c.renglon, f.fecha_emision`)
+  return r.recordset as AjusteDeCruce[]
 }
 
 /** Las clasificaciones del operador, en el orden de su tabla. */
