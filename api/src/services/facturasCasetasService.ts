@@ -732,6 +732,61 @@ export async function reabrir(id: number): Promise<void> {
   }
 }
 
+// ── Las tarifas ──────────────────────────────────────────────────────────────
+
+export interface ImporteCobrado {
+  clase: number
+  total: number
+  /** Cuántos cruces se cobraron así, en todas las facturas. */
+  cruces: number
+  /** Los tramos que cuestan eso para esa clase; vacío = fuera de tarifa. */
+  tramos: string[]
+}
+
+export interface TarifasDeCaseta {
+  caseta: string
+  nombre: string | null
+  cruces: number
+  total: number
+  tramos: Omit<TarifaTramo, 'caseta'>[]
+  /** Solo si la caseta tiene tarifa: lo cobrado, contra la tarifa de hoy. */
+  cobrados: ImporteCobrado[]
+}
+
+/**
+ * Las casetas con sus tramos y tarifas de hoy, y lo que PASE ha cobrado en cada
+ * una contra esas tarifas. Primero las que tienen tarifa; las demás, por lo que
+ * han costado: son las que conviene cargar.
+ */
+export async function tarifasPorCaseta(): Promise<TarifasDeCaseta[]> {
+  const [casetas, tarifas, cobrados] = await Promise.all([
+    repo.casetas(), repo.tarifasVigentes(), repo.importesCobrados(),
+  ])
+  return casetas
+    .map((k) => {
+      const ts = tarifas.filter((t) => t.caseta === k.caseta)
+      return {
+        caseta: k.caseta,
+        nombre: k.nombre,
+        cruces: k.cruces,
+        total: aCentavos(Number(k.total)),
+        tramos: ts.map(({ caseta: _, ...t }) => t),
+        cobrados: ts.length === 0 ? [] : cobrados
+          .filter((c) => c.caseta === k.caseta)
+          .map((c) => ({
+            clase: c.clase,
+            total: Number(c.total),
+            cruces: c.n,
+            tramos: [...new Set(validas(ts, c.clase)
+              .filter((v) => iguales(v.total, Number(c.total))).map((v) => v.tramo))],
+          }))
+          .sort((a, b) => a.clase - b.clase || a.total - b.total),
+      }
+    })
+    .sort((a, b) =>
+      Number(b.tramos.length > 0) - Number(a.tramos.length > 0) || b.total - a.total)
+}
+
 // ── Los tags ─────────────────────────────────────────────────────────────────
 
 export async function tags() {

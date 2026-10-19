@@ -432,6 +432,75 @@ export async function tarifasDeFactura(facturaId: number): Promise<TarifaTramo[]
   return r.recordset as TarifaTramo[]
 }
 
+/** Una caseta de PASE: las que tienen tarifa y las que han salido en una factura. */
+export interface CasetaRow {
+  caseta: string
+  /** Como la imprime PASE en el cruce más reciente; null si nunca ha salido en una factura. */
+  nombre: string | null
+  cruces: number
+  total: number
+}
+
+export async function casetas(): Promise<CasetaRow[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    WITH vistas AS (
+      SELECT caseta, COUNT(*) AS cruces, SUM(total) AS total
+      FROM facturas_casetas_cruces
+      WHERE clase > 0 AND descripcion NOT LIKE 'AJUSTE%'
+      GROUP BY caseta
+    ), nombres AS (
+      SELECT caseta, descripcion,
+             ROW_NUMBER() OVER (PARTITION BY caseta ORDER BY fecha_hora DESC) AS n
+      FROM facturas_casetas_cruces
+      WHERE descripcion NOT LIKE 'AJUSTE%'
+    ), codigos AS (
+      SELECT caseta FROM vistas UNION SELECT caseta FROM casetas_tramos
+    )
+    SELECT k.caseta, n.descripcion AS nombre,
+           ISNULL(v.cruces, 0) AS cruces, ISNULL(v.total, 0) AS total
+    FROM codigos k
+    LEFT JOIN vistas v  ON v.caseta = k.caseta
+    LEFT JOIN nombres n ON n.caseta = k.caseta AND n.n = 1`)
+  return r.recordset as CasetaRow[]
+}
+
+/**
+ * La tarifa de hoy de cada tramo que cada caseta cobra. Si un tramo solo tiene
+ * vigencias futuras, sale la más próxima.
+ */
+export async function tarifasVigentes(): Promise<TarifaTramo[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT ct.caseta, t.id AS tramo_id, t.autopista, t.nombre AS tramo,
+           CONVERT(char(10), ta.vigente_desde, 23) AS vigente_desde,
+           ta.moto, ta.auto, ta.autobus, ta.camion_2_4, ta.camion_5_6, ta.camion_7_9,
+           ta.eje_ligero, ta.eje_pesado
+    FROM casetas_tramos ct
+    JOIN tramos_casetas t ON t.id = ct.tramo_id
+    CROSS APPLY (
+      SELECT TOP 1 x.*
+      FROM tarifas_casetas x
+      WHERE x.tramo_id = t.id
+      ORDER BY CASE WHEN x.vigente_desde <= CAST(SYSDATETIME() AS date) THEN 0 ELSE 1 END,
+               CASE WHEN x.vigente_desde <= CAST(SYSDATETIME() AS date) THEN x.vigente_desde END DESC,
+               x.vigente_desde
+    ) ta
+    ORDER BY ct.caseta, t.autopista, t.nombre`)
+  return r.recordset as TarifaTramo[]
+}
+
+/** Lo que se ha cobrado en cada caseta, agrupado por clase e importe. */
+export async function importesCobrados(): Promise<{ caseta: string; clase: number; total: number; n: number }[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT caseta, clase, total, COUNT(*) AS n
+    FROM facturas_casetas_cruces
+    WHERE clase > 0 AND descripcion NOT LIKE 'AJUSTE%'
+    GROUP BY caseta, clase, total`)
+  return r.recordset as { caseta: string; clase: number; total: number; n: number }[]
+}
+
 export async function revisar(id: number, quien: string, nota: string | null): Promise<boolean> {
   const pool = await getPool()
   const r = await pool.request()

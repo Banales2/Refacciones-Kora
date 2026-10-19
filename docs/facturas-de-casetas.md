@@ -197,6 +197,7 @@ ninguna, y solo a esos.
 | `GET /facturas-casetas/{id}` | admin, editor, lector | Cruces, hallazgos y resumen por unidad |
 | `POST /facturas-casetas/{id}/revisar` | **admin** | La marca como revisada |
 | `POST /facturas-casetas/{id}/reabrir` | **admin** | Quita la marca |
+| `GET /tarifas-casetas` | admin, editor, lector | Casetas con sus tramos y tarifas de hoy, y lo cobrado en cada una |
 | `GET /tags-casetas` | admin, editor, lector | Los tags, los sin unidad primero |
 | `POST /tags-casetas` | admin, editor | Registra un tag antes de que cruce |
 | `PUT /tags-casetas/{id}` | admin, editor | Cambia la unidad del tag |
@@ -206,7 +207,12 @@ historia de cada tag, que cambia con cada factura nueva.
 
 ## La pantalla
 
-`src/src/pages/FacturasCasetas.tsx`, bajo **Facturas → Casetas**, con dos
-pestañas: **Facturas** (la bandeja, con el importador) y **Tags**. Al abrir una
+`src/src/pages/FacturasCasetas.tsx`, bajo **Facturas → Casetas**, con tres
+pestañas: **Facturas** (la bandeja, con el importador), **Tags** y **Tarifas**.
+En Tarifas, cada caseta con tarifa muestra sus tramos con la tarifa de hoy
+(marcadas las que PASE sí ha cobrado) y, debajo, lo cobrado agrupado por clase e
+importe con el tramo que le corresponde o "Fuera de tarifa". Al final, las
+casetas sin tarifa ordenadas por lo que han costado: son las que conviene
+cargar. Las tarifas se cargan por migración, no desde la pantalla. Al abrir una
 factura: cuatro tarjetas —total, cruces, lo que pudo cobrarse de más, uso por
 revisar— y tres pestañas: hallazgos, por unidad y los cruces.

@@ -184,6 +184,8 @@ export function useFacturaCasetas(id: number | null) {
 function invalidar(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['facturas-casetas'] })
   qc.invalidateQueries({ queryKey: ['tags-casetas'] })
+  // Lo cobrado en cada caseta cambia con cada factura.
+  qc.invalidateQueries({ queryKey: ['tarifas-casetas'] })
 }
 
 /** Lo leído del XML, sin lo que solo sirve para la vista previa. */
@@ -217,6 +219,46 @@ export function useReabrirFacturaCasetas() {
   return useMutation({
     mutationFn: (id: number) => api.post(`/facturas-casetas/${id}/reabrir`, {}),
     onSuccess: () => invalidar(qc),
+  })
+}
+
+export interface TarifaTramo {
+  tramo_id:      number
+  autopista:     string
+  tramo:         string
+  vigente_desde: string
+  moto:          number | null
+  auto:          number | null
+  autobus:       number | null
+  camion_2_4:    number | null
+  camion_5_6:    number | null
+  camion_7_9:    number | null
+  eje_ligero:    number | null
+  eje_pesado:    number | null
+}
+
+export interface ImporteCobrado {
+  clase:  number
+  total:  number
+  cruces: number
+  /** Los tramos que cuestan eso para esa clase; vacío = fuera de tarifa. */
+  tramos: string[]
+}
+
+export interface TarifasDeCaseta {
+  caseta:   string
+  nombre:   string | null
+  cruces:   number
+  total:    number
+  tramos:   TarifaTramo[]
+  cobrados: ImporteCobrado[]
+}
+
+/** Las casetas con sus tarifas de hoy y lo cobrado en cada una. */
+export function useTarifasCasetas() {
+  return useQuery({
+    queryKey: ['tarifas-casetas'],
+    queryFn: () => api.get<{ data: TarifasDeCaseta[] }>('/tarifas-casetas'),
   })
 }
 

@@ -21,7 +21,7 @@
 // Ver `db/migrations/064_facturas_de_casetas.sql`.
 import { useMemo, useState } from 'react'
 import {
-  Alert, Badge, Button, Card, Center, FileInput, Group, Loader, Modal, Pagination,
+  Accordion, Alert, Badge, Button, Card, Center, FileInput, Group, Loader, Modal, Pagination,
   Select, SimpleGrid, Stack, Switch, Table, Tabs, Text, TextInput, Textarea, Tooltip,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
@@ -31,10 +31,11 @@ import {
 import {
   FACTURA_DUPLICADA, useActualizarTagCaseta, useCrearTagCaseta, useFacturaCasetas,
   useFacturasCasetas, useImportarFacturaCasetas, useReabrirFacturaCasetas,
-  useRevisarFacturaCasetas, useTagsCasetas,
+  useRevisarFacturaCasetas, useTagsCasetas, useTarifasCasetas,
 } from '../hooks/useFacturasCasetas'
 import type {
-  CasetaSinTarifa, CorreccionDeClase, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas, Hallazgo, TagCaseta, TipoHallazgo,
+  CasetaSinTarifa, CorreccionDeClase, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas,
+  TarifaTramo, TarifasDeCaseta, Hallazgo, TagCaseta, TipoHallazgo,
 } from '../hooks/useFacturasCasetas'
 import { useVehiculos } from '../hooks/useVehiculos'
 import { usePermisos } from '../hooks/usePermisos'
@@ -1139,6 +1140,199 @@ function TagsPanel() {
 
 // ── La pantalla ──────────────────────────────────────────────────────────────
 
+// ── Las tarifas ──────────────────────────────────────────────────────────────
+
+const COLUMNAS_TARIFA: [keyof TarifaTramo, string][] = [
+  ['moto', 'Moto'], ['auto', 'Auto'], ['autobus', 'Autobús'], ['camion_2_4', '2-4 ejes'],
+  ['camion_5_6', '5-6 ejes'], ['camion_7_9', '7-9 ejes'], ['eje_ligero', 'Eje ligero'],
+  ['eje_pesado', 'Eje pesado'],
+]
+
+/**
+ * Una caseta abierta: sus tramos con la tarifa de hoy y, debajo, lo que PASE ha
+ * cobrado ahí. Las tarifas que sí se han cobrado se marcan en la tabla, para
+ * ver de un vistazo por qué tramos pasa la flota.
+ */
+function TarifasDeUnaCaseta({ k }: { k: TarifasDeCaseta }) {
+  const usadas = new Set(k.cobrados.flatMap((c) => c.tramos.map((t) => `${t}|${c.total}`)))
+  return (
+    <Stack gap="sm">
+      <Table.ScrollContainer minWidth={760}>
+        <Table withTableBorder striped fz="xs" verticalSpacing={4}>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Tramo</Table.Th>
+              {COLUMNAS_TARIFA.map(([, titulo]) => (
+                <Table.Th key={titulo} style={{ textAlign: 'right' }}>{titulo}</Table.Th>
+              ))}
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {k.tramos.map((t) => (
+              <Table.Tr key={t.tramo_id}>
+                <Table.Td>
+                  {t.tramo}
+                  <Text size="xs" c="dimmed">desde {formatFecha(t.vigente_desde)}</Text>
+                </Table.Td>
+                {COLUMNAS_TARIFA.map(([col]) => {
+                  const v = t[col] as number | null
+                  const usada = v !== null && usadas.has(`${t.tramo}|${v}`)
+                  return (
+                    <Table.Td
+                      key={col} fw={usada ? 700 : undefined}
+                      bg={usada ? 'var(--mantine-color-blue-light)' : undefined}
+                      style={{ textAlign: 'right', whiteSpace: 'nowrap' }}
+                    >
+                      {v === null ? '—' : formatMXN(v)}
+                    </Table.Td>
+                  )
+                })}
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+
+      {k.cobrados.length > 0 && (
+        <Stack gap={4}>
+          <Text size="xs" fw={600}>Lo que PASE ha cobrado aquí, contra la tarifa de hoy</Text>
+          <Table.ScrollContainer minWidth={480}>
+            <Table withTableBorder fz="xs" verticalSpacing={2}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th style={{ textAlign: 'center' }}>Clase</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Importe</Table.Th>
+                  <Table.Th style={{ textAlign: 'center' }}>Cruces</Table.Th>
+                  <Table.Th>Tramo</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {k.cobrados.map((c) => (
+                  <Table.Tr key={`${c.clase}|${c.total}`}>
+                    <Table.Td style={{ textAlign: 'center' }}>{c.clase}</Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>{formatMXN(c.total)}</Table.Td>
+                    <Table.Td style={{ textAlign: 'center' }}>{c.cruces}</Table.Td>
+                    <Table.Td c={c.tramos.length === 0 ? 'red' : undefined} fw={c.tramos.length === 0 ? 700 : undefined}>
+                      {c.tramos.length > 0 ? c.tramos.join(' / ') : 'Fuera de tarifa'}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+          <Text size="xs" c="dimmed">
+            Se compara contra la tarifa de hoy; en la factura, cada cruce se revisa contra la
+            de su fecha.
+          </Text>
+        </Stack>
+      )}
+    </Stack>
+  )
+}
+
+function TarifasPanel() {
+  const { data, isLoading, isError } = useTarifasCasetas()
+  const [buscar, setBuscar] = useState('')
+  const casetas = data?.data ?? []
+  const q = buscar.trim().toUpperCase()
+  const visibles = casetas.filter((k) => !q
+    || k.caseta.includes(q)
+    || (k.nombre ?? '').toUpperCase().includes(q)
+    || k.tramos.some((t) => t.tramo.toUpperCase().includes(q) || t.autopista.toUpperCase().includes(q)))
+  const conTarifa = visibles.filter((k) => k.tramos.length > 0)
+  const sinTarifa = visibles.filter((k) => k.tramos.length === 0)
+
+  if (isError) return <Alert color="red" title="Error">No se pudieron cargar las tarifas.</Alert>
+  if (isLoading) return <Center py="xl"><Loader /></Center>
+
+  return (
+    <Stack gap="sm">
+      <TextInput
+        placeholder="Buscar caseta, tramo o autopista…" leftSection={<IconSearch size={16} />}
+        value={buscar} onChange={(e) => setBuscar(e.currentTarget.value)}
+      />
+      <Text size="xs" c="dimmed">
+        Clase de PASE: 1 = automóvil · 2 a 4 = autobús o camión de 2-4 ejes · 5-6 = camión
+        de 5-6 ejes · 7 a 9 = camión de 7-9 ejes. Precios con IVA.
+      </Text>
+
+      {conTarifa.length === 0 ? (
+        <Text size="sm" c="dimmed">
+          {q ? 'Ninguna caseta con tarifa coincide.' : 'Todavía no hay tarifas cargadas.'}
+        </Text>
+      ) : (
+        <Accordion variant="separated" multiple>
+          {conTarifa.map((k) => {
+            const fuera = k.cobrados.filter((c) => c.tramos.length === 0)
+            return (
+              <Accordion.Item key={k.caseta} value={k.caseta}>
+                <Accordion.Control>
+                  <Group justify="space-between" wrap="nowrap" pr="sm">
+                    <div style={{ minWidth: 0 }}>
+                      <Text size="sm" fw={600}>
+                        {k.nombre?.replace(/^PEAJE /i, '') ?? 'Sin cruces todavía'}
+                        <Text component="span" size="xs" c="dimmed" fw={400}> · caseta {k.caseta}</Text>
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {[...new Set(k.tramos.map((t) => t.autopista))].join(', ')} · {k.tramos.length} tramo
+                        {k.tramos.length === 1 ? '' : 's'}
+                      </Text>
+                    </div>
+                    <Group gap="xs" wrap="nowrap">
+                      {fuera.length > 0 && (
+                        <Badge size="sm" color="red" variant="light">
+                          {sumar(fuera, (c) => c.cruces)} fuera de tarifa
+                        </Badge>
+                      )}
+                      <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                        {k.cruces} cruces · {formatMXN(k.total)}
+                      </Text>
+                    </Group>
+                  </Group>
+                </Accordion.Control>
+                <Accordion.Panel><TarifasDeUnaCaseta k={k} /></Accordion.Panel>
+              </Accordion.Item>
+            )
+          })}
+        </Accordion>
+      )}
+
+      {sinTarifa.length > 0 && (
+        <Stack gap={4} mt="sm">
+          <Text size="sm" fw={600}>Sin tarifa cargada</Text>
+          <Text size="xs" c="dimmed">
+            Sus cruces no se revisan contra precio. Por lo que han costado, primero las que
+            conviene cargar.
+          </Text>
+          <Table.ScrollContainer minWidth={420}>
+            <Table withTableBorder striped fz="sm">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Caseta</Table.Th>
+                  <Table.Th style={{ textAlign: 'center' }}>Cruces</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Total</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {sinTarifa.map((k) => (
+                  <Table.Tr key={k.caseta}>
+                    <Table.Td>
+                      {k.nombre?.replace(/^PEAJE /i, '') ?? `Caseta ${k.caseta}`}
+                      <Text component="span" size="xs" c="dimmed"> · {k.caseta}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'center' }}>{k.cruces}</Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>{formatMXN(k.total)}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Stack>
+      )}
+    </Stack>
+  )
+}
+
 export default function FacturasCasetas() {
   return (
     <Stack gap="md">
@@ -1155,9 +1349,11 @@ export default function FacturasCasetas() {
         <Tabs.List>
           <Tabs.Tab value="facturas">Facturas</Tabs.Tab>
           <Tabs.Tab value="tags">Tags</Tabs.Tab>
+          <Tabs.Tab value="tarifas">Tarifas</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="facturas" pt="md"><FacturasPanel /></Tabs.Panel>
         <Tabs.Panel value="tags" pt="md"><TagsPanel /></Tabs.Panel>
+        <Tabs.Panel value="tarifas" pt="md"><TarifasPanel /></Tabs.Panel>
       </Tabs>
     </Stack>
   )
