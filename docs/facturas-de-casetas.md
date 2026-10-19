@@ -198,6 +198,9 @@ ninguna, y solo a esos.
 | `POST /facturas-casetas/{id}/revisar` | **admin** | La marca como revisada |
 | `POST /facturas-casetas/{id}/reabrir` | **admin** | Quita la marca |
 | `GET /tarifas-casetas` | admin, editor, lector | Casetas con sus tramos y tarifas de hoy, y lo cobrado en cada una |
+| `PUT /tarifas-casetas/{id}` | **admin** | Corrige una vigencia (precios o fecha) |
+| `POST /tarifas-casetas` | **admin** | Registra un aumento: vigencia nueva de un tramo |
+| `POST /tramos-casetas` | **admin** | Agrega un tramo a una caseta, con su primera tarifa |
 | `GET /tags-casetas` | admin, editor, lector | Los tags, los sin unidad primero |
 | `POST /tags-casetas` | admin, editor | Registra un tag antes de que cruce |
 | `PUT /tags-casetas/{id}` | admin, editor | Cambia la unidad del tag |
@@ -213,6 +216,25 @@ En Tarifas, cada caseta con tarifa muestra sus tramos con la tarifa de hoy
 (marcadas las que PASE sí ha cobrado) y, debajo, lo cobrado agrupado por clase e
 importe con el tramo que le corresponde o "Fuera de tarifa". Al final, las
 casetas sin tarifa ordenadas por lo que han costado: son las que conviene
-cargar. Las tarifas se cargan por migración, no desde la pantalla. Al abrir una
+cargar.
+
+**Editar tarifas es solo de admin**, porque deciden qué cuenta como cobro de más
+en todas las facturas, las ya revisadas incluidas. Hay dos acciones distintas
+sobre un tramo: **corregir** (el precio estaba mal: cambia la vigencia que ya
+existe) y **registrar un aumento** (vigencia nueva con fecha posterior; la
+anterior se queda para los cruces de antes). Si el tramo lo cobran otras
+casetas, el modal lo avisa. **Agregar tramo** sirve también en las casetas sin
+tarifa: el tramo queda ligado solo a esa caseta. Todo pasa por la bitácora.
+
+### De dónde sacar tarifas
+
+- **El operador** (IDEAL para Guadalajara - Tepic y Las Varas - Vallarta): por
+  tramo, sin fecha de vigencia. Tenía un error: Arenal, camión 2-4 ejes, $287.
+- **casetas.com.mx**: por caseta y por número de ejes, con fecha ("válidas
+  desde el 13 de abril de 2026" en Guadalajara - Tepic). Ahí Arenal camión 2-4
+  es $278, lo que cobra PASE. En Las Varas - Vallarta sus precios son más bajos
+  que los de IDEAL y que lo que cobra PASE: parece desactualizada.
+
+Comparar contra lo que PASE cobra (pestaña Tarifas) dice cuál fuente está bien. Al abrir una
 factura: cuatro tarjetas —total, cruces, lo que pudo cobrarse de más, uso por
 revisar— y tres pestañas: hallazgos, por unidad y los cruces.

@@ -1,8 +1,10 @@
 import * as repo from '../repositories/facturasCasetasRepo'
 import type {
-  CandidatoDeAjuste, Categoria, CruceRow, FacturaCasetas, HistorialTag, TarifaTramo,
+  CandidatoDeAjuste, Categoria, CruceRow, FacturaCasetas, HistorialTag, TarifaTramo, TarifaVigente,
 } from '../repositories/facturasCasetasRepo'
-import type { FacturaCasetasImport, TagCreate, TagUpdate } from '../schemas/facturaCasetasSchema'
+import type {
+  FacturaCasetasImport, TagCreate, TagUpdate, TarifaCreate, TarifaUpdate, TramoCreate,
+} from '../schemas/facturaCasetasSchema'
 import { AppError, ConflictError, NotFoundError, ValidationError, esLlaveDuplicada } from '../shared/errors'
 import { aCentavos } from '../shared/totales'
 
@@ -748,7 +750,8 @@ export interface TarifasDeCaseta {
   nombre: string | null
   cruces: number
   total: number
-  tramos: Omit<TarifaTramo, 'caseta'>[]
+  /** Cada tramo con su tarifa de hoy y las casetas que lo cobran. */
+  tramos: (Omit<TarifaVigente, 'caseta'> & { casetas: string[] })[]
   /** Solo si la caseta tiene tarifa: lo cobrado, contra la tarifa de hoy. */
   cobrados: ImporteCobrado[]
 }
@@ -770,7 +773,10 @@ export async function tarifasPorCaseta(): Promise<TarifasDeCaseta[]> {
         nombre: k.nombre,
         cruces: k.cruces,
         total: aCentavos(Number(k.total)),
-        tramos: ts.map(({ caseta: _, ...t }) => t),
+        tramos: ts.map(({ caseta: _, ...t }) => ({
+          ...t,
+          casetas: [...new Set(tarifas.filter((x) => x.tramo_id === t.tramo_id).map((x) => x.caseta))],
+        })),
         cobrados: ts.length === 0 ? [] : cobrados
           .filter((c) => c.caseta === k.caseta)
           .map((c) => ({
@@ -785,6 +791,42 @@ export async function tarifasPorCaseta(): Promise<TarifasDeCaseta[]> {
     })
     .sort((a, b) =>
       Number(b.tramos.length > 0) - Number(a.tramos.length > 0) || b.total - a.total)
+}
+
+// Las tarifas se editan desde la pantalla. Corregir cambia la vigencia que ya
+// existe; un aumento es una vigencia nueva, para que los cruces de antes se
+// sigan revisando contra el precio de su día.
+
+function tarifaDuplicada(err: unknown, fecha: string): never {
+  if (esLlaveDuplicada(err, 'UQ_tarifas_casetas')) {
+    throw new ConflictError(`Ese tramo ya tiene una tarifa vigente desde el ${fecha}.`)
+  }
+  throw err
+}
+
+export async function actualizarTarifa(id: number, data: TarifaUpdate): Promise<void> {
+  if (!(await repo.findTarifa(id))) throw new NotFoundError('Tarifa')
+  try {
+    await repo.actualizarTarifa(id, data)
+  } catch (err) { tarifaDuplicada(err, data.vigente_desde) }
+}
+
+export async function crearTarifa(data: TarifaCreate): Promise<number> {
+  if (!(await repo.existeTramo(data.tramo_id))) throw new NotFoundError('Tramo')
+  try {
+    return await repo.crearTarifa(data)
+  } catch (err) { return tarifaDuplicada(err, data.vigente_desde) }
+}
+
+export async function crearTramo(data: TramoCreate) {
+  try {
+    return await repo.crearTramo(data)
+  } catch (err) {
+    if (esLlaveDuplicada(err, 'UQ_tramos_casetas')) {
+      throw new ConflictError(`Ya existe el tramo "${data.nombre}" en ${data.autopista}.`)
+    }
+    throw err
+  }
 }
 
 // ── Los tags ─────────────────────────────────────────────────────────────────

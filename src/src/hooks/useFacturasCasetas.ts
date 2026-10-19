@@ -223,6 +223,12 @@ export function useReabrirFacturaCasetas() {
 }
 
 export interface TarifaTramo {
+  /** La vigencia que se muestra: es la que se corrige al editar. */
+  tarifa_id:     number
+  /** Cuántas vigencias tiene el tramo en total. */
+  vigencias:     number
+  /** Las casetas de PASE que cobran este tramo: editarlo les cambia a todas. */
+  casetas:       string[]
   tramo_id:      number
   autopista:     string
   tramo:         string
@@ -259,6 +265,56 @@ export function useTarifasCasetas() {
   return useQuery({
     queryKey: ['tarifas-casetas'],
     queryFn: () => api.get<{ data: TarifasDeCaseta[] }>('/tarifas-casetas'),
+  })
+}
+
+/** Los precios de una vigencia; null = el operador no publica esa clasificación. */
+export interface ValoresTarifa {
+  vigente_desde: string
+  moto:          number | null
+  auto:          number | null
+  autobus:       number | null
+  camion_2_4:    number | null
+  camion_5_6:    number | null
+  camion_7_9:    number | null
+  eje_ligero:    number | null
+  eje_pesado:    number | null
+}
+
+// Cambiar una tarifa cambia los hallazgos de todas las facturas, no solo la
+// pestaña de tarifas.
+function invalidarTarifas(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['tarifas-casetas'] })
+  qc.invalidateQueries({ queryKey: ['facturas-casetas'] })
+}
+
+/** Corregir una vigencia que ya existe. */
+export function useActualizarTarifaCaseta() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: ValoresTarifa & { id: number }) =>
+      api.put<{ data: { id: number } }>(`/tarifas-casetas/${id}`, body),
+    onSuccess: () => invalidarTarifas(qc),
+  })
+}
+
+/** Un aumento: una vigencia nueva del tramo. */
+export function useCrearTarifaCaseta() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ValoresTarifa & { tramo_id: number }) =>
+      api.post<{ data: { id: number } }>('/tarifas-casetas', body),
+    onSuccess: () => invalidarTarifas(qc),
+  })
+}
+
+/** Un tramo nuevo para una caseta, con su primera tarifa. */
+export function useCrearTramoCaseta() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ValoresTarifa & { autopista: string; nombre: string; casetas: string[] }) =>
+      api.post<{ data: { tramo_id: number; tarifa_id: number } }>('/tramos-casetas', body),
+    onSuccess: () => invalidarTarifas(qc),
   })
 }
 

@@ -1,6 +1,8 @@
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import type { Cruce, FacturaCasetasImport } from '../schemas/facturaCasetasSchema'
+import type {
+  Cruce, FacturaCasetasImport, TarifaCreate, TarifaUpdate, TramoCreate,
+} from '../schemas/facturaCasetasSchema'
 
 // Las facturas de casetas de PASE, sus cruces y el catálogo de tags.
 //
@@ -465,14 +467,18 @@ export async function casetas(): Promise<CasetaRow[]> {
   return r.recordset as CasetaRow[]
 }
 
+/** Con el id de la vigencia: es lo que se corrige al editar. */
+export type TarifaVigente = TarifaTramo & { tarifa_id: number; vigencias: number }
+
 /**
  * La tarifa de hoy de cada tramo que cada caseta cobra. Si un tramo solo tiene
  * vigencias futuras, sale la más próxima.
  */
-export async function tarifasVigentes(): Promise<TarifaTramo[]> {
+export async function tarifasVigentes(): Promise<TarifaVigente[]> {
   const pool = await getPool()
   const r = await pool.request().query(`
-    SELECT ct.caseta, t.id AS tramo_id, t.autopista, t.nombre AS tramo,
+    SELECT ct.caseta, t.id AS tramo_id, t.autopista, t.nombre AS tramo, ta.id AS tarifa_id,
+           (SELECT COUNT(*) FROM tarifas_casetas v WHERE v.tramo_id = t.id) AS vigencias,
            CONVERT(char(10), ta.vigente_desde, 23) AS vigente_desde,
            ta.moto, ta.auto, ta.autobus, ta.camion_2_4, ta.camion_5_6, ta.camion_7_9,
            ta.eje_ligero, ta.eje_pesado
@@ -487,7 +493,114 @@ export async function tarifasVigentes(): Promise<TarifaTramo[]> {
                x.vigente_desde
     ) ta
     ORDER BY ct.caseta, t.autopista, t.nombre`)
-  return r.recordset as TarifaTramo[]
+  return r.recordset as TarifaVigente[]
+}
+
+export interface TarifaRow {
+  id: number
+  tramo_id: number
+  autopista: string
+  tramo: string
+  vigente_desde: string
+  moto: number | null
+  auto: number | null
+  autobus: number | null
+  camion_2_4: number | null
+  camion_5_6: number | null
+  camion_7_9: number | null
+  eje_ligero: number | null
+  eje_pesado: number | null
+}
+
+export async function findTarifa(id: number): Promise<TarifaRow | null> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query(`
+      SELECT ta.id, ta.tramo_id, t.autopista, t.nombre AS tramo,
+             CONVERT(char(10), ta.vigente_desde, 23) AS vigente_desde,
+             ta.moto, ta.auto, ta.autobus, ta.camion_2_4, ta.camion_5_6, ta.camion_7_9,
+             ta.eje_ligero, ta.eje_pesado
+      FROM tarifas_casetas ta
+      JOIN tramos_casetas t ON t.id = ta.tramo_id
+      WHERE ta.id = @id`)
+  return (r.recordset[0] as TarifaRow) ?? null
+}
+
+export async function existeTramo(id: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .query('SELECT 1 AS x FROM tramos_casetas WHERE id = @id')
+  return r.recordset.length > 0
+}
+
+function inputsTarifa(req: sql.Request, d: TarifaUpdate): sql.Request {
+  return req
+    .input('desde',      sql.Date,           d.vigente_desde)
+    .input('moto',       sql.Decimal(10, 2), d.moto)
+    .input('auto',       sql.Decimal(10, 2), d.auto)
+    .input('autobus',    sql.Decimal(10, 2), d.autobus)
+    .input('camion_2_4', sql.Decimal(10, 2), d.camion_2_4)
+    .input('camion_5_6', sql.Decimal(10, 2), d.camion_5_6)
+    .input('camion_7_9', sql.Decimal(10, 2), d.camion_7_9)
+    .input('eje_ligero', sql.Decimal(10, 2), d.eje_ligero)
+    .input('eje_pesado', sql.Decimal(10, 2), d.eje_pesado)
+}
+
+const INSERT_TARIFA = `
+  INSERT INTO tarifas_casetas
+    (tramo_id, vigente_desde, moto, auto, autobus, camion_2_4, camion_5_6, camion_7_9,
+     eje_ligero, eje_pesado)
+  OUTPUT INSERTED.id
+  VALUES (@tramo, @desde, @moto, @auto, @autobus, @camion_2_4, @camion_5_6, @camion_7_9,
+          @eje_ligero, @eje_pesado)`
+
+export async function actualizarTarifa(id: number, d: TarifaUpdate): Promise<void> {
+  const pool = await getPool()
+  await inputsTarifa(pool.request().input('id', sql.Int, id), d).query(`
+    UPDATE tarifas_casetas
+    SET vigente_desde = @desde, moto = @moto, auto = @auto, autobus = @autobus,
+        camion_2_4 = @camion_2_4, camion_5_6 = @camion_5_6, camion_7_9 = @camion_7_9,
+        eje_ligero = @eje_ligero, eje_pesado = @eje_pesado
+    WHERE id = @id`)
+}
+
+export async function crearTarifa(d: TarifaCreate): Promise<number> {
+  const pool = await getPool()
+  const r = await inputsTarifa(pool.request().input('tramo', sql.Int, d.tramo_id), d)
+    .query(INSERT_TARIFA)
+  return r.recordset[0].id as number
+}
+
+/** El tramo, las casetas que lo cobran y su primera tarifa, juntos o nada. */
+export async function crearTramo(d: TramoCreate): Promise<{ tramo_id: number; tarifa_id: number }> {
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  try {
+    const t = await tx.request()
+      .input('autopista', sql.NVarChar(80),  d.autopista)
+      .input('nombre',    sql.NVarChar(120), d.nombre)
+      .query(`
+        INSERT INTO tramos_casetas (autopista, nombre)
+        OUTPUT INSERTED.id
+        VALUES (@autopista, @nombre)`)
+    const tramoId = t.recordset[0].id as number
+    for (const caseta of new Set(d.casetas)) {
+      await tx.request()
+        .input('caseta', sql.NVarChar(10), caseta)
+        .input('tramo',  sql.Int,          tramoId)
+        .query('INSERT INTO casetas_tramos (caseta, tramo_id) VALUES (@caseta, @tramo)')
+    }
+    const ta = await inputsTarifa(tx.request().input('tramo', sql.Int, tramoId), d)
+      .query(INSERT_TARIFA)
+    await tx.commit()
+    return { tramo_id: tramoId, tarifa_id: ta.recordset[0].id as number }
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
 }
 
 /** Lo que se ha cobrado en cada caseta, agrupado por clase e importe. */

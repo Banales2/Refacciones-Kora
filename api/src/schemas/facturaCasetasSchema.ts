@@ -84,6 +84,47 @@ export const TagUpdateSchema = z.object({
   nota: z.string().trim().max(255).nullish(),
 })
 
+// Una tarifa con IVA, en pesos. Sin `coerce`: convertiría el null de "no se
+// publica esta clasificación" en $0, que es una tarifa distinta.
+const tarifa = z.number().min(0).max(99999).nullable()
+
+const TarifaValoresSchema = z.object({
+  vigente_desde: fecha,
+  moto: tarifa,
+  auto: tarifa,
+  autobus: tarifa,
+  camion_2_4: tarifa,
+  camion_5_6: tarifa,
+  camion_7_9: tarifa,
+  eje_ligero: tarifa,
+  eje_pesado: tarifa,
+})
+
+const algunaTarifa = (v: z.infer<typeof TarifaValoresSchema>) =>
+  [v.moto, v.auto, v.autobus, v.camion_2_4, v.camion_5_6, v.camion_7_9, v.eje_ligero, v.eje_pesado]
+    .some((x) => x !== null)
+const SIN_TARIFAS = { message: 'Captura al menos una tarifa' }
+
+/** Corregir una vigencia que ya existe: sus precios o su fecha. */
+export const TarifaUpdateSchema = TarifaValoresSchema.refine(algunaTarifa, SIN_TARIFAS)
+
+/** Un aumento: una vigencia nueva para un tramo que ya existe. */
+export const TarifaCreateSchema = TarifaValoresSchema
+  .extend({ tramo_id: z.number().int().positive() })
+  .refine(algunaTarifa, SIN_TARIFAS)
+
+/** Un tramo nuevo, con las casetas de PASE que lo cobran y su primera tarifa. */
+export const TramoCreateSchema = TarifaValoresSchema
+  .extend({
+    autopista: z.string().trim().min(1, 'Requerido').max(80),
+    nombre: z.string().trim().min(1, 'Requerido').max(120),
+    casetas: z.array(z.string().trim().min(1).max(10)).min(1).max(20),
+  })
+  .refine(algunaTarifa, SIN_TARIFAS)
+
+export type TarifaUpdate = z.infer<typeof TarifaUpdateSchema>
+export type TarifaCreate = z.infer<typeof TarifaCreateSchema>
+export type TramoCreate = z.infer<typeof TramoCreateSchema>
 export type Cruce = z.infer<typeof CruceSchema>
 export type FacturaCasetasImport = z.infer<typeof FacturaCasetasImportSchema>
 export type FacturaCasetasQuery = z.infer<typeof FacturaCasetasQuerySchema>

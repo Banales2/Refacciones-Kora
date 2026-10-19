@@ -21,23 +21,26 @@
 // Ver `db/migrations/064_facturas_de_casetas.sql`.
 import { useMemo, useState } from 'react'
 import {
-  Accordion, Alert, Badge, Button, Card, Center, FileInput, Group, Loader, Modal, Pagination,
-  Select, SimpleGrid, Stack, Switch, Table, Tabs, Text, TextInput, Textarea, Tooltip,
+  Accordion, ActionIcon, Alert, Badge, Button, Card, Center, FileInput, Group, Loader, Modal,
+  NumberInput, Pagination, SegmentedControl, Select, SimpleGrid, Stack, Switch, Table, Tabs, Text, TextInput, Textarea, Tooltip,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import {
-  IconAlertTriangle, IconArrowRight, IconCheck, IconFileImport, IconLockOpen, IconPlus, IconSearch,
+  IconAlertTriangle, IconArrowRight, IconCheck, IconFileImport, IconLockOpen, IconPencil, IconPlus,
+  IconSearch,
 } from '@tabler/icons-react'
 import {
   FACTURA_DUPLICADA, useActualizarTagCaseta, useCrearTagCaseta, useFacturaCasetas,
   useFacturasCasetas, useImportarFacturaCasetas, useReabrirFacturaCasetas,
-  useRevisarFacturaCasetas, useTagsCasetas, useTarifasCasetas,
+  useRevisarFacturaCasetas, useTagsCasetas, useTarifasCasetas, useActualizarTarifaCaseta,
+  useCrearTarifaCaseta, useCrearTramoCaseta,
 } from '../hooks/useFacturasCasetas'
 import type {
   CasetaSinTarifa, CorreccionDeClase, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas,
-  TarifaTramo, TarifasDeCaseta, Hallazgo, TagCaseta, TipoHallazgo,
+  TarifaTramo, TarifasDeCaseta, ValoresTarifa, Hallazgo, TagCaseta, TipoHallazgo,
 } from '../hooks/useFacturasCasetas'
 import { useVehiculos } from '../hooks/useVehiculos'
+import { FechaInput } from '../components/FechaInput'
 import { usePermisos } from '../hooks/usePermisos'
 import { ApiError } from '../lib/api'
 import { formatFecha, formatMXN } from '../lib/formato'
@@ -1142,18 +1145,174 @@ function TagsPanel() {
 
 // ── Las tarifas ──────────────────────────────────────────────────────────────
 
-const COLUMNAS_TARIFA: [keyof TarifaTramo, string][] = [
+const COLUMNAS_TARIFA: [Exclude<keyof ValoresTarifa, 'vigente_desde'>, string][] = [
   ['moto', 'Moto'], ['auto', 'Auto'], ['autobus', 'Autobús'], ['camion_2_4', '2-4 ejes'],
   ['camion_5_6', '5-6 ejes'], ['camion_7_9', '7-9 ejes'], ['eje_ligero', 'Eje ligero'],
   ['eje_pesado', 'Eje pesado'],
 ]
+
+const VACIA: ValoresTarifa = {
+  vigente_desde: '', moto: null, auto: null, autobus: null, camion_2_4: null,
+  camion_5_6: null, camion_7_9: null, eje_ligero: null, eje_pesado: null,
+}
+
+/**
+ * Lo que se edita: corregir la vigencia de un tramo, registrar un aumento del
+ * mismo tramo, o agregar un tramo nuevo a una caseta.
+ *
+ * Corregir y aumentar no son lo mismo. Corregir cambia el precio que ya estaba
+ * (la página tenía un error); aumentar agrega una vigencia con su fecha y deja
+ * la anterior, para que los cruces de antes se sigan revisando contra el
+ * precio de su día.
+ */
+type EdicionTarifa =
+  | { modo: 'tramo'; caseta: TarifasDeCaseta; tramo: TarifaTramo }
+  | { modo: 'nuevo'; caseta: TarifasDeCaseta }
+
+function TarifaModal({ edicion, onClose }: { edicion: EdicionTarifa | null; onClose: () => void }) {
+  const actualizar = useActualizarTarifaCaseta()
+  const crear = useCrearTarifaCaseta()
+  const crearTramo = useCrearTramoCaseta()
+  const [accion, setAccion] = useState<'corregir' | 'aumento'>('corregir')
+  const [valores, setValores] = useState<ValoresTarifa>(VACIA)
+  const [autopista, setAutopista] = useState('')
+  const [nombre, setNombre] = useState('')
+  const [abiertaPara, setAbiertaPara] = useState<EdicionTarifa | null>(null)
+
+  // Al abrir, se llena con lo que hay: es más fácil corregir un número que
+  // volver a teclear ocho.
+  if (edicion !== abiertaPara) {
+    setAbiertaPara(edicion)
+    setAccion('corregir')
+    actualizar.reset(); crear.reset(); crearTramo.reset()
+    if (edicion?.modo === 'tramo') {
+      const { tramo: t } = edicion
+      setValores({
+        vigente_desde: t.vigente_desde, moto: t.moto, auto: t.auto, autobus: t.autobus,
+        camion_2_4: t.camion_2_4, camion_5_6: t.camion_5_6, camion_7_9: t.camion_7_9,
+        eje_ligero: t.eje_ligero, eje_pesado: t.eje_pesado,
+      })
+    } else if (edicion) {
+      setValores(VACIA)
+      setAutopista(edicion.caseta.tramos[0]?.autopista ?? '')
+      setNombre('')
+    }
+  }
+
+  if (!edicion) return null
+  const tramo = edicion.modo === 'tramo' ? edicion.tramo : null
+  const otras = tramo ? tramo.casetas.filter((c) => c !== edicion.caseta.caseta) : []
+  const mutacion = edicion.modo === 'nuevo' ? crearTramo : accion === 'corregir' ? actualizar : crear
+  const hayTarifa = COLUMNAS_TARIFA.some(([col]) => valores[col] !== null)
+  const aumentoSinFechaNueva = tramo !== null && accion === 'aumento'
+    && valores.vigente_desde <= tramo.vigente_desde
+  const listo = !!valores.vigente_desde && hayTarifa && !aumentoSinFechaNueva
+    && (edicion.modo === 'tramo' || (!!autopista.trim() && !!nombre.trim()))
+
+  async function guardar() {
+    if (!edicion) return
+    if (edicion.modo === 'nuevo') {
+      await crearTramo.mutateAsync({
+        ...valores, autopista: autopista.trim(), nombre: nombre.trim(), casetas: [edicion.caseta.caseta],
+      })
+    } else if (accion === 'corregir') {
+      await actualizar.mutateAsync({ ...valores, id: edicion.tramo.tarifa_id })
+    } else {
+      await crear.mutateAsync({ ...valores, tramo_id: edicion.tramo.tramo_id })
+    }
+    onClose()
+  }
+
+  const nombreCaseta = edicion.caseta.nombre?.replace(/^PEAJE /i, '') ?? `Caseta ${edicion.caseta.caseta}`
+  return (
+    <Modal
+      opened onClose={onClose} size="lg"
+      title={<Text fw={700}>{tramo ? tramo.tramo : `Nuevo tramo en ${nombreCaseta}`}</Text>}
+    >
+      <Stack gap="sm">
+        {tramo ? (
+          <>
+            <SegmentedControl
+              fullWidth value={accion}
+              onChange={(v) => {
+                const a = v as 'corregir' | 'aumento'
+                setAccion(a)
+                setValores((x) => ({ ...x, vigente_desde: a === 'corregir' ? tramo.vigente_desde : '' }))
+              }}
+              data={[
+                { value: 'corregir', label: 'Corregir esta tarifa' },
+                { value: 'aumento', label: 'Registrar un aumento' },
+              ]}
+            />
+            <Text size="xs" c="dimmed">
+              {accion === 'corregir'
+                ? `Cambia la tarifa vigente desde el ${formatFecha(tramo.vigente_desde)}. Úsalo si el precio estaba mal: todos los cruces revisados con ella cambian.`
+                : `Agrega una tarifa nueva con su fecha. La de ${formatFecha(tramo.vigente_desde)} se queda para los cruces de antes.`}
+            </Text>
+            {otras.length > 0 && (
+              <Alert color="blue" variant="light" p="xs">
+                <Text size="xs">
+                  Este tramo también lo cobran las casetas {otras.join(', ')}: el cambio les aplica igual.
+                </Text>
+              </Alert>
+            )}
+          </>
+        ) : (
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+            <TextInput
+              label="Autopista" required maxLength={80} placeholder="Guadalajara - Tepic"
+              value={autopista} onChange={(e) => setAutopista(e.currentTarget.value)}
+            />
+            <TextInput
+              label="Tramo" required maxLength={120} placeholder="De dónde a dónde"
+              value={nombre} onChange={(e) => setNombre(e.currentTarget.value)}
+            />
+          </SimpleGrid>
+        )}
+
+        <FechaInput
+          label="Vigente desde" required
+          value={valores.vigente_desde}
+          onChange={(v) => setValores((x) => ({ ...x, vigente_desde: v }))}
+          error={aumentoSinFechaNueva && valores.vigente_desde
+            ? 'El aumento debe ser posterior a la tarifa actual' : undefined}
+        />
+
+        <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+          {COLUMNAS_TARIFA.map(([col, titulo]) => (
+            <NumberInput
+              key={col} label={titulo} prefix="$" min={0} max={99999} decimalScale={2}
+              thousandSeparator="," hideControls placeholder="—"
+              value={valores[col] ?? ''}
+              onChange={(v) => setValores((x) => ({ ...x, [col]: v === '' ? null : Number(v) }))}
+            />
+          ))}
+        </SimpleGrid>
+        <Text size="xs" c="dimmed">
+          Con IVA, como las publica el operador. Deja vacía la clasificación que no se publica.
+        </Text>
+
+        {mutacion.error && <Alert color="red">{(mutacion.error as Error).message}</Alert>}
+
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>Cancelar</Button>
+          <Button loading={mutacion.isPending} disabled={!listo} onClick={guardar}>
+            {edicion.modo === 'nuevo' ? 'Agregar tramo' : accion === 'corregir' ? 'Guardar corrección' : 'Registrar aumento'}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  )
+}
 
 /**
  * Una caseta abierta: sus tramos con la tarifa de hoy y, debajo, lo que PASE ha
  * cobrado ahí. Las tarifas que sí se han cobrado se marcan en la tabla, para
  * ver de un vistazo por qué tramos pasa la flota.
  */
-function TarifasDeUnaCaseta({ k }: { k: TarifasDeCaseta }) {
+function TarifasDeUnaCaseta({
+  k, onEditar,
+}: { k: TarifasDeCaseta; onEditar: ((e: EdicionTarifa) => void) | null }) {
   const usadas = new Set(k.cobrados.flatMap((c) => c.tramos.map((t) => `${t}|${c.total}`)))
   return (
     <Stack gap="sm">
@@ -1165,6 +1324,7 @@ function TarifasDeUnaCaseta({ k }: { k: TarifasDeCaseta }) {
               {COLUMNAS_TARIFA.map(([, titulo]) => (
                 <Table.Th key={titulo} style={{ textAlign: 'right' }}>{titulo}</Table.Th>
               ))}
+              {onEditar && <Table.Th w={36} />}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -1172,10 +1332,13 @@ function TarifasDeUnaCaseta({ k }: { k: TarifasDeCaseta }) {
               <Table.Tr key={t.tramo_id}>
                 <Table.Td>
                   {t.tramo}
-                  <Text size="xs" c="dimmed">desde {formatFecha(t.vigente_desde)}</Text>
+                  <Text size="xs" c="dimmed">
+                    desde {formatFecha(t.vigente_desde)}
+                    {t.vigencias > 1 && ` · ${t.vigencias} vigencias`}
+                  </Text>
                 </Table.Td>
                 {COLUMNAS_TARIFA.map(([col]) => {
-                  const v = t[col] as number | null
+                  const v = t[col]
                   const usada = v !== null && usadas.has(`${t.tramo}|${v}`)
                   return (
                     <Table.Td
@@ -1187,11 +1350,33 @@ function TarifasDeUnaCaseta({ k }: { k: TarifasDeCaseta }) {
                     </Table.Td>
                   )
                 })}
+                {onEditar && (
+                  <Table.Td>
+                    <Tooltip label="Corregir o registrar un aumento">
+                      <ActionIcon
+                        variant="subtle" size="sm" aria-label={`Editar ${t.tramo}`}
+                        onClick={() => onEditar({ modo: 'tramo', caseta: k, tramo: t })}
+                      >
+                        <IconPencil size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Table.Td>
+                )}
               </Table.Tr>
             ))}
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
+      {onEditar && (
+        <Group>
+          <Button
+            size="compact-xs" variant="subtle" leftSection={<IconPlus size={14} />}
+            onClick={() => onEditar({ modo: 'nuevo', caseta: k })}
+          >
+            Agregar tramo a esta caseta
+          </Button>
+        </Group>
+      )}
 
       {k.cobrados.length > 0 && (
         <Stack gap={4}>
@@ -1231,8 +1416,11 @@ function TarifasDeUnaCaseta({ k }: { k: TarifasDeCaseta }) {
 }
 
 function TarifasPanel() {
+  const { esAdmin } = usePermisos()
   const { data, isLoading, isError } = useTarifasCasetas()
   const [buscar, setBuscar] = useState('')
+  const [edicion, setEdicion] = useState<EdicionTarifa | null>(null)
+  const onEditar = esAdmin ? setEdicion : null
   const casetas = data?.data ?? []
   const q = buscar.trim().toUpperCase()
   const visibles = casetas.filter((k) => !q
@@ -1290,7 +1478,7 @@ function TarifasPanel() {
                     </Group>
                   </Group>
                 </Accordion.Control>
-                <Accordion.Panel><TarifasDeUnaCaseta k={k} /></Accordion.Panel>
+                <Accordion.Panel><TarifasDeUnaCaseta k={k} onEditar={onEditar} /></Accordion.Panel>
               </Accordion.Item>
             )
           })}
@@ -1311,6 +1499,7 @@ function TarifasPanel() {
                   <Table.Th>Caseta</Table.Th>
                   <Table.Th style={{ textAlign: 'center' }}>Cruces</Table.Th>
                   <Table.Th style={{ textAlign: 'right' }}>Total</Table.Th>
+                  {onEditar && <Table.Th />}
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -1322,6 +1511,16 @@ function TarifasPanel() {
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'center' }}>{k.cruces}</Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>{formatMXN(k.total)}</Table.Td>
+                    {onEditar && (
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Button
+                          size="compact-xs" variant="subtle" leftSection={<IconPlus size={14} />}
+                          onClick={() => onEditar({ modo: 'nuevo', caseta: k })}
+                        >
+                          Agregar tarifa
+                        </Button>
+                      </Table.Td>
+                    )}
                   </Table.Tr>
                 ))}
               </Table.Tbody>
@@ -1329,6 +1528,8 @@ function TarifasPanel() {
           </Table.ScrollContainer>
         </Stack>
       )}
+
+      <TarifaModal edicion={edicion} onClose={() => setEdicion(null)} />
     </Stack>
   )
 }
