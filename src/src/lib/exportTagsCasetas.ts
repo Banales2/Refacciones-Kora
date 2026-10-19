@@ -5,9 +5,10 @@
 //
 //   tags sin unidad      PASE los cobra y nadie ha dicho de quién son; sus
 //                        cruces no cuentan en el gasto de ninguna unidad
-//   unidades sin tag     las que cruzan casetas (translado, reparto,
-//                        utilitarios) y no tienen tag registrado. Las cajas y
-//                        los montacargas no llevan tag y no se listan
+//   translado sin tag    los tractocamiones sin tag registrado. Son los que
+//                        cruzan casetas por regla; una unidad de reparto o un
+//                        utilitario con tag es la excepción, y que no lo tenga
+//                        no es algo que falte
 //
 // Las placas no vienen con el tag: se cruzan con la flota por `vehiculo_id`.
 import type { TagCaseta } from '../hooks/useFacturasCasetas'
@@ -16,7 +17,7 @@ import { formatFecha, formatMXN } from './formato'
 import { COLOR, crearReportePdf, hoyISO } from './reportes/pdfDoc'
 import { TIPO_LABELS } from './tipoVehiculo'
 
-/** Los tipos que cruzan casetas, en el orden en que se listan. */
+/** El orden de los tipos en la lista de tags con unidad. */
 const TIPOS_CON_TAG = ['tractocamion', 'camion', 'utilitario']
 
 function ordenTipo(tipo: string | null): number {
@@ -39,9 +40,8 @@ export async function exportTagsCasetasToPdf(tags: TagCaseta[], vehiculos: Vehic
     .sort((a, b) => b.total - a.total)
   const conTag = new Set(conUnidad.map((t) => t.vehiculo_id))
   const sinTag = vehiculos
-    .filter((v) => TIPOS_CON_TAG.includes(v.tipo) && !conTag.has(v.id))
-    .sort((a, b) => ordenTipo(a.tipo) - ordenTipo(b.tipo)
-      || `${a.marca} ${a.modelo}`.localeCompare(`${b.marca} ${b.modelo}`, 'es-MX')
+    .filter((v) => v.tipo === 'tractocamion' && !conTag.has(v.id))
+    .sort((a, b) => `${a.marca} ${a.modelo}`.localeCompare(`${b.marca} ${b.modelo}`, 'es-MX')
       || a.serie.localeCompare(b.serie, 'es-MX', { numeric: true }))
 
   const pdf = await crearReportePdf({
@@ -53,7 +53,7 @@ export async function exportTagsCasetasToPdf(tags: TagCaseta[], vehiculos: Vehic
   pdf.datos([
     ['Tags con unidad', String(conUnidad.length)],
     ['Tags sin unidad', String(sinUnidad.length)],
-    ['Unidades que cruzan casetas sin tag', String(sinTag.length)],
+    ['Unidades de translado sin tag', String(sinTag.length)],
   ])
 
   pdf.seccion(
@@ -82,20 +82,18 @@ export async function exportTagsCasetasToPdf(tags: TagCaseta[], vehiculos: Vehic
   }
 
   pdf.seccion(
-    'Unidades sin tag',
-    'Unidades de translado, de reparto y utilitarias sin tag registrado. Si cruzan casetas, o les ' +
-    'falta el tag o es uno de los de arriba. Las cajas y los montacargas no llevan tag.',
+    'Unidades de translado sin tag',
+    'Los tractocamiones sin tag registrado: o les falta el tag o es uno de los de arriba.',
   )
   if (sinTag.length === 0) {
-    pdf.vacio('Todas las unidades que cruzan casetas tienen tag.')
+    pdf.vacio('Todas las unidades de translado tienen tag.')
   } else {
     pdf.tabla({
-      head: ['Tipo', 'Unidad', 'Serie', 'Placas', 'Estatus', 'Tag (anotar)'],
+      head: ['Unidad', 'Serie', 'Placas', 'Estatus', 'Tag (anotar)'],
       body: sinTag.map((v) => [
-        TIPO_LABELS[v.tipo] ?? v.tipo, `${v.marca} ${v.modelo}`, v.serie, v.placas ?? '—',
-        v.status ?? '—', '',
+        `${v.marca} ${v.modelo}`, v.serie, v.placas ?? '—', v.status ?? '—', '',
       ]),
-      columnStyles: { 5: { cellWidth: 55 } },
+      columnStyles: { 4: { cellWidth: 55 } },
     })
   }
 
