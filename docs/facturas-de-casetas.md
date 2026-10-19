@@ -55,12 +55,19 @@ preguntas distintas:
 | | grupo | qué es | el dinero que se enseña |
 |---|---|---|---|
 | **Ya cobrado en otra factura** | cobro | mismo tag, caseta y hora al segundo en otra factura | el cruce entero; $0 en la factura donde se cobró primero |
-| **Posible doble cobro** | cobro | mismo tag y caseta con menos de 60 min | el menor de los dos |
+| **Posible doble cobro** | cobro | mismo tag y caseta con menos de 60 min entre un cruce y el siguiente | todos menos el más caro |
 | **Clase arriba de la habitual** | cobro | el tag pagó en esa caseta una clase mayor que la que suele pagar | lo que pagó por encima de lo **más caro** que ha pagado en su clase habitual |
 | **Ajuste de PASE** | cobro | clase 0 o "AJUSTE …" | el cargo |
 | **Fuera del periodo** | cobro | cruce con fecha fuera de las del periodo | el cruce |
 | **Tag sin unidad** | uso | nadie ha dicho de qué unidad es | lo que suman sus cruces |
 | **Caseta que el tag no cruzaba** | uso | con 30+ cruces en otras facturas, nunca por esta caseta | lo que suman |
+
+El **Posible doble cobro** junta la ráfaga entera: tres cruces seguidos en la
+misma caseta son un hallazgo, no dos pares. Los cruces se ordenan por tag y
+caseta antes que por hora, así que pasar por otra caseta en medio no esconde el
+doble cobro. Se ponen lado a lado con la hora al segundo, el tiempo desde el
+anterior, el carril, el evento, la clase y el total. El más caro sale como "se
+paga" porque es el que el monto deja fuera.
 
 El hallazgo **Ya cobrado en otra factura** sale una vez por cruce, en todas las
 facturas donde viene. Pone el cruce lado a lado tal como aparece en cada factura

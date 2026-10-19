@@ -278,19 +278,37 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
     })
   }
 
+  // Por tag y caseta antes que por hora: si el tag pasa por otra caseta en
+  // medio, los dos cruces de la primera siguen quedando juntos.
   const ordenados = [...cruces].sort(
-    (a, b) => a.tag.localeCompare(b.tag) || a.fecha_hora.localeCompare(b.fecha_hora),
+    (a, b) => a.tag.localeCompare(b.tag) || a.caseta.localeCompare(b.caseta)
+      || a.fecha_hora.localeCompare(b.fecha_hora),
   )
-  for (let i = 1; i < ordenados.length; i++) {
+  // Una ráfaga es una cadena de cruces con menos de DOBLE_COBRO_MINUTOS entre
+  // uno y el siguiente. Sale como UN hallazgo con todos sus cruces, no como un
+  // par por cada dos seguidos: tres lecturas del carril son un solo problema.
+  // De más es todo menos un cruce, y se descuenta el más caro: ese pudo ser el
+  // legítimo, y así no se reclama de más.
+  const rafagas: CruceRow[][] = []
+  for (let i = 0; i < ordenados.length; i++) {
     const a = ordenados[i - 1]
     const b = ordenados[i]
-    if (a.tag !== b.tag || a.caseta !== b.caseta) continue
-    const m = minutos(a, b)
-    if (m >= DOBLE_COBRO_MINUTOS) continue
+    const sigue = a && a.tag === b.tag && a.caseta === b.caseta
+      && minutos(a, b) < DOBLE_COBRO_MINUTOS
+    if (sigue) rafagas[rafagas.length - 1].push(b)
+    else rafagas.push([b])
+  }
+  for (const r of rafagas) {
+    if (r.length < 2) continue
+    const ultimo = r[r.length - 1]
+    const lapso = Math.round(minutos(r[0], ultimo))
     agregar({
-      tipo: 'doble_cobro', renglones: [a.renglon, b.renglon], tag: b.tag, vehiculo: b.vehiculo,
-      caseta: b.descripcion, monto: Math.min(a.total, b.total),
-      detalle: `Dos cruces por la misma caseta con ${Math.round(m)} min de diferencia.`,
+      tipo: 'doble_cobro', renglones: r.map((c) => c.renglon), tag: ultimo.tag,
+      vehiculo: ultimo.vehiculo, caseta: ultimo.descripcion,
+      monto: r.reduce((s, c) => s + c.total, 0) - Math.max(...r.map((c) => c.total)),
+      detalle: r.length === 2
+        ? `Dos cruces por la misma caseta con ${lapso} min de diferencia.`
+        : `${r.length} cruces por la misma caseta en ${lapso} min.`,
     })
   }
 

@@ -417,9 +417,69 @@ function ComparaCobradoAntes({
   )
 }
 
+/** `+4 min 05 s` entre dos `fecha_hora` del mismo día o de días seguidos. */
+function lapso(desde: string, hasta: string): string {
+  const s = Math.round((Date.parse(`${hasta}Z`) - Date.parse(`${desde}Z`)) / 1000)
+  const m = Math.floor(s / 60)
+  return m === 0 ? `+${s} s` : `+${m} min ${String(s % 60).padStart(2, '0')} s`
+}
+
+/**
+ * Los cruces de una ráfaga en columnas, en orden de hora y al segundo, con el
+ * tiempo desde el anterior: lo que decide si es una doble lectura del carril o
+ * una vuelta real. Lo que no coincide con el primero se marca. El más caro
+ * sale como "se paga" porque es el que el monto del hallazgo deja fuera.
+ */
+function ComparaDobleCobro({ cruces }: { cruces: CruceCaseta[] }) {
+  const orden = [...cruces].sort((a, b) => a.fecha_hora.localeCompare(b.fecha_hora))
+  const pagado = orden.reduce((m, c) => (c.total > m.total ? c : m), orden[0])
+  const filas: [string, (c: CruceCaseta, i: number) => string, boolean][] = [
+    ['Partida', (c) => String(c.renglon), false],
+    ['Fecha y hora', (c) => `${formatFecha(c.fecha_hora.slice(0, 10))} ${c.fecha_hora.slice(11, 19)}`, false],
+    ['Desde el anterior', (c, i) => (i === 0 ? '—' : lapso(orden[i - 1].fecha_hora, c.fecha_hora)), false],
+    ['Carril', (c) => c.carril ?? '—', true],
+    ['Evento', (c) => c.evento ?? '—', true],
+    ['Clase', (c) => String(c.clase), true],
+    ['Total', (c) => formatMXN(c.total), true],
+  ]
+  return (
+    <Table.ScrollContainer minWidth={120 + 130 * orden.length} mt={4}>
+      <Table withTableBorder fz="xs" verticalSpacing={2} horizontalSpacing="xs">
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th />
+            {orden.map((c) => (
+              <Table.Th key={c.renglon}>
+                <Badge size="xs" variant="light" color={c === pagado ? 'gray' : 'red'}>
+                  {c === pagado ? 'se paga' : 'de más'}
+                </Badge>
+              </Table.Th>
+            ))}
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {filas.map(([etiqueta, valor, compara]) => (
+            <Table.Tr key={etiqueta}>
+              <Table.Td c="dimmed">{etiqueta}</Table.Td>
+              {orden.map((c, i) => {
+                const distinto = compara && i > 0 && valor(c, i) !== valor(orden[0], 0)
+                return (
+                  <Table.Td key={c.renglon} c={distinto ? 'red' : undefined} fw={distinto ? 700 : undefined}>
+                    {valor(c, i)}
+                  </Table.Td>
+                )
+              })}
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
+  )
+}
+
 function TarjetaHallazgo({
-  h, cruce, onAbrir,
-}: { h: Hallazgo; cruce?: CruceCaseta; onAbrir: (id: number) => void }) {
+  h, cruces, onAbrir,
+}: { h: Hallazgo; cruces: CruceCaseta[]; onAbrir: (id: number) => void }) {
   return (
     <Card withBorder padding="sm" radius="md">
       <Group justify="space-between" align="flex-start" wrap="nowrap">
@@ -438,7 +498,8 @@ function TarjetaHallazgo({
           </Text>
           {h.caseta && <Text size="xs" c="dimmed">{h.caseta}</Text>}
           <Text size="xs">{h.detalle}</Text>
-          {h.otras && cruce && <ComparaCobradoAntes esta={cruce} otras={h.otras} onAbrir={onAbrir} />}
+          {h.otras && cruces[0] && <ComparaCobradoAntes esta={cruces[0]} otras={h.otras} onAbrir={onAbrir} />}
+          {h.tipo === 'doble_cobro' && cruces.length > 1 && <ComparaDobleCobro cruces={cruces} />}
         </Stack>
         <Tooltip label={
           h.tipo === 'cobrado_antes' && h.monto === 0
@@ -459,7 +520,10 @@ function Hallazgos({
 }: { hallazgos: Hallazgo[]; cruces: CruceCaseta[]; onAbrir: (id: number) => void }) {
   const porRenglon = new Map(cruces.map((c) => [c.renglon, c]))
   const tarjeta = (h: Hallazgo, key: string) => (
-    <TarjetaHallazgo key={key} h={h} cruce={porRenglon.get(h.renglones[0])} onAbrir={onAbrir} />
+    <TarjetaHallazgo
+      key={key} h={h} onAbrir={onAbrir}
+      cruces={h.renglones.flatMap((r) => porRenglon.get(r) ?? [])}
+    />
   )
   const cobro = hallazgos.filter((h) => h.grupo === 'cobro')
   const uso = hallazgos.filter((h) => h.grupo === 'uso')
