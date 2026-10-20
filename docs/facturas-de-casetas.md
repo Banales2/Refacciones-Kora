@@ -167,7 +167,12 @@ Primera tanda (sitio de IDEAL, consultado el 2026-10-19): Guadalajara - Tepic
 Cecilia 405) y Las Varas - Vallarta (La Peñita 406, Vallarta 468, Florida 469,
 Bucerías Aux. 1 520). Segunda tanda (072): Jala - Compostela - Las Varas,
 tabla del operador vigente desde el 13 de abril de 2026 (Amado Nervo y
-Compostela EASYTRIP). Con la factura de septiembre las dos explican 301 de 303
+Compostela EASYTRIP). Tercera tanda (073): Tepic - Mazatlán, de IDEAL, publicada
+por caseta (troncal y auxiliar) en vez de por tramo; el código de PASE apunta a
+las dos (Estación Ruiz cobró la troncal, Acaponeta la auxiliar). Yago y El
+Rosario se cargaron **sin caseta** porque aún no salen en ninguna factura: la
+pestaña los lista y se ligan con "Agregar tramo → Ligar uno que ya existe".
+Con la factura de septiembre las dos primeras tandas explican 301 de 303
 cruces; los otros dos son Arenal camión 2-4 a $278, que IDEAL publica en $287
 y casetas.com.mx en $278: hay que corregirla.
 
@@ -218,6 +223,9 @@ ninguna, y solo a esos.
 | `PUT /tarifas-casetas/{id}` | **admin** | Corrige una vigencia (precios o fecha) |
 | `POST /tarifas-casetas` | **admin** | Registra un aumento: vigencia nueva de un tramo |
 | `POST /tramos-casetas` | **admin** | Agrega un tramo a una caseta, con su primera tarifa |
+| `GET /tramos-casetas` | admin, editor, lector | Todos los tramos, con las casetas que los cobran |
+| `POST /casetas-tramos` | **admin** | Liga un tramo que ya existe a una caseta |
+| `PUT /casetas-pase/{caseta}` | **admin** | Marca que la caseta no manda la clase real |
 | `GET /tags-casetas` | admin, editor, lector | Los tags, los sin unidad primero |
 | `POST /tags-casetas` | admin, editor | Registra un tag antes de que cruce |
 | `PUT /tags-casetas/{id}` | admin, editor | Cambia la unidad del tag |

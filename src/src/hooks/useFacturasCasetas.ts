@@ -299,6 +299,32 @@ export interface ValoresTarifa {
   eje_pesado:    number | null
 }
 
+export interface TramoCaseta {
+  id:        number
+  autopista: string
+  nombre:    string
+  /** Las casetas de PASE que lo cobran; vacío = cargado sin caseta todavía. */
+  casetas:   string[]
+}
+
+export function useTramosCasetas(enabled = true) {
+  return useQuery({
+    queryKey: ['tarifas-casetas', 'tramos'],
+    queryFn: () => api.get<{ data: TramoCaseta[] }>('/tramos-casetas'),
+    enabled,
+  })
+}
+
+/** Liga un tramo que ya existe a una caseta. */
+export function useLigarTramoCaseta() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { caseta: string; tramo_id: number }) =>
+      api.post<{ data: { caseta: string; tramo_id: number } }>('/casetas-tramos', body),
+    onSuccess: () => invalidarTarifas(qc),
+  })
+}
+
 // Cambiar una tarifa cambia los hallazgos de todas las facturas, no solo la
 // pestaña de tarifas.
 function invalidarTarifas(qc: ReturnType<typeof useQueryClient>) {

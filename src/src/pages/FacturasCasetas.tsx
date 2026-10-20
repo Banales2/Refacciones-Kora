@@ -33,7 +33,8 @@ import {
   FACTURA_DUPLICADA, useActualizarTagCaseta, useCrearTagCaseta, useFacturaCasetas,
   useFacturasCasetas, useImportarFacturaCasetas, useReabrirFacturaCasetas,
   useRevisarFacturaCasetas, useTagsCasetas, useTarifasCasetas, useActualizarTarifaCaseta,
-  useCrearTarifaCaseta, useCrearTramoCaseta, useIgnoraClaseCaseta,
+  useCrearTarifaCaseta, useCrearTramoCaseta, useIgnoraClaseCaseta, useLigarTramoCaseta,
+  useTramosCasetas,
 } from '../hooks/useFacturasCasetas'
 import type {
   CasetaSinTarifa, CorreccionDeClase, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas,
@@ -1217,7 +1218,13 @@ function TarifaModal({ edicion, onClose }: { edicion: EdicionTarifa | null; onCl
   const actualizar = useActualizarTarifaCaseta()
   const crear = useCrearTarifaCaseta()
   const crearTramo = useCrearTramoCaseta()
+  const ligar = useLigarTramoCaseta()
   const [accion, setAccion] = useState<'corregir' | 'aumento'>('corregir')
+  // Agregar a una caseta: un tramo nuevo, o ligar uno que ya existe (los que se
+  // cargaron sin caseta, o uno que otra caseta también cobra).
+  const [agregar, setAgregar] = useState<'nuevo' | 'ligar'>('nuevo')
+  const [ligarId, setLigarId] = useState<string | null>(null)
+  const { data: tramosData } = useTramosCasetas(edicion?.modo === 'nuevo')
   const [valores, setValores] = useState<ValoresTarifa>(VACIA)
   const [autopista, setAutopista] = useState('')
   const [nombre, setNombre] = useState('')
@@ -1228,7 +1235,9 @@ function TarifaModal({ edicion, onClose }: { edicion: EdicionTarifa | null; onCl
   if (edicion !== abiertaPara) {
     setAbiertaPara(edicion)
     setAccion('corregir')
-    actualizar.reset(); crear.reset(); crearTramo.reset()
+    setAgregar('nuevo')
+    setLigarId(null)
+    actualizar.reset(); crear.reset(); crearTramo.reset(); ligar.reset()
     if (edicion?.modo === 'tramo') {
       const { tramo: t } = edicion
       setValores({
@@ -1245,7 +1254,17 @@ function TarifaModal({ edicion, onClose }: { edicion: EdicionTarifa | null; onCl
   if (!edicion) return null
   const tramo = edicion.modo === 'tramo' ? edicion.tramo : null
   const otras = tramo ? tramo.casetas.filter((c) => c !== edicion.caseta.caseta) : []
-  const mutacion = edicion.modo === 'nuevo' ? crearTramo : accion === 'corregir' ? actualizar : crear
+  const ligando = edicion.modo === 'nuevo' && agregar === 'ligar'
+  const mutacion = ligando ? ligar
+    : edicion.modo === 'nuevo' ? crearTramo : accion === 'corregir' ? actualizar : crear
+  // Los que esta caseta todavía no cobra; primero los que no tiene nadie.
+  const ligables = (tramosData?.data ?? [])
+    .filter((t) => !t.casetas.includes(edicion.caseta.caseta))
+    .sort((a, b) => Number(a.casetas.length > 0) - Number(b.casetas.length > 0))
+    .map((t) => ({
+      value: String(t.id),
+      label: `${t.autopista} · ${t.nombre}${t.casetas.length ? ` (caseta ${t.casetas.join(', ')})` : ' (sin caseta)'}`,
+    }))
   const hayTarifa = COLUMNAS_TARIFA.some(([col]) => valores[col] !== null)
   const aumentoSinFechaNueva = tramo !== null && accion === 'aumento'
     && valores.vigente_desde <= tramo.vigente_desde
@@ -1254,7 +1273,9 @@ function TarifaModal({ edicion, onClose }: { edicion: EdicionTarifa | null; onCl
 
   async function guardar() {
     if (!edicion) return
-    if (edicion.modo === 'nuevo') {
+    if (ligando) {
+      await ligar.mutateAsync({ caseta: edicion.caseta.caseta, tramo_id: Number(ligarId) })
+    } else if (edicion.modo === 'nuevo') {
       await crearTramo.mutateAsync({
         ...valores, autopista: autopista.trim(), nombre: nombre.trim(), casetas: [edicion.caseta.caseta],
       })
@@ -1301,74 +1322,98 @@ function TarifaModal({ edicion, onClose }: { edicion: EdicionTarifa | null; onCl
             )}
           </>
         ) : (
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-            <TextInput
-              label="Autopista" required maxLength={80} placeholder="Guadalajara - Tepic"
-              value={autopista} onChange={(e) => setAutopista(e.currentTarget.value)}
+          <>
+            <SegmentedControl
+              fullWidth value={agregar} onChange={(v) => setAgregar(v as 'nuevo' | 'ligar')}
+              data={[
+                { value: 'nuevo', label: 'Tramo nuevo' },
+                { value: 'ligar', label: 'Ligar uno que ya existe' },
+              ]}
             />
-            <TextInput
-              label="Tramo" required maxLength={120} placeholder="De dónde a dónde"
-              value={nombre} onChange={(e) => setNombre(e.currentTarget.value)}
-            />
-          </SimpleGrid>
+            {ligando ? (
+              <Select
+                label="Tramo" searchable data={ligables} value={ligarId} onChange={setLigarId}
+                placeholder="Busca por autopista o tramo"
+                nothingFoundMessage="No hay tramos que esta caseta no tenga ya"
+                description="Su tarifa no cambia: solo pasa a contar también para esta caseta."
+                comboboxProps={{ withinPortal: true }}
+              />
+            ) : (
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                <TextInput
+                  label="Autopista" required maxLength={80} placeholder="Guadalajara - Tepic"
+                  value={autopista} onChange={(e) => setAutopista(e.currentTarget.value)}
+                />
+                <TextInput
+                  label="Tramo" required maxLength={120} placeholder="De dónde a dónde"
+                  value={nombre} onChange={(e) => setNombre(e.currentTarget.value)}
+                />
+              </SimpleGrid>
+            )}
+          </>
         )}
 
-        <FechaInput
-          label="Vigente desde" required
-          value={valores.vigente_desde}
-          onChange={(v) => setValores((x) => ({ ...x, vigente_desde: v }))}
-          error={aumentoSinFechaNueva && valores.vigente_desde
-            ? 'El aumento debe ser posterior a la tarifa actual' : undefined}
-        />
+        {!ligando && (
+          <>
+            <FechaInput
+              label="Vigente desde" required
+              value={valores.vigente_desde}
+              onChange={(v) => setValores((x) => ({ ...x, vigente_desde: v }))}
+              error={aumentoSinFechaNueva && valores.vigente_desde
+                ? 'El aumento debe ser posterior a la tarifa actual' : undefined}
+            />
 
-        {GRUPOS_TARIFA.map((g) => (
-          <Stack key={g.titulo} gap={4}>
-            <Group justify="space-between">
-              <Text size="xs" fw={600}>{g.titulo}</Text>
-              {g.columnas.length > 2 && (
-                <Button
-                  size="compact-xs" variant="subtle"
-                  onClick={() => setValores((x) => {
-                    // Copia hacia la derecha el último valor hasta el siguiente
-                    // capturado: los operadores cobran igual varios ejes
-                    // seguidos, y así se teclea un número por grupo.
-                    const r = { ...x }
-                    let ultimo: number | null = null
-                    for (const [col] of g.columnas) {
-                      if (r[col] !== null) ultimo = r[col]
-                      else r[col] = ultimo
-                    }
-                    return r
-                  })}
-                >
-                  Rellenar hacia la derecha
-                </Button>
-              )}
-            </Group>
-            <SimpleGrid cols={{ base: 4, sm: Math.max(g.columnas.length, 4) }} spacing="xs">
-              {g.columnas.map(([col, titulo]) => (
-                <NumberInput
-                  key={col} label={titulo} size="xs" prefix="$" min={0} max={99999} decimalScale={2}
-                  thousandSeparator="," hideControls placeholder="—"
-                  value={valores[col] ?? ''}
-                  onChange={(v) => setValores((x) => ({ ...x, [col]: v === '' ? null : Number(v) }))}
-                />
-              ))}
-            </SimpleGrid>
-          </Stack>
-        ))}
-        <Text size="xs" c="dimmed">
-          Con IVA, como las publica el operador. Si la tabla agrupa ejes (“camiones 4 y 5
-          ejes”), captura el primero y usa “Rellenar hacia la derecha”. Deja vacía la
-          clasificación que no se publica.
-        </Text>
+            {GRUPOS_TARIFA.map((g) => (
+              <Stack key={g.titulo} gap={4}>
+                <Group justify="space-between">
+                  <Text size="xs" fw={600}>{g.titulo}</Text>
+                  {g.columnas.length > 2 && (
+                    <Button
+                      size="compact-xs" variant="subtle"
+                      onClick={() => setValores((x) => {
+                        // Copia hacia la derecha el último valor hasta el siguiente
+                        // capturado: los operadores cobran igual varios ejes
+                        // seguidos, y así se teclea un número por grupo.
+                        const r = { ...x }
+                        let ultimo: number | null = null
+                        for (const [col] of g.columnas) {
+                          if (r[col] !== null) ultimo = r[col]
+                          else r[col] = ultimo
+                        }
+                        return r
+                      })}
+                    >
+                      Rellenar hacia la derecha
+                    </Button>
+                  )}
+                </Group>
+                <SimpleGrid cols={{ base: 4, sm: Math.max(g.columnas.length, 4) }} spacing="xs">
+                  {g.columnas.map(([col, titulo]) => (
+                    <NumberInput
+                      key={col} label={titulo} size="xs" prefix="$" min={0} max={99999} decimalScale={2}
+                      thousandSeparator="," hideControls placeholder="—"
+                      value={valores[col] ?? ''}
+                      onChange={(v) => setValores((x) => ({ ...x, [col]: v === '' ? null : Number(v) }))}
+                    />
+                  ))}
+                </SimpleGrid>
+              </Stack>
+            ))}
+            <Text size="xs" c="dimmed">
+              Con IVA, como las publica el operador. Si la tabla agrupa ejes (“camiones 4 y 5
+              ejes”), captura el primero y usa “Rellenar hacia la derecha”. Deja vacía la
+              clasificación que no se publica.
+            </Text>
+          </>
+        )}
 
         {mutacion.error && <Alert color="red">{(mutacion.error as Error).message}</Alert>}
 
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>Cancelar</Button>
-          <Button loading={mutacion.isPending} disabled={!listo} onClick={guardar}>
-            {edicion.modo === 'nuevo' ? 'Agregar tramo' : accion === 'corregir' ? 'Guardar corrección' : 'Registrar aumento'}
+          <Button loading={mutacion.isPending} disabled={ligando ? !ligarId : !listo} onClick={guardar}>
+            {ligando ? 'Ligar tramo'
+              : edicion.modo === 'nuevo' ? 'Agregar tramo' : accion === 'corregir' ? 'Guardar corrección' : 'Registrar aumento'}
           </Button>
         </Group>
       </Stack>
@@ -1514,6 +1559,8 @@ function TarifasPanel() {
   const [buscar, setBuscar] = useState('')
   const [edicion, setEdicion] = useState<EdicionTarifa | null>(null)
   const onEditar = esAdmin ? setEdicion : null
+  const { data: tramosData } = useTramosCasetas()
+  const sinCaseta = (tramosData?.data ?? []).filter((t) => t.casetas.length === 0)
   const casetas = data?.data ?? []
   const q = buscar.trim().toUpperCase()
   const visibles = casetas.filter((k) => !q
@@ -1625,6 +1672,19 @@ function TarifasPanel() {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+        </Stack>
+      )}
+
+      {sinCaseta.length > 0 && !q && (
+        <Stack gap={4} mt="sm">
+          <Text size="sm" fw={600}>Tramos cargados sin caseta</Text>
+          <Text size="xs" c="dimmed">
+            Tienen tarifa pero todavía no se sabe qué código de PASE los cobra. Cuando la caseta
+            salga en una factura, ábrela y usa “Agregar tramo → Ligar uno que ya existe”.
+          </Text>
+          <Text size="sm">
+            {sinCaseta.map((t) => `${t.nombre} (${t.autopista})`).join(' · ')}
+          </Text>
         </Stack>
       )}
 

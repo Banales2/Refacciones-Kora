@@ -128,6 +128,12 @@ export const TramoCreateSchema = TarifaValoresSchema
   })
   .refine(algunaTarifa, SIN_TARIFAS)
 
+/** Ligar un tramo que ya existe a otra caseta de PASE. */
+export const CasetaTramoCreateSchema = z.object({
+  caseta: z.string().trim().min(1).max(10),
+  tramo_id: z.number().int().positive(),
+})
+
 /** Marcar que una caseta no manda la clase real (EASYTRIP manda 1 a todo). */
 export const CasetaPaseUpdateSchema = z.object({ ignora_clase: z.boolean() })
 

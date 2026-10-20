@@ -578,6 +578,38 @@ export async function crearTarifa(d: TarifaCreate): Promise<number> {
   return r.recordset[0].id as number
 }
 
+/** Un tramo del catálogo, con las casetas de PASE que lo cobran (puede no tener). */
+export interface TramoRow {
+  id: number
+  autopista: string
+  nombre: string
+  casetas: string[]
+}
+
+export async function tramos(): Promise<TramoRow[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT t.id, t.autopista, t.nombre,
+           ISNULL((SELECT STRING_AGG(ct.caseta, ',') FROM casetas_tramos ct WHERE ct.tramo_id = t.id), '') AS casetas
+    FROM tramos_casetas t
+    ORDER BY t.autopista, t.nombre`)
+  return (r.recordset as (Omit<TramoRow, 'casetas'> & { casetas: string })[])
+    .map((t) => ({ ...t, casetas: t.casetas ? t.casetas.split(',') : [] }))
+}
+
+/** Liga un tramo que ya existe a una caseta. Devuelve false si ya estaba ligado. */
+export async function ligarTramo(caseta: string, tramoId: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('caseta', sql.NVarChar(10), caseta)
+    .input('tramo',  sql.Int,          tramoId)
+    .query(`
+      INSERT INTO casetas_tramos (caseta, tramo_id)
+      SELECT @caseta, @tramo
+      WHERE NOT EXISTS (SELECT 1 FROM casetas_tramos WHERE caseta = @caseta AND tramo_id = @tramo)`)
+  return (r.rowsAffected[0] ?? 0) > 0
+}
+
 /** El tramo, las casetas que lo cobran y su primera tarifa, juntos o nada. */
 export async function crearTramo(d: TramoCreate): Promise<{ tramo_id: number; tarifa_id: number }> {
   const pool = await getPool()

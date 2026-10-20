@@ -884,6 +884,22 @@ export async function crearTramo(data: TramoCreate) {
   }
 }
 
+export async function tramos() {
+  return repo.tramos()
+}
+
+/**
+ * Liga un tramo que ya existe a una caseta: los que se cargaron sin caseta
+ * (aún no salían en una factura) o uno que resulta que otra caseta también
+ * cobra.
+ */
+export async function ligarTramo(caseta: string, tramoId: number): Promise<void> {
+  if (!(await repo.existeTramo(tramoId))) throw new NotFoundError('Tramo')
+  if (!(await repo.ligarTramo(caseta, tramoId))) {
+    throw new ConflictError('Ese tramo ya está ligado a esta caseta.')
+  }
+}
+
 export async function guardarIgnoraClase(caseta: string, ignora: boolean): Promise<void> {
   await repo.guardarIgnoraClase(caseta, ignora)
 }
