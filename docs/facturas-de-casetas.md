@@ -154,7 +154,7 @@ el ajuste dice con qué diferencias de tarifas cuadra, sin monto en $0.
 
 **La clase de PASE es el número de ejes**, con 1 para el automóvil (sale de
 cruzar septiembre contra las tarifas); de 2 a 4 puede ser autobús o camión.
-Salvo en las casetas EASYTRIP, ver arriba.
+Salvo en las casetas EASYTRIP, San Blas y Compostela (53), ver arriba.
 
 **Vigencia.** Cada aumento es una fila nueva con su fecha; un cruce se revisa
 contra la tarifa vigente el día que cruzó. La primera tanda se cargó con
@@ -183,8 +183,13 @@ por eso antes no cuadraba. San Blas **tampoco manda la clase real**: cobra $236,
 camión 2-4 ejes, y el XML dice clase 9 (los 10 cruces, de un camión que en las
 demás casetas paga 3). Se marcó `ignora_clase`, como las EASYTRIP.
 
-Sin tarifa conocida a 2026-10-20: **53 COMPOSTELA** ($81 en clase 1; la de
-CAPUFE en Compostela publica $104 auto).
+Sexta tanda (076): Chapalilla - Compostela, de la tabla 2026 de CAPUFE (Red
+FONADIN, en vigor desde el 1 de julio de 2023), para **53 COMPOSTELA**, km 31.6.
+Igual que San Blas: cobra $81, camión 2-3 ejes, y el XML dice clase 1 (los 5
+cruces, del mismo tipo de camión de clase 3). También `ignora_clase`.
+
+Con eso, a 2026-10-20 todas las casetas que han salido en una factura tienen
+tarifa.
 
 Con la factura de septiembre las dos primeras tandas explican 301 de 303
 cruces; los otros dos son Arenal camión 2-4 a $278, que IDEAL publica en $287
