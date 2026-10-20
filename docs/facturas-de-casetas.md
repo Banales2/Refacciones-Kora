@@ -176,11 +176,15 @@ Rosario se cargaron **sin caseta** porque aún no salen en ninguna factura: la
 pestaña los lista y se ligan con "Agregar tramo → Ligar uno que ya existe".
 Cuarta tanda (074): Tepic - Compostela, de cmronayarit.com (la misma
 concesionaria de Jala - Compostela), para 526 TEPIC; agrupa 2-3 / 4-5 / 6-9 ejes.
+Quinta tanda (075): Tepic - San Blas, plaza Matanchén, de la tabla 2026 de
+COTESA en el sitio de RCO (`redviacorta.mx/documents/d/red-v%C3%ADa-corta/cts_tarifas_2026`),
+para **407 SAN BLAS**. casetas.com.mx sigue con la de 2025 ($226 camión 2-4) y
+por eso antes no cuadraba. San Blas **tampoco manda la clase real**: cobra $236,
+camión 2-4 ejes, y el XML dice clase 9 (los 10 cruces, de un camión que en las
+demás casetas paga 3). Se marcó `ignora_clase`, como las EASYTRIP.
 
-Sin tarifa conocida a 2026-10-19: **407 SAN BLAS** (su código va con los de
-Tepic - Mazatlán, pero cobró $236 en clase 9 y ninguna tabla de Yago ni la de
-Matanchén, la caseta de la autopista Tepic - San Blas de RCO, da eso) y **53
-COMPOSTELA** ($81 en clase 1; la de CAPUFE en Compostela publica $104 auto).
+Sin tarifa conocida a 2026-10-20: **53 COMPOSTELA** ($81 en clase 1; la de
+CAPUFE en Compostela publica $104 auto).
 
 Con la factura de septiembre las dos primeras tandas explican 301 de 303
 cruces; los otros dos son Arenal camión 2-4 a $278, que IDEAL publica en $287
@@ -188,8 +192,8 @@ y casetas.com.mx en $278: hay que corregirla.
 
 ### Los recorridos
 
-Una caseta sola no dice si cobró mal: San Blas cobra 9 a un camión de 3 todas
-las veces, y para ella eso es lo habitual. **El mismo viaje sí lo dice**: si de
+Una caseta sola no dice si cobró mal: si siempre cobra la misma clase de más a
+un tag, para ella eso es lo habitual. **El mismo viaje sí lo dice**: si de
 Tepic a Guadalajara Sta. Ma. del Oro y Arenal cobraron clase 5 y en medio Plan de
 Barrancas cobró 9, la rara es Plan de Barrancas. No es para rastrear la unidad;
 es para comparar cada caseta contra las demás.
@@ -222,8 +226,9 @@ marcaba con $40 de más, ocho veces en cinco facturas. Por lo mismo, "Clase
 arriba de la habitual" tampoco señala la clase que el tag paga casi siempre.
 
 Con las cinco facturas (agosto a octubre de 2026): Plan de Barrancas cobró 9 y
-7 en recorridos de 5 ($76 cada uno), Arenal cobró clase 2 a un auto ($64) y San
-Blas sale con su recorrido de clase 3 al lado.
+7 en recorridos de 5 ($76 cada uno) y Arenal cobró clase 2 a un auto ($64). San
+Blas salía con clase 9 en recorridos de 3, hasta que su tarifa (075) mostró que
+cobra lo de 3 ejes y que es la clase la que no es real.
 
 En el detalle de la factura, la pestaña **Recorridos** los enseña todos, por
 unidad, con la clase de cada caseta lado a lado; el hallazgo trae el suyo.
@@ -253,9 +258,9 @@ Si todos los cruces tienen tarifa y ninguno costó más, no hay hallazgo.
 **Solo hacia arriba.** Con las cinco primeras facturas, hacia abajo era casi todo
 ruido: Sta. Ma. del Oro cobra clase 4-5 a un tráiler que paga 9 en todas partes
 (unos 50 cruces). Eso es cobrar de menos, y PASE lo corrige con un ajuste que
-se liga solo. Hacia arriba quedan San Blas (clase 9 a un camión de clase 3, en
-cuatro facturas) y Plan de Barrancas cobrando clase 9 el día que el mismo tag
-pagó 5 en Arenal.
+se liga solo. Hacia arriba quedaban San Blas (clase 9 a un camión de clase 3,
+en cuatro facturas; resultó que cobra lo de 3 ejes, ver la 075) y Plan de
+Barrancas cobrando clase 9 el día que el mismo tag pagó 5 en Arenal.
 
 ### Por qué la clase se compara así
 
