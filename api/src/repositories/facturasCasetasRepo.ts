@@ -324,6 +324,53 @@ export async function cobradosAntes(facturaId: number): Promise<CobradoAntes[]> 
   return r.recordset as CobradoAntes[]
 }
 
+/** Un cruce de otra factura, del mismo tag, cerca de los de esta. */
+export interface CruceVecino {
+  factura_id: number
+  serie: string | null
+  folio: string
+  renglon: number
+  tag: string
+  fecha_hora: string
+  caseta: string
+  descripcion: string
+  clase: number
+  total: number
+}
+
+/**
+ * Los cruces de los tags de esta factura que vinieron en otras, hasta `horas`
+ * antes del primero o después del último de esta. Un recorrido que empieza el
+ * último día del periodo sigue en la factura siguiente. Sin ajustes ni los que
+ * repiten un cruce de esta factura (ese es "Ya cobrado en otra factura").
+ */
+export async function crucesVecinos(facturaId: number, horas: number): Promise<CruceVecino[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, facturaId)
+    .input('horas', sql.Int, horas)
+    .query(`
+      WITH esta AS (
+        SELECT tag, MIN(fecha_hora) AS desde, MAX(fecha_hora) AS hasta
+        FROM facturas_casetas_cruces WHERE factura_id = @id GROUP BY tag
+      )
+      SELECT o.factura_id, f.serie, f.folio, o.renglon, o.tag,
+             CONVERT(varchar(19), o.fecha_hora, 126) AS fecha_hora,
+             o.caseta, o.descripcion, o.clase, o.total
+      FROM facturas_casetas_cruces o
+      JOIN esta e ON e.tag = o.tag
+      JOIN facturas_casetas f ON f.id = o.factura_id
+      WHERE o.factura_id <> @id
+        AND o.fecha_hora BETWEEN DATEADD(hour, -@horas, e.desde) AND DATEADD(hour, @horas, e.hasta)
+        AND o.clase > 0 AND o.descripcion NOT LIKE 'AJUSTE%'
+        AND NOT EXISTS (
+          SELECT 1 FROM facturas_casetas_cruces c
+          WHERE c.factura_id = @id AND c.tag = o.tag AND c.caseta = o.caseta
+            AND c.fecha_hora = o.fecha_hora)
+      ORDER BY o.tag, o.fecha_hora, f.fecha_emision`)
+  return r.recordset as CruceVecino[]
+}
+
 /** Un cruce que un ajuste de esta factura puede estar corrigiendo. */
 export interface CandidatoDeAjuste {
   /** La partida del ajuste, en esta factura. */

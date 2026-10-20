@@ -58,7 +58,8 @@ preguntas distintas:
 | **Corregido después** | cobro | un ajuste de otra factura corrige este cruce (misma hora) | $0: el ajuste se revisa en su factura |
 | **Ya cobrado en otra factura** | cobro | mismo tag, caseta y hora al segundo en otra factura (sin contar ajustes) | el cruce entero; $0 en la factura donde se cobró primero |
 | **Posible doble cobro** | cobro | mismo tag y caseta con menos de 60 min entre un cruce y el siguiente, y no son dos tramos distintos | todos menos el más caro |
-| **Clase arriba de la habitual** | cobro | el tag pagó en esa caseta una clase mayor que la que suele pagar | lo que pagó por encima de lo **más caro** que ha pagado en su clase habitual |
+| **Clase distinta en el recorrido** | cobro | en el mismo viaje las demás casetas cobraron una clase menor | contra la tarifa de la clase del recorrido en el mismo tramo; $0 sin tarifa |
+| **Clase arriba de la habitual** | cobro | el tag pagó en esa caseta una clase mayor que la que suele pagar, y no es la que paga casi siempre | lo que pagó por encima de lo **más caro** que ha pagado en su clase habitual |
 | **Clase distinta a la de siempre** | cobro | la clase está 2 o más arriba de la que el tag paga casi siempre (todas sus casetas), y ese día no pagó una parecida en otra caseta | contra la tarifa de su clase de siempre en el mismo tramo; $0 sin tarifa |
 | **Ajuste de PASE** | cobro | clase 0 o "AJUSTE …"; con tarifa, busca el cruce que corrige | $0 si la corrección deja la tarifa que el tag suele pagar; lo de encima si la pasa; el cargo entero si no se sabe |
 | **Fuera del periodo** | cobro | cruce con fecha fuera de las del periodo | el cruce |
@@ -185,6 +186,48 @@ Con la factura de septiembre las dos primeras tandas explican 301 de 303
 cruces; los otros dos son Arenal camión 2-4 a $278, que IDEAL publica en $287
 y casetas.com.mx en $278: hay que corregirla.
 
+### Los recorridos
+
+Una caseta sola no dice si cobró mal: San Blas cobra 9 a un camión de 3 todas
+las veces, y para ella eso es lo habitual. **El mismo viaje sí lo dice**: si de
+Tepic a Guadalajara Sta. Ma. del Oro y Arenal cobraron clase 5 y en medio Plan de
+Barrancas cobró 9, la rara es Plan de Barrancas. No es para rastrear la unidad;
+es para comparar cada caseta contra las demás.
+
+Un **recorrido** son los cruces de un tag con menos de **3 horas** entre uno y
+el siguiente. Sta. Ma. del Oro → Plan de Barrancas tarda unas dos; con más, la
+ida cargado y la vuelta vacío (con menos ejes) se juntarían. Entran los cruces
+de otras facturas que quedan pegados: el viaje del último día del periodo sigue
+en la factura siguiente.
+
+**La clase del recorrido** es la que cobró la mayoría de las casetas, **cada
+caseta un voto**: ida y vuelta por San Blas (dos cruces en 9) no le gana a
+Trapichillo y Trapichillo Bis (3). Hacen falta dos casetas que coincidan y que
+ninguna otra clase empate; si no, el recorrido no tiene clase y no se compara.
+No votan las casetas que no mandan la clase real.
+
+Se señala un cruce **arriba** de la clase del recorrido, salvo que no pase la
+que el tag paga casi siempre: a un tráiler de 9, Plan de Barrancas y Sta. Ma.
+del Oro le cobraron 5 la misma noche, el recorrido quedó en 5 y el 9 de Arenal
+era el bueno. Lo de más se mide contra la tarifa de la clase del recorrido en el
+mismo tramo; si cuesta igual (en Arenal 5 y 6 son $413), no hay hallazgo. Sin
+tarifa, contra lo más que el tag ha pagado ahí en esa clase; sin eso tampoco,
+sale en $0 solo si el salto es de 2 o más.
+
+**Y al revés: el recorrido confirma.** Un cruce que cobró lo mismo que su
+recorrido (o menos) ya no lo revisan "Clase arriba de la habitual" ni "Clase
+distinta a la de siempre". Sta. Ma. del Oro suele cobrar 5 a ese tráiler de 9;
+el día que cobraba 9 junto con las otras dos, la clase habitual de la caseta lo
+marcaba con $40 de más, ocho veces en cinco facturas. Por lo mismo, "Clase
+arriba de la habitual" tampoco señala la clase que el tag paga casi siempre.
+
+Con las cinco facturas (agosto a octubre de 2026): Plan de Barrancas cobró 9 y
+7 en recorridos de 5 ($76 cada uno), Arenal cobró clase 2 a un auto ($64) y San
+Blas sale con su recorrido de clase 3 al lado.
+
+En el detalle de la factura, la pestaña **Recorridos** los enseña todos, por
+unidad, con la clase de cada caseta lado a lado; el hallazgo trae el suyo.
+
 ### Clase distinta a la de siempre
 
 La **clase habitual** es por caseta, y por eso no ve una caseta que **siempre**
@@ -198,9 +241,14 @@ Se señala un cruce si su clase está **2 o más arriba** de esa (un 5 contra un
 es el eje retráctil de todos los días) y si **ese mismo día** (12 horas antes o
 después) el tag no pagó una clase parecida en otra caseta: si la pagó, el
 vehículo sí venía así (doble caja). Cuando no se cuenta con otra caseta ese día,
-se dice cuál fue la más cercana y qué clase pagó ahí. Se agrupa por caseta y
-clase: nueve cruces iguales son un hallazgo. Un cruce que ya señaló "clase
-arriba de la habitual" no se repite aquí.
+se dice cuál fue la más cercana y qué clase pagó ahí; eso incluye los cruces de
+otras facturas. Se agrupa por caseta y clase: nueve cruces iguales son un
+hallazgo. Un cruce que ya señaló "clase arriba de la habitual" o que ya vio su
+recorrido no se repite aquí.
+
+La tarifa de la clase de siempre se busca en el tramo que el importe
+identificó o, si el importe no es de ningún tramo, en todos los de la caseta.
+Si todos los cruces tienen tarifa y ninguno costó más, no hay hallazgo.
 
 **Solo hacia arriba.** Con las cinco primeras facturas, hacia abajo era casi todo
 ruido: Sta. Ma. del Oro cobra clase 4-5 a un tráiler que paga 9 en todas partes
@@ -295,4 +343,4 @@ tarifa: el tramo queda ligado solo a esa caseta. Todo pasa por la bitácora.
 
 Comparar contra lo que PASE cobra (pestaña Tarifas) dice cuál fuente está bien. Al abrir una
 factura: cuatro tarjetas —total, cruces, lo que pudo cobrarse de más, uso por
-revisar— y tres pestañas: hallazgos, por unidad y los cruces.
+revisar— y cuatro pestañas: hallazgos, por unidad, recorridos y los cruces.

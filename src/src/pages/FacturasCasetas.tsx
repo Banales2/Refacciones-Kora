@@ -10,8 +10,9 @@
 // dos preguntas que no se suman:
 //
 //   cobro   lo que PASE pudo cobrar de más: cruces repetidos, importes que no
-//           son de ningún tramo, clase arriba de la habitual o distinta a la de
-//           siempre del tag, ajustes y cruces de fuera del periodo
+//           son de ningún tramo, clase arriba de la del resto del recorrido, de
+//           la habitual o de la de siempre del tag, ajustes y cruces de fuera
+//           del periodo
 //   uso     cómo se usan las unidades: tags sin unidad, casetas que el tag nunca
 //           había cruzado
 //
@@ -38,7 +39,7 @@ import {
 } from '../hooks/useFacturasCasetas'
 import type {
   CasetaSinTarifa, CorreccionDeClase, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas,
-  TarifaTramo, TarifasDeCaseta, ValoresTarifa, Hallazgo, TagCaseta, TipoHallazgo,
+  Recorrido, TarifaTramo, TarifasDeCaseta, ValoresTarifa, Hallazgo, TagCaseta, TipoHallazgo,
 } from '../hooks/useFacturasCasetas'
 import { fetchTodosLosVehiculos, useVehiculos } from '../hooks/useVehiculos'
 import { exportTagsCasetasToPdf } from '../lib/exportTagsCasetas'
@@ -54,11 +55,13 @@ import {
 
 const PAGE_SIZE = 15
 const CRUCES_POR_PAGINA = 50
+const RECORRIDOS_POR_PAGINA = 25
 
 const TITULO_HALLAZGO: Record<TipoHallazgo, string> = {
   cobrado_antes: 'Ya cobrado en otra factura',
   fuera_de_tarifa: 'Fuera de tarifa',
   doble_cobro: 'Posible doble cobro',
+  clase_en_recorrido: 'Clase distinta en el recorrido',
   clase_mayor: 'Clase arriba de la habitual',
   clase_atipica: 'Clase distinta a la de siempre',
   ajuste: 'Ajuste de PASE',
@@ -72,6 +75,7 @@ const COLOR_HALLAZGO: Record<TipoHallazgo, string> = {
   cobrado_antes: 'red',
   fuera_de_tarifa: 'red',
   doble_cobro: 'red',
+  clase_en_recorrido: 'orange',
   clase_mayor: 'orange',
   clase_atipica: 'orange',
   ajuste: 'yellow',
@@ -575,6 +579,7 @@ function TarjetaHallazgo({
           {h.otras && cruces[0] && <ComparaCobradoAntes esta={cruces[0]} otras={h.otras} onAbrir={onAbrir} />}
           {h.tipo === 'doble_cobro' && cruces.length > 1 && <ComparaDobleCobro cruces={cruces} />}
           {h.corrige && cruces[0] && <ComparaAjuste ajuste={cruces[0]} k={h.corrige} onAbrir={onAbrir} />}
+          {h.recorrido && <PasosRecorrido r={h.recorrido} onAbrir={onAbrir} />}
           {h.ajuste_en && (
             <Group justify="flex-end">
               <Button
@@ -593,7 +598,7 @@ function TarjetaHallazgo({
               ? 'La corrección deja la tarifa que el tag suele pagar: no hay nada que reclamar'
               : h.tipo === 'corregido'
                 ? 'El ajuste se revisa en su factura'
-                : h.tipo === 'clase_atipica' && h.monto === 0
+                : (h.tipo === 'clase_atipica' || h.tipo === 'clase_en_recorrido') && h.monto === 0
                   ? 'Sin tarifa de esta caseta no se puede calcular cuánto es de más'
                   : h.grupo === 'cobro' ? 'Lo que pudo cobrarse de más' : 'Lo que suman esos cruces'
         }>
@@ -775,6 +780,127 @@ function Cruces({ cruces }: { cruces: CruceCaseta[] }) {
   )
 }
 
+/**
+ * Un recorrido en fila, caseta por caseta, con la clase que cobró cada una. La
+ * que cobró arriba de las demás se marca; las que no mandan la clase real y las
+ * que vinieron en otra factura se distinguen, con un botón para abrirla.
+ */
+function PasosRecorrido({ r, onAbrir }: { r: Recorrido; onAbrir: (id: number) => void }) {
+  return (
+    <Group gap={4} mt={4} align="stretch">
+      {r.pasos.map((p, i) => (
+        <Group key={`${p.fecha_hora}|${p.caseta}`} gap={4} wrap="nowrap" align="center">
+          {i > 0 && <IconArrowRight size={12} color="var(--mantine-color-dimmed)" />}
+          <Card
+            withBorder padding={4} radius="sm"
+            style={{
+              minWidth: 96,
+              borderColor: p.arriba ? 'var(--mantine-color-red-6)' : undefined,
+              borderStyle: p.otra ? 'dashed' : undefined,
+            }}
+          >
+            <Text size="xs" c="dimmed">
+              {p.fecha_hora.slice(11, 16)}{p.renglon !== null ? ` · p. ${p.renglon}` : ''}
+            </Text>
+            <Text size="xs" fw={600} lineClamp={1}>{p.descripcion.replace(/^PEAJE /i, '')}</Text>
+            <Group gap={4} wrap="nowrap">
+              <Badge
+                size="xs" variant={p.arriba ? 'filled' : 'light'}
+                color={p.arriba ? 'red' : p.sin_clase ? 'gray' : p.clase === r.clase ? 'teal' : 'yellow'}
+              >
+                {p.sin_clase ? 'sin clase' : `clase ${p.clase}`}
+              </Badge>
+              <Text size="xs">{formatMXN(p.total)}</Text>
+            </Group>
+            {p.otra && (
+              <Button size="compact-xs" variant="subtle" px={0} onClick={() => onAbrir(p.otra!.factura_id)}>
+                {folioDe(p.otra)}
+              </Button>
+            )}
+          </Card>
+        </Group>
+      ))}
+    </Group>
+  )
+}
+
+/**
+ * Los recorridos de cada unidad: sus cruces seguidos, con la clase que cobró
+ * cada caseta lado a lado. No es para rastrear la unidad sino para comparar:
+ * si en Tepic - Guadalajara todas cobraron 7 y una 9, la rara es esa, cosa que
+ * mirando la caseta sola no se puede decir.
+ */
+function Recorridos({
+  recorridos, onAbrir,
+}: { recorridos: Recorrido[]; onAbrir: (id: number) => void }) {
+  const [tag, setTag] = useState<string | null>(null)
+  const [soloArriba, setSoloArriba] = useState(false)
+  const [page, setPage] = useState(1)
+
+  const opcionesTag = useMemo(() => {
+    const vistos = new Map<string, string>()
+    for (const r of recorridos) vistos.set(r.tag, r.vehiculo ? `${r.vehiculo} · ${r.tag}` : `${r.tag} (sin unidad)`)
+    return [...vistos].map(([value, label]) => ({ value, label }))
+  }, [recorridos])
+
+  const conArriba = (r: Recorrido) => r.pasos.some((p) => p.arriba)
+  const filtrados = recorridos.filter((r) => (!tag || r.tag === tag) && (!soloArriba || conArriba(r)))
+  const paginas = Math.ceil(filtrados.length / RECORRIDOS_POR_PAGINA)
+  const visibles = filtrados.slice((page - 1) * RECORRIDOS_POR_PAGINA, page * RECORRIDOS_POR_PAGINA)
+
+  return (
+    <Stack gap="sm">
+      <Group grow align="center">
+        <Select
+          placeholder="Todas las unidades" data={opcionesTag} clearable searchable
+          value={tag} onChange={(v) => { setTag(v); setPage(1) }}
+        />
+        <Switch
+          label="Solo con una caseta arriba de las demás"
+          checked={soloArriba} onChange={(e) => { setSoloArriba(e.currentTarget.checked); setPage(1) }}
+        />
+      </Group>
+      <Text size="xs" c="dimmed">
+        {filtrados.length} recorrido{filtrados.length === 1 ? '' : 's'}. Un recorrido son los cruces de
+        una unidad con menos de tres horas entre uno y otro; su clase es la que cobró la mayoría de las
+        casetas. Con línea punteada, los cruces que vinieron en otra factura.
+      </Text>
+      {visibles.map((r) => {
+        const primero = r.pasos[0]
+        const ultimo = r.pasos[r.pasos.length - 1]
+        const mismoDia = ultimo.fecha_hora.slice(0, 10) === primero.fecha_hora.slice(0, 10)
+        return (
+          <Card key={`${r.tag}|${primero.fecha_hora}`} withBorder padding="sm" radius="md">
+            <Group justify="space-between" align="flex-start">
+              <div>
+                <Text size="sm" fw={600}>
+                  {r.vehiculo ?? 'Sin unidad'}
+                  <Text component="span" size="xs" c="dimmed" fw={400}> · {r.tag}</Text>
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {fechaHora(primero.fecha_hora)}
+                  {r.pasos.length > 1
+                    ? ` – ${mismoDia ? ultimo.fecha_hora.slice(11, 16) : fechaHora(ultimo.fecha_hora)}`
+                    : ''}
+                </Text>
+              </div>
+              <Badge size="sm" variant="light" color={r.clase === null ? 'gray' : conArriba(r) ? 'red' : 'teal'}>
+                {r.clase === null ? 'sin clase común' : `clase ${r.clase}`}
+              </Badge>
+            </Group>
+            <PasosRecorrido r={r} onAbrir={onAbrir} />
+          </Card>
+        )
+      })}
+      {paginas > 1 && (
+        <Group justify="center">
+          <Pagination value={page} onChange={setPage} total={paginas} size="sm" />
+        </Group>
+      )}
+    </Stack>
+  )
+}
+
 function DetalleModal({
   facturaId, onClose, onAbrir,
 }: { facturaId: number | null; onClose: () => void; onAbrir: (id: number) => void }) {
@@ -843,10 +969,12 @@ function DetalleModal({
             <Tabs.List>
               <Tabs.Tab value="hallazgos">Hallazgos ({d.hallazgos.length})</Tabs.Tab>
               <Tabs.Tab value="unidades">Por unidad</Tabs.Tab>
+              <Tabs.Tab value="recorridos">Recorridos</Tabs.Tab>
               <Tabs.Tab value="cruces">Cruces</Tabs.Tab>
             </Tabs.List>
             <Tabs.Panel value="hallazgos" pt="md"><Hallazgos hallazgos={d.hallazgos} cruces={d.cruces} sinTarifa={d.sin_tarifa} onAbrir={abrirOtra} /></Tabs.Panel>
             <Tabs.Panel value="unidades" pt="md"><PorUnidad detalle={d} /></Tabs.Panel>
+            <Tabs.Panel value="recorridos" pt="md"><Recorridos recorridos={d.recorridos} onAbrir={abrirOtra} /></Tabs.Panel>
             <Tabs.Panel value="cruces" pt="md"><Cruces cruces={d.cruces} /></Tabs.Panel>
           </Tabs>
 

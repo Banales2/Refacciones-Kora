@@ -1,7 +1,8 @@
 import * as repo from '../repositories/facturasCasetasRepo'
 import { CATEGORIAS } from '../repositories/facturasCasetasRepo'
 import type {
-  CandidatoDeAjuste, Categoria, CruceRow, FacturaCasetas, HistorialTag, TarifaTramo, TarifaVigente,
+  CandidatoDeAjuste, Categoria, CruceRow, CruceVecino, FacturaCasetas, HistorialTag, TarifaTramo,
+  TarifaVigente,
 } from '../repositories/facturasCasetasRepo'
 import type {
   FacturaCasetasImport, TagCreate, TagUpdate, TarifaCreate, TarifaUpdate, TramoCreate,
@@ -21,6 +22,8 @@ import { aCentavos } from '../shared/totales'
 //                     cobra, y cuál tramo fue (ver la 071)
 //   la historia       la clase que el tag suele pagar en esa caseta, y las
 //                     casetas que nunca cruza
+//   el recorrido      la clase que le cobraron las otras casetas del mismo
+//                     viaje: si todas dijeron 7 y una 9, la rara es esa
 //
 // Ninguno de los hallazgos es una conclusión: es "esto hay que mirarlo", con el
 // dinero que está en juego al lado. Un tráiler que cruza clase 9 donde siempre
@@ -69,6 +72,13 @@ const SALTO_CLASE = 2
  * vehículo sí venía así (un tráiler con doble caja) y no se señala.
  */
 const MISMO_DIA_HORAS = 12
+
+/**
+ * Los cruces de un tag con menos de esto entre uno y el siguiente son un mismo
+ * recorrido. Sta. Ma. del Oro → Plan de Barrancas tarda unas dos horas; con
+ * más, una vuelta cargado y otra vacío (con menos ejes) se juntarían.
+ */
+const RECORRIDO_HORAS = 3
 
 /** La tolerancia al comparar sumas contra lo impreso: un centavo. */
 const TOLERANCIA = 0.01
@@ -204,8 +214,8 @@ function duplicada(folio: string): AppError {
 // ── Revisar ──────────────────────────────────────────────────────────────────
 
 export type TipoHallazgo =
-  | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_mayor' | 'clase_atipica' | 'ajuste'
-  | 'corregido' | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
+  | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_en_recorrido' | 'clase_mayor'
+  | 'clase_atipica' | 'ajuste' | 'corregido' | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
 
 /**
  * De qué lado está el problema. Son dos preguntas distintas y no se suman:
@@ -237,6 +247,41 @@ export interface Hallazgo {
   corrige?: CorreccionDeClase
   /** Solo en `corregido`: la factura donde vino el ajuste. */
   ajuste_en?: { factura_id: number; serie: string | null; folio: string }
+  /** Solo en `clase_en_recorrido`: el recorrido entero, para ver qué cobraron las demás. */
+  recorrido?: Recorrido
+}
+
+/**
+ * Los cruces seguidos de un tag (menos de RECORRIDO_HORAS entre uno y otro),
+ * con la clase que les cobraron. No es para rastrear la unidad: es para
+ * comparar cada caseta contra las demás del mismo viaje.
+ */
+export interface Recorrido {
+  tag: string
+  vehiculo: string | null
+  /**
+   * La clase que cobró la mayoría de las casetas, contando cada caseta una vez
+   * (ida y vuelta por San Blas no son dos votos). null si no hay dos casetas
+   * que coincidan o hay empate: entonces no hay contra qué comparar.
+   */
+  clase: number | null
+  pasos: PasoRecorrido[]
+}
+
+export interface PasoRecorrido {
+  /** La partida en esta factura; null si el cruce vino en otra. */
+  renglon: number | null
+  /** La factura donde vino, si no es esta. */
+  otra: { factura_id: number; serie: string | null; folio: string; renglon: number } | null
+  fecha_hora: string
+  caseta: string
+  descripcion: string
+  clase: number
+  total: number
+  /** La caseta no manda la clase real (EASYTRIP): no cuenta para la del recorrido. */
+  sin_clase: boolean
+  /** Cobró una clase arriba de la del recorrido. */
+  arriba: boolean
 }
 
 /**
@@ -315,12 +360,15 @@ export interface DetalleFactura {
   hallazgos: Hallazgo[]
   por_unidad: ResumenUnidad[]
   sin_tarifa: CasetaSinTarifa[]
+  /** Los recorridos de cada tag que tocan esta factura, del más viejo al más nuevo. */
+  recorridos: Recorrido[]
 }
 
 const GRUPO: Record<TipoHallazgo, GrupoHallazgo> = {
   cobrado_antes: 'cobro',
   fuera_de_tarifa: 'cobro',
   doble_cobro: 'cobro',
+  clase_en_recorrido: 'cobro',
   clase_mayor: 'cobro',
   clase_atipica: 'cobro',
   ajuste: 'cobro',
@@ -331,7 +379,7 @@ const GRUPO: Record<TipoHallazgo, GrupoHallazgo> = {
 }
 
 function fechaDe(c: CruceRow): string { return c.fecha_hora.slice(0, 10) }
-function minutos(a: CruceRow, b: CruceRow): number {
+function minutos(a: { fecha_hora: string }, b: { fecha_hora: string }): number {
   return (Date.parse(`${b.fecha_hora}Z`) - Date.parse(`${a.fecha_hora}Z`)) / 60000
 }
 function esAjuste(c: CruceRow): boolean {
@@ -353,6 +401,22 @@ function vigentes(porCaseta: Map<string, TarifaTramo[]>, c: CruceRow): TarifaTra
     if (!actual || t.vigente_desde > actual.vigente_desde) porTramo.set(t.tramo_id, t)
   }
   return [...porTramo.values()]
+}
+
+/**
+ * Lo que cuesta `clase` donde cruzó: en el tramo que su importe identificó o,
+ * si el importe no es de ningún tramo, en cualquiera de los de la caseta. De
+ * varios, el más caro, para no reclamar de más. null sin tarifa.
+ */
+function tarifaDeClase(
+  porCaseta: Map<string, TarifaTramo[]>, tramoDe: Map<number, string[]>, c: CruceRow, clase: number,
+): number | null {
+  const tramos = tramoDe.get(c.renglon)
+  const precios = vigentes(porCaseta, c)
+    .filter((t) => !tramos || tramos.includes(t.tramo))
+    .flatMap((t) => (CATEGORIAS_DE_CLASE[clase] ?? [])
+      .flatMap((cat) => (t[cat] === null ? [] : [Number(t[cat])])))
+  return precios.length > 0 ? Math.max(...precios) : null
 }
 
 /** Los importes válidos para la clase del cruce: un tramo y una clasificación cada uno. */
@@ -464,6 +528,82 @@ function clasesDeSiempre(historial: HistorialTag[], sinClase: Set<string>) {
   return r
 }
 
+/**
+ * Corta los cruces de cada tag en recorridos: uno nuevo cuando pasan más de
+ * RECORRIDO_HORAS sin cruzar nada. Entran los de las otras facturas que quedan
+ * pegados (el viaje del último día del periodo sigue en la siguiente), pero solo
+ * se devuelven los recorridos que tienen al menos un cruce de esta.
+ */
+function armarRecorridos(
+  cruces: CruceRow[], vecinos: CruceVecino[], sinClase: Set<string>,
+  deSiempre: Map<string, { clase: number }>,
+): Recorrido[] {
+  const porTag = new Map<string, PasoRecorrido[]>()
+  const vehiculoDe = new Map<string, string | null>()
+  for (const c of cruces) {
+    if (esAjuste(c)) continue
+    if (!vehiculoDe.has(c.tag)) vehiculoDe.set(c.tag, c.vehiculo)
+    porTag.set(c.tag, [...(porTag.get(c.tag) ?? []), {
+      renglon: c.renglon, otra: null, fecha_hora: c.fecha_hora, caseta: c.caseta,
+      descripcion: c.descripcion, clase: c.clase, total: c.total,
+      sin_clase: sinClase.has(c.caseta), arriba: false,
+    }])
+  }
+  for (const v of vecinos) {
+    porTag.set(v.tag, [...(porTag.get(v.tag) ?? []), {
+      renglon: null,
+      otra: { factura_id: v.factura_id, serie: v.serie, folio: v.folio, renglon: v.renglon },
+      fecha_hora: v.fecha_hora, caseta: v.caseta, descripcion: v.descripcion,
+      clase: v.clase, total: Number(v.total), sin_clase: sinClase.has(v.caseta), arriba: false,
+    }])
+  }
+
+  const recorridos: Recorrido[] = []
+  for (const [tag, ps] of porTag) {
+    ps.sort((a, b) => a.fecha_hora.localeCompare(b.fecha_hora))
+    let actual: PasoRecorrido[] = []
+    const cerrar = () => {
+      if (actual.some((p) => p.renglon !== null)) {
+        recorridos.push({ tag, vehiculo: vehiculoDe.get(tag) ?? null, clase: claseDelRecorrido(actual), pasos: actual })
+      }
+      actual = []
+    }
+    for (const p of ps) {
+      const ultimo = actual[actual.length - 1]
+      if (ultimo && minutos(ultimo, p) > RECORRIDO_HORAS * 60) cerrar()
+      actual.push(p)
+    }
+    cerrar()
+  }
+
+  // Arriba de la del recorrido, salvo que no pase la que el tag paga casi
+  // siempre: un tráiler de 9 al que Plan de Barrancas y Sta. Ma. del Oro
+  // cobraron 5 deja el recorrido en 5, y el 9 de Arenal es el bueno.
+  for (const r of recorridos) {
+    if (r.clase === null) continue
+    const siempre = deSiempre.get(r.tag)
+    for (const p of r.pasos) {
+      p.arriba = !p.sin_clase && p.clase > r.clase && !(siempre && p.clase <= siempre.clase)
+    }
+  }
+  return recorridos.sort((a, b) => a.pasos[0].fecha_hora.localeCompare(b.pasos[0].fecha_hora))
+}
+
+/**
+ * La clase que cobró la mayoría de las casetas del recorrido, cada caseta un
+ * voto. Hacen falta dos que coincidan y que ninguna otra clase empate.
+ */
+function claseDelRecorrido(pasos: PasoRecorrido[]): number | null {
+  const porClase = new Map<number, Set<string>>()
+  for (const p of pasos) {
+    if (p.sin_clase) continue
+    porClase.set(p.clase, (porClase.get(p.clase) ?? new Set()).add(p.caseta))
+  }
+  const votos = [...porClase].map(([clase, cs]) => ({ clase, n: cs.size })).sort((a, b) => b.n - a.n)
+  if (votos.length === 0 || votos[0].n < 2 || votos[1]?.n === votos[0].n) return null
+  return votos[0].clase
+}
+
 export async function detalle(facturaId: number): Promise<DetalleFactura> {
   const factura = await repo.findById(facturaId)
   if (!factura) throw new NotFoundError('Factura')
@@ -477,6 +617,9 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
   }
   const ajustesDespues = await repo.ajustesDeCruces(facturaId)
   const sinClase = await repo.casetasSinClase()
+  // El mismo cruce puede venir en dos facturas más: se queda el de la primera.
+  const vecinos = [...new Map((await repo.crucesVecinos(facturaId, MISMO_DIA_HORAS))
+    .reverse().map((v) => [`${v.tag}|${v.caseta}|${v.fecha_hora}`, v])).values()]
   const tarifas = new Map<string, TarifaTramo[]>()
   for (const t of await repo.tarifasDeFactura(facturaId)) {
     tarifas.set(t.caseta, [...(tarifas.get(t.caseta) ?? []), t])
@@ -609,12 +752,89 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
     })
   }
 
+  // Clase arriba de la del recorrido: si Sta. Ma. del Oro y Arenal cobraron 5
+  // y en medio Plan de Barrancas cobró 9, el error es de Plan de Barrancas. Va
+  // antes que las revisiones por caseta y por tag porque es la que tiene más
+  // contexto: los cruces que mira ya no se repiten en aquellas.
+  //
+  // Y al revés: un cruce que cobró lo mismo que su recorrido (o menos) queda
+  // confirmado por las demás casetas. Sta. Ma. del Oro suele cobrar 5 a un
+  // tráiler de 9; el día que cobra 9 junto con Arenal y Plan de Barrancas, la
+  // clase habitual de esa caseta lo marcaba de más, y el recorrido dice que no.
+  //
+  // De más, contra la tarifa de la clase del recorrido en el mismo tramo. Si
+  // cuesta igual (en Arenal 5 y 6 son $413), no hay nada que reclamar. Sin
+  // tarifa, contra lo más que el tag ha pagado ahí en esa clase; sin eso
+  // tampoco, se dice en $0, pero solo si el salto es grande (San Blas cobrando
+  // 9 en un recorrido de 3).
+  const deSiempre = clasesDeSiempre(historial, sinClase)
+  const recorridos = armarRecorridos(cruces, vecinos, sinClase, deSiempre)
+  const maximoEn = new Map(historial.map((h) => [`${h.tag}|${h.caseta}|${h.clase}`, Number(h.total_maximo)]))
+  const enRecorrido = new Set<number>()
+  for (const r of recorridos) {
+    if (r.clase === null) continue
+    const clase = r.clase
+    const grupos = new Map<string, CruceRow[]>()
+    for (const p of r.pasos) {
+      if (p.renglon === null || p.sin_clase) continue
+      if (p.clase <= clase) { enRecorrido.add(p.renglon); continue }
+      if (!p.arriba) continue
+      enRecorrido.add(p.renglon)
+      const c = porRenglon.get(p.renglon)!
+      const k = `${c.caseta}|${c.clase}`
+      grupos.set(k, [...(grupos.get(k) ?? []), c])
+    }
+    const coinciden = [...new Set(r.pasos
+      .filter((p) => !p.sin_clase && p.clase === clase)
+      .map((p) => p.descripcion.replace(/^PEAJE /i, '')))]
+    for (const cs of grupos.values()) {
+      const c = cs[0]
+      let monto = 0
+      let porTarifa = 0
+      let porHistoria = 0
+      let sinPrecio = 0
+      for (const x of cs) {
+        const tarifa = tarifaDeClase(tarifas, tramoDe, x, clase)
+        const precio = tarifa ?? maximoEn.get(`${x.tag}|${x.caseta}|${clase}`) ?? null
+        if (precio === null) { sinPrecio++; continue }
+        if (tarifa !== null) porTarifa++
+        else porHistoria++
+        monto += Math.max(0, x.total - precio)
+      }
+      if (monto <= TOLERANCIA && !(sinPrecio > 0 && c.clase - clase >= SALTO_CLASE)) continue
+      const veces = cs.length === 1 ? '' : ` en ${cs.length} cruces`
+      const contra = [
+        porTarifa > 0 ? `la tarifa de la clase ${clase} en el mismo tramo` : null,
+        porHistoria > 0 ? `lo más que el tag ha pagado aquí en clase ${clase}` : null,
+      ].filter(Boolean).join(' y ')
+      agregar({
+        tipo: 'clase_en_recorrido', renglones: cs.map((x) => x.renglon), tag: c.tag,
+        vehiculo: c.vehiculo, caseta: c.descripcion, monto,
+        detalle: `Cobró clase ${c.clase}${veces}; en el mismo recorrido ` +
+          `${coinciden.length === 1 ? 'la otra caseta cobró' : `${coinciden.length} casetas cobraron`} ` +
+          `clase ${clase} (${coinciden.join(', ')}). ` + (
+          sinPrecio === cs.length
+            ? 'Sin tarifa de esta caseta no se sabe cuánto es de más: pregunta a PASE cuánto ' +
+              `cuesta ahí la clase ${clase}.`
+            : `De más, contra ${contra}.` + (sinPrecio > 0
+              ? ` ${sinPrecio} de los cruces no tienen con qué compararse y no entran al monto.`
+              : '')
+        ),
+        recorrido: r,
+      })
+    }
+  }
+
   const habitual = clasesHabituales(historial)
   const claseMayor = new Set<number>()
   for (const c of cruces) {
-    if (esAjuste(c)) continue
+    if (esAjuste(c) || enRecorrido.has(c.renglon)) continue
     const h = habitual.get(`${c.tag}|${c.caseta}`)
     if (!h || c.clase <= h.clase) continue
+    // Tampoco si es la clase que el tag paga casi siempre: es la caseta la que
+    // suele cobrarle de menos (Sta. Ma. del Oro, 5 a un tráiler de 9).
+    const siempre = deSiempre.get(c.tag)
+    if (siempre && c.clase <= siempre.clase) continue
     // Contra lo más caro que pagó en su clase habitual: hay casetas que cobran
     // igual dos clases, y entonces la clase distinta no costó nada de más.
     const exceso = c.total - h.total_maximo
@@ -639,15 +859,22 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
   //
   // No se señala si ese mismo día el tag pagó una clase parecida en otra
   // caseta: entonces el vehículo sí venía así. Se agrupa por caseta y clase,
-  // para que nueve cruces iguales sean un hallazgo y no nueve.
-  const deSiempre = clasesDeSiempre(historial, sinClase)
-  const atipicos = new Map<string, { cruces: CruceRow[]; testigo: CruceRow | null }>()
+  // para que nueve cruces iguales sean un hallazgo y no nueve. Lo del mismo
+  // día sale también de las otras facturas: un cruce del último día del
+  // periodo tiene el resto del viaje en la siguiente.
+  //
+  // Lo que ya vio el recorrido no se repite aquí: aquel compara contra el
+  // mismo viaje, que dice más que la costumbre del tag.
+  type Testigo = { tag: string; caseta: string; clase: number; fecha_hora: string; descripcion: string }
+  const delDia: Testigo[] = [...cruces.filter((o) => !esAjuste(o)), ...vecinos]
+    .filter((o) => !sinClase.has(o.caseta))
+  const atipicos = new Map<string, { cruces: CruceRow[]; testigo: Testigo | null }>()
   for (const c of cruces) {
-    if (esAjuste(c) || sinClase.has(c.caseta) || claseMayor.has(c.renglon)) continue
+    if (esAjuste(c) || sinClase.has(c.caseta) || claseMayor.has(c.renglon) || enRecorrido.has(c.renglon)) continue
     const g = deSiempre.get(c.tag)
     if (!g || c.clase - g.clase < SALTO_CLASE) continue
-    const ese = cruces.filter((o) => o.tag === c.tag && o.caseta !== c.caseta && !esAjuste(o)
-      && !sinClase.has(o.caseta) && Math.abs(minutos(o, c)) <= MISMO_DIA_HORAS * 60)
+    const ese = delDia.filter((o) => o.tag === c.tag && o.caseta !== c.caseta
+      && Math.abs(minutos(o, c)) <= MISMO_DIA_HORAS * 60)
     if (ese.some((o) => Math.abs(o.clase - c.clase) <= 1)) continue
     const testigo = [...ese].sort((a, b) => Math.abs(minutos(a, c)) - Math.abs(minutos(b, c)))[0] ?? null
     const k = `${c.tag}|${c.caseta}|${c.clase}`
@@ -660,18 +887,17 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
     const c = cs[0]
     const g = deSiempre.get(c.tag)!
     // Lo de más, contra la tarifa de la clase de siempre en el tramo que se
-    // cobró. Sin tarifa no hay contra qué: se dice y queda en $0.
+    // cobró. Sin tarifa no hay contra qué: se dice y queda en $0. Si todos
+    // tienen tarifa y ninguno costó más, la clase está mal leída pero no hay
+    // nada que reclamar.
     let monto = 0
-    let sinPrecio = false
+    let sinPrecio = 0
     for (const x of cs) {
-      const tramos = tramoDe.get(x.renglon)
-      const esperados = vigentes(tarifas, x)
-        .filter((t) => tramos?.includes(t.tramo))
-        .flatMap((t) => (CATEGORIAS_DE_CLASE[g.clase] ?? [])
-          .flatMap((cat) => (t[cat] === null ? [] : [Number(t[cat])])))
-      if (esperados.length === 0) { sinPrecio = true; continue }
-      monto += Math.max(0, x.total - Math.max(...esperados))
+      const esperado = tarifaDeClase(tarifas, tramoDe, x, g.clase)
+      if (esperado === null) { sinPrecio++; continue }
+      monto += Math.max(0, x.total - esperado)
     }
+    if (sinPrecio === 0 && monto <= TOLERANCIA) continue
     const veces = cs.length === 1 ? '' : ` en ${cs.length} cruces`
     const dia = testigo
       ? `, y ese día pasó en clase ${testigo.clase} por ${testigo.descripcion.replace(/^PEAJE /i, '')}`
@@ -681,10 +907,12 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
       caseta: c.descripcion, monto,
       detalle: `Cobró clase ${c.clase}${veces}; el tag paga clase ${g.clase} en ${g.n} de sus ` +
         `${g.total} cruces${dia}. ` + (
-        sinPrecio
+        sinPrecio === cs.length
           ? 'Sin tarifa de esta caseta no se sabe cuánto es de más: pregunta a PASE cuánto ' +
             `cuesta ahí la clase ${g.clase}.`
-          : `De más, contra la tarifa de la clase ${g.clase} en el mismo tramo.`
+          : `De más, contra la tarifa de la clase ${g.clase} en el mismo tramo.` + (sinPrecio > 0
+            ? ` ${sinPrecio} de los cruces no tienen tarifa y no entran al monto.`
+            : '')
       ),
     })
   }
@@ -843,6 +1071,7 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
     sin_tarifa: [...sinTarifa.values()]
       .map((s) => ({ ...s, total: aCentavos(s.total) }))
       .sort((a, b) => b.total - a.total),
+    recorridos,
   }
 }
 

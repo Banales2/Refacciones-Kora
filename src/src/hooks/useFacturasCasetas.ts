@@ -57,8 +57,8 @@ export interface CruceCaseta {
 }
 
 export type TipoHallazgo =
-  | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_mayor' | 'clase_atipica' | 'ajuste'
-  | 'corregido' | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
+  | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_en_recorrido' | 'clase_mayor'
+  | 'clase_atipica' | 'ajuste' | 'corregido' | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
 
 export interface Hallazgo {
   tipo:      TipoHallazgo
@@ -76,6 +76,35 @@ export interface Hallazgo {
   corrige?:  CorreccionDeClase
   /** Solo en `corregido`: la factura donde vino el ajuste. */
   ajuste_en?: { factura_id: number; serie: string | null; folio: string }
+  /** Solo en `clase_en_recorrido`: el recorrido entero, para ver qué cobraron las demás. */
+  recorrido?: Recorrido
+}
+
+/**
+ * Los cruces seguidos de un tag (menos de tres horas entre uno y otro). Sirve
+ * para comparar cada caseta contra las demás del mismo viaje.
+ */
+export interface Recorrido {
+  tag:      string
+  vehiculo: string | null
+  /** La clase que cobró la mayoría de las casetas; null si no hay mayoría. */
+  clase:    number | null
+  pasos:    PasoRecorrido[]
+}
+
+export interface PasoRecorrido {
+  /** La partida en esta factura; null si el cruce vino en otra. */
+  renglon:     number | null
+  otra:        { factura_id: number; serie: string | null; folio: string; renglon: number } | null
+  fecha_hora:  string
+  caseta:      string
+  descripcion: string
+  clase:       number
+  total:       number
+  /** La caseta no manda la clase real (EASYTRIP). */
+  sin_clase:   boolean
+  /** Cobró una clase arriba de la del recorrido. */
+  arriba:      boolean
 }
 
 export interface CorreccionDeClase {
@@ -131,6 +160,8 @@ export interface DetalleFacturaCasetas {
   por_unidad: ResumenUnidad[]
   /** Las casetas de la factura sin tarifa cargada: lo que no se pudo revisar contra precio. */
   sin_tarifa: CasetaSinTarifa[]
+  /** Los recorridos de cada tag que tocan esta factura, del más viejo al más nuevo. */
+  recorridos: Recorrido[]
 }
 
 export interface CasetaSinTarifa {
