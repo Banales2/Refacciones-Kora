@@ -33,7 +33,7 @@ import {
   FACTURA_DUPLICADA, useActualizarTagCaseta, useCrearTagCaseta, useFacturaCasetas,
   useFacturasCasetas, useImportarFacturaCasetas, useReabrirFacturaCasetas,
   useRevisarFacturaCasetas, useTagsCasetas, useTarifasCasetas, useActualizarTarifaCaseta,
-  useCrearTarifaCaseta, useCrearTramoCaseta,
+  useCrearTarifaCaseta, useCrearTramoCaseta, useIgnoraClaseCaseta,
 } from '../hooks/useFacturasCasetas'
 import type {
   CasetaSinTarifa, CorreccionDeClase, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas,
@@ -1173,16 +1173,32 @@ function TagsPanel() {
 
 // ── Las tarifas ──────────────────────────────────────────────────────────────
 
-const COLUMNAS_TARIFA: [Exclude<keyof ValoresTarifa, 'vigente_desde'>, string][] = [
-  ['moto', 'Moto'], ['auto', 'Auto'], ['autobus', 'Autobús'], ['camion_2_4', '2-4 ejes'],
-  ['camion_5_6', '5-6 ejes'], ['camion_7_9', '7-9 ejes'], ['eje_ligero', 'Eje ligero'],
-  ['eje_pesado', 'Eje pesado'],
+type ColumnaTarifa = Exclude<keyof ValoresTarifa, 'vigente_desde'>
+
+/**
+ * Las clasificaciones, una por número de ejes y agrupadas como en la tabla del
+ * operador. Cada operador junta los ejes a su modo (IDEAL 2-4/5-6/7-9, Jala -
+ * Compostela 2-3/4-5/6-9); por eje cabe cualquiera.
+ */
+const GRUPOS_TARIFA: { titulo: string; columnas: [ColumnaTarifa, string][] }[] = [
+  { titulo: 'Ligeros', columnas: [['moto', 'Moto'], ['auto', 'Auto']] },
+  { titulo: 'Autobús (ejes)', columnas: [['autobus_2', '2'], ['autobus_3', '3'], ['autobus_4', '4']] },
+  {
+    titulo: 'Camión (ejes)',
+    columnas: [
+      ['camion_2', '2'], ['camion_3', '3'], ['camion_4', '4'], ['camion_5', '5'],
+      ['camion_6', '6'], ['camion_7', '7'], ['camion_8', '8'], ['camion_9', '9'],
+    ],
+  },
+  { titulo: 'Eje excedente', columnas: [['eje_ligero', 'Ligero'], ['eje_pesado', 'Pesado']] },
 ]
 
-const VACIA: ValoresTarifa = {
-  vigente_desde: '', moto: null, auto: null, autobus: null, camion_2_4: null,
-  camion_5_6: null, camion_7_9: null, eje_ligero: null, eje_pesado: null,
-}
+const COLUMNAS_TARIFA = GRUPOS_TARIFA.flatMap((g) => g.columnas)
+
+const VACIA = {
+  vigente_desde: '',
+  ...Object.fromEntries(COLUMNAS_TARIFA.map(([col]) => [col, null])),
+} as ValoresTarifa
 
 /**
  * Lo que se edita: corregir la vigencia de un tramo, registrar un aumento del
@@ -1208,7 +1224,7 @@ function TarifaModal({ edicion, onClose }: { edicion: EdicionTarifa | null; onCl
   const [abiertaPara, setAbiertaPara] = useState<EdicionTarifa | null>(null)
 
   // Al abrir, se llena con lo que hay: es más fácil corregir un número que
-  // volver a teclear ocho.
+  // volver a teclear quince.
   if (edicion !== abiertaPara) {
     setAbiertaPara(edicion)
     setAccion('corregir')
@@ -1216,10 +1232,9 @@ function TarifaModal({ edicion, onClose }: { edicion: EdicionTarifa | null; onCl
     if (edicion?.modo === 'tramo') {
       const { tramo: t } = edicion
       setValores({
-        vigente_desde: t.vigente_desde, moto: t.moto, auto: t.auto, autobus: t.autobus,
-        camion_2_4: t.camion_2_4, camion_5_6: t.camion_5_6, camion_7_9: t.camion_7_9,
-        eje_ligero: t.eje_ligero, eje_pesado: t.eje_pesado,
-      })
+        vigente_desde: t.vigente_desde,
+        ...Object.fromEntries(COLUMNAS_TARIFA.map(([col]) => [col, t[col]])),
+      } as ValoresTarifa)
     } else if (edicion) {
       setValores(VACIA)
       setAutopista(edicion.caseta.tramos[0]?.autopista ?? '')
@@ -1254,7 +1269,7 @@ function TarifaModal({ edicion, onClose }: { edicion: EdicionTarifa | null; onCl
   const nombreCaseta = edicion.caseta.nombre?.replace(/^PEAJE /i, '') ?? `Caseta ${edicion.caseta.caseta}`
   return (
     <Modal
-      opened onClose={onClose} size="lg"
+      opened onClose={onClose} size="xl"
       title={<Text fw={700}>{tramo ? tramo.tramo : `Nuevo tramo en ${nombreCaseta}`}</Text>}
     >
       <Stack gap="sm">
@@ -1306,18 +1321,46 @@ function TarifaModal({ edicion, onClose }: { edicion: EdicionTarifa | null; onCl
             ? 'El aumento debe ser posterior a la tarifa actual' : undefined}
         />
 
-        <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
-          {COLUMNAS_TARIFA.map(([col, titulo]) => (
-            <NumberInput
-              key={col} label={titulo} prefix="$" min={0} max={99999} decimalScale={2}
-              thousandSeparator="," hideControls placeholder="—"
-              value={valores[col] ?? ''}
-              onChange={(v) => setValores((x) => ({ ...x, [col]: v === '' ? null : Number(v) }))}
-            />
-          ))}
-        </SimpleGrid>
+        {GRUPOS_TARIFA.map((g) => (
+          <Stack key={g.titulo} gap={4}>
+            <Group justify="space-between">
+              <Text size="xs" fw={600}>{g.titulo}</Text>
+              {g.columnas.length > 2 && (
+                <Button
+                  size="compact-xs" variant="subtle"
+                  onClick={() => setValores((x) => {
+                    // Copia hacia la derecha el último valor hasta el siguiente
+                    // capturado: los operadores cobran igual varios ejes
+                    // seguidos, y así se teclea un número por grupo.
+                    const r = { ...x }
+                    let ultimo: number | null = null
+                    for (const [col] of g.columnas) {
+                      if (r[col] !== null) ultimo = r[col]
+                      else r[col] = ultimo
+                    }
+                    return r
+                  })}
+                >
+                  Rellenar hacia la derecha
+                </Button>
+              )}
+            </Group>
+            <SimpleGrid cols={{ base: 4, sm: Math.max(g.columnas.length, 4) }} spacing="xs">
+              {g.columnas.map(([col, titulo]) => (
+                <NumberInput
+                  key={col} label={titulo} size="xs" prefix="$" min={0} max={99999} decimalScale={2}
+                  thousandSeparator="," hideControls placeholder="—"
+                  value={valores[col] ?? ''}
+                  onChange={(v) => setValores((x) => ({ ...x, [col]: v === '' ? null : Number(v) }))}
+                />
+              ))}
+            </SimpleGrid>
+          </Stack>
+        ))}
         <Text size="xs" c="dimmed">
-          Con IVA, como las publica el operador. Deja vacía la clasificación que no se publica.
+          Con IVA, como las publica el operador. Si la tabla agrupa ejes (“camiones 4 y 5
+          ejes”), captura el primero y usa “Rellenar hacia la derecha”. Deja vacía la
+          clasificación que no se publica.
         </Text>
 
         {mutacion.error && <Alert color="red">{(mutacion.error as Error).message}</Alert>}
@@ -1342,17 +1385,37 @@ function TarifasDeUnaCaseta({
   k, onEditar,
 }: { k: TarifasDeCaseta; onEditar: ((e: EdicionTarifa) => void) | null }) {
   const usadas = new Set(k.cobrados.flatMap((c) => c.tramos.map((t) => `${t}|${c.total}`)))
+  const ignora = useIgnoraClaseCaseta()
   return (
     <Stack gap="sm">
-      <Table.ScrollContainer minWidth={760}>
-        <Table withTableBorder striped fz="xs" verticalSpacing={4}>
+      {onEditar ? (
+        <Switch
+          size="xs" checked={k.ignora_clase} disabled={ignora.isPending}
+          label="Esta caseta no manda la clase real (EASYTRIP manda 1 a todo): comparar el importe contra todas las clasificaciones"
+          onChange={(e) => ignora.mutate({ caseta: k.caseta, ignora_clase: e.currentTarget.checked })}
+        />
+      ) : k.ignora_clase && (
+        <Text size="xs" c="dimmed">
+          Esta caseta no manda la clase real: el importe se compara contra todas las clasificaciones.
+        </Text>
+      )}
+      {ignora.error && <Alert color="red">{(ignora.error as Error).message}</Alert>}
+      <Table.ScrollContainer minWidth={1100}>
+        <Table withTableBorder withColumnBorders striped fz="xs" verticalSpacing={4} horizontalSpacing={6}>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Tramo</Table.Th>
-              {COLUMNAS_TARIFA.map(([, titulo]) => (
-                <Table.Th key={titulo} style={{ textAlign: 'right' }}>{titulo}</Table.Th>
+              <Table.Th rowSpan={2}>Tramo</Table.Th>
+              {GRUPOS_TARIFA.map((g) => (
+                <Table.Th key={g.titulo} colSpan={g.columnas.length} style={{ textAlign: 'center' }}>
+                  {g.titulo}
+                </Table.Th>
               ))}
-              {onEditar && <Table.Th w={36} />}
+              {onEditar && <Table.Th rowSpan={2} w={36} />}
+            </Table.Tr>
+            <Table.Tr>
+              {COLUMNAS_TARIFA.map(([col, titulo]) => (
+                <Table.Th key={col} style={{ textAlign: 'right' }}>{titulo}</Table.Th>
+              ))}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -1374,7 +1437,7 @@ function TarifasDeUnaCaseta({
                       bg={usada ? 'var(--mantine-color-blue-light)' : undefined}
                       style={{ textAlign: 'right', whiteSpace: 'nowrap' }}
                     >
-                      {v === null ? '—' : formatMXN(v)}
+                      {v === null ? '—' : `$${Number(v).toLocaleString('es-MX')}`}
                     </Table.Td>
                   )
                 })}
@@ -1417,6 +1480,7 @@ function TarifasDeUnaCaseta({
                   <Table.Th style={{ textAlign: 'right' }}>Importe</Table.Th>
                   <Table.Th style={{ textAlign: 'center' }}>Cruces</Table.Th>
                   <Table.Th>Tramo</Table.Th>
+                  {k.ignora_clase && <Table.Th>Ejes cobrados</Table.Th>}
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -1428,6 +1492,7 @@ function TarifasDeUnaCaseta({
                     <Table.Td c={c.tramos.length === 0 ? 'red' : undefined} fw={c.tramos.length === 0 ? 700 : undefined}>
                       {c.tramos.length > 0 ? c.tramos.join(' / ') : 'Fuera de tarifa'}
                     </Table.Td>
+                    {k.ignora_clase && <Table.Td>{c.ejes ?? '—'}</Table.Td>}
                   </Table.Tr>
                 ))}
               </Table.Tbody>
@@ -1468,8 +1533,9 @@ function TarifasPanel() {
         value={buscar} onChange={(e) => setBuscar(e.currentTarget.value)}
       />
       <Text size="xs" c="dimmed">
-        Clase de PASE: 1 = automóvil · 2 a 4 = autobús o camión de 2-4 ejes · 5-6 = camión
-        de 5-6 ejes · 7 a 9 = camión de 7-9 ejes. Precios con IVA.
+        Clase de PASE = número de ejes (1 = automóvil; de 2 a 4 puede ser autobús o camión).
+        Las casetas EASYTRIP mandan clase 1 a todo: para ellas cuenta solo el importe. Precios
+        con IVA; marcadas, las tarifas que PASE sí ha cobrado.
       </Text>
 
       {conTarifa.length === 0 ? (
@@ -1495,6 +1561,11 @@ function TarifasPanel() {
                       </Text>
                     </div>
                     <Group gap="xs" wrap="nowrap">
+                      {k.ignora_clase && (
+                        <Tooltip label="No manda la clase real: se compara contra todas las clasificaciones">
+                          <Badge size="sm" color="gray" variant="light">sin clase</Badge>
+                        </Tooltip>
+                      )}
                       {fuera.length > 0 && (
                         <Badge size="sm" color="red" variant="light">
                           {sumar(fuera, (c) => c.cruces)} fuera de tarifa

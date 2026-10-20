@@ -398,15 +398,26 @@ export async function ajustesDeCruces(facturaId: number): Promise<AjusteDeCruce[
   return r.recordset as AjusteDeCruce[]
 }
 
-/** Las clasificaciones del operador, en el orden de su tabla. */
+/**
+ * Las clasificaciones, una por número de ejes: cada operador agrupa los ejes a
+ * su modo (IDEAL 2-4/5-6/7-9, Jala - Compostela 2-3/4-5/6-9) y por eje cabe
+ * cualquiera. Ver `db/migrations/072_tarifas_por_eje.sql`.
+ */
 export const CATEGORIAS = [
-  'moto', 'auto', 'autobus', 'camion_2_4', 'camion_5_6', 'camion_7_9', 'eje_ligero', 'eje_pesado',
+  'moto', 'auto', 'autobus_2', 'autobus_3', 'autobus_4',
+  'camion_2', 'camion_3', 'camion_4', 'camion_5', 'camion_6', 'camion_7', 'camion_8', 'camion_9',
+  'eje_ligero', 'eje_pesado',
 ] as const
 export type Categoria = typeof CATEGORIAS[number]
+
+/** Las columnas de tarifa con su alias, para los SELECT. */
+const COLUMNAS_TARIFA = CATEGORIAS.map((c) => `ta.${c}`).join(', ')
 
 /** Un tramo que una caseta puede cobrar, con una de sus vigencias. */
 export type TarifaTramo = {
   caseta: string
+  /** La caseta no manda la clase real (EASYTRIP): se compara contra todas. */
+  ignora_clase: boolean
   tramo_id: number
   autopista: string
   tramo: string
@@ -423,13 +434,14 @@ export async function tarifasDeFactura(facturaId: number): Promise<TarifaTramo[]
   const r = await pool.request()
     .input('id', sql.Int, facturaId)
     .query(`
-      SELECT ct.caseta, t.id AS tramo_id, t.autopista, t.nombre AS tramo,
+      SELECT ct.caseta, CAST(ISNULL(cp.ignora_clase, 0) AS bit) AS ignora_clase,
+             t.id AS tramo_id, t.autopista, t.nombre AS tramo,
              CONVERT(char(10), ta.vigente_desde, 23) AS vigente_desde,
-             ta.moto, ta.auto, ta.autobus, ta.camion_2_4, ta.camion_5_6, ta.camion_7_9,
-             ta.eje_ligero, ta.eje_pesado
+             ${COLUMNAS_TARIFA}
       FROM casetas_tramos ct
       JOIN tramos_casetas t   ON t.id = ct.tramo_id
       JOIN tarifas_casetas ta ON ta.tramo_id = t.id
+      LEFT JOIN casetas_pase cp ON cp.caseta = ct.caseta
       WHERE ct.caseta IN (SELECT DISTINCT caseta FROM facturas_casetas_cruces WHERE factura_id = @id)`)
   return r.recordset as TarifaTramo[]
 }
@@ -439,6 +451,7 @@ export interface CasetaRow {
   caseta: string
   /** Como la imprime PASE en el cruce más reciente; null si nunca ha salido en una factura. */
   nombre: string | null
+  ignora_clase: boolean
   cruces: number
   total: number
 }
@@ -460,15 +473,29 @@ export async function casetas(): Promise<CasetaRow[]> {
       SELECT caseta FROM vistas UNION SELECT caseta FROM casetas_tramos
     )
     SELECT k.caseta, n.descripcion AS nombre,
+           CAST(ISNULL(cp.ignora_clase, 0) AS bit) AS ignora_clase,
            ISNULL(v.cruces, 0) AS cruces, ISNULL(v.total, 0) AS total
     FROM codigos k
     LEFT JOIN vistas v  ON v.caseta = k.caseta
-    LEFT JOIN nombres n ON n.caseta = k.caseta AND n.n = 1`)
+    LEFT JOIN nombres n ON n.caseta = k.caseta AND n.n = 1
+    LEFT JOIN casetas_pase cp ON cp.caseta = k.caseta`)
   return r.recordset as CasetaRow[]
 }
 
+/** Marca (o desmarca) que una caseta no manda la clase real. */
+export async function guardarIgnoraClase(caseta: string, ignora: boolean): Promise<void> {
+  const pool = await getPool()
+  await pool.request()
+    .input('caseta', sql.NVarChar(10), caseta)
+    .input('ignora', sql.Bit, ignora)
+    .query(`
+      UPDATE casetas_pase SET ignora_clase = @ignora WHERE caseta = @caseta;
+      IF @@ROWCOUNT = 0
+        INSERT INTO casetas_pase (caseta, ignora_clase) VALUES (@caseta, @ignora);`)
+}
+
 /** Con el id de la vigencia: es lo que se corrige al editar. */
-export type TarifaVigente = TarifaTramo & { tarifa_id: number; vigencias: number }
+export type TarifaVigente = Omit<TarifaTramo, 'ignora_clase'> & { tarifa_id: number; vigencias: number }
 
 /**
  * La tarifa de hoy de cada tramo que cada caseta cobra. Si un tramo solo tiene
@@ -480,8 +507,7 @@ export async function tarifasVigentes(): Promise<TarifaVigente[]> {
     SELECT ct.caseta, t.id AS tramo_id, t.autopista, t.nombre AS tramo, ta.id AS tarifa_id,
            (SELECT COUNT(*) FROM tarifas_casetas v WHERE v.tramo_id = t.id) AS vigencias,
            CONVERT(char(10), ta.vigente_desde, 23) AS vigente_desde,
-           ta.moto, ta.auto, ta.autobus, ta.camion_2_4, ta.camion_5_6, ta.camion_7_9,
-           ta.eje_ligero, ta.eje_pesado
+           ${COLUMNAS_TARIFA}
     FROM casetas_tramos ct
     JOIN tramos_casetas t ON t.id = ct.tramo_id
     CROSS APPLY (
@@ -496,21 +522,13 @@ export async function tarifasVigentes(): Promise<TarifaVigente[]> {
   return r.recordset as TarifaVigente[]
 }
 
-export interface TarifaRow {
+export type TarifaRow = {
   id: number
   tramo_id: number
   autopista: string
   tramo: string
   vigente_desde: string
-  moto: number | null
-  auto: number | null
-  autobus: number | null
-  camion_2_4: number | null
-  camion_5_6: number | null
-  camion_7_9: number | null
-  eje_ligero: number | null
-  eje_pesado: number | null
-}
+} & Record<Categoria, number | null>
 
 export async function findTarifa(id: number): Promise<TarifaRow | null> {
   const pool = await getPool()
@@ -519,8 +537,7 @@ export async function findTarifa(id: number): Promise<TarifaRow | null> {
     .query(`
       SELECT ta.id, ta.tramo_id, t.autopista, t.nombre AS tramo,
              CONVERT(char(10), ta.vigente_desde, 23) AS vigente_desde,
-             ta.moto, ta.auto, ta.autobus, ta.camion_2_4, ta.camion_5_6, ta.camion_7_9,
-             ta.eje_ligero, ta.eje_pesado
+             ${COLUMNAS_TARIFA}
       FROM tarifas_casetas ta
       JOIN tramos_casetas t ON t.id = ta.tramo_id
       WHERE ta.id = @id`)
@@ -536,33 +553,21 @@ export async function existeTramo(id: number): Promise<boolean> {
 }
 
 function inputsTarifa(req: sql.Request, d: TarifaUpdate): sql.Request {
+  req.input('desde', sql.Date, d.vigente_desde)
+  for (const c of CATEGORIAS) req.input(c, sql.Decimal(10, 2), d[c])
   return req
-    .input('desde',      sql.Date,           d.vigente_desde)
-    .input('moto',       sql.Decimal(10, 2), d.moto)
-    .input('auto',       sql.Decimal(10, 2), d.auto)
-    .input('autobus',    sql.Decimal(10, 2), d.autobus)
-    .input('camion_2_4', sql.Decimal(10, 2), d.camion_2_4)
-    .input('camion_5_6', sql.Decimal(10, 2), d.camion_5_6)
-    .input('camion_7_9', sql.Decimal(10, 2), d.camion_7_9)
-    .input('eje_ligero', sql.Decimal(10, 2), d.eje_ligero)
-    .input('eje_pesado', sql.Decimal(10, 2), d.eje_pesado)
 }
 
 const INSERT_TARIFA = `
-  INSERT INTO tarifas_casetas
-    (tramo_id, vigente_desde, moto, auto, autobus, camion_2_4, camion_5_6, camion_7_9,
-     eje_ligero, eje_pesado)
+  INSERT INTO tarifas_casetas (tramo_id, vigente_desde, ${CATEGORIAS.join(', ')})
   OUTPUT INSERTED.id
-  VALUES (@tramo, @desde, @moto, @auto, @autobus, @camion_2_4, @camion_5_6, @camion_7_9,
-          @eje_ligero, @eje_pesado)`
+  VALUES (@tramo, @desde, ${CATEGORIAS.map((c) => `@${c}`).join(', ')})`
 
 export async function actualizarTarifa(id: number, d: TarifaUpdate): Promise<void> {
   const pool = await getPool()
   await inputsTarifa(pool.request().input('id', sql.Int, id), d).query(`
     UPDATE tarifas_casetas
-    SET vigente_desde = @desde, moto = @moto, auto = @auto, autobus = @autobus,
-        camion_2_4 = @camion_2_4, camion_5_6 = @camion_5_6, camion_7_9 = @camion_7_9,
-        eje_ligero = @eje_ligero, eje_pesado = @eje_pesado
+    SET vigente_desde = @desde, ${CATEGORIAS.map((c) => `${c} = @${c}`).join(', ')}
     WHERE id = @id`)
 }
 

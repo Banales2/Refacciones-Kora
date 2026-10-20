@@ -1,4 +1,5 @@
 import * as repo from '../repositories/facturasCasetasRepo'
+import { CATEGORIAS } from '../repositories/facturasCasetasRepo'
 import type {
   CandidatoDeAjuste, Categoria, CruceRow, FacturaCasetas, HistorialTag, TarifaTramo, TarifaVigente,
 } from '../repositories/facturasCasetasRepo'
@@ -55,33 +56,54 @@ const TOLERANCIA = 0.01
 
 /**
  * La clase de PASE y las clasificaciones del operador que puede ser. Sale de la
- * factura de septiembre de 2026 contra las tarifas de IDEAL: la clase es el
- * número de ejes, con 1 para el automóvil. De 2 a 4 no se distingue el autobús
- * del camión, así que vale cualquiera de los dos.
+ * factura de septiembre de 2026 contra las tarifas: la clase es el número de
+ * ejes, con 1 para el automóvil. De 2 a 4 no se distingue el autobús del
+ * camión, así que vale cualquiera de los dos.
  *
- * Las casetas EASYTRIP cobran clase 1 a los tractocamiones; si se cargan sus
- * tarifas, esta tabla no les sirve.
+ * Las casetas EASYTRIP mandan clase 1 a todo, también a los tráileres: para
+ * ellas (`ignora_clase`) se compara contra todas las clasificaciones y el
+ * importe dice cuántos ejes se cobraron.
  */
 const CATEGORIAS_DE_CLASE: Record<number, Categoria[]> = {
   1: ['auto'],
-  2: ['autobus', 'camion_2_4'], 3: ['autobus', 'camion_2_4'], 4: ['autobus', 'camion_2_4'],
-  5: ['camion_5_6'], 6: ['camion_5_6'],
-  7: ['camion_7_9'], 8: ['camion_7_9'], 9: ['camion_7_9'],
+  2: ['autobus_2', 'camion_2'], 3: ['autobus_3', 'camion_3'], 4: ['autobus_4', 'camion_4'],
+  5: ['camion_5'], 6: ['camion_6'], 7: ['camion_7'], 8: ['camion_8'], 9: ['camion_9'],
 }
 
-const NOMBRE_CATEGORIA: Record<Categoria, string> = {
-  moto: 'motocicleta',
-  auto: 'automóvil',
-  autobus: 'autobús 2-4 ejes',
-  camion_2_4: 'camión 2-4 ejes',
-  camion_5_6: 'camión 5-6 ejes',
-  camion_7_9: 'camión 7-9 ejes',
-  eje_ligero: 'eje excedente ligero',
-  eje_pesado: 'eje excedente pesado',
+/** Lo que puede cobrarse a un vehículo: todo menos los ejes excedentes, que se suman aparte. */
+const VEHICULOS = CATEGORIAS.filter((c) => !c.startsWith('eje_'))
+
+/**
+ * Las clasificaciones contra las que se compara un cruce: las de su clase, o
+ * todas si la caseta no manda la clase real.
+ */
+function categoriasDe(t: TarifaTramo, clase: number): readonly Categoria[] {
+  return t.ignora_clase ? VEHICULOS : CATEGORIAS_DE_CLASE[clase] ?? []
 }
 
-/** Las clasificaciones entre las que un ajuste puede corregir, de menor a mayor. */
-const ESCALA: Categoria[] = ['auto', 'autobus', 'camion_2_4', 'camion_5_6', 'camion_7_9']
+/**
+ * Cómo se dice un grupo de clasificaciones: los ejes seguidos se juntan, como
+ * los agrupa el operador. [camion_4, camion_5] → "camión 4-5 ejes".
+ */
+function nombreGrupo(cats: readonly Categoria[]): string {
+  const partes: string[] = []
+  if (cats.includes('moto')) partes.push('motocicleta')
+  if (cats.includes('auto')) partes.push('automóvil')
+  for (const [prefijo, nombre] of [['autobus_', 'autobús'], ['camion_', 'camión']] as const) {
+    const ejes = cats.filter((c) => c.startsWith(prefijo)).map((c) => Number(c.slice(prefijo.length)))
+      .sort((x, y) => x - y)
+    let i = 0
+    while (i < ejes.length) {
+      let j = i
+      while (j + 1 < ejes.length && ejes[j + 1] === ejes[j] + 1) j++
+      partes.push(`${nombre} ${ejes[i] === ejes[j] ? ejes[i] : `${ejes[i]}-${ejes[j]}`} ejes`)
+      i = j + 1
+    }
+  }
+  if (cats.includes('eje_ligero')) partes.push('eje excedente ligero')
+  if (cats.includes('eje_pesado')) partes.push('eje excedente pesado')
+  return partes.join(' o ')
+}
 
 export async function getAll(p: {
   page: number; pageSize: number; search?: string; por_revisar?: boolean
@@ -315,53 +337,62 @@ function vigentes(porCaseta: Map<string, TarifaTramo[]>, c: CruceRow): TarifaTra
 
 /** Los importes válidos para la clase del cruce: un tramo y una clasificación cada uno. */
 function validas(ts: TarifaTramo[], clase: number) {
-  return ts.flatMap((t) => (CATEGORIAS_DE_CLASE[clase] ?? []).flatMap((cat) =>
+  return ts.flatMap((t) => categoriasDe(t, clase).flatMap((cat) =>
     t[cat] === null ? [] : [{ tramo: t.tramo, categoria: cat, total: Number(t[cat]) }]))
 }
 
 /**
+ * Los importes distintos de un tramo, de menor a mayor, cada uno con las
+ * clasificaciones que lo pagan. Es la escala por la que un ajuste sube: de un
+ * importe a otro, sin importar cómo agrupa los ejes el operador.
+ */
+function escalones(t: TarifaTramo) {
+  const porImporte = new Map<number, Categoria[]>()
+  for (const c of VEHICULOS) {
+    const v = t[c]
+    if (v === null) continue
+    porImporte.set(Number(v), [...(porImporte.get(Number(v)) ?? []), c])
+  }
+  return [...porImporte].map(([total, cats]) => ({ total, cats })).sort((a, b) => a.total - b.total)
+}
+
+/**
  * El cruce que un ajuste corrige: el más cercano en el tiempo cuyo importe es
- * la tarifa de una clasificación de algún tramo, y que con el ajuste sube
- * exacto a la tarifa de una clasificación mayor del mismo tramo.
+ * un escalón de algún tramo, y que con el ajuste sube exacto a otro escalón
+ * mayor del mismo tramo.
  */
 function buscarCorreccion(candidatos: CandidatoDeAjuste[], ts: TarifaTramo[], total: number) {
   for (const o of candidatos) {
     for (const t of ts) {
-      for (let i = 0; i < ESCALA.length; i++) {
-        const de = t[ESCALA[i]]
-        if (de === null || !iguales(Number(de), o.total)) continue
-        for (let j = i + 1; j < ESCALA.length; j++) {
-          const a = t[ESCALA[j]]
-          if (a !== null && iguales(Number(a) - Number(de), total)) {
-            return { original: o, tarifa: t, de: ESCALA[i], a: ESCALA[j] }
-          }
-        }
-      }
+      const es = escalones(t)
+      const de = es.find((e) => iguales(e.total, o.total))
+      if (!de) continue
+      const a = es.find((e) => e.total > de.total && iguales(e.total - de.total, total))
+      if (a) return { original: o, tarifa: t, de: nombreGrupo(de.cats), a: nombreGrupo(a.cats), suma: a.total }
     }
   }
   return null
 }
 
 /**
- * Lo que un ajuste puede ser: la diferencia entre dos clasificaciones de un
- * tramo (el carril leyó menos ejes y lo corrigieron) o el cobro de un eje
- * excedente. Vacío si no cuadra con nada.
+ * Lo que un ajuste puede ser: la diferencia entre dos escalones de un tramo
+ * (el carril leyó menos ejes y lo corrigieron) o el cobro de un eje excedente.
+ * Vacío si no cuadra con nada.
  */
 function explicarAjuste(ts: TarifaTramo[], total: number): string[] {
   const r: string[] = []
   for (const t of ts) {
-    for (let i = 0; i < ESCALA.length; i++) {
-      for (let j = i + 1; j < ESCALA.length; j++) {
-        const de = t[ESCALA[i]]
-        const a = t[ESCALA[j]]
-        if (de === null || a === null || !iguales(Number(a) - Number(de), total)) continue
-        r.push(`corrección de ${NOMBRE_CATEGORIA[ESCALA[i]]} (${pesos(Number(de))}) a ` +
-          `${NOMBRE_CATEGORIA[ESCALA[j]]} (${pesos(Number(a))}) en ${t.tramo}`)
+    const es = escalones(t)
+    for (let i = 0; i < es.length; i++) {
+      for (let j = i + 1; j < es.length; j++) {
+        if (!iguales(es[j].total - es[i].total, total)) continue
+        r.push(`corrección de ${nombreGrupo(es[i].cats)} (${pesos(es[i].total)}) a ` +
+          `${nombreGrupo(es[j].cats)} (${pesos(es[j].total)}) en ${t.tramo}`)
       }
     }
     for (const eje of ['eje_ligero', 'eje_pesado'] as const) {
       const v = t[eje]
-      if (v !== null && iguales(Number(v), total)) r.push(`${NOMBRE_CATEGORIA[eje]} en ${t.tramo}`)
+      if (v !== null && iguales(Number(v), total)) r.push(`${nombreGrupo([eje])} en ${t.tramo}`)
     }
   }
   return r
@@ -450,6 +481,7 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
   // ningún tramo que la caseta cobra, es un hallazgo; si es más caro que todos,
   // lo de más es contra el más caro, porque cualquiera de los válidos pudo ser.
   const tramoDe = new Map<number, string[]>()
+  const ejesDe = new Map<number, string>()
   const sinTarifa = new Map<string, CasetaSinTarifa>()
   for (const c of cruces) {
     if (esAjuste(c)) continue
@@ -467,16 +499,23 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
     const coinciden = vs.filter((v) => iguales(v.total, c.total))
     if (coinciden.length > 0) {
       tramoDe.set(c.renglon, [...new Set(coinciden.map((v) => v.tramo))])
+      // Sin la clase real, el importe es lo único que dice cuántos ejes se
+      // cobraron: se enseña junto al tramo.
+      if (ts[0].ignora_clase) {
+        ejesDe.set(c.renglon, nombreGrupo([...new Set(coinciden.map((v) => v.categoria))]))
+      }
       continue
     }
     const maximo = Math.max(...vs.map((v) => v.total))
     const minimo = Math.min(...vs.map((v) => v.total))
     const cercana = [...vs].sort((a, b) => Math.abs(a.total - c.total) - Math.abs(b.total - c.total))[0]
-    const clases = [...new Set(vs.map((v) => NOMBRE_CATEGORIA[v.categoria]))].join(' o ')
+    const clases = nombreGrupo([...new Set(vs.map((v) => v.categoria))])
     agregar({
       tipo: 'fuera_de_tarifa', renglones: [c.renglon], tag: c.tag, vehiculo: c.vehiculo,
       caseta: c.descripcion, monto: c.total > maximo ? c.total - maximo : 0,
-      detalle: `Clase ${c.clase} (${clases}): ningún tramo que cobra esta caseta cuesta ` +
+      detalle: (ts[0].ignora_clase
+        ? 'Esta caseta no manda la clase real: ningún tramo que cobra cuesta '
+        : `Clase ${c.clase} (${clases}): ningún tramo que cobra esta caseta cuesta `) +
         `${pesos(c.total)}. Lo más cercano: ${cercana.tramo}, ${pesos(cercana.total)}.` +
         (c.total < minimo ? ' Cobró menos que cualquier tarifa: revisa que la tarifa cargada sea la de esa fecha.' : ''),
     })
@@ -558,7 +597,8 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
         // reclamar. Si da más, lo de encima es cobro de más. Sin tarifa, contra
         // lo más que el tag ha pagado en esa clase en esa caseta.
         const suma = aCentavos(o.total + c.total)
-        const h = habitual.get(`${c.tag}|${c.caseta}`)
+        // Donde la clase no es la real, la "clase habitual" tampoco dice nada.
+        const h = ts[0]?.ignora_clase ? undefined : habitual.get(`${c.tag}|${c.caseta}`)
         let esperado: number | null = null
         let segun: CorreccionDeClase['segun'] = null
         if (h && porTarifa) {
@@ -571,8 +611,8 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
         const misma = o.factura_id === factura.id
         const folio = `${o.serie ? `${o.serie}-` : ''}${o.folio}`
         const cobro = porTarifa
-          ? `se cobró como ${NOMBRE_CATEGORIA[porTarifa.de]} (${pesos(o.total)}) y con el ajuste queda en ` +
-            `${pesos(suma)}, la tarifa de ${NOMBRE_CATEGORIA[porTarifa.a]} en ${porTarifa.tarifa.tramo}.`
+          ? `se cobró como ${porTarifa.de} (${pesos(o.total)}) y con el ajuste queda en ` +
+            `${pesos(suma)}, la tarifa de ${porTarifa.a} en ${porTarifa.tarifa.tramo}.`
           : `se cobró en clase ${o.clase} (${pesos(o.total)}) y con el ajuste queda en ${pesos(suma)}.`
         const cuadra = esperado !== null && (iguales(suma, esperado) || suma < esperado)
         agregar({
@@ -594,8 +634,8 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
             factura_id: o.factura_id, serie: o.serie, folio: o.folio, misma_factura: misma,
             renglon: o.renglon_original, fecha_hora: o.fecha_hora, clase: o.clase, total: o.total,
             tramo: porTarifa?.tarifa.tramo ?? null,
-            de: porTarifa ? NOMBRE_CATEGORIA[porTarifa.de] : null,
-            a: porTarifa ? NOMBRE_CATEGORIA[porTarifa.a] : null,
+            de: porTarifa?.de ?? null,
+            a: porTarifa?.a ?? null,
             suma, clase_habitual: h?.clase ?? null, esperado, segun,
           },
         })
@@ -686,7 +726,11 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
 
   return {
     factura,
-    cruces: cruces.map((c) => ({ ...c, tramo: tramoDe.get(c.renglon)?.join(' / ') ?? null })),
+    cruces: cruces.map((c) => {
+      const tramo = tramoDe.get(c.renglon)?.join(' / ') ?? null
+      const ejes = ejesDe.get(c.renglon)
+      return { ...c, tramo: tramo && ejes ? `${tramo} · ${ejes}` : tramo }
+    }),
     hallazgos,
     por_unidad: resumenPorUnidad(cruces),
     sin_tarifa: [...sinTarifa.values()]
@@ -743,11 +787,15 @@ export interface ImporteCobrado {
   cruces: number
   /** Los tramos que cuestan eso para esa clase; vacío = fuera de tarifa. */
   tramos: string[]
+  /** En las casetas sin clase real: cuántos ejes dice el importe que se cobraron. */
+  ejes: string | null
 }
 
 export interface TarifasDeCaseta {
   caseta: string
   nombre: string | null
+  /** La caseta no manda la clase real (EASYTRIP): se compara contra todas. */
+  ignora_clase: boolean
   cruces: number
   total: number
   /** Cada tramo con su tarifa de hoy y las casetas que lo cobran. */
@@ -768,9 +816,11 @@ export async function tarifasPorCaseta(): Promise<TarifasDeCaseta[]> {
   return casetas
     .map((k) => {
       const ts = tarifas.filter((t) => t.caseta === k.caseta)
+      const conClase = ts.map((t) => ({ ...t, ignora_clase: k.ignora_clase }))
       return {
         caseta: k.caseta,
         nombre: k.nombre,
+        ignora_clase: k.ignora_clase,
         cruces: k.cruces,
         total: aCentavos(Number(k.total)),
         tramos: ts.map(({ caseta: _, ...t }) => ({
@@ -779,13 +829,18 @@ export async function tarifasPorCaseta(): Promise<TarifasDeCaseta[]> {
         })),
         cobrados: ts.length === 0 ? [] : cobrados
           .filter((c) => c.caseta === k.caseta)
-          .map((c) => ({
-            clase: c.clase,
-            total: Number(c.total),
-            cruces: c.n,
-            tramos: [...new Set(validas(ts, c.clase)
-              .filter((v) => iguales(v.total, Number(c.total))).map((v) => v.tramo))],
-          }))
+          .map((c) => {
+            const coinciden = validas(conClase, c.clase).filter((v) => iguales(v.total, Number(c.total)))
+            return {
+              clase: c.clase,
+              total: Number(c.total),
+              cruces: c.n,
+              tramos: [...new Set(coinciden.map((v) => v.tramo))],
+              ejes: k.ignora_clase && coinciden.length > 0
+                ? nombreGrupo([...new Set(coinciden.map((v) => v.categoria))])
+                : null,
+            }
+          })
           .sort((a, b) => a.clase - b.clase || a.total - b.total),
       }
     })
@@ -827,6 +882,10 @@ export async function crearTramo(data: TramoCreate) {
     }
     throw err
   }
+}
+
+export async function guardarIgnoraClase(caseta: string, ignora: boolean): Promise<void> {
+  await repo.guardarIgnoraClase(caseta, ignora)
 }
 
 // ── Los tags ─────────────────────────────────────────────────────────────────

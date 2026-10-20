@@ -92,17 +92,23 @@ const TarifaValoresSchema = z.object({
   vigente_desde: fecha,
   moto: tarifa,
   auto: tarifa,
-  autobus: tarifa,
-  camion_2_4: tarifa,
-  camion_5_6: tarifa,
-  camion_7_9: tarifa,
+  autobus_2: tarifa,
+  autobus_3: tarifa,
+  autobus_4: tarifa,
+  camion_2: tarifa,
+  camion_3: tarifa,
+  camion_4: tarifa,
+  camion_5: tarifa,
+  camion_6: tarifa,
+  camion_7: tarifa,
+  camion_8: tarifa,
+  camion_9: tarifa,
   eje_ligero: tarifa,
   eje_pesado: tarifa,
 })
 
-const algunaTarifa = (v: z.infer<typeof TarifaValoresSchema>) =>
-  [v.moto, v.auto, v.autobus, v.camion_2_4, v.camion_5_6, v.camion_7_9, v.eje_ligero, v.eje_pesado]
-    .some((x) => x !== null)
+const algunaTarifa = ({ vigente_desde: _, ...v }: z.infer<typeof TarifaValoresSchema>) =>
+  Object.values(v).some((x) => x !== null)
 const SIN_TARIFAS = { message: 'Captura al menos una tarifa' }
 
 /** Corregir una vigencia que ya existe: sus precios o su fecha. */
@@ -121,6 +127,9 @@ export const TramoCreateSchema = TarifaValoresSchema
     casetas: z.array(z.string().trim().min(1).max(10)).min(1).max(20),
   })
   .refine(algunaTarifa, SIN_TARIFAS)
+
+/** Marcar que una caseta no manda la clase real (EASYTRIP manda 1 a todo). */
+export const CasetaPaseUpdateSchema = z.object({ ignora_clase: z.boolean() })
 
 export type TarifaUpdate = z.infer<typeof TarifaUpdateSchema>
 export type TarifaCreate = z.infer<typeof TarifaCreateSchema>

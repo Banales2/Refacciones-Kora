@@ -235,10 +235,17 @@ export interface TarifaTramo {
   vigente_desde: string
   moto:          number | null
   auto:          number | null
-  autobus:       number | null
-  camion_2_4:    number | null
-  camion_5_6:    number | null
-  camion_7_9:    number | null
+  autobus_2:     number | null
+  autobus_3:     number | null
+  autobus_4:     number | null
+  camion_2:      number | null
+  camion_3:      number | null
+  camion_4:      number | null
+  camion_5:      number | null
+  camion_6:      number | null
+  camion_7:      number | null
+  camion_8:      number | null
+  camion_9:      number | null
   eje_ligero:    number | null
   eje_pesado:    number | null
 }
@@ -249,11 +256,15 @@ export interface ImporteCobrado {
   cruces: number
   /** Los tramos que cuestan eso para esa clase; vacío = fuera de tarifa. */
   tramos: string[]
+  /** En las casetas sin clase real: cuántos ejes dice el importe que se cobraron. */
+  ejes:   string | null
 }
 
 export interface TarifasDeCaseta {
   caseta:   string
   nombre:   string | null
+  /** La caseta no manda la clase real (EASYTRIP manda 1 a todo). */
+  ignora_clase: boolean
   cruces:   number
   total:    number
   tramos:   TarifaTramo[]
@@ -273,10 +284,17 @@ export interface ValoresTarifa {
   vigente_desde: string
   moto:          number | null
   auto:          number | null
-  autobus:       number | null
-  camion_2_4:    number | null
-  camion_5_6:    number | null
-  camion_7_9:    number | null
+  autobus_2:     number | null
+  autobus_3:     number | null
+  autobus_4:     number | null
+  camion_2:      number | null
+  camion_3:      number | null
+  camion_4:      number | null
+  camion_5:      number | null
+  camion_6:      number | null
+  camion_7:      number | null
+  camion_8:      number | null
+  camion_9:      number | null
   eje_ligero:    number | null
   eje_pesado:    number | null
 }
@@ -314,6 +332,16 @@ export function useCrearTramoCaseta() {
   return useMutation({
     mutationFn: (body: ValoresTarifa & { autopista: string; nombre: string; casetas: string[] }) =>
       api.post<{ data: { tramo_id: number; tarifa_id: number } }>('/tramos-casetas', body),
+    onSuccess: () => invalidarTarifas(qc),
+  })
+}
+
+/** Marca que una caseta no manda la clase real: se compara contra todas las clasificaciones. */
+export function useIgnoraClaseCaseta() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ caseta, ignora_clase }: { caseta: string; ignora_clase: boolean }) =>
+      api.put<{ data: { caseta: string; ignora_clase: boolean } }>(`/casetas-pase/${caseta}`, { ignora_clase }),
     onSuccess: () => invalidarTarifas(qc),
   })
 }

@@ -83,13 +83,28 @@ puede llevar doble caja ese día; quien lo sabe es quien revisa.
 
 ## Las tarifas
 
-Ver `db/migrations/071_tarifas_de_casetas.sql`.
+Ver `db/migrations/071_tarifas_de_casetas.sql` y `072_tarifas_por_eje.sql`.
 
 ```
 tramos_casetas         autopista + tramo, como lo publica el operador
-  tarifas_casetas      tramo + vigencia -> tarifa por clasificación (con IVA)
+  tarifas_casetas      tramo + vigencia -> tarifa por número de ejes (con IVA)
 casetas_tramos         código de caseta de PASE -> tramos que puede cobrar
+casetas_pase           código de caseta -> ignora_clase (EASYTRIP)
 ```
+
+**Una columna por número de ejes** (moto, auto, autobús 2-4, camión 2-9, eje
+excedente ligero y pesado), porque cada operador agrupa a su modo: IDEAL cobra
+camión 2-4 / 5-6 / 7-9 y Jala - Compostela - Las Varas 2-3 / 4-5 / 6-9. Al
+capturar una tabla agrupada se teclea el primero del grupo y "Rellenar hacia la
+derecha" copia el resto.
+
+**Las casetas EASYTRIP no mandan la clase**: en el XML todo cruce de Amado
+Nervo (581) y Compostela EASYTRIP (582) viene en clase 1, sea un auto o un
+tráiler. Esas casetas se marcan con `ignora_clase` (un switch en la pestaña
+Tarifas, solo admin) y su importe se compara contra todas las clasificaciones:
+el importe es lo que dice cuántos ejes se cobraron, y sale junto al tramo
+("Jala - Las Varas · camión 4-5 ejes"). En ellas no se usa la clase habitual
+del tag para revisar ajustes.
 
 **La tarifa es del tramo, no de la caseta.** En un sistema cerrado se paga
 según por dónde se entró: en La Peñita un camión de 5 ejes paga $193 (Capomo →
@@ -136,9 +151,8 @@ Si no se encuentra el original (todavía no se importa la factura donde vino),
 el ajuste dice con qué diferencias de tarifas cuadra, sin monto en $0.
 
 **La clase de PASE es el número de ejes**, con 1 para el automóvil (sale de
-cruzar septiembre contra las tarifas): 1 automóvil, 2-4 autobús o camión 2-4
-ejes, 5-6 camión 5-6, 7-9 camión 7-9. Las casetas EASYTRIP no siguen esta
-regla (cobran clase 1 a los tractocamiones); si se cargan, hay que revisarla.
+cruzar septiembre contra las tarifas); de 2 a 4 puede ser autobús o camión.
+Salvo en las casetas EASYTRIP, ver arriba.
 
 **Vigencia.** Cada aumento es una fila nueva con su fecha; un cruce se revisa
 contra la tarifa vigente el día que cruzó. La primera tanda se cargó con
@@ -151,8 +165,11 @@ se lea como que todo cuadró.
 Primera tanda (sitio de IDEAL, consultado el 2026-10-19): Guadalajara - Tepic
 (Arenal 155, Plan de Barrancas 156, Sta. Ma. del Oro 157, Chapala 325, Santa
 Cecilia 405) y Las Varas - Vallarta (La Peñita 406, Vallarta 468, Florida 469,
-Bucerías Aux. 1 520). Con la factura de septiembre explica 253 de 255 cruces;
-los otros dos son Arenal clase 3-4 a $278 contra $287 publicados.
+Bucerías Aux. 1 520). Segunda tanda (072): Jala - Compostela - Las Varas,
+tabla del operador vigente desde el 13 de abril de 2026 (Amado Nervo y
+Compostela EASYTRIP). Con la factura de septiembre las dos explican 301 de 303
+cruces; los otros dos son Arenal camión 2-4 a $278, que IDEAL publica en $287
+y casetas.com.mx en $278: hay que corregirla.
 
 ### Por qué la clase se compara así
 
