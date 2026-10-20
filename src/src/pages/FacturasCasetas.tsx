@@ -35,7 +35,7 @@ import {
   useFacturasCasetas, useImportarFacturaCasetas, useReabrirFacturaCasetas,
   useRevisarFacturaCasetas, useTagsCasetas, useTarifasCasetas, useActualizarTarifaCaseta,
   useCrearTarifaCaseta, useCrearTramoCaseta, useIgnoraClaseCaseta, useLigarTramoCaseta,
-  useTramosCasetas, useCrucesDeImporte,
+  useTramosCasetas, useCrucesDeImporte, useHistorialEnCaseta,
 } from '../hooks/useFacturasCasetas'
 import type {
   CasetaSinTarifa, CorreccionDeClase, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas,
@@ -43,6 +43,7 @@ import type {
 } from '../hooks/useFacturasCasetas'
 import { fetchTodosLosVehiculos, useVehiculos } from '../hooks/useVehiculos'
 import { exportTagsCasetasToPdf } from '../lib/exportTagsCasetas'
+import { exportHistorialCasetaToPdf } from '../lib/exportHistorialCaseta'
 import { FechaInput } from '../components/FechaInput'
 import { usePermisos } from '../hooks/usePermisos'
 import { ApiError } from '../lib/api'
@@ -556,8 +557,11 @@ function ComparaAjuste({
 }
 
 function TarjetaHallazgo({
-  h, cruces, onAbrir,
-}: { h: Hallazgo; cruces: CruceCaseta[]; onAbrir: (id: number) => void }) {
+  h, cruces, onAbrir, onHistorial,
+}: {
+  h: Hallazgo; cruces: CruceCaseta[]; onAbrir: (id: number) => void
+  onHistorial: (c: CruceCaseta) => void
+}) {
   return (
     <Card withBorder padding="sm" radius="md">
       <Group justify="space-between" align="flex-start" wrap="nowrap">
@@ -580,6 +584,13 @@ function TarjetaHallazgo({
           {h.tipo === 'doble_cobro' && cruces.length > 1 && <ComparaDobleCobro cruces={cruces} />}
           {h.corrige && cruces[0] && <ComparaAjuste ajuste={cruces[0]} k={h.corrige} onAbrir={onAbrir} />}
           {h.recorrido && <PasosRecorrido r={h.recorrido} onAbrir={onAbrir} />}
+          {h.caseta && cruces[0] && (
+            <Group justify="flex-end">
+              <Button size="compact-xs" variant="subtle" onClick={() => onHistorial(cruces[0])}>
+                Historial del tag en esta caseta
+              </Button>
+            </Group>
+          )}
           {h.ajuste_en && (
             <Group justify="flex-end">
               <Button
@@ -628,15 +639,15 @@ function SinTarifa({ casetas }: { casetas: CasetaSinTarifa[] }) {
 }
 
 function Hallazgos({
-  hallazgos, cruces, sinTarifa, onAbrir,
+  hallazgos, cruces, sinTarifa, onAbrir, onHistorial,
 }: {
   hallazgos: Hallazgo[]; cruces: CruceCaseta[]; sinTarifa: CasetaSinTarifa[]
-  onAbrir: (id: number) => void
+  onAbrir: (id: number) => void; onHistorial: (c: CruceCaseta) => void
 }) {
   const porRenglon = new Map(cruces.map((c) => [c.renglon, c]))
   const tarjeta = (h: Hallazgo, key: string) => (
     <TarjetaHallazgo
-      key={key} h={h} onAbrir={onAbrir}
+      key={key} h={h} onAbrir={onAbrir} onHistorial={onHistorial}
       cruces={h.renglones.flatMap((r) => porRenglon.get(r) ?? [])}
     />
   )
@@ -901,6 +912,164 @@ function Recorridos({
   )
 }
 
+/** Qué historial abrir: un tag en una caseta, y el cruce que se está revisando. */
+type ConsultaHistorial = {
+  tag: string
+  caseta: string
+  resaltar: { factura_id: number; renglon: number } | null
+}
+
+/**
+ * Todo lo que un tag ha pagado en una caseta, factura por factura: la
+ * evidencia para PASE. Arriba, cada importe con sus fechas y lo que pagaron
+ * los demás tags ahí (si todos cambiaron desde una fecha, fue un aumento; si
+ * solo este, un cobro raro). Abajo, cruce por cruce con folio y partida, y
+ * cuánto cambió contra la vez anterior. Se exporta a PDF para mandarlo.
+ */
+function HistorialModal({
+  consulta, onClose, onAbrir,
+}: { consulta: ConsultaHistorial | null; onClose: () => void; onAbrir: (id: number) => void }) {
+  const { data, isLoading, isError } = useHistorialEnCaseta(
+    consulta && { tag: consulta.tag, caseta: consulta.caseta })
+  const [exportando, setExportando] = useState(false)
+  const h = data?.data
+  const r = consulta?.resaltar ?? null
+  const esElReclamado = (p: { factura_id: number; renglon: number }) =>
+    !!r && p.factura_id === r.factura_id && p.renglon === r.renglon
+  const importeReclamado = h?.pasos.find(esElReclamado)?.total
+  const tarifaDe = (tramos: string[], ejes: string | null = null) =>
+    tramos.length > 0
+      ? <Text size="xs">{tramos.join(' / ')}{ejes ? ` · ${ejes}` : ''}</Text>
+      : <Text size="xs" c={h?.con_tarifa ? 'red' : 'dimmed'} fw={h?.con_tarifa ? 700 : undefined}>
+          {h?.con_tarifa ? 'Fuera de tarifa' : 'Sin tarifa cargada'}
+        </Text>
+
+  async function exportar() {
+    if (!h) return
+    setExportando(true)
+    try { await exportHistorialCasetaToPdf(h, r) } finally { setExportando(false) }
+  }
+
+  let anterior: number | null = null
+  return (
+    <Modal
+      opened={consulta !== null} onClose={onClose} size="xl"
+      title={<Text fw={600}>
+        {h ? `${h.vehiculo ?? 'Sin unidad'} en ${(h.nombre ?? h.caseta).replace(/^PEAJE /i, '')}` : 'Historial'}
+      </Text>}
+    >
+      {isError ? <Alert color="red">No se pudo cargar el historial.</Alert>
+        : isLoading || !h ? <Center py="md"><Loader size="sm" /></Center> : (
+        <Stack gap="sm">
+          <Group justify="space-between" align="flex-start">
+            <Text size="xs" c="dimmed" style={{ flex: 1, minWidth: 220 }}>
+              Tag <Text span ff="monospace" size="xs">{h.tag}</Text>, caseta {h.caseta}. Todo sale de las
+              facturas de PASE: cada cruce con su folio y partida. Si los demás tags pasaron al mismo
+              importe desde una fecha, fue un aumento; si solo este, hay que pedirle a PASE que lo explique.
+            </Text>
+            <Button
+              size="compact-sm" variant="light" leftSection={<IconFileTypePdf size={14} />}
+              loading={exportando} onClick={exportar}
+            >
+              Exportar PDF
+            </Button>
+          </Group>
+
+          <Text size="sm" fw={600}>Lo que ha pagado aquí</Text>
+          <Table.ScrollContainer minWidth={640}>
+            <Table withTableBorder fz="xs" verticalSpacing={4}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th style={{ textAlign: 'right' }}>Importe</Table.Th>
+                  <Table.Th style={{ textAlign: 'center' }}>Clase</Table.Th>
+                  <Table.Th style={{ textAlign: 'center' }}>Veces</Table.Th>
+                  <Table.Th>Entre</Table.Th>
+                  <Table.Th>Tarifa</Table.Th>
+                  <Table.Th>Otros tags con ese importe</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {h.importes.map((i) => (
+                  <Table.Tr
+                    key={i.total}
+                    bg={importeReclamado !== undefined && Math.abs(i.total - importeReclamado) < 0.005
+                      ? 'var(--mantine-color-yellow-light)' : undefined}
+                  >
+                    <Table.Td style={{ textAlign: 'right' }} fw={700}>{formatMXN(i.total)}</Table.Td>
+                    <Table.Td style={{ textAlign: 'center' }}>{i.clases.join(', ')}</Table.Td>
+                    <Table.Td style={{ textAlign: 'center' }}>{i.cruces}</Table.Td>
+                    <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                      {i.cruces === 1
+                        ? formatFecha(i.primera.slice(0, 10))
+                        : `${formatFecha(i.primera.slice(0, 10))} – ${formatFecha(i.ultima.slice(0, 10))}`}
+                    </Table.Td>
+                    <Table.Td>{tarifaDe(i.tramos)}</Table.Td>
+                    <Table.Td>
+                      {i.otros
+                        ? `${i.otros.cruces} cruce${i.otros.cruces === 1 ? '' : 's'} de ${i.otros.tags} tag` +
+                          `${i.otros.tags === 1 ? '' : 's'}, ${formatFecha(i.otros.primera.slice(0, 10))} – ` +
+                          formatFecha(i.otros.ultima.slice(0, 10))
+                        : <Text size="xs" c="orange" fw={600}>Ninguno: solo este tag</Text>}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+
+          <Text size="sm" fw={600}>Cruce por cruce</Text>
+          <Table.ScrollContainer minWidth={640}>
+            <Table withTableBorder striped fz="xs" verticalSpacing={2}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Fecha</Table.Th>
+                  <Table.Th>Factura</Table.Th>
+                  <Table.Th style={{ textAlign: 'center' }}>Clase</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Importe</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Contra la anterior</Table.Th>
+                  <Table.Th>Tarifa</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {h.pasos.map((p) => {
+                  const cambio = !p.ajuste && anterior !== null && Math.abs(p.total - anterior) > 0.005
+                    ? p.total - anterior : null
+                  if (!p.ajuste) anterior = p.total
+                  return (
+                    <Table.Tr
+                      key={`${p.factura_id}|${p.renglon}`}
+                      bg={esElReclamado(p) ? 'var(--mantine-color-yellow-light)' : undefined}
+                    >
+                      <Table.Td style={{ whiteSpace: 'nowrap' }}>{fechaHora(p.fecha_hora)}</Table.Td>
+                      <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                        <Button size="compact-xs" variant="subtle" px={0} onClick={() => onAbrir(p.factura_id)}>
+                          {folioDe(p)}
+                        </Button>
+                        <Text span size="xs" c="dimmed"> p. {p.renglon}</Text>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'center' }}>
+                        {p.ajuste ? <Badge size="xs" color="yellow" variant="light">ajuste</Badge> : p.clase}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>{formatMXN(p.total)}</Table.Td>
+                      <Table.Td
+                        style={{ textAlign: 'right' }}
+                        c={cambio === null ? undefined : cambio > 0 ? 'red' : 'teal'} fw={cambio === null ? undefined : 700}
+                      >
+                        {cambio === null ? '' : `${cambio > 0 ? '+' : '−'}${formatMXN(Math.abs(cambio))}`}
+                      </Table.Td>
+                      <Table.Td>{p.ajuste ? '—' : tarifaDe(p.tramos, p.ejes)}</Table.Td>
+                    </Table.Tr>
+                  )
+                })}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Stack>
+      )}
+    </Modal>
+  )
+}
+
 function DetalleModal({
   facturaId, onClose, onAbrir,
 }: { facturaId: number | null; onClose: () => void; onAbrir: (id: number) => void }) {
@@ -909,6 +1078,7 @@ function DetalleModal({
   const revisar = useRevisarFacturaCasetas()
   const reabrir = useReabrirFacturaCasetas()
   const [nota, setNota] = useState('')
+  const [historial, setHistorial] = useState<ConsultaHistorial | null>(null)
 
   const d = data?.data
   const cobro = d ? sumar(d.hallazgos.filter((h) => h.grupo === 'cobro'), (h) => h.monto) : 0
@@ -972,7 +1142,12 @@ function DetalleModal({
               <Tabs.Tab value="recorridos">Recorridos</Tabs.Tab>
               <Tabs.Tab value="cruces">Cruces</Tabs.Tab>
             </Tabs.List>
-            <Tabs.Panel value="hallazgos" pt="md"><Hallazgos hallazgos={d.hallazgos} cruces={d.cruces} sinTarifa={d.sin_tarifa} onAbrir={abrirOtra} /></Tabs.Panel>
+            <Tabs.Panel value="hallazgos" pt="md"><Hallazgos
+              hallazgos={d.hallazgos} cruces={d.cruces} sinTarifa={d.sin_tarifa} onAbrir={abrirOtra}
+              onHistorial={(c) => setHistorial({
+                tag: c.tag, caseta: c.caseta, resaltar: { factura_id: d.factura.id, renglon: c.renglon },
+              })}
+            /></Tabs.Panel>
             <Tabs.Panel value="unidades" pt="md"><PorUnidad detalle={d} /></Tabs.Panel>
             <Tabs.Panel value="recorridos" pt="md"><Recorridos recorridos={d.recorridos} onAbrir={abrirOtra} /></Tabs.Panel>
             <Tabs.Panel value="cruces" pt="md"><Cruces cruces={d.cruces} /></Tabs.Panel>
@@ -1021,6 +1196,7 @@ function DetalleModal({
           )}
         </Stack>
       )}
+      <HistorialModal consulta={historial} onClose={() => setHistorial(null)} onAbrir={abrirOtra} />
     </Modal>
   )
 }
@@ -1733,6 +1909,7 @@ function RastreoModal({
 }: { rastreo: Rastreo | null; onClose: () => void; onAbrir: (id: number) => void }) {
   const q = rastreo && { caseta: rastreo.k.caseta, clase: rastreo.c.clase, total: rastreo.c.total }
   const { data, isLoading, isError } = useCrucesDeImporte(q)
+  const [historial, setHistorial] = useState<ConsultaHistorial | null>(null)
   const cruces = data?.data ?? []
   const k = rastreo?.k
   const c = rastreo?.c
@@ -1777,6 +1954,7 @@ function RastreoModal({
                     <Table.Th>Unidad</Table.Th>
                     <Table.Th>Carril</Table.Th>
                     <Table.Th>En su fecha</Table.Th>
+                    <Table.Th />
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -1810,6 +1988,16 @@ function RastreoModal({
                           </Text>
                         )}
                       </Table.Td>
+                      <Table.Td>
+                        <Button
+                          size="compact-xs" variant="light"
+                          onClick={() => setHistorial({
+                            tag: x.tag, caseta: k.caseta, resaltar: { factura_id: x.factura_id, renglon: x.renglon },
+                          })}
+                        >
+                          Historial
+                        </Button>
+                      </Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
@@ -1818,10 +2006,12 @@ function RastreoModal({
           )}
           <Text size="xs" c="dimmed">
             {cruces.length} cruce{cruces.length === 1 ? '' : 's'} · {formatMXN(sumar(cruces, (x) => x.total))}.
-            La factura se abre encima, sin cerrar esta lista.
+            La factura se abre encima, sin cerrar esta lista. “Historial” compara con las otras
+            veces que ese mismo tag pasó por aquí.
           </Text>
         </Stack>
       )}
+      <HistorialModal consulta={historial} onClose={() => setHistorial(null)} onAbrir={onAbrir} />
     </Modal>
   )
 }

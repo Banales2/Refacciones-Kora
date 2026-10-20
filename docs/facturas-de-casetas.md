@@ -319,6 +319,7 @@ ninguna, y solo a esos.
 | `POST /casetas-tramos` | **admin** | Liga un tramo que ya existe a una caseta |
 | `PUT /casetas-pase/{caseta}` | **admin** | Marca que la caseta no manda la clase real |
 | `GET /tags-casetas` | admin, editor, lector | Los tags, los sin unidad primero |
+| `GET /tags-casetas/{tag}/historial?caseta=` | admin, editor, lector | Todo lo que el tag pagó en esa caseta, por factura y por importe, con lo que pagaron los demás |
 | `POST /tags-casetas` | admin, editor | Registra un tag antes de que cruce |
 | `PUT /tags-casetas/{id}` | admin, editor | Cambia la unidad del tag |
 
@@ -344,6 +345,16 @@ unidad, carril y si cuadra **con la tarifa de su fecha**, porque la pestaña
 compara contra la de hoy y un aumento puede hacer ver fuera lo que en su día
 cuadraba. Trae un botón para buscar las tarifas de la caseta en internet: lo
 que se encuentre se corrige o se registra como aumento.
+
+**El historial del tag en la caseta** es la evidencia para PASE: no "confía",
+sino sus propias facturas. Se abre con "Historial" en el rastreo y con
+"Historial del tag en esta caseta" en cada hallazgo. Arriba, cada importe que
+el tag pagó ahí, cuántas veces, entre qué fechas y **cuántos cruces de otros
+tags** pagaron lo mismo: si todos pasan a un importe nuevo desde una fecha fue
+un aumento; si solo este tag lo pagó, una vez, es un cobro que PASE tiene que
+explicar. Abajo, cruce por cruce con folio, partida y cuánto cambió contra la
+vez anterior, con el cruce reclamado resaltado. Se exporta a PDF
+(`src/src/lib/exportHistorialCaseta.ts`) para mandarlo.
 
 **Editar tarifas es solo de admin**, porque deciden qué cuenta como cobro de más
 en todas las facturas, las ya revisadas incluidas. Hay dos acciones distintas

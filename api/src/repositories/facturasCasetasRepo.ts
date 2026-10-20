@@ -551,6 +551,66 @@ export async function crucesDeImporte(caseta: string, clase: number, total: numb
   return r.recordset as CruceDeImporte[]
 }
 
+/** Un cruce de un tag por una caseta, con su factura: la historia que se le enseña a PASE. */
+export interface CruceDelTag {
+  factura_id: number
+  serie: string | null
+  folio: string
+  periodo: string | null
+  renglon: number
+  fecha_hora: string
+  vehiculo: string | null
+  descripcion: string
+  carril: string | null
+  evento: string | null
+  clase: number
+  total: number
+}
+
+/** Todos los cruces de un tag por una caseta, ajustes incluidos, del más viejo al más nuevo. */
+export async function crucesDelTag(tag: string, caseta: string): Promise<CruceDelTag[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('tag', sql.NVarChar(30), tag)
+    .input('caseta', sql.NVarChar(10), caseta)
+    .query(`
+      SELECT c.factura_id, f.serie, f.folio, f.periodo, c.renglon,
+             CONVERT(varchar(19), c.fecha_hora, 126) AS fecha_hora,
+             CASE WHEN v.id IS NULL THEN NULL ELSE ${VEHICULO} END AS vehiculo,
+             c.descripcion, c.carril, c.evento, c.clase, c.total
+      FROM facturas_casetas_cruces c
+      JOIN facturas_casetas f ON f.id = c.factura_id
+      LEFT JOIN vehiculos v ON v.id = c.vehiculo_id
+      LEFT JOIN modelos mo  ON mo.id = v.modelo_id
+      WHERE c.tag = @tag AND c.caseta = @caseta
+      ORDER BY c.fecha_hora, f.fecha_emision, c.renglon`)
+  return r.recordset as CruceDelTag[]
+}
+
+/** Lo que pagaron los DEMÁS tags en una caseta, por importe: cuántos y cuándo. */
+export interface ImporteDeOtros {
+  total: number
+  cruces: number
+  tags: number
+  primera: string
+  ultima: string
+}
+
+export async function importesDeOtros(tag: string, caseta: string): Promise<ImporteDeOtros[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('tag', sql.NVarChar(30), tag)
+    .input('caseta', sql.NVarChar(10), caseta)
+    .query(`
+      SELECT total, COUNT(*) AS cruces, COUNT(DISTINCT tag) AS tags,
+             CONVERT(varchar(19), MIN(fecha_hora), 126) AS primera,
+             CONVERT(varchar(19), MAX(fecha_hora), 126) AS ultima
+      FROM facturas_casetas_cruces
+      WHERE caseta = @caseta AND tag <> @tag AND clase > 0 AND descripcion NOT LIKE 'AJUSTE%'
+      GROUP BY total`)
+  return r.recordset as ImporteDeOtros[]
+}
+
 /** Una caseta de PASE: las que tienen tarifa y las que han salido en una factura. */
 export interface CasetaRow {
   caseta: string

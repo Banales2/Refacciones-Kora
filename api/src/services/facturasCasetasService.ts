@@ -1,7 +1,7 @@
 import * as repo from '../repositories/facturasCasetasRepo'
 import { CATEGORIAS } from '../repositories/facturasCasetasRepo'
 import type {
-  CandidatoDeAjuste, Categoria, CruceDeImporte, CruceRow, CruceVecino, FacturaCasetas, HistorialTag, TarifaTramo,
+  CandidatoDeAjuste, Categoria, CruceDeImporte, CruceDelTag, CruceRow, CruceVecino, FacturaCasetas, HistorialTag, TarifaTramo,
   TarifaVigente,
 } from '../repositories/facturasCasetasRepo'
 import type {
@@ -382,7 +382,7 @@ function fechaDe(c: { fecha_hora: string }): string { return c.fecha_hora.slice(
 function minutos(a: { fecha_hora: string }, b: { fecha_hora: string }): number {
   return (Date.parse(`${b.fecha_hora}Z`) - Date.parse(`${a.fecha_hora}Z`)) / 60000
 }
-function esAjuste(c: CruceRow): boolean {
+function esAjuste(c: { clase: number; descripcion: string }): boolean {
   return c.clase === 0 || /^AJUSTE\b/i.test(c.descripcion)
 }
 function pesos(n: number): string { return `$${n.toFixed(2)}` }
@@ -1261,6 +1261,97 @@ export async function crucesDeImporte(caseta: string, clase: number, total: numb
       ...cercanas(vs, c.clase, Number(c.total), coinciden.length > 0),
     }
   })
+}
+
+/** Un cruce del tag en la caseta, contra la tarifa de su fecha. */
+export type PasoDelTag = CruceDelTag & {
+  ajuste: boolean
+  /** Los tramos que cuestan eso el día que cruzó; vacío = fuera de tarifa (o sin tarifa). */
+  tramos: string[]
+  /** En las casetas sin clase real: cuántos ejes dice el importe. */
+  ejes: string | null
+}
+
+/** Un importe que el tag pagó en la caseta: cuántas veces y entre qué fechas. */
+export interface ImporteDelTag {
+  total: number
+  clases: number[]
+  cruces: number
+  primera: string
+  ultima: string
+  /** Los tramos que cuestan eso (en alguna de sus fechas); vacío = fuera de tarifa. */
+  tramos: string[]
+  /** Lo que pagaron los demás tags ahí con ese mismo importe; null si ninguno. */
+  otros: { cruces: number; tags: number; primera: string; ultima: string } | null
+}
+
+export interface HistorialEnCaseta {
+  tag: string
+  vehiculo: string | null
+  caseta: string
+  nombre: string | null
+  /** Si la caseta tiene tarifa cargada: sin ella `tramos` siempre sale vacío. */
+  con_tarifa: boolean
+  pasos: PasoDelTag[]
+  /** Los importes que pagó (sin ajustes), del que pagó primero al más reciente. */
+  importes: ImporteDelTag[]
+}
+
+/**
+ * Todo lo que un tag ha pagado en una caseta, factura por factura. Es la
+ * evidencia para PASE: "este tag pagó $218 doce veces y desde el 2 de
+ * septiembre paga $219", con folio y partida de cada una, y si los demás tags
+ * también empezaron a pagar eso (un aumento) o solo este (un cobro raro).
+ */
+export async function historialEnCaseta(tag: string, caseta: string): Promise<HistorialEnCaseta> {
+  const [cs, ts, otros] = await Promise.all([
+    repo.crucesDelTag(tag, caseta), repo.tarifasDeCaseta(caseta), repo.importesDeOtros(tag, caseta),
+  ])
+  if (cs.length === 0) throw new NotFoundError('Cruce de ese tag en esa caseta')
+  const porCaseta = new Map([[caseta, ts]])
+  const pasos: PasoDelTag[] = cs.map((c) => {
+    const total = Number(c.total)
+    const ajuste = esAjuste(c)
+    const vs = ajuste ? [] : vigentes(porCaseta, { caseta, fecha_hora: c.fecha_hora })
+    const coinciden = validas(vs, c.clase).filter((v) => iguales(v.total, total))
+    return {
+      ...c,
+      total,
+      ajuste,
+      tramos: [...new Set(coinciden.map((v) => v.tramo))],
+      ejes: vs[0]?.ignora_clase && coinciden.length > 0
+        ? nombreGrupo([...new Set(coinciden.map((v) => v.categoria))])
+        : null,
+    }
+  })
+
+  const porImporte = new Map<number, PasoDelTag[]>()
+  for (const p of pasos) {
+    if (p.ajuste) continue
+    const k = aCentavos(p.total)
+    porImporte.set(k, [...(porImporte.get(k) ?? []), p])
+  }
+  const importes = [...porImporte].map(([total, ps]) => {
+    const o = otros.find((x) => iguales(Number(x.total), total))
+    return {
+      total,
+      clases: [...new Set(ps.map((p) => p.clase))].sort((a, b) => a - b),
+      cruces: ps.length,
+      primera: ps[0].fecha_hora,
+      ultima: ps[ps.length - 1].fecha_hora,
+      tramos: [...new Set(ps.flatMap((p) => p.tramos))],
+      otros: o ? { cruces: o.cruces, tags: o.tags, primera: o.primera, ultima: o.ultima } : null,
+    }
+  }).sort((a, b) => a.primera.localeCompare(b.primera))
+
+  return {
+    tag, caseta,
+    vehiculo: [...cs].reverse().find((c) => c.vehiculo)?.vehiculo ?? null,
+    nombre: cs[cs.length - 1].descripcion.replace(/^AJUSTE /i, 'PEAJE '),
+    con_tarifa: ts.length > 0,
+    pasos,
+    importes,
+  }
 }
 
 // Las tarifas se editan desde la pantalla. Corregir cambia la vigencia que ya

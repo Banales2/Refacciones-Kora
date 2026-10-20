@@ -325,6 +325,58 @@ export interface CruceCobrado {
   cercana_otra: TarifaCercana | null
 }
 
+/** Un cruce del tag en la caseta, con su factura, contra la tarifa de su fecha. */
+export interface PasoDelTag {
+  factura_id:  number
+  serie:       string | null
+  folio:       string
+  periodo:     string | null
+  renglon:     number
+  fecha_hora:  string
+  vehiculo:    string | null
+  descripcion: string
+  carril:      string | null
+  evento:      string | null
+  clase:       number
+  total:       number
+  ajuste:      boolean
+  /** Los tramos que cuestan eso el día que cruzó; vacío = fuera de tarifa (o sin tarifa). */
+  tramos:      string[]
+  ejes:        string | null
+}
+
+/** Un importe que el tag pagó en la caseta: cuántas veces y entre qué fechas. */
+export interface ImporteDelTag {
+  total:   number
+  clases:  number[]
+  cruces:  number
+  primera: string
+  ultima:  string
+  tramos:  string[]
+  /** Lo que pagaron los demás tags ahí con ese importe; null si ninguno. */
+  otros:   { cruces: number; tags: number; primera: string; ultima: string } | null
+}
+
+export interface HistorialEnCaseta {
+  tag:        string
+  vehiculo:   string | null
+  caseta:     string
+  nombre:     string | null
+  con_tarifa: boolean
+  pasos:      PasoDelTag[]
+  importes:   ImporteDelTag[]
+}
+
+/** Todo lo que un tag ha pagado en una caseta: la evidencia para PASE. */
+export function useHistorialEnCaseta(q: { tag: string; caseta: string } | null) {
+  return useQuery({
+    queryKey: ['tags-casetas', 'historial', q],
+    queryFn: () => api.get<{ data: HistorialEnCaseta }>(
+      `/tags-casetas/${encodeURIComponent(q!.tag)}/historial?caseta=${encodeURIComponent(q!.caseta)}`),
+    enabled: q !== null,
+  })
+}
+
 /** Los cruces de una caseta cobrados con esa clase y ese importe: rastrear un fuera de tarifa. */
 export function useCrucesDeImporte(q: { caseta: string; clase: number; total: number } | null) {
   return useQuery({
