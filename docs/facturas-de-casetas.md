@@ -172,6 +172,14 @@ por caseta (troncal y auxiliar) en vez de por tramo; el código de PASE apunta a
 las dos (Estación Ruiz cobró la troncal, Acaponeta la auxiliar). Yago y El
 Rosario se cargaron **sin caseta** porque aún no salen en ninguna factura: la
 pestaña los lista y se ligan con "Agregar tramo → Ligar uno que ya existe".
+Cuarta tanda (074): Tepic - Compostela, de cmronayarit.com (la misma
+concesionaria de Jala - Compostela), para 526 TEPIC; agrupa 2-3 / 4-5 / 6-9 ejes.
+
+Sin tarifa conocida a 2026-10-19: **407 SAN BLAS** (su código va con los de
+Tepic - Mazatlán, pero cobró $236 en clase 9 y ninguna tabla de Yago ni la de
+Matanchén, la caseta de la autopista Tepic - San Blas de RCO, da eso) y **53
+COMPOSTELA** ($81 en clase 1; la de CAPUFE en Compostela publica $104 auto).
+
 Con la factura de septiembre las dos primeras tandas explican 301 de 303
 cruces; los otros dos son Arenal camión 2-4 a $278, que IDEAL publica en $287
 y casetas.com.mx en $278: hay que corregirla.
