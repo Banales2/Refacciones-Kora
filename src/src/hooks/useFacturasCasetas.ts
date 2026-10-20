@@ -57,7 +57,7 @@ export interface CruceCaseta {
 }
 
 export type TipoHallazgo =
-  | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_mayor' | 'ajuste'
+  | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_mayor' | 'clase_atipica' | 'ajuste'
   | 'corregido' | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
 
 export interface Hallazgo {

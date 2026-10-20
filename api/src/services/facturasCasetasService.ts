@@ -51,6 +51,25 @@ const MIN_CRUCES_CLASE = 3
  */
 const MIN_HISTORIA_CASETA = 30
 
+/**
+ * Para decir cuál es la clase de siempre de un tag, sumando todas las casetas,
+ * hacen falta al menos estos cruces, y que esa clase sea la mayoría.
+ */
+const MIN_CRUCES_TAG = 10
+
+/**
+ * Cuánto tiene que alejarse la clase cobrada de la de siempre para señalarla.
+ * Un 5 contra un 6 es un eje de más o de menos que pasa todos los días (el eje
+ * retráctil); un 3 contra un 9 es otro vehículo.
+ */
+const SALTO_CLASE = 2
+
+/**
+ * Si en estas horas el tag pagó una clase parecida en otra caseta, ese día el
+ * vehículo sí venía así (un tráiler con doble caja) y no se señala.
+ */
+const MISMO_DIA_HORAS = 12
+
 /** La tolerancia al comparar sumas contra lo impreso: un centavo. */
 const TOLERANCIA = 0.01
 
@@ -185,7 +204,7 @@ function duplicada(folio: string): AppError {
 // ── Revisar ──────────────────────────────────────────────────────────────────
 
 export type TipoHallazgo =
-  | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_mayor' | 'ajuste'
+  | 'cobrado_antes' | 'fuera_de_tarifa' | 'doble_cobro' | 'clase_mayor' | 'clase_atipica' | 'ajuste'
   | 'corregido' | 'fuera_de_periodo' | 'tag_sin_unidad' | 'caseta_inusual'
 
 /**
@@ -303,6 +322,7 @@ const GRUPO: Record<TipoHallazgo, GrupoHallazgo> = {
   fuera_de_tarifa: 'cobro',
   doble_cobro: 'cobro',
   clase_mayor: 'cobro',
+  clase_atipica: 'cobro',
   ajuste: 'cobro',
   corregido: 'cobro',
   fuera_de_periodo: 'cobro',
@@ -421,6 +441,29 @@ function clasesHabituales(historial: HistorialTag[]) {
   return habitual
 }
 
+/**
+ * La clase que cada tag paga casi siempre, sumando todas sus casetas menos las
+ * que no mandan la clase real. Solo con MIN_CRUCES_TAG cruces y si esa clase es
+ * la mayoría: un tag que reparte sus cruces entre clases no tiene "de siempre".
+ */
+function clasesDeSiempre(historial: HistorialTag[], sinClase: Set<string>) {
+  const porTag = new Map<string, Map<number, number>>()
+  for (const h of historial) {
+    if (h.clase === 0 || sinClase.has(h.caseta)) continue
+    const m = porTag.get(h.tag) ?? new Map<number, number>()
+    m.set(h.clase, (m.get(h.clase) ?? 0) + h.n)
+    porTag.set(h.tag, m)
+  }
+  const r = new Map<string, { clase: number; n: number; total: number }>()
+  for (const [tag, m] of porTag) {
+    const total = [...m.values()].reduce((s, n) => s + n, 0)
+    const [clase, n] = [...m].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]
+    if (total < MIN_CRUCES_TAG || n * 2 <= total) continue
+    r.set(tag, { clase, n, total })
+  }
+  return r
+}
+
 export async function detalle(facturaId: number): Promise<DetalleFactura> {
   const factura = await repo.findById(facturaId)
   if (!factura) throw new NotFoundError('Factura')
@@ -433,6 +476,7 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
     candidatos.set(o.renglon, [...(candidatos.get(o.renglon) ?? []), o])
   }
   const ajustesDespues = await repo.ajustesDeCruces(facturaId)
+  const sinClase = await repo.casetasSinClase()
   const tarifas = new Map<string, TarifaTramo[]>()
   for (const t of await repo.tarifasDeFactura(facturaId)) {
     tarifas.set(t.caseta, [...(tarifas.get(t.caseta) ?? []), t])
@@ -566,6 +610,7 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
   }
 
   const habitual = clasesHabituales(historial)
+  const claseMayor = new Set<number>()
   for (const c of cruces) {
     if (esAjuste(c)) continue
     const h = habitual.get(`${c.tag}|${c.caseta}`)
@@ -574,11 +619,73 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
     // igual dos clases, y entonces la clase distinta no costó nada de más.
     const exceso = c.total - h.total_maximo
     if (exceso <= 0) continue
+    claseMayor.add(c.renglon)
     agregar({
       tipo: 'clase_mayor', renglones: [c.renglon], tag: c.tag, vehiculo: c.vehiculo,
       caseta: c.descripcion, monto: exceso,
       detalle: `Cobró clase ${c.clase}; en esta caseta el tag suele pagar clase ${h.clase} ` +
         `(${h.n} de sus cruces).`,
+    })
+  }
+
+  // Clase distinta a la de siempre del tag, sumando todas sus casetas. La clase
+  // habitual de arriba es por caseta y no ve una caseta que SIEMPRE lo cobra
+  // mal: San Blas cobró clase 9 a un camión que en 89 cruces más pagó clase 3,
+  // y como ahí siempre fue 9, para ella eso era lo habitual.
+  //
+  // Solo hacia arriba: lo que se busca es lo cobrado de más. Hacia abajo era
+  // casi todo ruido (Sta. Ma. del Oro cobra 4-5 a un tráiler que paga 9 en
+  // todas partes), y eso PASE lo corrige con un ajuste, que se liga solo.
+  //
+  // No se señala si ese mismo día el tag pagó una clase parecida en otra
+  // caseta: entonces el vehículo sí venía así. Se agrupa por caseta y clase,
+  // para que nueve cruces iguales sean un hallazgo y no nueve.
+  const deSiempre = clasesDeSiempre(historial, sinClase)
+  const atipicos = new Map<string, { cruces: CruceRow[]; testigo: CruceRow | null }>()
+  for (const c of cruces) {
+    if (esAjuste(c) || sinClase.has(c.caseta) || claseMayor.has(c.renglon)) continue
+    const g = deSiempre.get(c.tag)
+    if (!g || c.clase - g.clase < SALTO_CLASE) continue
+    const ese = cruces.filter((o) => o.tag === c.tag && o.caseta !== c.caseta && !esAjuste(o)
+      && !sinClase.has(o.caseta) && Math.abs(minutos(o, c)) <= MISMO_DIA_HORAS * 60)
+    if (ese.some((o) => Math.abs(o.clase - c.clase) <= 1)) continue
+    const testigo = [...ese].sort((a, b) => Math.abs(minutos(a, c)) - Math.abs(minutos(b, c)))[0] ?? null
+    const k = `${c.tag}|${c.caseta}|${c.clase}`
+    const a = atipicos.get(k) ?? { cruces: [], testigo: null }
+    a.cruces.push(c)
+    a.testigo ??= testigo
+    atipicos.set(k, a)
+  }
+  for (const { cruces: cs, testigo } of atipicos.values()) {
+    const c = cs[0]
+    const g = deSiempre.get(c.tag)!
+    // Lo de más, contra la tarifa de la clase de siempre en el tramo que se
+    // cobró. Sin tarifa no hay contra qué: se dice y queda en $0.
+    let monto = 0
+    let sinPrecio = false
+    for (const x of cs) {
+      const tramos = tramoDe.get(x.renglon)
+      const esperados = vigentes(tarifas, x)
+        .filter((t) => tramos?.includes(t.tramo))
+        .flatMap((t) => (CATEGORIAS_DE_CLASE[g.clase] ?? [])
+          .flatMap((cat) => (t[cat] === null ? [] : [Number(t[cat])])))
+      if (esperados.length === 0) { sinPrecio = true; continue }
+      monto += Math.max(0, x.total - Math.max(...esperados))
+    }
+    const veces = cs.length === 1 ? '' : ` en ${cs.length} cruces`
+    const dia = testigo
+      ? `, y ese día pasó en clase ${testigo.clase} por ${testigo.descripcion.replace(/^PEAJE /i, '')}`
+      : ''
+    agregar({
+      tipo: 'clase_atipica', renglones: cs.map((x) => x.renglon), tag: c.tag, vehiculo: c.vehiculo,
+      caseta: c.descripcion, monto,
+      detalle: `Cobró clase ${c.clase}${veces}; el tag paga clase ${g.clase} en ${g.n} de sus ` +
+        `${g.total} cruces${dia}. ` + (
+        sinPrecio
+          ? 'Sin tarifa de esta caseta no se sabe cuánto es de más: pregunta a PASE cuánto ' +
+            `cuesta ahí la clase ${g.clase}.`
+          : `De más, contra la tarifa de la clase ${g.clase} en el mismo tramo.`
+      ),
     })
   }
 

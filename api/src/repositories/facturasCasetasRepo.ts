@@ -482,6 +482,13 @@ export async function casetas(): Promise<CasetaRow[]> {
   return r.recordset as CasetaRow[]
 }
 
+/** Las casetas que no mandan la clase real (EASYTRIP): su clase no dice nada del vehículo. */
+export async function casetasSinClase(): Promise<Set<string>> {
+  const pool = await getPool()
+  const r = await pool.request().query('SELECT caseta FROM casetas_pase WHERE ignora_clase = 1')
+  return new Set((r.recordset as { caseta: string }[]).map((x) => x.caseta))
+}
+
 /** Marca (o desmarca) que una caseta no manda la clase real. */
 export async function guardarIgnoraClase(caseta: string, ignora: boolean): Promise<void> {
   const pool = await getPool()

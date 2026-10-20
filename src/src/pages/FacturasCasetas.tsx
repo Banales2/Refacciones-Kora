@@ -10,8 +10,8 @@
 // dos preguntas que no se suman:
 //
 //   cobro   lo que PASE pudo cobrar de más: cruces repetidos, importes que no
-//           son de ningún tramo, clase arriba de la habitual, ajustes y cruces
-//           de fuera del periodo
+//           son de ningún tramo, clase arriba de la habitual o distinta a la de
+//           siempre del tag, ajustes y cruces de fuera del periodo
 //   uso     cómo se usan las unidades: tags sin unidad, casetas que el tag nunca
 //           había cruzado
 //
@@ -60,6 +60,7 @@ const TITULO_HALLAZGO: Record<TipoHallazgo, string> = {
   fuera_de_tarifa: 'Fuera de tarifa',
   doble_cobro: 'Posible doble cobro',
   clase_mayor: 'Clase arriba de la habitual',
+  clase_atipica: 'Clase distinta a la de siempre',
   ajuste: 'Ajuste de PASE',
   corregido: 'Corregido después',
   fuera_de_periodo: 'Fuera del periodo',
@@ -72,6 +73,7 @@ const COLOR_HALLAZGO: Record<TipoHallazgo, string> = {
   fuera_de_tarifa: 'red',
   doble_cobro: 'red',
   clase_mayor: 'orange',
+  clase_atipica: 'orange',
   ajuste: 'yellow',
   corregido: 'gray',
   fuera_de_periodo: 'yellow',
@@ -591,7 +593,9 @@ function TarjetaHallazgo({
               ? 'La corrección deja la tarifa que el tag suele pagar: no hay nada que reclamar'
               : h.tipo === 'corregido'
                 ? 'El ajuste se revisa en su factura'
-                : h.grupo === 'cobro' ? 'Lo que pudo cobrarse de más' : 'Lo que suman esos cruces'
+                : h.tipo === 'clase_atipica' && h.monto === 0
+                  ? 'Sin tarifa de esta caseta no se puede calcular cuánto es de más'
+                  : h.grupo === 'cobro' ? 'Lo que pudo cobrarse de más' : 'Lo que suman esos cruces'
         }>
           <Text size="sm" fw={700} c={h.monto === 0 ? 'dimmed' : undefined} style={{ whiteSpace: 'nowrap' }}>
             {formatMXN(h.monto)}

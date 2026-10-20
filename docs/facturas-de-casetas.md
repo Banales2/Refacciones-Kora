@@ -59,6 +59,7 @@ preguntas distintas:
 | **Ya cobrado en otra factura** | cobro | mismo tag, caseta y hora al segundo en otra factura (sin contar ajustes) | el cruce entero; $0 en la factura donde se cobró primero |
 | **Posible doble cobro** | cobro | mismo tag y caseta con menos de 60 min entre un cruce y el siguiente, y no son dos tramos distintos | todos menos el más caro |
 | **Clase arriba de la habitual** | cobro | el tag pagó en esa caseta una clase mayor que la que suele pagar | lo que pagó por encima de lo **más caro** que ha pagado en su clase habitual |
+| **Clase distinta a la de siempre** | cobro | la clase está 2 o más arriba de la que el tag paga casi siempre (todas sus casetas), y ese día no pagó una parecida en otra caseta | contra la tarifa de su clase de siempre en el mismo tramo; $0 sin tarifa |
 | **Ajuste de PASE** | cobro | clase 0 o "AJUSTE …"; con tarifa, busca el cruce que corrige | $0 si la corrección deja la tarifa que el tag suele pagar; lo de encima si la pasa; el cargo entero si no se sabe |
 | **Fuera del periodo** | cobro | cruce con fecha fuera de las del periodo | el cruce |
 | **Tag sin unidad** | uso | nadie ha dicho de qué unidad es | lo que suman sus cruces |
@@ -183,6 +184,30 @@ COMPOSTELA** ($81 en clase 1; la de CAPUFE en Compostela publica $104 auto).
 Con la factura de septiembre las dos primeras tandas explican 301 de 303
 cruces; los otros dos son Arenal camión 2-4 a $278, que IDEAL publica en $287
 y casetas.com.mx en $278: hay que corregirla.
+
+### Clase distinta a la de siempre
+
+La **clase habitual** es por caseta, y por eso no ve una caseta que **siempre**
+cobra mal: San Blas cobró clase 9 en todos los cruces de un camión que en otras
+89 casetas pagó clase 3, y para San Blas el 9 era lo habitual. Esta revisión
+mira la clase que el tag paga casi siempre **sumando todas sus casetas**
+(mínimo 10 cruces y que sea la mayoría; no cuentan las casetas sin clase real
+ni los ajustes).
+
+Se señala un cruce si su clase está **2 o más arriba** de esa (un 5 contra un 6
+es el eje retráctil de todos los días) y si **ese mismo día** (12 horas antes o
+después) el tag no pagó una clase parecida en otra caseta: si la pagó, el
+vehículo sí venía así (doble caja). Cuando no se cuenta con otra caseta ese día,
+se dice cuál fue la más cercana y qué clase pagó ahí. Se agrupa por caseta y
+clase: nueve cruces iguales son un hallazgo. Un cruce que ya señaló "clase
+arriba de la habitual" no se repite aquí.
+
+**Solo hacia arriba.** Con las cinco primeras facturas, hacia abajo era casi todo
+ruido: Sta. Ma. del Oro cobra clase 4-5 a un tráiler que paga 9 en todas partes
+(unos 50 cruces). Eso es cobrar de menos, y PASE lo corrige con un ajuste que
+se liga solo. Hacia arriba quedan San Blas (clase 9 a un camión de clase 3, en
+cuatro facturas) y Plan de Barrancas cobrando clase 9 el día que el mismo tag
+pagó 5 en Arenal.
 
 ### Por qué la clase se compara así
 
