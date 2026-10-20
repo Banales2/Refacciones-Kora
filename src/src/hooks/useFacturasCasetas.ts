@@ -289,6 +289,53 @@ export interface ImporteCobrado {
   tramos: string[]
   /** En las casetas sin clase real: cuántos ejes dice el importe que se cobraron. */
   ejes:   string | null
+  /** Fuera de tarifa: la tarifa de hoy más parecida para su clase. */
+  cercana:      TarifaCercana | null
+  /** Fuera de tarifa: la más parecida de cualquier clasificación, si no es la misma. */
+  cercana_otra: TarifaCercana | null
+}
+
+/** La tarifa más parecida a un importe que no es de ningún tramo. */
+export interface TarifaCercana {
+  tramo:         string
+  /** Las clasificaciones que pagan ese importe: "camión 2-4 ejes". */
+  clases:        string
+  total:         number
+  vigente_desde: string
+}
+
+/** Un cruce cobrado con cierto importe, revisado contra la tarifa de su fecha. */
+export interface CruceCobrado {
+  factura_id:   number
+  serie:        string | null
+  folio:        string
+  periodo:      string | null
+  revisada:     boolean
+  renglon:      number
+  fecha_hora:   string
+  tag:          string
+  vehiculo:     string | null
+  carril:       string | null
+  evento:       string | null
+  clase:        number
+  total:        number
+  /** Los tramos que cuestan eso el día que cruzó; vacío = fuera de tarifa. */
+  tramos:       string[]
+  cercana:      TarifaCercana | null
+  cercana_otra: TarifaCercana | null
+}
+
+/** Los cruces de una caseta cobrados con esa clase y ese importe: rastrear un fuera de tarifa. */
+export function useCrucesDeImporte(q: { caseta: string; clase: number; total: number } | null) {
+  return useQuery({
+    queryKey: ['tarifas-casetas', 'cruces', q],
+    queryFn: () => {
+      const qs = new URLSearchParams({ clase: String(q!.clase), total: String(q!.total) })
+      return api.get<{ data: CruceCobrado[] }>(
+        `/tarifas-casetas/${encodeURIComponent(q!.caseta)}/cruces?${qs}`)
+    },
+    enabled: q !== null,
+  })
 }
 
 export interface TarifasDeCaseta {

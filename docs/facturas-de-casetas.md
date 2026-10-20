@@ -311,6 +311,7 @@ ninguna, y solo a esos.
 | `POST /facturas-casetas/{id}/revisar` | **admin** | La marca como revisada |
 | `POST /facturas-casetas/{id}/reabrir` | **admin** | Quita la marca |
 | `GET /tarifas-casetas` | admin, editor, lector | Casetas con sus tramos y tarifas de hoy, y lo cobrado en cada una |
+| `GET /tarifas-casetas/{caseta}/cruces?clase=&total=` | admin, editor, lector | Los cruces cobrados con esa clase e importe, con su factura y contra la tarifa de su fecha |
 | `PUT /tarifas-casetas/{id}` | **admin** | Corrige una vigencia (precios o fecha) |
 | `POST /tarifas-casetas` | **admin** | Registra un aumento: vigencia nueva de un tramo |
 | `POST /tramos-casetas` | **admin** | Agrega un tramo a una caseta, con su primera tarifa |
@@ -333,6 +334,16 @@ En Tarifas, cada caseta con tarifa muestra sus tramos con la tarifa de hoy
 importe con el tramo que le corresponde o "Fuera de tarifa". Al final, las
 casetas sin tarifa ordenadas por lo que han costado: son las que conviene
 cargar.
+
+**Rastrear un fuera de tarifa.** Arriba, cuántos cruces están fuera de tarifa
+y en cuántas casetas, con un switch para dejar solo esas. Cada importe fuera
+de tarifa dice lo más parecido **en su clase** y **en cualquier clase** (la
+clase de PASE no siempre es la real), y el botón **Rastrear** lista los cruces
+cobrados así: factura y partida (se abre encima sin cerrar la lista), fecha,
+unidad, carril y si cuadra **con la tarifa de su fecha**, porque la pestaña
+compara contra la de hoy y un aumento puede hacer ver fuera lo que en su día
+cuadraba. Trae un botón para buscar las tarifas de la caseta en internet: lo
+que se encuentre se corrige o se registra como aumento.
 
 **Editar tarifas es solo de admin**, porque deciden qué cuenta como cobro de más
 en todas las facturas, las ya revisadas incluidas. Hay dos acciones distintas

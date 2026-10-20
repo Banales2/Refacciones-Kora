@@ -1,7 +1,7 @@
 import * as repo from '../repositories/facturasCasetasRepo'
 import { CATEGORIAS } from '../repositories/facturasCasetasRepo'
 import type {
-  CandidatoDeAjuste, Categoria, CruceRow, CruceVecino, FacturaCasetas, HistorialTag, TarifaTramo,
+  CandidatoDeAjuste, Categoria, CruceDeImporte, CruceRow, CruceVecino, FacturaCasetas, HistorialTag, TarifaTramo,
   TarifaVigente,
 } from '../repositories/facturasCasetasRepo'
 import type {
@@ -378,7 +378,7 @@ const GRUPO: Record<TipoHallazgo, GrupoHallazgo> = {
   caseta_inusual: 'uso',
 }
 
-function fechaDe(c: CruceRow): string { return c.fecha_hora.slice(0, 10) }
+function fechaDe(c: { fecha_hora: string }): string { return c.fecha_hora.slice(0, 10) }
 function minutos(a: { fecha_hora: string }, b: { fecha_hora: string }): number {
   return (Date.parse(`${b.fecha_hora}Z`) - Date.parse(`${a.fecha_hora}Z`)) / 60000
 }
@@ -392,7 +392,9 @@ function iguales(a: number, b: number): boolean { return Math.abs(a - b) <= TOLE
  * Las tarifas vigentes el día del cruce, una por tramo, de los tramos que su
  * caseta puede cobrar. Vacío si la caseta no tiene tarifa cargada.
  */
-function vigentes(porCaseta: Map<string, TarifaTramo[]>, c: CruceRow): TarifaTramo[] {
+function vigentes(
+  porCaseta: Map<string, TarifaTramo[]>, c: { caseta: string; fecha_hora: string },
+): TarifaTramo[] {
   const fecha = fechaDe(c)
   const porTramo = new Map<number, TarifaTramo>()
   for (const t of porCaseta.get(c.caseta) ?? []) {
@@ -423,6 +425,36 @@ function tarifaDeClase(
 function validas(ts: TarifaTramo[], clase: number) {
   return ts.flatMap((t) => categoriasDe(t, clase).flatMap((cat) =>
     t[cat] === null ? [] : [{ tramo: t.tramo, categoria: cat, total: Number(t[cat]) }]))
+}
+
+/** La tarifa más parecida a un importe que no es de ningún tramo. */
+export interface TarifaCercana {
+  tramo: string
+  /** Las clasificaciones que pagan ese importe en ese tramo: "camión 2-4 ejes". */
+  clases: string
+  total: number
+  vigente_desde: string
+}
+
+/**
+ * De los importes válidos para la clase (o, con `clase` null, de cualquier
+ * clasificación), el más parecido a `total`, con todas las clasificaciones que
+ * lo pagan en su tramo. null si no hay contra qué.
+ */
+function masCercana(ts: TarifaTramo[], clase: number | null, total: number): TarifaCercana | null {
+  const vs = clase === null
+    ? ts.flatMap((t) => VEHICULOS.flatMap((cat) =>
+      t[cat] === null ? [] : [{ tramo: t.tramo, categoria: cat, total: Number(t[cat]) }]))
+    : validas(ts, clase)
+  if (vs.length === 0) return null
+  const c = [...vs].sort((a, b) => Math.abs(a.total - total) - Math.abs(b.total - total))[0]
+  const t = ts.find((x) => x.tramo === c.tramo)!
+  return {
+    tramo: c.tramo,
+    clases: nombreGrupo(vs.filter((v) => v.tramo === c.tramo && iguales(v.total, c.total)).map((v) => v.categoria)),
+    total: c.total,
+    vigente_desde: t.vigente_desde,
+  }
 }
 
 /**
@@ -1125,6 +1157,13 @@ export interface ImporteCobrado {
   tramos: string[]
   /** En las casetas sin clase real: cuántos ejes dice el importe que se cobraron. */
   ejes: string | null
+  /** Fuera de tarifa: la tarifa de hoy más parecida para su clase, para ir a verificarla. */
+  cercana: TarifaCercana | null
+  /**
+   * Fuera de tarifa: la más parecida de cualquier clasificación, si no es la
+   * misma. La clase de PASE no siempre es la real (EASYTRIP, San Blas).
+   */
+  cercana_otra: TarifaCercana | null
 }
 
 export interface TarifasDeCaseta {
@@ -1175,6 +1214,7 @@ export async function tarifasPorCaseta(): Promise<TarifasDeCaseta[]> {
               ejes: k.ignora_clase && coinciden.length > 0
                 ? nombreGrupo([...new Set(coinciden.map((v) => v.categoria))])
                 : null,
+              ...cercanas(conClase, c.clase, Number(c.total), coinciden.length > 0),
             }
           })
           .sort((a, b) => a.clase - b.clase || a.total - b.total),
@@ -1182,6 +1222,45 @@ export async function tarifasPorCaseta(): Promise<TarifasDeCaseta[]> {
     })
     .sort((a, b) =>
       Number(b.tramos.length > 0) - Number(a.tramos.length > 0) || b.total - a.total)
+}
+
+/** Un cruce cobrado con cierto importe, revisado contra la tarifa de su fecha. */
+export type CruceCobrado = CruceDeImporte & {
+  /** Los tramos que cuestan eso el día que cruzó; vacío = fuera de tarifa. */
+  tramos: string[]
+  /** Fuera de tarifa: la más parecida de ese día, para su clase y para cualquiera. */
+  cercana: TarifaCercana | null
+  cercana_otra: TarifaCercana | null
+}
+
+function cercanas(ts: TarifaTramo[], clase: number, total: number, cuadra: boolean) {
+  if (cuadra) return { cercana: null, cercana_otra: null }
+  const cercana = masCercana(ts, clase, total)
+  const otra = masCercana(ts, null, total)
+  const igual = !!cercana && !!otra && cercana.tramo === otra.tramo && iguales(cercana.total, otra.total)
+  return { cercana, cercana_otra: igual ? null : otra }
+}
+
+/**
+ * Los cruces que PASE cobró en una caseta con esa clase y ese importe, para
+ * rastrear un "fuera de tarifa" hasta sus facturas. La pestaña Tarifas compara
+ * contra la tarifa de hoy; aquí cada cruce va contra la de su fecha, y eso
+ * separa un cobro mal hecho de una tarifa que cambió.
+ */
+export async function crucesDeImporte(caseta: string, clase: number, total: number): Promise<CruceCobrado[]> {
+  const [ts, cs] = await Promise.all([repo.tarifasDeCaseta(caseta), repo.crucesDeImporte(caseta, clase, total)])
+  const porCaseta = new Map([[caseta, ts]])
+  return cs.map((c) => {
+    const vs = vigentes(porCaseta, { caseta, fecha_hora: c.fecha_hora })
+    const coinciden = validas(vs, c.clase).filter((v) => iguales(v.total, Number(c.total)))
+    return {
+      ...c,
+      revisada: !!c.revisada,
+      total: Number(c.total),
+      tramos: [...new Set(coinciden.map((v) => v.tramo))],
+      ...cercanas(vs, c.clase, Number(c.total), coinciden.length > 0),
+    }
+  })
 }
 
 // Las tarifas se editan desde la pantalla. Corregir cambia la vigencia que ya

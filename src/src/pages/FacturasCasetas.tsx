@@ -35,11 +35,11 @@ import {
   useFacturasCasetas, useImportarFacturaCasetas, useReabrirFacturaCasetas,
   useRevisarFacturaCasetas, useTagsCasetas, useTarifasCasetas, useActualizarTarifaCaseta,
   useCrearTarifaCaseta, useCrearTramoCaseta, useIgnoraClaseCaseta, useLigarTramoCaseta,
-  useTramosCasetas,
+  useTramosCasetas, useCrucesDeImporte,
 } from '../hooks/useFacturasCasetas'
 import type {
   CasetaSinTarifa, CorreccionDeClase, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas,
-  Recorrido, TarifaTramo, TarifasDeCaseta, ValoresTarifa, Hallazgo, TagCaseta, TipoHallazgo,
+  ImporteCobrado, Recorrido, TarifaCercana, TarifaTramo, TarifasDeCaseta, ValoresTarifa, Hallazgo, TagCaseta, TipoHallazgo,
 } from '../hooks/useFacturasCasetas'
 import { fetchTodosLosVehiculos, useVehiculos } from '../hooks/useVehiculos'
 import { exportTagsCasetasToPdf } from '../lib/exportTagsCasetas'
@@ -1559,8 +1559,11 @@ function TarifaModal({ edicion, onClose }: { edicion: EdicionTarifa | null; onCl
  * ver de un vistazo por qué tramos pasa la flota.
  */
 function TarifasDeUnaCaseta({
-  k, onEditar,
-}: { k: TarifasDeCaseta; onEditar: ((e: EdicionTarifa) => void) | null }) {
+  k, onEditar, onRastrear,
+}: {
+  k: TarifasDeCaseta; onEditar: ((e: EdicionTarifa) => void) | null
+  onRastrear: (c: ImporteCobrado) => void
+}) {
   const usadas = new Set(k.cobrados.flatMap((c) => c.tramos.map((t) => `${t}|${c.total}`)))
   const ignora = useIgnoraClaseCaseta()
   return (
@@ -1658,6 +1661,7 @@ function TarifasDeUnaCaseta({
                   <Table.Th style={{ textAlign: 'center' }}>Cruces</Table.Th>
                   <Table.Th>Tramo</Table.Th>
                   {k.ignora_clase && <Table.Th>Ejes cobrados</Table.Th>}
+                  <Table.Th w={70} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -1666,10 +1670,25 @@ function TarifasDeUnaCaseta({
                     <Table.Td style={{ textAlign: 'center' }}>{c.clase}</Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>{formatMXN(c.total)}</Table.Td>
                     <Table.Td style={{ textAlign: 'center' }}>{c.cruces}</Table.Td>
-                    <Table.Td c={c.tramos.length === 0 ? 'red' : undefined} fw={c.tramos.length === 0 ? 700 : undefined}>
-                      {c.tramos.length > 0 ? c.tramos.join(' / ') : 'Fuera de tarifa'}
+                    <Table.Td>
+                      {c.tramos.length > 0 ? c.tramos.join(' / ') : (
+                        <>
+                          <Text size="xs" c="red" fw={700}>Fuera de tarifa</Text>
+                          {c.cercana && <Cercana c={c.cercana} etiqueta={`Lo más parecido en clase ${c.clase}`} />}
+                          {c.cercana_otra && <Cercana c={c.cercana_otra} etiqueta="En cualquier clase" />}
+                        </>
+                      )}
                     </Table.Td>
                     {k.ignora_clase && <Table.Td>{c.ejes ?? '—'}</Table.Td>}
+                    <Table.Td>
+                      <Button
+                        size="compact-xs" variant={c.tramos.length === 0 ? 'light' : 'subtle'}
+                        color={c.tramos.length === 0 ? 'red' : undefined}
+                        onClick={() => onRastrear(c)}
+                      >
+                        Rastrear
+                      </Button>
+                    </Table.Td>
                   </Table.Tr>
                 ))}
               </Table.Tbody>
@@ -1685,11 +1704,136 @@ function TarifasDeUnaCaseta({
   )
 }
 
+/** Lo que hay que buscar en internet para verificar la tarifa de una caseta. */
+function buscarEnInternet(k: TarifasDeCaseta): string {
+  const nombre = (k.nombre ?? `caseta ${k.caseta}`).replace(/^PEAJE /i, '')
+  const autopista = [...new Set(k.tramos.map((t) => t.autopista))].join(' ')
+  const q = `caseta ${nombre} ${autopista} tarifas ${new Date().getFullYear()}`
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`
+}
+
+function Cercana({ c, etiqueta }: { c: TarifaCercana; etiqueta: string }) {
+  return (
+    <Text size="xs" c="dimmed">
+      {etiqueta}: {c.clases} en {c.tramo}, {formatMXN(c.total)} (desde {formatFecha(c.vigente_desde)})
+    </Text>
+  )
+}
+
+type Rastreo = { k: TarifasDeCaseta; c: ImporteCobrado }
+
+/**
+ * Los cruces detrás de un importe cobrado: en qué factura y partida vino cada
+ * uno, para verificarlo contra la página del operador y reclamarlo a PASE.
+ * Cada cruce va contra la tarifa de SU fecha: si ahí sí cuadra, lo que cambió
+ * fue la tarifa, no el cobro.
+ */
+function RastreoModal({
+  rastreo, onClose, onAbrir,
+}: { rastreo: Rastreo | null; onClose: () => void; onAbrir: (id: number) => void }) {
+  const q = rastreo && { caseta: rastreo.k.caseta, clase: rastreo.c.clase, total: rastreo.c.total }
+  const { data, isLoading, isError } = useCrucesDeImporte(q)
+  const cruces = data?.data ?? []
+  const k = rastreo?.k
+  const c = rastreo?.c
+  return (
+    <Modal
+      opened={rastreo !== null} onClose={onClose} size="xl"
+      title={k && c && (
+        <Text fw={600}>
+          {k.nombre?.replace(/^PEAJE /i, '') ?? `Caseta ${k.caseta}`} · clase {c.clase} · {formatMXN(c.total)}
+        </Text>
+      )}
+    >
+      {k && c && (
+        <Stack gap="sm">
+          <Group justify="space-between" align="flex-start">
+            <Stack gap={2}>
+              {c.tramos.length > 0
+                ? <Text size="sm">Cuadra con {c.tramos.join(' / ')}{c.ejes ? ` · ${c.ejes}` : ''}.</Text>
+                : <Text size="sm" c="red" fw={600}>Ningún tramo de esta caseta cuesta eso hoy.</Text>}
+              {c.cercana && <Cercana c={c.cercana} etiqueta={`Lo más parecido en clase ${c.clase}`} />}
+              {c.cercana_otra && <Cercana c={c.cercana_otra} etiqueta="En cualquier clase" />}
+            </Stack>
+            <Button
+              component="a" href={buscarEnInternet(k)} target="_blank" rel="noopener noreferrer"
+              size="compact-sm" variant="light" leftSection={<IconSearch size={14} />}
+            >
+              Buscar tarifas en internet
+            </Button>
+          </Group>
+          <Text size="xs" c="dimmed">
+            Tramos de esta caseta: {k.tramos.map((t) => `${t.tramo} (${t.autopista})`).join(', ')}.
+          </Text>
+
+          {isError && <Alert color="red">No se pudieron cargar los cruces.</Alert>}
+          {isLoading ? <Center py="md"><Loader size="sm" /></Center> : (
+            <Table.ScrollContainer minWidth={720}>
+              <Table withTableBorder striped fz="xs" verticalSpacing={4}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Factura</Table.Th>
+                    <Table.Th>Fecha</Table.Th>
+                    <Table.Th>Unidad</Table.Th>
+                    <Table.Th>Carril</Table.Th>
+                    <Table.Th>En su fecha</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {cruces.map((x) => (
+                    <Table.Tr key={`${x.factura_id}|${x.renglon}`}>
+                      <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                        <Button
+                          size="compact-xs" variant="subtle" px={0} rightSection={<IconArrowRight size={12} />}
+                          onClick={() => onAbrir(x.factura_id)}
+                        >
+                          {folioDe(x)}
+                        </Button>
+                        <Text size="xs" c="dimmed">
+                          partida {x.renglon}{x.revisada ? ' · revisada' : ''}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td style={{ whiteSpace: 'nowrap' }}>{fechaHora(x.fecha_hora)}</Table.Td>
+                      <Table.Td>
+                        <Text size="xs">{x.vehiculo ?? 'Sin unidad'}</Text>
+                        <Text size="xs" c="dimmed" ff="monospace">{x.tag}</Text>
+                      </Table.Td>
+                      <Table.Td>{[x.carril, x.evento].filter(Boolean).join(' · ') || '—'}</Table.Td>
+                      <Table.Td>
+                        {x.tramos.length > 0
+                          ? <Text size="xs">{x.tramos.join(' / ')}</Text>
+                          : <Badge size="xs" color="red" variant="light">Fuera de tarifa</Badge>}
+                        {x.cercana && x.tramos.length === 0 && (
+                          <Text size="xs" c="dimmed">
+                            {x.cercana.clases}: {formatMXN(x.cercana.total)}
+                            {x.cercana_otra && ` · ${x.cercana_otra.clases}: ${formatMXN(x.cercana_otra.total)}`}
+                          </Text>
+                        )}
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          )}
+          <Text size="xs" c="dimmed">
+            {cruces.length} cruce{cruces.length === 1 ? '' : 's'} · {formatMXN(sumar(cruces, (x) => x.total))}.
+            La factura se abre encima, sin cerrar esta lista.
+          </Text>
+        </Stack>
+      )}
+    </Modal>
+  )
+}
+
 function TarifasPanel() {
   const { esAdmin } = usePermisos()
   const { data, isLoading, isError } = useTarifasCasetas()
   const [buscar, setBuscar] = useState('')
   const [edicion, setEdicion] = useState<EdicionTarifa | null>(null)
+  const [soloFuera, setSoloFuera] = useState(false)
+  const [rastreo, setRastreo] = useState<Rastreo | null>(null)
+  const [abierta, setAbierta] = useState<number | null>(null)
   const onEditar = esAdmin ? setEdicion : null
   const { data: tramosData } = useTramosCasetas()
   const sinCaseta = (tramosData?.data ?? []).filter((t) => t.casetas.length === 0)
@@ -1699,7 +1843,10 @@ function TarifasPanel() {
     || k.caseta.includes(q)
     || (k.nombre ?? '').toUpperCase().includes(q)
     || k.tramos.some((t) => t.tramo.toUpperCase().includes(q) || t.autopista.toUpperCase().includes(q)))
-  const conTarifa = visibles.filter((k) => k.tramos.length > 0)
+  const fueraDe = (k: TarifasDeCaseta) => k.cobrados.filter((c) => c.tramos.length === 0)
+  const conFuera = casetas.filter((k) => fueraDe(k).length > 0)
+  const crucesFuera = sumar(conFuera, (k) => sumar(fueraDe(k), (c) => c.cruces))
+  const conTarifa = visibles.filter((k) => k.tramos.length > 0 && (!soloFuera || fueraDe(k).length > 0))
   const sinTarifa = visibles.filter((k) => k.tramos.length === 0)
 
   if (isError) return <Alert color="red" title="Error">No se pudieron cargar las tarifas.</Alert>
@@ -1716,6 +1863,23 @@ function TarifasPanel() {
         Las casetas EASYTRIP mandan clase 1 a todo: para ellas cuenta solo el importe. Precios
         con IVA; marcadas, las tarifas que PASE sí ha cobrado.
       </Text>
+      {conFuera.length > 0 ? (
+        <Alert color="red" variant="light" p="xs" icon={<IconAlertTriangle size={16} />}>
+          <Group justify="space-between" gap="xs">
+            <Text size="sm">
+              {crucesFuera} cruce{crucesFuera === 1 ? '' : 's'} fuera de tarifa en {conFuera.length} caseta
+              {conFuera.length === 1 ? '' : 's'}. Ábrelas y usa “Rastrear” para ver en qué factura vino
+              cada uno y buscar la tarifa en internet.
+            </Text>
+            <Switch
+              size="xs" label="Solo esas casetas"
+              checked={soloFuera} onChange={(e) => setSoloFuera(e.currentTarget.checked)}
+            />
+          </Group>
+        </Alert>
+      ) : casetas.some((k) => k.tramos.length > 0) && (
+        <Text size="xs" c="green">Todo lo cobrado en casetas con tarifa cuadra con algún tramo.</Text>
+      )}
 
       {conTarifa.length === 0 ? (
         <Text size="sm" c="dimmed">
@@ -1756,7 +1920,9 @@ function TarifasPanel() {
                     </Group>
                   </Group>
                 </Accordion.Control>
-                <Accordion.Panel><TarifasDeUnaCaseta k={k} onEditar={onEditar} /></Accordion.Panel>
+                <Accordion.Panel>
+                  <TarifasDeUnaCaseta k={k} onEditar={onEditar} onRastrear={(c) => setRastreo({ k, c })} />
+                </Accordion.Panel>
               </Accordion.Item>
             )
           })}
@@ -1821,6 +1987,8 @@ function TarifasPanel() {
       )}
 
       <TarifaModal edicion={edicion} onClose={() => setEdicion(null)} />
+      <RastreoModal rastreo={rastreo} onClose={() => setRastreo(null)} onAbrir={setAbierta} />
+      <DetalleModal facturaId={abierta} onClose={() => setAbierta(null)} onAbrir={setAbierta} />
     </Stack>
   )
 }

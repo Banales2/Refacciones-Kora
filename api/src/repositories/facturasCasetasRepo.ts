@@ -493,6 +493,64 @@ export async function tarifasDeFactura(facturaId: number): Promise<TarifaTramo[]
   return r.recordset as TarifaTramo[]
 }
 
+/** Todas las vigencias de los tramos que una caseta puede cobrar. */
+export async function tarifasDeCaseta(caseta: string): Promise<TarifaTramo[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('caseta', sql.NVarChar(10), caseta)
+    .query(`
+      SELECT ct.caseta, CAST(ISNULL(cp.ignora_clase, 0) AS bit) AS ignora_clase,
+             t.id AS tramo_id, t.autopista, t.nombre AS tramo,
+             CONVERT(char(10), ta.vigente_desde, 23) AS vigente_desde,
+             ${COLUMNAS_TARIFA}
+      FROM casetas_tramos ct
+      JOIN tramos_casetas t   ON t.id = ct.tramo_id
+      JOIN tarifas_casetas ta ON ta.tramo_id = t.id
+      LEFT JOIN casetas_pase cp ON cp.caseta = ct.caseta
+      WHERE ct.caseta = @caseta`)
+  return r.recordset as TarifaTramo[]
+}
+
+/** Un cruce cobrado con cierta clase e importe en una caseta, con su factura. */
+export interface CruceDeImporte {
+  factura_id: number
+  serie: string | null
+  folio: string
+  periodo: string | null
+  revisada: boolean
+  renglon: number
+  fecha_hora: string
+  tag: string
+  vehiculo: string | null
+  carril: string | null
+  evento: string | null
+  clase: number
+  total: number
+}
+
+/** Los cruces de una caseta cobrados con esa clase y ese importe, del más nuevo al más viejo. */
+export async function crucesDeImporte(caseta: string, clase: number, total: number): Promise<CruceDeImporte[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('caseta', sql.NVarChar(10), caseta)
+    .input('clase', sql.Int, clase)
+    .input('total', sql.Decimal(18, 6), total)
+    .query(`
+      SELECT c.factura_id, f.serie, f.folio, f.periodo,
+             CAST(CASE WHEN f.revisada_en IS NULL THEN 0 ELSE 1 END AS bit) AS revisada,
+             c.renglon, CONVERT(varchar(19), c.fecha_hora, 126) AS fecha_hora, c.tag,
+             CASE WHEN v.id IS NULL THEN NULL ELSE ${VEHICULO} END AS vehiculo,
+             c.carril, c.evento, c.clase, c.total
+      FROM facturas_casetas_cruces c
+      JOIN facturas_casetas f ON f.id = c.factura_id
+      LEFT JOIN vehiculos v ON v.id = c.vehiculo_id
+      LEFT JOIN modelos mo  ON mo.id = v.modelo_id
+      WHERE c.caseta = @caseta AND c.clase = @clase AND ABS(c.total - @total) < 0.005
+        AND c.descripcion NOT LIKE 'AJUSTE%'
+      ORDER BY c.fecha_hora DESC`)
+  return r.recordset as CruceDeImporte[]
+}
+
 /** Una caseta de PASE: las que tienen tarifa y las que han salido en una factura. */
 export interface CasetaRow {
   caseta: string
