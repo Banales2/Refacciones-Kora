@@ -16,7 +16,7 @@ import {
   IconGasStation, IconRoad,
 } from '@tabler/icons-react'
 import {
-  useAnalisisCostos, useCobrosCasetas,
+  useAnalisisCostos, useCobrosCasetas, NOMBRE_GRUPO,
   type AnalisisCostos, type CobrosCasetas, type TipoAnomalia, type VentanaCostos,
 } from '../hooks/useDashboard'
 import { useErroresCaptura } from '../hooks/useRevision'
@@ -223,10 +223,24 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
 
   // Lo que rinde, contra el modelo de cada unidad. Solo las que juntaron
   // suficientes tramos; las demás salen en la tabla sin el dato.
+  // Tráileres y unidades en barras separadas: revueltos, la gasolinera donde
+  // cargan más tractocamiones salía rindiendo menos solo por quién carga ahí.
+  const grupoDe = (g: typeof renglones[number], grupo: 'traileres' | 'unidades') =>
+    g.por_grupo.find((p) => p.grupo === grupo)?.eficiencia_pct ?? null
   const rinden = renglones
-    .filter((g) => g.eficiencia_pct != null)
-    .map((g) => ({ gasolinera: g.gasolinera, eficiencia: g.eficiencia_pct! }))
-    .sort((a, b) => b.eficiencia - a.eficiencia)
+    .filter((g) => g.por_grupo.some((p) => p.eficiencia_pct != null))
+    .map((g) => ({
+      gasolinera: g.gasolinera,
+      [NOMBRE_GRUPO.traileres]: grupoDe(g, 'traileres'),
+      [NOMBRE_GRUPO.unidades]:  grupoDe(g, 'unidades'),
+    }))
+  const seriesRinden = (['traileres', 'unidades'] as const)
+    .filter((k) => rinden.some((r) => r[NOMBRE_GRUPO[k]] != null))
+    .map((k) => ({
+      name: NOMBRE_GRUPO[k],
+      // Fijos por grupo: el color sigue al grupo aunque el otro no aparezca.
+      color: k === 'traileres' ? 'orange.7' : 'blue.6',
+    }))
   // Con una sola no hay a quién ganarle, y por centavos tampoco: Vázquez y
   // Dakota quedaban en $26.92 contra $26.93 y la etiqueta coronaba un empate.
   const efectivos = renglones
@@ -321,9 +335,10 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
           <Text size="sm" fw={500}>Cuánto rinde cada litro</Text>
           <Text size="xs" c="dimmed" mb={4}>
             Los kilómetros que recorrieron las unidades con lo que cargaron aquí, contra el promedio de
-            su mismo modelo: a una gasolinera le cargan los camiones y a otra las camionetas. Cada tramo
-            se le cuenta a la carga que lo cierra, que es donde sale una bomba que marca más de lo que
-            despacha. Hacen falta {TRAMOS_MIN_GASOLINERA} tramos con kilometraje para juzgarla.
+            su mismo modelo, con los tráileres aparte: rinden mucho menos por su tamaño, y donde cargan
+            más tráileres el rendimiento baja aunque la gasolinera no tenga nada. Cada tramo se le cuenta
+            a la carga que lo cierra, que es donde sale una bomba que marca más de lo que despacha.
+            Hacen falta {TRAMOS_MIN_GASOLINERA} tramos con kilometraje por grupo para juzgarla.
           </Text>
           {producto === SIN_PRODUCTO ? (
             <Vacio>Sin combustible especificado no se compara: puede ser Magna o Premium.</Vacio>
@@ -331,14 +346,15 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
             <Vacio>Ninguna gasolinera tiene todavía {TRAMOS_MIN_GASOLINERA} tramos de {producto} con kilometraje en el periodo.</Vacio>
           ) : (
             <BarChart
-              h={Math.max(120, rinden.length * 40)}
+              h={Math.max(120, rinden.length * seriesRinden.length * 28)}
               data={rinden}
               dataKey="gasolinera"
               orientation="vertical"
+              withLegend={seriesRinden.length > 1}
               yAxisProps={{ width: 150 }}
               xAxisProps={{ tickFormatter: (v: number) => `${v > 0 ? '+' : ''}${v}%` }}
-              series={[{ name: 'eficiencia', color: 'blue.6', label: 'Contra su modelo' }]}
-              valueFormatter={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`}
+              series={seriesRinden}
+              valueFormatter={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}% contra su modelo`}
               gridAxis="x"
             />
           )}
@@ -397,19 +413,30 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
                         : <Badge size="sm" variant="light" color="teal">La más barata</Badge>}
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
-                    {g.rendimiento == null ? (
-                      <Tooltip label={`${g.tramos} de ${TRAMOS_MIN_GASOLINERA} tramos con kilometraje`} withArrow>
-                        <Text size="xs" c="dimmed">Pocos datos</Text>
-                      </Tooltip>
-                    ) : (
-                      <Group gap={6} justify="flex-end" wrap="nowrap">
-                        <Text size="sm">{g.rendimiento.toFixed(2)} km/L</Text>
-                        {g.eficiencia_pct != null && (
-                          <Badge variant="light" color={colorEficiencia(g.eficiencia_pct)} size="sm">
-                            {g.eficiencia_pct > 0 ? '+' : ''}{g.eficiencia_pct.toFixed(1)}%
-                          </Badge>
-                        )}
-                      </Group>
+                    {g.por_grupo.length === 0 ? <Guion /> : (
+                      <Stack gap={2} align="flex-end">
+                        {/* Un renglón por grupo: el km/L de un tráiler no se compara
+                            con el de una camioneta. */}
+                        {g.por_grupo.map((p) => (
+                          <Group key={p.grupo} gap={6} justify="flex-end" wrap="nowrap">
+                            <Text size="xs" c="dimmed">{NOMBRE_GRUPO[p.grupo]}</Text>
+                            {p.rendimiento == null ? (
+                              <Tooltip label={`${p.tramos} de ${TRAMOS_MIN_GASOLINERA} tramos con kilometraje`} withArrow>
+                                <Text size="xs" c="dimmed">pocos datos</Text>
+                              </Tooltip>
+                            ) : (
+                              <>
+                                <Text size="sm">{p.rendimiento.toFixed(2)} km/L</Text>
+                                {p.eficiencia_pct != null && (
+                                  <Badge variant="light" color={colorEficiencia(p.eficiencia_pct)} size="sm">
+                                    {p.eficiencia_pct > 0 ? '+' : ''}{p.eficiencia_pct.toFixed(1)}%
+                                  </Badge>
+                                )}
+                              </>
+                            )}
+                          </Group>
+                        ))}
+                      </Stack>
                     )}
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
@@ -714,9 +741,13 @@ function Contenido({
         <StatCard
           label="Rendimiento de la flota"
           value={t.rendimiento != null ? `${t.rendimiento.toFixed(2)} km/L` : '—'}
-          sub={`${formatLitros(t.litros)} L cargados`}
+          sub={t.rendimiento_grupos.length > 1
+            ? t.rendimiento_grupos
+                .map((g) => `${NOMBRE_GRUPO[g.grupo]} ${g.rendimiento != null ? g.rendimiento.toFixed(2) : '—'}`)
+                .join(' · ') + ' km/L'
+            : `${formatLitros(t.litros)} L cargados`}
           color="blue" icon={IconDroplet}
-          ayuda="Kilómetros recorridos entre litros cargados, midiendo de una carga a la siguiente. Solo entran las unidades con al menos tres tramos completos."
+          ayuda="Kilómetros recorridos entre litros cargados, midiendo de una carga a la siguiente. Solo entran las unidades con al menos tres tramos completos. Abajo, tráileres y el resto por separado: un tractocamión rinde mucho menos por su tamaño, y el número de arriba depende de cuántos hay."
         />
         <StatCard
           label="Precio por litro"

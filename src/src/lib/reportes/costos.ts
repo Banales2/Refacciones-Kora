@@ -44,6 +44,21 @@ function nombreBase(a: AnalisisCostos): string {
   return `costos-y-ahorro-${a.rango.start}_${ultimoDia(a)}`
 }
 
+type Gasolinera = AnalisisCostos['gasolineras'][number]
+type Grupo = Gasolinera['por_grupo'][number]
+
+function grupo(g: Gasolinera, nombre: Grupo['grupo']): Grupo | undefined {
+  return g.por_grupo.find((p) => p.grupo === nombre)
+}
+
+/** "2.21 (−0.2%)": el km/L del grupo y, entre paréntesis, contra su modelo. */
+function rendimientoDeGrupo(p: Grupo | undefined): string {
+  if (!p) return '—'
+  if (p.rendimiento == null) return 'pocos datos'
+  const vs = p.eficiencia_pct != null ? ` (${p.eficiencia_pct > 0 ? '+' : ''}${p.eficiencia_pct.toFixed(1)}%)` : ''
+  return `${p.rendimiento.toFixed(2)}${vs}`
+}
+
 function km(v: number | null): string {
   return v != null ? `${formatNum(v)} km` : '—'
 }
@@ -120,24 +135,24 @@ export async function exportCostosPdf(a: AnalisisCostos) {
   pdf.seccion(
     'Precio y rendimiento por gasolinera',
     'El sobreprecio es lo pagado de más contra la gasolinera más barata de las que ya se visitan con regularidad, ' +
-    'en el mismo combustible. "Vs. modelo" es qué tanto recorren las unidades con lo que cargaron ahí, contra el ' +
-    'promedio de su mismo modelo (mínimo 5 tramos), y el $/L efectivo es el litro corregido por eso. ' +
-    'Las cargas sin combustible especificado no se comparan.',
+    'en el mismo combustible. El rendimiento va con los tráileres aparte, que rinden mucho menos por su tamaño: ' +
+    'km/L y, entre paréntesis, qué tanto recorren contra el promedio de su mismo modelo (mínimo 5 tramos). ' +
+    'El $/L efectivo es el litro corregido por eso. Las cargas sin combustible especificado no se comparan.',
   )
   if (a.gasolineras.length === 0) {
     pdf.vacio('Sin recargas registradas en el periodo.')
   } else {
     pdf.tabla({
       head: ['Gasolinera', 'Combustible', 'Cargas', 'Litros', 'Gasto', '$/L', 'Sobreprecio',
-             'km/L', 'Vs. modelo', '$/L efectivo'],
+             'Tráileres km/L', 'Unidades km/L', '$/L efectivo'],
       body: [
         ...a.gasolineras.map((g) => [
           g.gasolinera, g.producto, String(g.recargas), formatLitros(g.litros), formatMXN(g.costo),
           g.precio_litro != null ? `$${g.precio_litro.toFixed(2)}` : '—',
           g.sobreprecio > 0 ? formatMXN(g.sobreprecio)
             : g.producto === SIN_PRODUCTO ? '—' : 'la más barata',
-          g.rendimiento != null ? g.rendimiento.toFixed(2) : '—',
-          g.eficiencia_pct != null ? `${g.eficiencia_pct > 0 ? '+' : ''}${g.eficiencia_pct.toFixed(1)}%` : '—',
+          rendimientoDeGrupo(grupo(g, 'traileres')),
+          rendimientoDeGrupo(grupo(g, 'unidades')),
           g.precio_efectivo != null ? `$${g.precio_efectivo.toFixed(2)}` : '—',
         ]),
         ['Total', '', '', '', '', '', formatMXN(t.ahorro_combustible), '', '', ''],
@@ -369,8 +384,10 @@ export async function exportCostosExcel(a: AnalisisCostos) {
     { header: 'Precio/litro',width: 13, formato: 'moneda',  valor: (g) => g.precio_litro ?? 0 },
     { header: 'Sobreprecio', width: 15, formato: 'moneda',  valor: (g) => g.sobreprecio },
     { header: 'Tramos medidos',     width: 15, formato: 'numero',     valor: (g) => g.tramos },
-    { header: 'km/L',               width: 10, formato: 'decimal',    valor: (g) => g.rendimiento ?? 0 },
-    { header: 'Contra su modelo %', width: 17, formato: 'porcentaje', valor: (g) => g.eficiencia_pct ?? 0 },
+    { header: 'Tráileres km/L',     width: 15, formato: 'decimal',    valor: (g) => grupo(g, 'traileres')?.rendimiento ?? 0 },
+    { header: 'Tráileres vs. modelo %', width: 21, formato: 'porcentaje', valor: (g) => grupo(g, 'traileres')?.eficiencia_pct ?? 0 },
+    { header: 'Unidades km/L',      width: 15, formato: 'decimal',    valor: (g) => grupo(g, 'unidades')?.rendimiento ?? 0 },
+    { header: 'Unidades vs. modelo %', width: 21, formato: 'porcentaje', valor: (g) => grupo(g, 'unidades')?.eficiencia_pct ?? 0 },
     { header: '$/L efectivo',       width: 13, formato: 'moneda',     valor: (g) => g.precio_efectivo ?? 0 },
   ], a.gasolineras, {
     totales: { 'Gasolinera': 'Total', 'Sobreprecio': t.ahorro_combustible },

@@ -394,6 +394,23 @@ export interface GasolineraCosto {
   eficiencia_pct:  number | null
   /** El litro corregido por lo que rinde: con lo que se decide a dónde mandar a cargar. */
   precio_efectivo: number | null
+  /** Lo mismo, tráileres y el resto por separado. Solo los grupos que cargaron aquí. */
+  por_grupo:       RendimientoDeGrupo[]
+}
+
+/** Los tráileres rinden mucho menos por su tamaño: se miden aparte del resto. */
+export type GrupoRendimiento = 'traileres' | 'unidades'
+
+export const NOMBRE_GRUPO: Record<GrupoRendimiento, string> = {
+  traileres: 'Tráileres',
+  unidades:  'Unidades',
+}
+
+export interface RendimientoDeGrupo {
+  grupo:          GrupoRendimiento
+  tramos:         number
+  rendimiento:    number | null
+  eficiencia_pct: number | null
 }
 
 /** El litro de una gasolinera y un combustible en un mes. */
@@ -477,6 +494,7 @@ export interface AnalisisCostos {
     costo_por_km:          number | null
     litros:                number
     rendimiento:           number | null
+    rendimiento_grupos:    { grupo: GrupoRendimiento; unidades: number; rendimiento: number | null }[]
     precio_litro:          number | null
     ahorro_refacciones:    number
     ahorro_combustible:    number

@@ -156,6 +156,46 @@ function recorrido(lecturas: { fecha: string; km: number }[]): number | null {
   return tramos > 0 ? km : null
 }
 
+/**
+ * Los tráileres se miden aparte del resto. Un tractocamión rinde la mitad o
+ * menos que una camioneta por su tamaño y su carga, así que revueltos, el
+ * km/L de una gasolinera o de la flota dependía de quién cargaba ahí más que de
+ * la gasolinera.
+ */
+export type GrupoRendimiento = 'traileres' | 'unidades'
+const GRUPOS_RENDIMIENTO: GrupoRendimiento[] = ['traileres', 'unidades']
+
+function grupoDe(tipo: string): GrupoRendimiento {
+  return tipo === 'tractocamion' ? 'traileres' : 'unidades'
+}
+
+/**
+ * Lo que se junta para medir cuánto rinde un conjunto de tramos. `_efLitros` e
+ * `_ideales` son solo los de unidades cuyo modelo tiene rendimiento de
+ * referencia: los litros que gastaron y los que habrían gastado al del modelo.
+ */
+interface MedicionRendimiento {
+  tramos:       number
+  _tramoKm:     number
+  _tramoLitros: number
+  _efLitros:    number
+  _ideales:     number
+}
+
+function nuevaMedicion(): MedicionRendimiento {
+  return { tramos: 0, _tramoKm: 0, _tramoLitros: 0, _efLitros: 0, _ideales: 0 }
+}
+
+/** km/L y % contra el modelo, o null con menos de TRAMOS_MIN_GASOLINERA tramos. */
+function medir(m: MedicionRendimiento): { tramos: number; rendimiento: number | null; eficiencia_pct: number | null } {
+  if (m.tramos < TRAMOS_MIN_GASOLINERA) return { tramos: m.tramos, rendimiento: null, eficiencia_pct: null }
+  return {
+    tramos:         m.tramos,
+    rendimiento:    redondear(ratio(m._tramoKm, m._tramoLitros)),
+    eficiencia_pct: m._efLitros > 0 ? redondear((m._ideales / m._efLitros - 1) * 100, 1) : null,
+  }
+}
+
 function redondear(n: number | null, decimales = 2): number | null {
   if (n == null || !Number.isFinite(n)) return null
   const f = 10 ** decimales
@@ -236,6 +276,16 @@ export interface GasolineraCosto {
    * el que se decide a dónde mandar a cargar.
    */
   precio_efectivo: number | null
+  /** Lo mismo, tráileres por un lado y el resto por otro. Solo los grupos que cargaron aquí. */
+  por_grupo:       RendimientoDeGrupo[]
+}
+
+export interface RendimientoDeGrupo {
+  grupo:          GrupoRendimiento
+  tramos:         number
+  /** Null con menos de TRAMOS_MIN_GASOLINERA tramos. */
+  rendimiento:    number | null
+  eficiencia_pct: number | null
 }
 
 /** El litro de una gasolinera y un combustible en un mes, para ver cómo se mueve. */
@@ -378,6 +428,8 @@ export interface AnalisisCostos {
     costo_por_km:           number | null
     litros:                 number
     rendimiento:            number | null
+    /** Tráileres y el resto por separado: revueltos, el de la flota depende de cuántos tráileres hay. */
+    rendimiento_grupos:     { grupo: GrupoRendimiento; unidades: number; rendimiento: number | null }[]
     /** Todos los combustibles revueltos: sirve de total, no para comparar. */
     precio_litro:           number | null
     ahorro_refacciones:     number
@@ -496,7 +548,9 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
 
   // Los tramos que cerró cada gasolinera, para medir cuánto rinde. Ver
   // `GasolineraCosto.eficiencia_pct`.
-  const tramosGasolinera: { modelo_id: number; clave: string; km: number; litros: number }[] = []
+  const tramosGasolinera: {
+    modelo_id: number; grupo: GrupoRendimiento; clave: string; km: number; litros: number
+  }[] = []
 
   let previa: repo.RecargaCosto | null = null
   // Litros de emergencia cargados desde la última carga normal de la unidad.
@@ -554,7 +608,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
         if (litrosEmergencia === 0 && r.gasolinera_id != null
           && !esAtipica(desviacionPrecio(r, referenciaDe(r)))) {
           tramosGasolinera.push({
-            modelo_id: a.v.modelo_id, clave: `${r.gasolinera_id}|${r.producto ?? SIN_PRODUCTO}`,
+            modelo_id: a.v.modelo_id, grupo: grupoDe(a.v.tipo), clave: `${r.gasolinera_id}|${r.producto ?? SIN_PRODUCTO}`,
             km: deltaKm, litros: r.litros,
           })
         }
@@ -796,12 +850,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   // no es "cara" ni "barata" en general, lo es en cada uno.
   // El litro de cada renglón sale solo de las cargas que no son atípicas;
   // litros y gasto sí las cuentan todas, porque se pagaron igual.
-  // `_tramoKm` y `_tramoLitros` son los de sus tramos; `_efLitros` e `_ideales`,
-  // los de los tramos de unidades cuyo modelo tiene rendimiento de referencia.
-  type GasolineraAcum = GasolineraCosto & {
-    _litros: number; _costo: number
-    _tramoKm: number; _tramoLitros: number; _efLitros: number; _ideales: number
-  }
+  type GasolineraAcum = GasolineraCosto & MedicionRendimiento & { _litros: number; _costo: number }
   const porGasolinera = new Map<string, GasolineraAcum>()
   for (const r of recargas) {
     // La de emergencia se cargó donde se pudo: no dice nada de a qué
@@ -812,8 +861,8 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     const g = porGasolinera.get(clave) ?? {
       gasolinera_id: r.gasolinera_id, gasolinera: r.gasolinera ?? '', producto,
       recargas: 0, litros: 0, costo: 0, precio_litro: null, sobreprecio: 0, atipicas: 0,
-      tramos: 0, rendimiento: null, eficiencia_pct: null, precio_efectivo: null,
-      _litros: 0, _costo: 0, _tramoKm: 0, _tramoLitros: 0, _efLitros: 0, _ideales: 0,
+      rendimiento: null, eficiencia_pct: null, precio_efectivo: null, por_grupo: [],
+      _litros: 0, _costo: 0, ...nuevaMedicion(),
     }
     g.recargas += 1
     g.litros   += r.litros
@@ -828,31 +877,43 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   }
   // Lo que rinde: cada tramo contra el rendimiento del modelo de su unidad. El
   // km/L a secas revuelve modelos y premiaría a la gasolinera de las camionetas.
+  // Lo mismo, separado en tráileres y el resto: el km/L de un tractocamión no
+  // se parece al de una camioneta, y revueltos, la gasolinera donde cargan más
+  // tráileres salía "rindiendo menos" solo por quién carga ahí.
+  const porGrupo = new Map<string, MedicionRendimiento>()
   for (const t of tramosGasolinera) {
     const g = porGasolinera.get(t.clave)
     if (!g) continue
-    g.tramos       += 1
-    g._tramoKm     += t.km
-    g._tramoLitros += t.litros
     const mod = porModelo.get(t.modelo_id)
     const rendModelo = mod ? ratio(mod.km, mod.litros) : null
-    if (rendModelo != null && rendModelo > 0) {
-      g._efLitros += t.litros
-      g._ideales  += t.km / rendModelo
+    const kGrupo = `${t.clave}|${t.grupo}`
+    const mg = porGrupo.get(kGrupo) ?? nuevaMedicion()
+    for (const m of [g, mg]) {
+      m.tramos       += 1
+      m._tramoKm     += t.km
+      m._tramoLitros += t.litros
+      if (rendModelo != null && rendModelo > 0) {
+        m._efLitros += t.litros
+        m._ideales  += t.km / rendModelo
+      }
     }
+    porGrupo.set(kGrupo, mg)
   }
 
   const gasolineras = [...porGasolinera.values()]
   for (const g of gasolineras) {
     g.precio_litro = redondear(ratio(g._costo, g._litros))
-    if (g.tramos < TRAMOS_MIN_GASOLINERA) continue
-    g.rendimiento = redondear(ratio(g._tramoKm, g._tramoLitros))
-    if (g._efLitros > 0) {
-      const eficiencia = g._ideales / g._efLitros - 1
-      g.eficiencia_pct = redondear(eficiencia * 100, 1)
-      if (g.precio_litro != null && 1 + eficiencia > 0) {
-        g.precio_efectivo = redondear(g.precio_litro / (1 + eficiencia))
-      }
+    g.por_grupo = GRUPOS_RENDIMIENTO
+      .map((grupo) => {
+        const m = porGrupo.get(`${g.gasolinera_id}|${g.producto}|${grupo}`)
+        return m ? { grupo, ...medir(m) } : null
+      })
+      .filter((x): x is RendimientoDeGrupo => x != null)
+    const total = medir(g)
+    g.rendimiento    = total.rendimiento
+    g.eficiencia_pct = total.eficiencia_pct
+    if (g.precio_litro != null && total.eficiencia_pct != null && 1 + total.eficiencia_pct / 100 > 0) {
+      g.precio_efectivo = redondear(g.precio_litro / (1 + total.eficiencia_pct / 100))
     }
   }
 
@@ -993,10 +1054,18 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   const kmFlota = vehiculos.reduce((s, v) => s + (v.km_recorridos ?? 0), 0)
   const refaccionesCompradas = compras.reduce((s, c) => s + c.cantidad * c.costo_unitario, 0)
   const totalOperacion = costoCombustible + manoObra + piezasUsadas + casetasAsignadas
-  const rendimientoFlota = ratio(
-    [...acum.values()].reduce((s, a) => s + (a.tramos >= TRAMOS_MIN_RENDIMIENTO ? a.tramoKm : 0), 0),
-    [...acum.values()].reduce((s, a) => s + (a.tramos >= TRAMOS_MIN_RENDIMIENTO ? a.tramoLitros : 0), 0),
+  const medibles = [...acum.values()].filter((a) => a.tramos >= TRAMOS_MIN_RENDIMIENTO)
+  const rendimientoDe = (as: Acumulado[]) => ratio(
+    as.reduce((s, a) => s + a.tramoKm, 0),
+    as.reduce((s, a) => s + a.tramoLitros, 0),
   )
+  const rendimientoFlota = rendimientoDe(medibles)
+  const rendimientoGrupos = GRUPOS_RENDIMIENTO
+    .map((grupo) => {
+      const delGrupo = medibles.filter((a) => grupoDe(a.v.tipo) === grupo)
+      return { grupo, unidades: delGrupo.length, rendimiento: redondear(rendimientoDe(delGrupo)) }
+    })
+    .filter((g) => g.unidades > 0)
 
   retrabajos.sort((a, b) => b.costo - a.costo || b.fecha.localeCompare(a.fecha))
 
@@ -1025,6 +1094,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       costo_por_km:          redondear(ratio(totalOperacion, kmFlota)),
       litros:                redondear(litrosTotales, 3)!,
       rendimiento:           redondear(rendimientoFlota),
+      rendimiento_grupos:    rendimientoGrupos,
       precio_litro:          redondear(precioLitroFlota),
       ahorro_refacciones:    redondear(totalAhorroRefacciones, 2)!,
       ahorro_combustible:    redondear(ahorroCombustible, 2)!,
