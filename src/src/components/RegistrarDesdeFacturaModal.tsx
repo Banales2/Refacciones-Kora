@@ -3,19 +3,26 @@
 // Es el caso del ticket que llega a la oficina junto con el vale: la gasolinera
 // ya está cobrando la carga y en el sistema no está.
 //
+// O, tercer caso, la recarga sí está pero le falta un ticket: eran dos tanques
+// y el chofer entregó uno. Entonces se le agrega a esa recarga el ticket que
+// faltaba (migración 077).
+//
 // La gasolinera es la de la factura y no se pregunta. Litros, costo y producto
 // arrancan con lo del renglón; se corrigen con el ticket en la mano. Al guardar,
 // la recarga queda casada con el renglón y marcada para el reporte de
 // omisiones (pestaña "Sin reportar"). Ver la migración 069.
 import { useMemo, useState } from 'react'
 import {
-  Alert, Button, Group, Loader, Modal, NumberInput, Radio, SegmentedControl, Select,
+  Alert, Badge, Button, Group, Loader, Modal, NumberInput, Radio, SegmentedControl, Select,
   Stack, Text, TextInput,
 } from '@mantine/core'
+import type { ComboboxItem, SelectProps } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import { IconAlertTriangle } from '@tabler/icons-react'
-import type { FacturaGasolina, RenglonFactura, Registrada } from '../hooks/useFacturasGasolina'
-import { useRegistrarDesdeFactura } from '../hooks/useFacturasGasolina'
+import type { FacturaGasolina, RecargaParaTicket, RenglonFactura } from '../hooks/useFacturasGasolina'
+import {
+  useAgregarTicketDesdeFactura, useRecargasParaTicket, useRegistrarDesdeFactura,
+} from '../hooks/useFacturasGasolina'
 import { useValesGasolina, useCuentasVale } from '../hooks/useValesGasolina'
 import { useConductores } from '../hooks/useConductores'
 import { useVehiculo, useVehiculos } from '../hooks/useVehiculos'
@@ -25,12 +32,13 @@ import { useSucursales } from '../hooks/useSucursales'
 import SelectCatalogo from './SelectCatalogo'
 import { FechaInput } from './FechaInput'
 import ConfirmarAvanceKm from './ConfirmarAvanceKm'
-import { opcionVale, renderOpcionVale, filtrarVales } from './OpcionVale'
+import { opcionVale, renderOpcionVale, filtrarVales, normalizar } from './OpcionVale'
+import { filtrarTickets } from './OpcionTicket'
 import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCorto } from './OpcionVehiculo'
 import { CODIGO, KM_MAX, limpiarCodigo, validarKm } from '../lib/validaciones'
 import { GASOLINAS, esGasolina, familiaCombustible } from '../lib/combustible'
 import { avanzaOdometro } from '../lib/odometro'
-import { formatFecha, formatMXN } from '../lib/formato'
+import { formatFecha, formatLitros, formatMXN } from '../lib/formato'
 
 const FOLIO_MAX = 30
 
@@ -39,7 +47,14 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-type Modo = 'existente' | 'nuevo'
+type Modo = 'existente' | 'nuevo' | 'ticket'
+
+/**
+ * Qué se registró: la recarga entera (con su vale, si faltaba) o solo el ticket
+ * que le faltaba a una recarga que ya estaba. En los dos casos el renglón queda
+ * casado con `ticket_id`.
+ */
+export type Registro = { tipo: 'recarga' | 'ticket'; ticket_id: number }
 type VehiculoElegido = { id: number; label: string }
 
 export default function RegistrarDesdeFacturaModal({
@@ -49,13 +64,13 @@ export default function RegistrarDesdeFacturaModal({
   /** null = cerrado. */
   renglon: RenglonFactura | null
   onClose: () => void
-  onRegistrada: (renglonId: number, r: Registrada) => void
+  onRegistrada: (renglonId: number, r: Registro) => void
 }) {
   return (
     <Modal
       opened={renglon !== null}
       onClose={onClose}
-      title="Registrar la recarga que no se reportó"
+      title="Registrar lo que no se reportó"
       size="lg"
       centered
     >
@@ -79,7 +94,7 @@ function Formulario({
   factura: FacturaGasolina
   renglon: RenglonFactura
   onClose: () => void
-  onRegistrada: (renglonId: number, r: Registrada) => void
+  onRegistrada: (renglonId: number, r: Registro) => void
 }) {
   const hoy = todayIso()
   const registrar = useRegistrarDesdeFactura()
@@ -218,7 +233,7 @@ function Formulario({
         kilometraje: kmNum,
         ...(preguntaProducto && esGasolina(producto) ? { producto } : {}),
       },
-      { onSuccess: (res) => onRegistrada(renglon.id, res.data) },
+      { onSuccess: (res) => onRegistrada(renglon.id, { tipo: 'recarga', ticket_id: res.data.ticket_id }) },
     )
   }
 
@@ -237,11 +252,20 @@ function Formulario({
         value={modo}
         onChange={(v) => { setModo(v as Modo); setErrores({}) }}
         data={[
-          { value: 'existente', label: 'El vale sí está registrado' },
-          { value: 'nuevo', label: 'El vale tampoco está registrado' },
+          { value: 'existente', label: 'Falta la recarga' },
+          { value: 'nuevo', label: 'Falta también el vale' },
+          { value: 'ticket', label: 'Falta solo un ticket' },
         ]}
       />
 
+      {modo === 'ticket' ? (
+        <TicketFaltante
+          factura={factura}
+          renglon={renglon}
+          onClose={onClose}
+          onAgregado={(ticketId) => onRegistrada(renglon.id, { tipo: 'ticket', ticket_id: ticketId })}
+        />
+      ) : (<>
       {modo === 'existente' ? (
         <>
           <SelectCatalogo
@@ -395,6 +419,144 @@ function Formulario({
         onCancel={() => setPorConfirmarKm(false)}
         onConfirm={() => guardar(true)}
       />
+      </>)}
     </Stack>
+  )
+}
+
+// ── Falta solo un ticket ──────────────────────────────────────────────────────
+
+type OpcionRecarga = ComboboxItem & {
+  recarga:  RecargaParaTicket
+  /** Lo que filtra `filtrarTickets`: todo lo que se puede teclear, sin acentos. */
+  busqueda: string
+}
+
+function opcionRecarga(r: RecargaParaTicket): OpcionRecarga {
+  const fecha = formatFecha(r.fecha)
+  return {
+    value: String(r.id),
+    label: `${fecha} · ${r.litros} L · ${formatMXN(r.costo)} · ${r.conductor}`,
+    recarga: r,
+    busqueda: normalizar([
+      fecha, String(r.litros), String(r.costo), formatMXN(r.costo),
+      r.conductor, r.vehiculo, r.placas ?? '', r.vale_folio ? `vale ${r.vale_folio}` : 'sin vale',
+    ].join(' ')),
+  }
+}
+
+const renderOpcionRecarga: SelectProps['renderOption'] = ({ option }) => {
+  const { recarga: r } = option as unknown as OpcionRecarga
+  return (
+    <Group justify="space-between" wrap="nowrap" gap="sm" w="100%">
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <Group gap={6} wrap="nowrap">
+          <Text size="sm" fw={500} style={{ flexShrink: 0 }}>{r.litros} L · {formatMXN(r.costo)}</Text>
+          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>{formatFecha(r.fecha)}</Text>
+        </Group>
+        <Text size="xs" c="dimmed" truncate>
+          {r.conductor} · {r.vehiculo}{r.placas ? ` · ${r.placas}` : ''}
+          {r.vale_folio ? ` · vale ${r.vale_folio}` : ' · sin vale'}
+          {` · ${r.tickets} ticket${r.tickets !== 1 ? 's' : ''}`}
+        </Text>
+      </div>
+      {/* El tanque que falta casi siempre viene en la misma factura que el otro. */}
+      {r.en_esta_factura && (
+        <Badge variant="light" color="green" radius="sm" style={{ flexShrink: 0 }}>
+          Otro ticket en esta factura
+        </Badge>
+      )}
+    </Group>
+  )
+}
+
+function TicketFaltante({
+  factura, renglon, onClose, onAgregado,
+}: {
+  factura: FacturaGasolina
+  renglon: RenglonFactura
+  onClose: () => void
+  onAgregado: (ticketId: number) => void
+}) {
+  const query = useRecargasParaTicket(factura.id, true)
+  const agregar = useAgregarTicketDesdeFactura()
+  const recargas = useMemo(() => query.data?.data ?? [], [query.data])
+  const opciones = useMemo(() => recargas.map(opcionRecarga), [recargas])
+  const [recargaId, setRecargaId] = useState<string | null>(null)
+  const recarga = recargas.find((r) => String(r.id) === recargaId)
+  const [litros, setLitros] = useState<number | string>(renglon.cantidad)
+  const [costo, setCosto] = useState<number | string>(renglon.importe_con_iva)
+  const [errores, setErrores] = useState<Record<string, string>>({})
+
+  function guardar() {
+    const e: Record<string, string> = {}
+    if (!recarga) e.recarga = 'Elige la recarga'
+    if (litros === '' || Number(litros) <= 0) e.litros = 'Debe ser mayor a 0'
+    if (costo === '' || Number(costo) < 0) e.costo = 'No puede ser negativo'
+    setErrores(e)
+    if (Object.keys(e).length > 0) return
+    agregar.mutate(
+      {
+        factura_id: factura.id,
+        renglon_id: renglon.id,
+        recarga_id: recarga!.id,
+        litros: Number(litros),
+        costo: Number(costo),
+      },
+      { onSuccess: (res) => onAgregado(res.data.ticket_id) },
+    )
+  }
+
+  return (
+    <>
+      <SelectCatalogo
+        estado={query}
+        nombre="recargas"
+        label="Recarga a la que le faltó el ticket"
+        placeholder={opciones.length ? 'Busca por chofer, unidad, vale o litros' : 'No hay recargas que admitan otro ticket'}
+        data={opciones}
+        renderOption={renderOpcionRecarga}
+        filter={filtrarTickets}
+        maxDropdownHeight={320}
+        required
+        value={recargaId}
+        onChange={setRecargaId}
+        error={errores.recarga}
+      />
+      <Text size="xs" c="dimmed">
+        Las de {factura.gasolinera} que todavía admiten otro ticket. La recarga conserva su chofer,
+        unidad, vale y fecha; el ticket queda señalado como no entregado por el chofer.
+      </Text>
+
+      <Group grow align="flex-start">
+        <NumberInput
+          label="Litros del ticket" required min={0} decimalScale={3} step={0.001} suffix=" L"
+          value={litros} onChange={setLitros} error={errores.litros}
+        />
+        <NumberInput
+          label="Costo del ticket" required min={0} decimalScale={2} step={0.01}
+          prefix="$" thousandSeparator=","
+          value={costo} onChange={setCosto} error={errores.costo}
+          description={renglon.iva_estimado ? 'El IVA del renglón es estimado: usa el del ticket.' : undefined}
+        />
+      </Group>
+      {recarga && Number(litros) > 0 && (
+        <Text size="sm">
+          La recarga pasa de {formatLitros(recarga.litros)} L a{' '}
+          <b>{formatLitros(recarga.litros + Number(litros))} L</b> y de {formatMXN(recarga.costo)} a{' '}
+          <b>{formatMXN(recarga.costo + Number(costo || 0))}</b>, con {recarga.tickets + 1} tickets.
+        </Text>
+      )}
+
+      {agregar.error && (
+        <Alert color="red" title="No se pudo agregar el ticket" icon={<IconAlertTriangle size={16} />}>
+          {(agregar.error as Error).message}
+        </Alert>
+      )}
+      <Group justify="flex-end" mt="xs">
+        <Button variant="default" onClick={onClose} disabled={agregar.isPending}>Volver</Button>
+        <Button onClick={guardar} loading={agregar.isPending}>Agregar ticket</Button>
+      </Group>
+    </>
   )
 }

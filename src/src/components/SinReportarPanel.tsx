@@ -1,7 +1,9 @@
 // Pestaña "Sin reportar" de Facturas de gas: las recargas que aparecieron al
 // cuadrar la factura porque nadie las había capturado, y los vales que el
-// encargado tampoco registró. Es la lista que se le lleva a cada uno. Se llena
-// con "Registrar recarga no reportada" en el cuadre. Ver la migración 069.
+// encargado tampoco registró. También los tickets que el chofer no entregó de
+// una recarga que sí reportó (el otro tanque). Es la lista que se le lleva a
+// cada uno. Se llena con "Registrar lo que no se reportó" en el cuadre. Ver las
+// migraciones 069 y 077.
 import { useState } from 'react'
 import {
   Alert, Badge, Button, Card, Center, Group, Loader, SegmentedControl, Stack, Table, Text,
@@ -48,9 +50,9 @@ export default function SinReportarPanel() {
   return (
     <Stack gap="md">
       <Text size="sm" c="dimmed">
-        Recargas que el chofer no reportó y salieron al cuadrar la factura de la gasolinera, y los
-        vales que el encargado tampoco registró. Se agregan desde el cuadre, con
-        "Registrar recarga no reportada".
+        Recargas que el chofer no reportó y salieron al cuadrar la factura de la gasolinera, tickets
+        de otro tanque que no entregó, y los vales que el encargado tampoco registró. Se agregan
+        desde el cuadre, con "Registrar lo que no se reportó".
       </Text>
 
       <Group gap="sm" align="flex-end" wrap="wrap">
@@ -90,7 +92,11 @@ export default function SinReportarPanel() {
           <Group gap="sm">
             <Card withBorder padding="xs" style={{ flex: 1, minWidth: 130 }}>
               <Text size="xs" c="dimmed">Recargas sin reportar</Text>
-              <Text size="lg" fw={700}>{items.length}</Text>
+              <Text size="lg" fw={700}>{items.filter((r) => r.ticket_id === null).length}</Text>
+            </Card>
+            <Card withBorder padding="xs" style={{ flex: 1, minWidth: 130 }}>
+              <Text size="xs" c="dimmed">Tickets no entregados</Text>
+              <Text size="lg" fw={700}>{items.filter((r) => r.ticket_id !== null).length}</Text>
             </Card>
             <Card withBorder padding="xs" style={{ flex: 1, minWidth: 130 }}>
               <Text size="xs" c="dimmed">Vales sin registrar</Text>
@@ -151,8 +157,13 @@ function Grupo({ g, vista }: { g: GrupoOmision; vista: Vista }) {
           </Table.Thead>
           <Table.Tbody>
             {g.items.map((r) => (
-              <Table.Tr key={r.recarga_id}>
-                <Table.Td><Text size="sm">{formatFecha(r.fecha)}</Text></Table.Td>
+              <Table.Tr key={`${r.recarga_id}-${r.ticket_id ?? 'recarga'}`}>
+                <Table.Td>
+                  <Text size="sm">{formatFecha(r.fecha)}</Text>
+                  {r.ticket_id !== null && (
+                    <Badge size="xs" variant="light" color="grape">Faltó un ticket</Badge>
+                  )}
+                </Table.Td>
                 <Table.Td>
                   {vista === 'encargado' && <Text size="sm">{r.conductor}</Text>}
                   <Text size={vista === 'encargado' ? 'xs' : 'sm'} c={vista === 'encargado' ? 'dimmed' : undefined}>

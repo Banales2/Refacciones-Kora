@@ -46,7 +46,7 @@ import type {
 } from '../hooks/useFacturasGasolina'
 import { useGasolineras } from '../hooks/useGasolineras'
 import ImportarFacturasGasolina from '../components/ImportarFacturasGasolina'
-import RegistrarDesdeFacturaModal from '../components/RegistrarDesdeFacturaModal'
+import RegistrarDesdeFacturaModal, { type Registro } from '../components/RegistrarDesdeFacturaModal'
 import SinReportarPanel from '../components/SinReportarPanel'
 import ValeEnFacturas from '../components/ValeEnFacturas'
 import { SelectCatalogo } from '../components/SelectCatalogo'
@@ -360,9 +360,10 @@ function CuadreFactura({
   const [nota, setNota] = useState(factura.nota ?? '')
   // El renglón cuya recarga se está registrando (llegó el ticket con el vale), y
   // los que ya se registraron aquí. La marca de verdad viene en el ticket
-  // (`registrada_aqui`); esto solo la adelanta mientras vuelven las candidatas.
+  // (`registrada_aqui`, `ticket_agregado_aqui`); esto solo la adelanta mientras
+  // vuelven las candidatas.
   const [registrando, setRegistrando] = useState<RenglonFactura | null>(null)
-  const [registrados, setRegistrados] = useState<Record<number, boolean>>({})
+  const [registrados, setRegistrados] = useState<Record<number, Registro['tipo']>>({})
 
   const porId = new Map(tickets.map((t) => [t.id, t]))
   const usadas = new Set(Object.values(eleccion).filter((v): v is number => v !== null))
@@ -587,7 +588,14 @@ function CuadreFactura({
                         {ticket.vale_folio ? ` · vale ${ticket.vale_folio}` : ''}
                       </Text>
                     )}
-                    {(ticket?.registrada_aqui || (registrados[r.id] && elegida !== null)) && (
+                    {(ticket?.ticket_agregado_aqui || (registrados[r.id] === 'ticket' && elegida !== null)) && (
+                      <Tooltip label="La recarga sí se reportó, pero sin este ticket: se agregó al cuadrar esta factura">
+                        <Badge size="xs" variant="light" color="grape" mt={2}>
+                          Ticket agregado desde la factura · no entregado
+                        </Badge>
+                      </Tooltip>
+                    )}
+                    {(ticket?.registrada_aqui || (registrados[r.id] === 'recarga' && elegida !== null)) && (
                       <Group gap={4} mt={2}>
                         <Tooltip label="El chofer no la reportó: se registró al cuadrar esta factura">
                           <Badge size="xs" variant="light" color="grape">
@@ -609,7 +617,7 @@ function CuadreFactura({
                         leftSection={<IconPlus size={12} />}
                         onClick={() => setRegistrando(r)}
                       >
-                        Registrar recarga no reportada
+                        Registrar lo que no se reportó
                       </Button>
                     )}
                     {elegida === null && r.en_otra_gasolinera.map((a) => (
@@ -685,7 +693,7 @@ function CuadreFactura({
               // La API ya lo casó; aquí solo se refleja, para que el siguiente
               // "Conciliar" lo mande igual y no lo suelte.
               setEleccion((p) => ({ ...p, [renglonId]: res.ticket_id }))
-              setRegistrados((p) => ({ ...p, [renglonId]: true }))
+              setRegistrados((p) => ({ ...p, [renglonId]: res.tipo }))
               setRegistrando(null)
               if (conciliar.error) conciliar.reset()
             }}

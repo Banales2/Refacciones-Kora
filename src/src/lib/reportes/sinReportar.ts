@@ -4,7 +4,8 @@
 //
 // Son dos listas para dos personas distintas:
 //
-//   por chofer     las recargas que no avisó. Toda recarga de aquí es suya.
+//   por chofer     las recargas que no avisó, y los tickets de otro tanque que
+//                  no entregó de una recarga que sí avisó (077). Todo es suyo.
 //   por encargado  los vales que no registró. Solo las recargas cuyo vale
 //                  tampoco estaba; si el vale sí estaba, el encargado cumplió.
 //
@@ -61,6 +62,11 @@ export function porEncargado(items: SinReportar[]): GrupoOmision[] {
   )
 }
 
+/** La recarga entera, o solo el ticket de otro tanque (migración 077). */
+function faltante(r: SinReportar): string {
+  return r.ticket_id === null ? 'Recarga' : 'Un ticket'
+}
+
 function periodo(desde?: string, hasta?: string): string {
   if (desde && hasta) return `del ${formatFecha(desde)} al ${formatFecha(hasta)}`
   if (desde) return `desde el ${formatFecha(desde)}`
@@ -95,14 +101,14 @@ export async function exportSinReportarPdf(items: SinReportar[], desde?: string,
     pdf.subseccion(`${g.nombre} · ${g.items.length} recarga${g.items.length !== 1 ? 's' : ''} · ` +
       `${formatLitros(g.litros)} L · ${formatMXN(g.costo)}`)
     pdf.tabla({
-      head: ['Fecha', 'Vehículo', 'Placas', 'Gasolinera', 'Litros', 'Costo', 'Vale', 'Factura'],
+      head: ['Fecha', 'Faltó', 'Vehículo', 'Placas', 'Gasolinera', 'Litros', 'Costo', 'Vale', 'Factura'],
       body: g.items.map((r) => [
-        formatFecha(r.fecha), r.vehiculo, r.placas ?? '—', r.gasolinera ?? '—',
+        formatFecha(r.fecha), faltante(r), r.vehiculo, r.placas ?? '—', r.gasolinera ?? '—',
         formatLitros(r.litros), formatMXN(r.costo),
         r.vale_folio ? `${r.vale_folio}${r.vale_sin_registrar ? ' (sin registrar)' : ''}` : '—',
         r.factura_folio,
       ]),
-      columnStyles: { 4: { halign: 'right' }, 5: { halign: 'right' } },
+      columnStyles: { 5: { halign: 'right' }, 6: { halign: 'right' } },
       fontSize: 9,
     })
   }
@@ -133,6 +139,7 @@ export async function exportSinReportarExcel(items: SinReportar[]) {
 
   wb.hoja('Recargas', [
     { header: 'Fecha',      width: 13, formato: 'fecha', valor: (r) => fecha(r.fecha) },
+    { header: 'Faltó',      width: 12, valor: (r) => faltante(r) },
     { header: 'Chofer',     width: 28, valor: (r) => r.conductor },
     { header: 'Vehículo',   width: 30, valor: (r) => r.vehiculo },
     { header: 'Placas',     width: 12, valor: (r) => r.placas ?? '—' },

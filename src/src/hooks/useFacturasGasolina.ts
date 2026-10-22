@@ -117,6 +117,8 @@ export interface TicketCandidato {
   registrada_aqui:      boolean
   /** Y su vale también: el encargado no lo había registrado. */
   vale_registrado_aqui: boolean
+  /** La recarga sí estaba, pero sin este ticket: se agregó desde ESTA factura (migración 077). */
+  ticket_agregado_aqui: boolean
 }
 
 export interface FacturasGasolinaFiltros {
@@ -402,11 +404,63 @@ export function useRegistrarDesdeFactura() {
 }
 
 /**
- * Una recarga que el chofer no reportó y salió al cuadrar la factura. Si
- * `vale_sin_registrar`, el encargado tampoco registró el vale.
+ * La recarga sí se reportó, pero el chofer entregó el ticket de un solo tanque.
+ * El que faltaba se agrega a esa recarga y queda casado con el renglón. Ver la
+ * migración 077.
+ */
+export interface AgregarTicketPayload {
+  recarga_id: number
+  litros:     number
+  costo:      number
+}
+
+/** Una recarga de la gasolinera de la factura que todavía admite otro ticket. */
+export interface RecargaParaTicket {
+  id:         number
+  fecha:      string
+  /** La suma de sus tickets. */
+  litros:     number
+  costo:      number
+  tickets:    number
+  vehiculo:   string
+  placas:     string | null
+  conductor:  string
+  vale_folio: string | null
+  /** Algún ticket suyo ya está casado con un renglón de esta factura. */
+  en_esta_factura: boolean
+}
+
+export function useRecargasParaTicket(facturaId: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ['facturas-gasolina', 'recargas-para-ticket', facturaId],
+    queryFn: () =>
+      api.get<{ data: RecargaParaTicket[] }>(`/facturas-gasolina/${facturaId}/recargas-para-ticket`),
+    enabled,
+  })
+}
+
+/** Solo admin, y solo en una factura abierta. El ticket queda casado con el renglón. */
+export function useAgregarTicketDesdeFactura() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ factura_id, renglon_id, ...body }:
+      AgregarTicketPayload & { factura_id: number; renglon_id: number }) =>
+      api.post<{ data: { recarga_id: number; ticket_id: number } }>(
+        `/facturas-gasolina/${factura_id}/renglones/${renglon_id}/agregar-ticket`, body,
+      ),
+    onSuccess: () => invalidar(qc),
+  })
+}
+
+/**
+ * Una omisión que salió al cuadrar la factura: la recarga que el chofer no
+ * reportó o, si `ticket_id`, el ticket que no entregó de una recarga que sí
+ * reportó. Si `vale_sin_registrar`, el encargado tampoco registró el vale.
  */
 export interface SinReportar {
   recarga_id:   number
+  /** Solo cuando faltó un ticket: `litros` y `costo` son los suyos, no los de la recarga. */
+  ticket_id:    number | null
   fecha:        string
   litros:       number
   costo:        number

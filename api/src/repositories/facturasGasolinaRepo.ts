@@ -58,7 +58,8 @@ export interface FacturaGasolina {
   total_estimado: boolean
   /**
    * Cuántas recargas se registraron desde esta factura porque nadie las había
-   * reportado (migración 069). Se ve en el listado aunque ya esté sellada.
+   * reportado (migración 069), más los tickets que se les agregaron porque el
+   * chofer no los entregó (077). Se ve en el listado aunque ya esté sellada.
    */
   registradas: number
 }
@@ -126,6 +127,11 @@ export interface TicketCandidato {
   registrada_aqui: boolean
   /** Y su vale también: el encargado no lo había registrado. */
   vale_registrado_aqui: boolean
+  /**
+   * La recarga sí estaba, pero sin este ticket: se agregó desde ESTA factura
+   * porque el chofer no lo entregó (migración 077).
+   */
+  ticket_agregado_aqui: boolean
 }
 
 /**
@@ -166,6 +172,7 @@ const SELECT_FACTURA = `
          CAST(CASE WHEN f.iva IS NULL AND f.tasa_iva IS NOT NULL THEN 1 ELSE 0 END AS BIT)
            AS total_estimado,
          (SELECT COUNT(*) FROM recargas_combustible rd WHERE rd.desde_factura_id = f.id)
+           + (SELECT COUNT(*) FROM recargas_combustible_tickets td WHERE td.desde_factura_id = f.id)
            AS registradas
   ${FROM_FACTURA}
 `
@@ -524,11 +531,13 @@ export async function candidatas(facturaId: number): Promise<TicketCandidato[]> 
              CAST(CASE WHEN rc.desde_factura_id = f.id THEN 1 ELSE 0 END AS BIT)
                AS registrada_aqui,
              CAST(CASE WHEN vg.desde_factura_id = f.id THEN 1 ELSE 0 END AS BIT)
-               AS vale_registrado_aqui
+               AS vale_registrado_aqui,
+             CAST(CASE WHEN t.desde_factura_id = f.id THEN 1 ELSE 0 END AS BIT)
+               AS ticket_agregado_aqui
       -- El número se cuenta antes del filtro: "ticket 2 de 3" no cambia
       -- porque el 1 ya lo cobre otra factura.
       FROM (
-        SELECT id, recarga_id, litros, costo,
+        SELECT id, recarga_id, litros, costo, desde_factura_id,
                ROW_NUMBER() OVER (PARTITION BY recarga_id ORDER BY id) AS ticket_n,
                COUNT(*) OVER (PARTITION BY recarga_id) AS tickets
         FROM recargas_combustible_tickets
@@ -1091,12 +1100,199 @@ export async function registrarDesdeFactura(
   }
 }
 
+// ── Agregar el ticket que faltaba ─────────────────────────────────────────────
+
 /**
- * Una recarga que el chofer no reportó y salió al cuadrar la factura. Si
- * `vale_sin_registrar`, el encargado tampoco registró el vale.
+ * Cuántos días antes de la factura se buscan recargas a las que pudo faltarles
+ * un ticket. No es el corte de las candidatas —ese no tiene límite inferior—:
+ * esto solo llena el desplegable de una acción a mano. Las recargas con otro
+ * ticket ya casado en ESTA factura salen siempre, sin importar la fecha: el
+ * tanque que falta casi siempre viene en la misma factura que el otro, también
+ * cuando la factura llega atrasada.
+ */
+export const DIAS_ATRAS_TICKET_FALTANTE = 31
+
+/** Una recarga de la gasolinera de la factura que todavía admite otro ticket. */
+export interface RecargaParaTicket {
+  id:         number
+  fecha:      string
+  /** La suma de sus tickets. */
+  litros:     number
+  costo:      number
+  tickets:    number
+  vehiculo:   string
+  placas:     string | null
+  conductor:  string
+  vale_folio: string | null
+  /** Algún ticket suyo ya está casado con un renglón de esta factura. */
+  en_esta_factura: boolean
+}
+
+/**
+ * Las recargas a las que se les puede agregar el ticket de un renglón: de la
+ * gasolinera de la factura, dentro del corte (`DIAS_DE_GRACIA`), con menos de
+ * `ticketsMax` tickets. Primero las que ya tienen otro ticket en esta factura.
+ */
+export async function recargasParaTicket(
+  facturaId: number, ticketsMax: number,
+): Promise<RecargaParaTicket[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id',     sql.Int, facturaId)
+    .input('gracia', sql.Int, DIAS_DE_GRACIA)
+    .input('atras',  sql.Int, DIAS_ATRAS_TICKET_FALTANTE)
+    .input('max',    sql.Int, ticketsMax)
+    .query(`
+      SELECT rc.id, CONVERT(char(10), rc.fecha, 23) AS fecha, rc.litros, rc.costo,
+             n.tickets,
+             CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo, v.placas,
+             co.nombre AS conductor, vg.folio AS vale_folio,
+             CAST(CASE WHEN aqui.x IS NOT NULL THEN 1 ELSE 0 END AS BIT) AS en_esta_factura
+      FROM recargas_combustible rc
+      JOIN facturas_gasolina f ON f.id = @id
+      JOIN vehiculos   v  ON v.id  = rc.vehiculo_id
+      JOIN modelos     mo ON mo.id = v.modelo_id
+      JOIN conductores co ON co.id = rc.conductor_id
+      LEFT JOIN vales_gasolina vg ON vg.id = rc.vale_id
+      CROSS APPLY (
+        SELECT COUNT(*) AS tickets FROM recargas_combustible_tickets t WHERE t.recarga_id = rc.id
+      ) n
+      OUTER APPLY (
+        SELECT TOP 1 1 AS x FROM facturas_gasolina_renglones fr
+        WHERE fr.factura_id = f.id AND fr.recarga_id = rc.id
+      ) aqui
+      WHERE rc.gasolinera_id = f.gasolinera_id
+        AND rc.fecha <= DATEADD(day, @gracia, f.fecha)
+        AND (aqui.x IS NOT NULL OR rc.fecha >= DATEADD(day, -@atras, f.fecha))
+        AND n.tickets < @max
+      ORDER BY en_esta_factura DESC, rc.fecha DESC, rc.id DESC`)
+  return r.recordset.map((x) => ({
+    ...x, litros: Number(x.litros), costo: Number(x.costo),
+  })) as RecargaParaTicket[]
+}
+
+export interface TicketDesdeFactura {
+  renglonId:  number
+  recargaId:  number
+  litros:     number
+  costo:      number
+  ticketsMax: number
+}
+
+export type ResultadoTicket =
+  | { estado: 'no_existe' }
+  | { estado: 'ya_conciliada' }
+  | { estado: 'renglon_ajeno' }
+  | { estado: 'renglon_casado' }
+  | { estado: 'recarga_no_existe' }
+  | { estado: 'otra_gasolinera' }
+  | { estado: 'fuera_de_corte' }
+  | { estado: 'tickets_completos' }
+  | { estado: 'agregado'; ticket_id: number }
+
+/**
+ * Agrega a una recarga que ya existía el ticket que el chofer no entregó —el
+ * otro tanque— y lo casa con el renglón que lo destapó. Misma transacción y
+ * mismo candado que `registrarDesdeFactura`.
+ *
+ * El ticket queda marcado con la factura (`desde_factura_id`, migración 077);
+ * la recarga no, porque sí se reportó. Su `litros` y `costo` se vuelven a sumar
+ * dentro de la transacción, como en cualquier alta de ticket.
+ *
+ * Las reglas son las de las candidatas: la recarga es de la gasolinera de la
+ * factura y no pasa del corte. Si no, el ticket no podría casarse aquí.
+ */
+export async function agregarTicketDesdeFactura(
+  facturaId: number, d: TicketDesdeFactura,
+): Promise<ResultadoTicket> {
+  const pool = await getPool()
+  const tx = pool.transaction()
+  await tx.begin()
+  const salir = async (r: ResultadoTicket) => { await tx.rollback(); return r }
+  try {
+    const f = await tx.request()
+      .input('id', sql.Int, facturaId)
+      .query(`
+        SELECT conciliada_en FROM facturas_gasolina WITH (UPDLOCK, HOLDLOCK)
+        WHERE id = @id`)
+    if (f.recordset.length === 0) return salir({ estado: 'no_existe' })
+    if (f.recordset[0].conciliada_en !== null) return salir({ estado: 'ya_conciliada' })
+
+    const ren = await tx.request()
+      .input('rid', sql.Int, d.renglonId)
+      .input('fid', sql.Int, facturaId)
+      .query(`
+        SELECT ticket_id FROM facturas_gasolina_renglones WITH (UPDLOCK)
+        WHERE id = @rid AND factura_id = @fid`)
+    if (ren.recordset.length === 0) return salir({ estado: 'renglon_ajeno' })
+    if (ren.recordset[0].ticket_id !== null) return salir({ estado: 'renglon_casado' })
+
+    const rc = await tx.request()
+      .input('cid',    sql.Int, d.recargaId)
+      .input('fid',    sql.Int, facturaId)
+      .input('gracia', sql.Int, DIAS_DE_GRACIA)
+      .query(`
+        SELECT CAST(CASE WHEN rc.gasolinera_id = f.gasolinera_id THEN 1 ELSE 0 END AS BIT) AS misma,
+               CAST(CASE WHEN rc.fecha <= DATEADD(day, @gracia, f.fecha) THEN 1 ELSE 0 END AS BIT) AS en_corte
+        FROM recargas_combustible rc WITH (UPDLOCK, HOLDLOCK)
+        JOIN facturas_gasolina f ON f.id = @fid
+        WHERE rc.id = @cid`)
+    if (rc.recordset.length === 0) return salir({ estado: 'recarga_no_existe' })
+    if (!rc.recordset[0].misma) return salir({ estado: 'otra_gasolinera' })
+    if (!rc.recordset[0].en_corte) return salir({ estado: 'fuera_de_corte' })
+
+    // Bajo el candado de la recarga: otra edición no puede meter un ticket a la vez.
+    const n = await tx.request()
+      .input('cid', sql.Int, d.recargaId)
+      .query('SELECT COUNT(*) AS n FROM recargas_combustible_tickets WHERE recarga_id = @cid')
+    if ((n.recordset[0].n as number) >= d.ticketsMax) return salir({ estado: 'tickets_completos' })
+
+    const t = await tx.request()
+      .input('cid',    sql.Int, d.recargaId)
+      .input('litros', sql.Decimal(10, 3), d.litros)
+      .input('costo',  sql.Decimal(18, 2), d.costo)
+      .input('fid',    sql.Int, facturaId)
+      .query(`
+        INSERT INTO recargas_combustible_tickets (recarga_id, litros, costo, desde_factura_id)
+        OUTPUT INSERTED.id
+        VALUES (@cid, @litros, @costo, @fid)`)
+    const ticketId = t.recordset[0].id as number
+
+    await tx.request()
+      .input('cid', sql.Int, d.recargaId)
+      .input('rid', sql.Int, d.renglonId)
+      .input('tid', sql.Int, ticketId)
+      .query(`
+        UPDATE r SET litros = s.litros, costo = s.costo
+        FROM recargas_combustible r
+        CROSS APPLY (
+          SELECT SUM(litros) AS litros, SUM(costo) AS costo
+          FROM recargas_combustible_tickets WHERE recarga_id = r.id
+        ) s
+        WHERE r.id = @cid;
+        UPDATE facturas_gasolina_renglones SET ticket_id = @tid, recarga_id = @cid
+        WHERE id = @rid`)
+
+    await tx.commit()
+    return { estado: 'agregado', ticket_id: ticketId }
+  } catch (err) {
+    await tx.rollback()
+    throw err
+  }
+}
+
+/**
+ * Una omisión que salió al cuadrar la factura: la recarga que el chofer no
+ * reportó o, si `ticket_id`, el ticket que no entregó de una recarga que sí
+ * reportó. Si `vale_sin_registrar`, el encargado tampoco registró el vale.
  */
 export interface SinReportar {
   recarga_id:   number
+  /**
+   * Solo cuando lo que faltó fue un ticket (migración 077): ese ticket, y
+   * `litros` y `costo` son los suyos, no los de la recarga.
+   */
+  ticket_id:    number | null
   fecha:        string
   litros:       number
   costo:        number
@@ -1120,29 +1316,42 @@ export interface SinReportar {
   capturado_por: string | null
 }
 
-/** Las omisiones: recargas registradas desde una factura, de la más nueva a la más vieja. */
+/**
+ * Las omisiones, de la más nueva a la más vieja: recargas registradas desde una
+ * factura (069) y tickets agregados desde una factura a una recarga que sí se
+ * había reportado (077).
+ */
 export async function sinReportar(p: { desde?: string; hasta?: string }): Promise<SinReportar[]> {
   const pool = await getPool()
   const req = pool.request()
-  const where = ['r.desde_factura_id IS NOT NULL']
+  const where = ['1 = 1']
   if (p.desde) { req.input('desde', sql.Date, p.desde); where.push('r.fecha >= @desde') }
   if (p.hasta) { req.input('hasta', sql.Date, p.hasta); where.push('r.fecha <= @hasta') }
   const r = await req.query(`
-    SELECT r.id AS recarga_id, CONVERT(char(10), r.fecha, 23) AS fecha,
-           r.litros, r.costo, r.producto,
+    SELECT r.id AS recarga_id, o.ticket_id, CONVERT(char(10), r.fecha, 23) AS fecha,
+           o.litros, o.costo, r.producto,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo, v.placas,
            r.conductor_id, co.nombre AS conductor,
            g.nombre AS gasolinera,
            f.id AS factura_id, f.folio AS factura_folio,
            vg.id AS vale_id, vg.folio AS vale_folio,
            CONVERT(char(10), vg.fecha, 23) AS vale_fecha,
-           CAST(CASE WHEN vg.desde_factura_id IS NOT NULL THEN 1 ELSE 0 END AS BIT)
+           -- El vale de una recarga que sí se reportó no es omisión del encargado.
+           CAST(CASE WHEN o.ticket_id IS NULL AND vg.desde_factura_id IS NOT NULL THEN 1 ELSE 0 END AS BIT)
              AS vale_sin_registrar,
            vg.creado_por AS encargado, enc.nombre AS encargado_nombre,
            s.nombre AS sucursal,
-           r.capturado_por
-    FROM recargas_combustible r
-    JOIN facturas_gasolina f ON f.id = r.desde_factura_id
+           -- El ticket no guarda quién lo agregó; queda en la bitácora.
+           CASE WHEN o.ticket_id IS NULL THEN r.capturado_por END AS capturado_por
+    FROM (
+      SELECT id AS recarga_id, CAST(NULL AS INT) AS ticket_id, litros, costo, desde_factura_id
+      FROM recargas_combustible WHERE desde_factura_id IS NOT NULL
+      UNION ALL
+      SELECT recarga_id, id, litros, costo, desde_factura_id
+      FROM recargas_combustible_tickets WHERE desde_factura_id IS NOT NULL
+    ) o
+    JOIN recargas_combustible r ON r.id = o.recarga_id
+    JOIN facturas_gasolina f ON f.id = o.desde_factura_id
     JOIN vehiculos   v  ON v.id  = r.vehiculo_id
     JOIN modelos     mo ON mo.id = v.modelo_id
     JOIN conductores co ON co.id = r.conductor_id
@@ -1155,7 +1364,7 @@ export async function sinReportar(p: { desde?: string; hasta?: string }): Promis
       FROM usuarios u WHERE LTRIM(RTRIM(u.email)) = vg.creado_por
     ) enc
     WHERE ${where.join(' AND ')}
-    ORDER BY r.fecha DESC, r.id DESC`)
+    ORDER BY r.fecha DESC, r.id DESC, o.ticket_id`)
   return r.recordset.map((x) => ({
     ...x, litros: Number(x.litros), costo: Number(x.costo),
   })) as SinReportar[]

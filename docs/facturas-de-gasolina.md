@@ -204,14 +204,24 @@ abierta) también se rechaza: hay que soltarlo o corregir la recarga.
 
 A veces el ticket de la bomba llega a la oficina junto con el vale, y el renglón
 sin casar es exactamente esa carga. En vez de ir a capturarla a otra pantalla, el
-renglón tiene **Registrar recarga no reportada** (solo admin, solo con la factura
-abierta; la sellada se reabre primero). Hay dos casos:
+renglón tiene **Registrar lo que no se reportó** (solo admin, solo con la factura
+abierta; la sellada se reabre primero). Hay tres casos:
 
 - **El vale sí estaba registrado**: se elige, y trae la unidad y el chofer. Se
   registra solo la recarga, que queda señalada como no reportada por el chofer.
 - **El vale tampoco estaba**: se captura ahí mismo —folio, encargado que lo
   entregó, sucursal, fecha y unidad— y queda señalado como no registrado por ese
   encargado.
+- **La recarga sí estaba, pero le faltaba un ticket**: eran dos tanques y el
+  chofer entregó el ticket de uno. Se elige la recarga y se le **agrega el
+  ticket** con los litros y el costo del renglón; la recarga vuelve a sumar sus
+  tickets y conserva su chofer, unidad, vale, fecha y kilometraje. Solo se
+  ofrecen recargas de la gasolinera de la factura, dentro del corte, con menos
+  de 3 tickets, y de hasta `DIAS_ATRAS_TICKET_FALTANTE` (31) días antes de la
+  factura; las que ya tienen otro ticket casado en **esta** factura salen
+  siempre y primero, porque el otro tanque casi siempre viene en la misma.
+  La ventana aquí sí es aceptable: no decide qué se puede casar, solo llena el
+  desplegable de una acción a mano.
 
 La gasolinera es la de la factura y no se pregunta. Litros, costo y producto
 arrancan con los del renglón y se corrigen con el ticket en la mano. El
@@ -224,7 +234,9 @@ gracia, ni ser anterior al vale).
 Todo va en una transacción con la factura bloqueada, y la recarga nueva queda
 **casada con el renglón**. La marca es `desde_factura_id` en la recarga y en el
 vale nuevo (migración 069): un vale que ya estaba no se marca, porque el
-encargado sí cumplió.
+encargado sí cumplió. En el tercer caso se marca solo el **ticket**
+(`recargas_combustible_tickets.desde_factura_id`, migración 077): la recarga sí
+se reportó.
 
 La marca se ve siempre, no solo mientras la factura está abierta: en el renglón
 de la factura (también ya sellada), en el listado de facturas ("N sin
@@ -233,9 +245,11 @@ Recargas se encuentran buscando "sin reportar".
 
 ### La pestaña Sin reportar
 
-Junta lo que se registró así, **por chofer** (las recargas que no avisó) y **por
-encargado** (los vales que no registró), con filtro de fechas y exportación a PDF
-y Excel. Es la lista que se le lleva a cada uno.
+Junta lo que se registró así, **por chofer** (las recargas que no avisó y los
+tickets que no entregó, señalados como "Faltó un ticket" con sus litros y costo,
+no los de la recarga) y **por encargado** (los vales que no registró), con
+filtro de fechas y exportación a PDF y Excel. Es la lista que se le lleva a cada
+uno.
 
 ## El candado
 
@@ -330,7 +344,9 @@ pegó.
 | `POST /facturas-gasolina/{id}/reabrir` | **admin** | Suelta el sello |
 | `GET /facturas-gasolina/sin-facturar` | admin, editor, lector | Los tickets que ninguna factura ha reclamado |
 | `POST /facturas-gasolina/{id}/renglones/{renglonId}/registrar` | **admin** | Registra la recarga no reportada (y su vale, si faltaba) y la casa con el renglón |
-| `GET /facturas-gasolina/sin-reportar` | admin, editor, lector | Lo registrado desde factura. Filtros: `desde`/`hasta` |
+| `GET /facturas-gasolina/{id}/recargas-para-ticket` | **admin** | Recargas de su gasolinera que admiten otro ticket |
+| `POST /facturas-gasolina/{id}/renglones/{renglonId}/agregar-ticket` | **admin** | Agrega a una recarga el ticket que el chofer no entregó y lo casa con el renglón |
+| `GET /facturas-gasolina/sin-reportar` | admin, editor, lector | Lo registrado desde factura, recargas y tickets. Filtros: `desde`/`hasta` |
 
 Conciliar es solo admin, igual que revisar una factura de refacciones: es el
 segundo par de ojos sobre lo capturado.

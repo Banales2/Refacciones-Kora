@@ -32,6 +32,17 @@ export const RegistrarDesdeFacturaSchema = z.object({
 
 export type RegistrarDesdeFactura = z.infer<typeof RegistrarDesdeFacturaSchema>
 
+// La recarga sí se reportó, pero le falta el ticket de un tanque: se le agrega
+// a esa recarga. Chofer, unidad, vale, fecha y kilometraje son los suyos. Ver
+// la migración 077.
+export const AgregarTicketDesdeFacturaSchema = z.object({
+  recarga_id: z.coerce.number().int().positive(),
+  litros,
+  costo,
+})
+
+export type AgregarTicketDesdeFactura = z.infer<typeof AgregarTicketDesdeFacturaSchema>
+
 export const SinReportarQuerySchema = z.object({
   desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
