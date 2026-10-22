@@ -311,12 +311,50 @@ export function fetchDocumentosPorVencer(rango: Periodo) {
 
 export type VentanaCostos = 30 | 90 | 180 | 365
 
+/**
+ * Una sucursal y lo que gastaron y recorrieron las unidades con base en ella.
+ * `sucursal_id` null es "Sin base fija", que va al final y no se compara.
+ */
+export interface SucursalCosto {
+  sucursal_id:        number | null
+  sucursal:           string
+  /** Unidades con base aquí, se hayan movido o no. */
+  unidades_flota:     number
+  /** Las que tuvieron gasto o cargas en el periodo. */
+  unidades:           number
+  km_recorridos:      number
+  unidades_con_km:    number
+  combustible:        number
+  litros:             number
+  recargas:           number
+  mano_obra:          number
+  refacciones:        number
+  casetas:            number
+  total:              number
+  /** Solo con las unidades que tienen kilometraje. */
+  costo_por_km:       number | null
+  combustible_por_km: number | null
+  precio_litro:       number | null
+  gasto_por_unidad:   number | null
+  /** km/L revuelto: mezcla modelos. */
+  rendimiento:        number | null
+  /** Contra el promedio del modelo de cada unidad, en %. Negativo = gastan de más. */
+  eficiencia_pct:     number | null
+  sobrecosto_anual:   number
+  anomalias:          number
+  sin_vale:           number
+  sin_odometro:       number
+}
+
 export interface VehiculoCosto {
   vehiculo_id:        number
   vehiculo:           string
   tipo:               string
   modelo_id:          number
   modelo:             string
+  /** Null: sin base fija (tractocamiones, sucursal múltiple, utilitarios sin asignar). */
+  sucursal_id:        number | null
+  sucursal:           string | null
   km_recorridos:      number | null
   combustible:        number
   mano_obra:          number
@@ -440,6 +478,7 @@ export interface AnalisisCostos {
   /** El precio por litro de cada combustible, que es el que se compara. */
   precios_litro:      PrecioProducto[]
   vehiculos:          VehiculoCosto[]
+  sucursales:         SucursalCosto[]
   gasolineras:        GasolineraCosto[]
   /** Últimos 12 meses, sin importar el periodo elegido. */
   precios_mensuales:  PrecioMensual[]

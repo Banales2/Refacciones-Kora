@@ -6,7 +6,7 @@
 // TypeScript sale obvio.
 import * as sql from 'mssql'
 import { getPool } from '../shared/db'
-import { JOINS_HIJAS, EN_SEGUIMIENTO } from './vehiculosSql'
+import { JOINS_HIJAS, EN_SEGUIMIENTO, SUCURSAL_SQL } from './vehiculosSql'
 
 // El odómetro vive en la tabla hija de cada tipo, igual que el status. Las
 // cajas de trailer y los montacargas no lo llevan y quedan en NULL — no se
@@ -317,6 +317,13 @@ export interface VehiculoFlota {
   modelo_id:   number
   modelo:      string
   kilometraje: number | null
+  /**
+   * La sucursal donde tiene base. Null en tractocamiones y cajas, que no la
+   * tienen, en las de sucursal múltiple, que rotan (migración 068), y en los
+   * utilitarios a los que todavía no se les asigna.
+   */
+  sucursal_id: number | null
+  sucursal:    string | null
 }
 
 // La flota viva, para poder reportar también a las unidades que **no** tuvieron
@@ -328,10 +335,13 @@ export async function findFlotaEnOperacion(): Promise<VehiculoFlota[]> {
     SELECT v.id AS vehiculo_id,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
            v.tipo, v.modelo_id, CONCAT(mo.marca, ' ', mo.nombre) AS modelo,
-           ${KILOMETRAJE_SQL} AS kilometraje
+           ${KILOMETRAJE_SQL} AS kilometraje,
+           sb.id AS sucursal_id, sb.nombre AS sucursal
     FROM vehiculos v
     JOIN modelos mo ON mo.id = v.modelo_id
     ${JOINS_HIJAS}
+    -- La marca de sucursal múltiple manda aunque la hija conserve una sucursal.
+    LEFT JOIN sucursales sb ON sb.id = ${SUCURSAL_SQL} AND v.sucursal_multiple = 0
     WHERE ${EN_SEGUIMIENTO}
     ORDER BY v.tipo, mo.marca, mo.nombre, v.numero_serie
   `)

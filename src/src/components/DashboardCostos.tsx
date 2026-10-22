@@ -346,6 +346,181 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
 }
 
 /** El último día del periodo, YYYY-MM-DD: el rango llega semiabierto. */
+// ─── Sucursales ─────────────────────────────────────────────────────────────
+
+/** Mismos cortes que la tabla de rendimiento por unidad. */
+function colorEficiencia(d: number | null): string {
+  return d == null ? 'gray' : d <= -15 ? 'red' : d < -5 ? 'orange' : d > 5 ? 'teal' : 'gray'
+}
+
+// Cada unidad cuenta en la sucursal donde tiene base. El gasto total depende de
+// cuántas unidades tiene cada patio, así que lo que compara de verdad es el
+// costo por km y la eficiencia contra el propio modelo: una sucursal con
+// camionetas siempre tiene mejor km/L que una con camiones.
+function SeccionSucursales({ data, notaCasetas }: { data: AnalisisCostos; notaCasetas: string }) {
+  const sucursales = data.sucursales
+  const conBase = sucursales.filter((s) => s.sucursal_id != null)
+  const hayCasetas = sucursales.some((s) => s.casetas > 0)
+  const maxCostoKm = Math.max(...conBase.map((s) => s.costo_por_km ?? 0), 0.01)
+
+  const grafica = sucursales.map((s) => ({
+    sucursal: s.sucursal,
+    'Combustible': s.combustible,
+    'Taller': s.mano_obra + s.refacciones,
+    'Casetas': s.casetas,
+  }))
+
+  return (
+    <Seccion
+      titulo="Sucursales lado a lado"
+      descripcion={`Cada unidad cuenta en la sucursal donde tiene base. El total depende de cuántas unidades tiene cada una; lo que se compara es el costo por kilómetro y la eficiencia contra su propio modelo. "Sin base fija" son los tractocamiones, las unidades que rotan entre sucursales y los utilitarios sin sucursal asignada: van aparte.${notaCasetas}`}
+    >
+      {conBase.length === 0 ? (
+        <Vacio>Ninguna unidad con sucursal tuvo movimiento en el periodo.</Vacio>
+      ) : (
+        <Stack gap="md">
+          <BarChart
+            h={Math.max(140, grafica.length * 44)}
+            data={grafica}
+            dataKey="sucursal"
+            type="stacked"
+            orientation="vertical"
+            withLegend
+            gridAxis="x"
+            yAxisProps={{ width: 120 }}
+            xAxisProps={{ tickFormatter: formatMXNCorto }}
+            valueFormatter={(v) => formatMXN(v)}
+            series={[
+              // Los mismos colores que la gráfica de gasto mensual.
+              { name: 'Combustible', color: 'cyan.6'   },
+              { name: 'Taller',      color: 'violet.6' },
+              ...(hayCasetas ? [{ name: 'Casetas', color: 'teal.6' }] : []),
+            ]}
+          />
+
+          <Table.ScrollContainer minWidth={1080}>
+            <Table striped withTableBorder highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Sucursal</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Km</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Combustible</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Taller</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Casetas</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Total</Table.Th>
+                  <Table.Th style={{ width: 160 }}>
+                    <Tooltip label="Solo con las unidades que tienen kilometraje: el gasto de las demás no se reparte sobre km ajenos" withArrow multiline w={260}>
+                      <span>Costo por km</span>
+                    </Tooltip>
+                  </Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Combustible por km</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>
+                    <Tooltip label="El km/L revuelve modelos. La etiqueta es la comparación justa: qué tanto rinden sus unidades contra el promedio de su mismo modelo" withArrow multiline w={280}>
+                      <span>Rendimiento</span>
+                    </Tooltip>
+                  </Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Sobrecosto anual</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Por revisar</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {sucursales.map((s) => {
+                  const sinBase = s.sucursal_id == null
+                  return (
+                    <Table.Tr key={s.sucursal_id ?? 'sin-base'}>
+                      <Table.Td>
+                        <Text size="sm" fw={500} c={sinBase ? 'dimmed' : undefined}>{s.sucursal}</Text>
+                        <Text size="xs" c="dimmed">
+                          {s.unidades} de {s.unidades_flota} unidad{s.unidades_flota !== 1 ? 'es' : ''} con movimiento
+                        </Text>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {s.km_recorridos > 0 ? formatNum(s.km_recorridos) : <Guion />}
+                        {s.unidades_con_km < s.unidades && (
+                          <Text size="xs" c="dimmed">{s.unidades_con_km} de {s.unidades} medibles</Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Text size="sm">{formatMXN(s.combustible)}</Text>
+                        <Text size="xs" c="dimmed">
+                          {formatLitros(s.litros)} L{s.precio_litro != null ? ` · $${s.precio_litro.toFixed(2)}/L` : ''}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>{formatMXN(s.mano_obra + s.refacciones)}</Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {s.casetas > 0 ? formatMXN(s.casetas) : <Guion />}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Text size="sm" fw={600}>{formatMXN(s.total)}</Text>
+                        {s.gasto_por_unidad != null && (
+                          <Text size="xs" c="dimmed">{formatMXN(s.gasto_por_unidad)} por unidad</Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        {s.costo_por_km == null ? (
+                          <Text size="xs" c="dimmed">Sin kilometraje</Text>
+                        ) : (
+                          <Group gap="xs" wrap="nowrap">
+                            <Text size="sm" fw={600} style={{ minWidth: 62, fontVariantNumeric: 'tabular-nums' }}>
+                              {formatMXN(s.costo_por_km)}
+                            </Text>
+                            {/* La barra solo entre sucursales con base: "Sin base fija"
+                                son tractocamiones y no se mide contra un patio. */}
+                            {!sinBase && (
+                              <Progress
+                                value={(s.costo_por_km / maxCostoKm) * 100}
+                                size="sm" radius="xl" style={{ flex: 1 }}
+                                color={s.costo_por_km >= maxCostoKm * 0.75 ? 'red'
+                                     : s.costo_por_km >= maxCostoKm * 0.4  ? 'orange' : 'teal'}
+                              />
+                            )}
+                          </Group>
+                        )}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {s.combustible_por_km != null ? formatMXN(s.combustible_por_km) : <Guion />}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {s.rendimiento == null ? <Guion /> : (
+                          <Group gap={6} justify="flex-end" wrap="nowrap">
+                            <Text size="sm">{s.rendimiento.toFixed(2)} km/L</Text>
+                            {s.eficiencia_pct != null && (
+                              <Tooltip label="Contra el promedio del modelo de cada unidad" withArrow>
+                                <Badge variant="light" color={colorEficiencia(s.eficiencia_pct)} size="sm">
+                                  {s.eficiencia_pct > 0 ? '+' : ''}{s.eficiencia_pct.toFixed(1)}%
+                                </Badge>
+                              </Tooltip>
+                            )}
+                          </Group>
+                        )}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {s.sobrecosto_anual > 0
+                          ? <Text size="sm" fw={600} c="red">{formatMXN(s.sobrecosto_anual)}</Text>
+                          : <Guion />}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {s.anomalias === 0 ? <Guion /> : (
+                          <Tooltip
+                            label={`${s.sin_vale} carga${s.sin_vale !== 1 ? 's' : ''} sin vale · ${s.sin_odometro} sin kilometraje · ${s.anomalias - s.sin_vale - s.sin_odometro} más`}
+                            withArrow
+                          >
+                            <Badge variant="light" color="orange" size="sm">{s.anomalias}</Badge>
+                          </Tooltip>
+                        )}
+                      </Table.Td>
+                    </Table.Tr>
+                  )
+                })}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Stack>
+      )}
+    </Seccion>
+  )
+}
+
 function ultimoDiaDe(rango: { end: string }): string {
   const d = new Date(`${rango.end}T12:00:00`)
   d.setDate(d.getDate() - 1)
@@ -497,6 +672,9 @@ function Contenido({
         )}
       </Seccion>
 
+      {/* ── Sucursales lado a lado ── */}
+      <SeccionSucursales data={data} notaCasetas={notaCasetas} />
+
       {/* ── Refacciones: mismo repuesto, otro proveedor ── */}
       <Seccion
         titulo="Refacciones que se están comprando caras"
@@ -596,7 +774,9 @@ function Contenido({
                         nombre={v.vehiculo}
                         onClick={onNavigateVehiculo ? () => onNavigateVehiculo(v.vehiculo_id) : undefined}
                       />
-                      <Text size="xs" c="dimmed">{TIPO_LABELS[v.tipo] ?? v.tipo}</Text>
+                      <Text size="xs" c="dimmed">
+                        {TIPO_LABELS[v.tipo] ?? v.tipo} · {v.sucursal ?? 'Sin base fija'}
+                      </Text>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       {v.km_recorridos != null ? formatNum(v.km_recorridos) : <Guion />}

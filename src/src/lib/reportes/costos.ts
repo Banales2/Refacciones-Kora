@@ -145,6 +145,37 @@ export async function exportCostosPdf(a: AnalisisCostos) {
     })
   }
 
+  // ── Sucursales ──
+  pdf.seccion(
+    'Sucursales lado a lado',
+    'Cada unidad cuenta en la sucursal donde tiene base. Se comparan el costo por km (solo unidades con kilometraje) ' +
+    'y la eficiencia contra el promedio del modelo de cada unidad. "Sin base fija": tractocamiones, unidades que rotan ' +
+    'y utilitarios sin sucursal asignada.',
+  )
+  if (a.sucursales.length === 0) {
+    pdf.vacio('Sin movimiento registrado en el periodo.')
+  } else {
+    pdf.tabla({
+      head: ['Sucursal', 'Unidades', 'Km', 'Combustible', '$/L', 'Taller', 'Casetas', 'Total',
+             'Costo/km', 'km/L', 'Vs. modelo', 'Sobrecosto anual'],
+      body: a.sucursales.map((s) => [
+        s.sucursal, `${s.unidades} de ${s.unidades_flota}`, km(s.km_recorridos || null),
+        formatMXN(s.combustible), s.precio_litro != null ? `$${s.precio_litro.toFixed(2)}` : '—',
+        formatMXN(s.mano_obra + s.refacciones), formatMXN(s.casetas), formatMXN(s.total),
+        s.costo_por_km != null ? formatMXN(s.costo_por_km) : '—',
+        s.rendimiento != null ? s.rendimiento.toFixed(2) : '—',
+        s.eficiencia_pct != null ? `${s.eficiencia_pct > 0 ? '+' : ''}${s.eficiencia_pct.toFixed(1)}%` : '—',
+        s.sobrecosto_anual > 0 ? formatMXN(s.sobrecosto_anual) : '—',
+      ]),
+      columnStyles: {
+        1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
+        5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' },
+        9: { halign: 'right' }, 10: { halign: 'right' }, 11: { halign: 'right' },
+      },
+      fontSize: 8,
+    })
+  }
+
   // ── Costo por kilómetro ──
   pdf.seccion(
     'Costo por kilómetro, unidad por unidad',
@@ -335,9 +366,33 @@ export async function exportCostosExcel(a: AnalisisCostos) {
     vacio: 'Sin recargas registradas en el periodo.',
   })
 
+  wb.hoja('Sucursales', [
+    { header: 'Sucursal',             width: 22, valor: (s) => s.sucursal },
+    { header: 'Unidades',             width: 10, formato: 'numero',  valor: (s) => s.unidades_flota },
+    { header: 'Con movimiento',       width: 15, formato: 'numero',  valor: (s) => s.unidades },
+    { header: 'Con kilometraje',      width: 15, formato: 'numero',  valor: (s) => s.unidades_con_km },
+    { header: 'Km recorridos',        width: 14, formato: 'numero',  valor: (s) => s.km_recorridos },
+    { header: 'Combustible',          width: 14, formato: 'moneda',  valor: (s) => s.combustible },
+    { header: 'Litros',               width: 11, formato: 'litros',  valor: (s) => s.litros },
+    { header: 'Precio por litro',     width: 15, formato: 'moneda',  valor: (s) => s.precio_litro ?? 0 },
+    { header: 'Mano de obra',         width: 14, formato: 'moneda',  valor: (s) => s.mano_obra },
+    { header: 'Refacciones usadas',   width: 16, formato: 'moneda',  valor: (s) => s.refacciones },
+    { header: 'Casetas',              width: 14, formato: 'moneda',  valor: (s) => s.casetas },
+    { header: 'Total',                width: 14, formato: 'moneda',  valor: (s) => s.total },
+    { header: 'Gasto por unidad',     width: 16, formato: 'moneda',  valor: (s) => s.gasto_por_unidad ?? 0 },
+    { header: 'Costo por km',         width: 13, formato: 'moneda',  valor: (s) => s.costo_por_km ?? 0 },
+    { header: 'Combustible por km',   width: 18, formato: 'moneda',  valor: (s) => s.combustible_por_km ?? 0 },
+    { header: 'km/L',                 width: 10, formato: 'decimal', valor: (s) => s.rendimiento ?? 0 },
+    { header: 'Contra su modelo %',   width: 17, formato: 'porcentaje', valor: (s) => s.eficiencia_pct ?? 0 },
+    { header: 'Sobrecosto anual',     width: 16, formato: 'moneda',  valor: (s) => s.sobrecosto_anual },
+    { header: 'Cargas sin vale',      width: 15, formato: 'numero',  valor: (s) => s.sin_vale },
+    { header: 'Cargas sin km',        width: 14, formato: 'numero',  valor: (s) => s.sin_odometro },
+  ], a.sucursales, { vacio: 'Sin movimiento registrado en el periodo.' })
+
   wb.hoja('Costo por vehículo', [
     { header: 'Vehículo',            width: 34, valor: (v) => v.vehiculo },
     { header: 'Tipo',                width: 20, valor: (v) => TIPO_LABELS[v.tipo] ?? v.tipo },
+    { header: 'Sucursal',            width: 20, valor: (v) => v.sucursal ?? 'Sin base fija' },
     { header: 'Modelo',              width: 26, valor: (v) => v.modelo },
     { header: 'Km recorridos',       width: 14, formato: 'numero',  valor: (v) => v.km_recorridos ?? 0 },
     { header: 'Combustible',         width: 14, formato: 'moneda',  valor: (v) => v.combustible },

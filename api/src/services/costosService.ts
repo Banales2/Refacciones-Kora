@@ -44,6 +44,9 @@ const MESES_GASTO = 12
  */
 const SIN_PRODUCTO = 'Sin especificar'
 
+/** Cómo se llama el grupo de las unidades sin sucursal. Ver `SucursalCosto`. */
+const SIN_BASE = 'Sin base fija'
+
 /** Diesel, Magna, Premium y al final lo que no se sabe. */
 function ordenProducto(p: string): string {
   return p === SIN_PRODUCTO ? '~' : p
@@ -134,6 +137,9 @@ export interface VehiculoCosto {
   tipo:           string
   modelo_id:      number
   modelo:         string
+  /** Null: sin base fija. Ver `SucursalCosto`. */
+  sucursal_id:    number | null
+  sucursal:       string | null
   /** Recorrido del periodo según los odómetros capturados. null si no alcanzan. */
   km_recorridos:  number | null
   combustible:    number
@@ -193,6 +199,57 @@ export interface PrecioProducto {
   precio_litro: number | null
   /** El litro de la gasolinera más barata del periodo: contra él se mide el sobreprecio. */
   precio_minimo: number | null
+}
+
+/**
+ * Una sucursal y lo que gastaron y recorrieron sus unidades. La unidad cuenta
+ * en la sucursal donde tiene BASE, no en la que entregó el vale: los km, el
+ * rendimiento y el taller son de la unidad, y repartirla entre patios por cada
+ * vale partiría su recorrido en pedazos que no miden nada.
+ *
+ * `sucursal_id` null es "Sin base fija": tractocamiones, unidades de sucursal
+ * múltiple y utilitarios sin sucursal asignada. Va aparte y al final; no es una
+ * sucursal más contra la que comparar.
+ */
+export interface SucursalCosto {
+  sucursal_id:     number | null
+  sucursal:        string
+  /** Unidades en seguimiento con base aquí, se hayan movido o no. */
+  unidades_flota:  number
+  /** Las que tuvieron gasto o cargas en el periodo. */
+  unidades:        number
+  km_recorridos:   number
+  /** Cuántas de `unidades` tienen lecturas para medir su recorrido. */
+  unidades_con_km: number
+  combustible:     number
+  litros:          number
+  recargas:        number
+  mano_obra:       number
+  refacciones:     number
+  casetas:         number
+  total:           number
+  /**
+   * Solo con las unidades que tienen kilometraje: sumar el gasto de una que no
+   * lo tiene sobre los km de las demás inflaría el costo de la sucursal.
+   */
+  costo_por_km:       number | null
+  combustible_por_km: number | null
+  precio_litro:       number | null
+  gasto_por_unidad:   number | null
+  /** km/L de sus unidades medibles. Mezcla modelos: ver `eficiencia_pct`. */
+  rendimiento:        number | null
+  /**
+   * Qué tanto rinden sus unidades contra el promedio de su propio modelo, en %.
+   * Es la comparación justa entre sucursales: una con camionetas siempre tiene
+   * mejor km/L que una con camiones, y eso no dice nada de cómo se manejan.
+   * Negativo = gastan de más.
+   */
+  eficiencia_pct:     number | null
+  /** La suma del sobrecosto anual por rendimiento de sus unidades. */
+  sobrecosto_anual:   number
+  anomalias:          number
+  sin_vale:           number
+  sin_odometro:       number
 }
 
 export type TipoAnomalia =
@@ -275,6 +332,8 @@ export interface AnalisisCostos {
   /** El precio por litro de cada combustible, que es el que sí se compara. */
   precios_litro:      PrecioProducto[]
   vehiculos:          VehiculoCosto[]
+  /** De la que más gasta a la que menos; "Sin base fija" al final. */
+  sucursales:         SucursalCosto[]
   gasolineras:        GasolineraCosto[]
   /** Últimos 12 meses sin importar el periodo elegido, igual que el gasto mensual. */
   precios_mensuales:  PrecioMensual[]
@@ -529,6 +588,31 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     porModelo.set(a.v.modelo_id, e)
   }
 
+  // Por sucursal: se llena en el mismo recorrido que las unidades. Los campos
+  // con guion bajo son de las unidades medibles; `_ideales`, los litros que
+  // habrían gastado al rendimiento de su modelo.
+  type SucursalAcum = SucursalCosto & {
+    _totalConKm: number; _combConKm: number
+    _tramoKm: number; _tramoLitros: number
+    _efLitros: number; _ideales: number
+  }
+  const porSucursal = new Map<string, SucursalAcum>()
+  const claveSucursal = (v: repo.VehiculoFlota) => String(v.sucursal_id ?? 'sin')
+  for (const a of acum.values()) {
+    const k = claveSucursal(a.v)
+    const s = porSucursal.get(k) ?? {
+      sucursal_id: a.v.sucursal_id, sucursal: a.v.sucursal ?? SIN_BASE,
+      unidades_flota: 0, unidades: 0, km_recorridos: 0, unidades_con_km: 0,
+      combustible: 0, litros: 0, recargas: 0, mano_obra: 0, refacciones: 0, casetas: 0, total: 0,
+      costo_por_km: null, combustible_por_km: null, precio_litro: null, gasto_por_unidad: null,
+      rendimiento: null, eficiencia_pct: null, sobrecosto_anual: 0,
+      anomalias: 0, sin_vale: 0, sin_odometro: 0,
+      _totalConKm: 0, _combConKm: 0, _tramoKm: 0, _tramoLitros: 0, _efLitros: 0, _ideales: 0,
+    }
+    s.unidades_flota += 1
+    porSucursal.set(k, s)
+  }
+
   const vehiculos: VehiculoCosto[] = []
   for (const a of acum.values()) {
     const total = a.combustible + a.mano_obra + a.refacciones + a.casetas
@@ -574,12 +658,39 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       })
     }
 
+    const s = porSucursal.get(claveSucursal(a.v))!
+    s.unidades    += 1
+    s.combustible += a.combustible
+    s.litros      += a.litros
+    s.recargas    += a.recargas
+    s.mano_obra   += a.mano_obra
+    s.refacciones += a.refacciones
+    s.casetas     += a.casetas
+    s.total       += total
+    if (kmRecorridos != null && kmRecorridos > 0) {
+      s.km_recorridos   += kmRecorridos
+      s.unidades_con_km += 1
+      s._totalConKm     += total
+      s._combConKm      += a.combustible
+    }
+    if (rendimiento != null) {
+      s._tramoKm     += a.tramoKm
+      s._tramoLitros += a.tramoLitros
+      if (rendModelo != null && rendModelo > 0) {
+        s._efLitros += a.tramoLitros
+        s._ideales  += a.tramoKm / rendModelo
+      }
+    }
+    if (sobrecostoAnual != null) s.sobrecosto_anual += sobrecostoAnual
+
     vehiculos.push({
       vehiculo_id: a.v.vehiculo_id,
       vehiculo:    a.v.vehiculo,
       tipo:        a.v.tipo,
       modelo_id:   a.v.modelo_id,
       modelo:      a.v.modelo,
+      sucursal_id: a.v.sucursal_id,
+      sucursal:    a.v.sucursal,
       km_recorridos: kmRecorridos,
       combustible: redondear(a.combustible, 2)!,
       mano_obra:   redondear(a.mano_obra, 2)!,
@@ -722,6 +833,40 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     e.monto    += an.monto ?? 0
     resumenMap.set(an.tipo, e)
   }
+  // Las anomalías de cada sucursal, por la base de la unidad. Antes de recortar
+  // a MAX_ANOMALIAS: el conteo es de todas, no de las que caben en la tabla.
+  for (const an of anomalias) {
+    const a = acum.get(an.vehiculo_id)
+    if (!a) continue
+    const s = porSucursal.get(claveSucursal(a.v))!
+    s.anomalias += 1
+    if (an.tipo === 'sin_vale')     s.sin_vale += 1
+    if (an.tipo === 'sin_odometro') s.sin_odometro += 1
+  }
+  const sucursales: SucursalCosto[] = [...porSucursal.values()]
+    // Una sucursal sin unidades con movimiento solo pinta un renglón de ceros.
+    .filter((s) => s.unidades > 0)
+    .map(({ _totalConKm, _combConKm, _tramoKm, _tramoLitros, _efLitros, _ideales, ...s }) => ({
+      ...s,
+      combustible:        redondear(s.combustible, 2)!,
+      litros:             redondear(s.litros, 3)!,
+      mano_obra:          redondear(s.mano_obra, 2)!,
+      refacciones:        redondear(s.refacciones, 2)!,
+      casetas:            redondear(s.casetas, 2)!,
+      total:              redondear(s.total, 2)!,
+      costo_por_km:       redondear(ratio(_totalConKm, s.km_recorridos)),
+      combustible_por_km: redondear(ratio(_combConKm, s.km_recorridos)),
+      precio_litro:       redondear(ratio(s.combustible, s.litros)),
+      gasto_por_unidad:   redondear(ratio(s.total, s.unidades), 2),
+      rendimiento:        redondear(ratio(_tramoKm, _tramoLitros)),
+      // Litros que habrían gastado al rendimiento de su modelo entre los que
+      // gastaron: arriba de 1, rinden más que sus gemelas.
+      eficiencia_pct:     _efLitros > 0 ? redondear((_ideales / _efLitros - 1) * 100, 1) : null,
+      sobrecosto_anual:   redondear(s.sobrecosto_anual, 0)!,
+    }))
+    .sort((a, b) =>
+      (a.sucursal_id == null ? 1 : 0) - (b.sucursal_id == null ? 1 : 0) || b.total - a.total)
+
   const anomaliasResumen = [...resumenMap.values()]
     .map((e) => ({ ...e, monto: redondear(e.monto, 2)! }))
     .sort((a, b) => b.monto - a.monto)
@@ -770,6 +915,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     },
     precios_litro: preciosLitro,
     vehiculos,
+    sucursales,
     gasolineras: gasolinerasSalida,
     precios_mensuales: preciosMensuales,
     gasto_mensual: gastoMensual,
