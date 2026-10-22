@@ -169,6 +169,12 @@ const COLORES_GASOLINERA = ['blue.7', 'orange.8', 'teal.7', 'grape.7', 'red.8', 
 
 /** El mismo mínimo que usa el servicio para juzgar lo que rinde una gasolinera. */
 const TRAMOS_MIN_GASOLINERA = 5
+/**
+ * Cuánto tiene que ganarle al segundo lugar el litro efectivo para llamarse
+ * "rinde más por peso": 1 %. Por debajo es ruido de la medición —el tanque
+ * nunca queda igual de lleno— y la etiqueta sugería una diferencia que no hay.
+ */
+const VENTAJA_MIN_EFECTIVO = 0.01
 
 function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
   const t = data.totales
@@ -221,10 +227,14 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
     .filter((g) => g.eficiencia_pct != null)
     .map((g) => ({ gasolinera: g.gasolinera, eficiencia: g.eficiencia_pct! }))
     .sort((a, b) => b.eficiencia - a.eficiencia)
-  const conEfectivo = renglones.filter((g) => g.precio_efectivo != null)
-  // Con una sola no hay a quién ganarle.
-  const mejorEfectivo = conEfectivo.length > 1
-    ? Math.min(...conEfectivo.map((g) => g.precio_efectivo!))
+  // Con una sola no hay a quién ganarle, y por centavos tampoco: Vázquez y
+  // Dakota quedaban en $26.92 contra $26.93 y la etiqueta coronaba un empate.
+  const efectivos = renglones
+    .map((g) => g.precio_efectivo)
+    .filter((p): p is number => p != null)
+    .sort((a, b) => a - b)
+  const mejorEfectivo = efectivos.length > 1 && efectivos[1] - efectivos[0] >= efectivos[0] * VENTAJA_MIN_EFECTIVO
+    ? efectivos[0]
     : null
 
   const mensual = data.precios_mensuales.filter((p) => p.producto === producto && p.precio_litro != null)
@@ -450,7 +460,7 @@ function SeccionSucursales({ data, notaCasetas }: { data: AnalisisCostos; notaCa
   return (
     <Seccion
       titulo="Sucursales lado a lado"
-      descripcion={`Cada unidad cuenta en la sucursal donde tiene base. El total depende de cuántas unidades tiene cada una; lo que se compara es el costo por kilómetro y la eficiencia contra su propio modelo. "Sin base fija" son los tractocamiones, las unidades que rotan entre sucursales y los utilitarios sin sucursal asignada: van aparte.${notaCasetas}`}
+      descripcion={`Cada unidad cuenta en la sucursal donde tiene base. El total depende de cuántas unidades tiene cada una; lo que se compara es el costo por kilómetro y el rendimiento contra las unidades del mismo modelo en otras sucursales. Los km se suman lectura por lectura y se descartan los saltos imposibles del odómetro. "Sin base fija" son los tractocamiones, las unidades que rotan entre sucursales y los utilitarios sin sucursal asignada: van aparte.${notaCasetas}`}
     >
       {conBase.length === 0 ? (
         <Vacio>Ninguna unidad con sucursal tuvo movimiento en el periodo.</Vacio>
@@ -561,11 +571,18 @@ function SeccionSucursales({ data, notaCasetas }: { data: AnalisisCostos; notaCa
                         {s.rendimiento == null ? <Guion /> : (
                           <Group gap={6} justify="flex-end" wrap="nowrap">
                             <Text size="sm">{s.rendimiento.toFixed(2)} km/L</Text>
-                            {s.eficiencia_pct != null && (
-                              <Tooltip label="Contra el promedio del modelo de cada unidad" withArrow>
+                            {s.eficiencia_pct != null ? (
+                              <Tooltip label="Contra las unidades del mismo modelo en otras sucursales" withArrow>
                                 <Badge variant="light" color={colorEficiencia(s.eficiencia_pct)} size="sm">
                                   {s.eficiencia_pct > 0 ? '+' : ''}{s.eficiencia_pct.toFixed(1)}%
                                 </Badge>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip
+                                label="Ninguno de sus modelos tiene en otra sucursal unidades con suficientes cargas para comparar. El km/L solo no sirve: revuelve modelos."
+                                withArrow multiline w={260}
+                              >
+                                <Text size="xs" c="dimmed">sin con quién comparar</Text>
                               </Tooltip>
                             )}
                           </Group>

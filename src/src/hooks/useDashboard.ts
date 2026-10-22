@@ -338,7 +338,7 @@ export interface SucursalCosto {
   gasto_por_unidad:   number | null
   /** km/L revuelto: mezcla modelos. */
   rendimiento:        number | null
-  /** Contra el promedio del modelo de cada unidad, en %. Negativo = gastan de más. */
+  /** Contra las unidades del mismo modelo en OTRAS sucursales, en %. Null: no hay contra quién. */
   eficiencia_pct:     number | null
   sobrecosto_anual:   number
   anomalias:          number

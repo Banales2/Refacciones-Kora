@@ -128,6 +128,34 @@ function esAtipica(desviacion: number | null): boolean {
   return desviacion != null && Math.abs(desviacion) >= PRECIO_LITRO_ATIPICO_PCT
 }
 
+/**
+ * Lo que avanzó el odómetro en el periodo, sumado lectura por lectura en orden
+ * de fecha y saltándose los saltos que no pueden ser: hacia atrás o de más de
+ * KM_ENTRE_CARGAS_MAX. Antes era la mayor menos la menor, y un dígito de más
+ * bastaba para inventar cientos de miles de km: una ELF 600 de Tuberosa con
+ * 132,354 → 955,835 → 132,993 sumaba 823 mil km en 90 días, y con ellos el
+ * costo por km de su sucursal salía en siete centavos.
+ *
+ * La lectura mala se pierde junto con los km reales que tocaba (los dos tramos
+ * se descartan): es preferible quedarse corto a inventar recorrido. Null con
+ * menos de dos lecturas o si ningún tramo es creíble.
+ */
+function recorrido(lecturas: { fecha: string; km: number }[]): number | null {
+  if (lecturas.length < 2) return null
+  // En empate de fecha, la menor primero: la carga y el servicio del mismo día.
+  const o = [...lecturas].sort((x, y) => x.fecha.localeCompare(y.fecha) || x.km - y.km)
+  let km = 0
+  let tramos = 0
+  for (let i = 1; i < o.length; i++) {
+    const d = o[i].km - o[i - 1].km
+    if (d >= 0 && d <= KM_ENTRE_CARGAS_MAX) {
+      km += d
+      tramos += 1
+    }
+  }
+  return tramos > 0 ? km : null
+}
+
 function redondear(n: number | null, decimales = 2): number | null {
   if (n == null || !Number.isFinite(n)) return null
   const f = 10 ** decimales
@@ -267,10 +295,11 @@ export interface SucursalCosto {
   /** km/L de sus unidades medibles. Mezcla modelos: ver `eficiencia_pct`. */
   rendimiento:        number | null
   /**
-   * Qué tanto rinden sus unidades contra el promedio de su propio modelo, en %.
-   * Es la comparación justa entre sucursales: una con camionetas siempre tiene
-   * mejor km/L que una con camiones, y eso no dice nada de cómo se manejan.
-   * Negativo = gastan de más.
+   * Qué tanto rinden sus unidades contra las del mismo modelo en OTRAS
+   * sucursales, en %. Es la comparación justa entre sucursales: una con
+   * camionetas siempre tiene mejor km/L que una con camiones, y eso no dice
+   * nada de cómo se manejan. Negativo = gastan de más. Null si ninguno de sus
+   * modelos rueda también en otra sucursal: no hay contra quién.
    */
   eficiencia_pct:     number | null
   /** La suma del sobrecosto anual por rendimiento de sus unidades. */
@@ -384,7 +413,7 @@ interface Acumulado {
   recargas:    number
   casetas:     number
   /** Lecturas de odómetro del periodo, vengan de una carga o de un servicio. */
-  lecturas:    number[]
+  lecturas:    { fecha: string; km: number }[]
   /** Tramos completos entre dos cargas, que es lo único con lo que se mide km/l. */
   tramoKm:     number
   tramoLitros: number
@@ -478,7 +507,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       a.combustible += r.costo
       a.litros      += r.litros
       a.recargas    += 1
-      if (r.kilometraje != null) a.lecturas.push(r.kilometraje)
+      if (r.kilometraje != null) a.lecturas.push({ fecha: r.fecha, km: r.kilometraje })
     }
 
     // La de emergencia va sin odómetro ni vale a propósito (migración 056), así
@@ -596,7 +625,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       a.mano_obra      += m.costo
       a.refacciones    += m.piezas_total
       a.mantenimientos += 1
-      if (m.km_actual != null && m.km_actual > 0) a.lecturas.push(m.km_actual)
+      if (m.km_actual != null && m.km_actual > 0) a.lecturas.push({ fecha: m.fecha, km: m.km_actual })
     }
 
     // Volver a hacer el mismo servicio a la misma unidad en menos de un mes
@@ -621,13 +650,22 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   // ── Rendimiento por modelo ──
   // El promedio del modelo es la vara de medir: comparar un tractocamión contra
   // una camioneta no dice nada, contra otro tractocamión igual sí.
+  const claveSucursal = (v: repo.VehiculoFlota) => String(v.sucursal_id ?? 'sin')
   const porModelo = new Map<number, { km: number; litros: number }>()
+  // Lo mismo, partido por sucursal: para comparar una sucursal hay que restarle
+  // sus propias unidades al promedio. Ver `eficiencia_pct` en SucursalCosto.
+  const porModeloSucursal = new Map<string, { km: number; litros: number }>()
   for (const a of acum.values()) {
     if (a.tramos < TRAMOS_MIN_RENDIMIENTO) continue
     const e = porModelo.get(a.v.modelo_id) ?? { km: 0, litros: 0 }
     e.km     += a.tramoKm
     e.litros += a.tramoLitros
     porModelo.set(a.v.modelo_id, e)
+    const k = `${a.v.modelo_id}|${claveSucursal(a.v)}`
+    const s = porModeloSucursal.get(k) ?? { km: 0, litros: 0 }
+    s.km     += a.tramoKm
+    s.litros += a.tramoLitros
+    porModeloSucursal.set(k, s)
   }
 
   // Por sucursal: se llena en el mismo recorrido que las unidades. Los campos
@@ -639,7 +677,6 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     _efLitros: number; _ideales: number
   }
   const porSucursal = new Map<string, SucursalAcum>()
-  const claveSucursal = (v: repo.VehiculoFlota) => String(v.sucursal_id ?? 'sin')
   for (const a of acum.values()) {
     const k = claveSucursal(a.v)
     const s = porSucursal.get(k) ?? {
@@ -662,9 +699,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     // una tabla llena de ceros donde no se ve lo que importa.
     if (total === 0 && a.recargas === 0) continue
 
-    const kmRecorridos = a.lecturas.length >= 2
-      ? Math.max(...a.lecturas) - Math.min(...a.lecturas)
-      : null
+    const kmRecorridos = recorrido(a.lecturas)
 
     const rendimiento = a.tramos >= TRAMOS_MIN_RENDIMIENTO
       ? ratio(a.tramoKm, a.tramoLitros)
@@ -718,9 +753,14 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     if (rendimiento != null) {
       s._tramoKm     += a.tramoKm
       s._tramoLitros += a.tramoLitros
-      if (rendModelo != null && rendModelo > 0) {
+      // Contra las gemelas de OTRAS sucursales. Con el promedio de todas, un
+      // modelo que solo tiene una sucursal se compara contra sí mismo y da
+      // 0 % siempre: parecía "en el promedio" cuando no había contra quién.
+      const propia = porModeloSucursal.get(`${a.v.modelo_id}|${claveSucursal(a.v)}`)
+      const rendOtras = mod && propia ? ratio(mod.km - propia.km, mod.litros - propia.litros) : null
+      if (rendOtras != null && rendOtras > 0) {
         s._efLitros += a.tramoLitros
-        s._ideales  += a.tramoKm / rendModelo
+        s._ideales  += a.tramoKm / rendOtras
       }
     }
     if (sobrecostoAnual != null) s.sobrecosto_anual += sobrecostoAnual

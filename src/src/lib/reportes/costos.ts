@@ -156,7 +156,7 @@ export async function exportCostosPdf(a: AnalisisCostos) {
   pdf.seccion(
     'Sucursales lado a lado',
     'Cada unidad cuenta en la sucursal donde tiene base. Se comparan el costo por km (solo unidades con kilometraje) ' +
-    'y la eficiencia contra el promedio del modelo de cada unidad. "Sin base fija": tractocamiones, unidades que rotan ' +
+    'y el rendimiento contra las unidades del mismo modelo en otras sucursales. "Sin base fija": tractocamiones, unidades que rotan ' +
     'y utilitarios sin sucursal asignada.',
   )
   if (a.sucursales.length === 0) {
