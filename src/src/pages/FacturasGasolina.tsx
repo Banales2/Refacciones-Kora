@@ -511,6 +511,7 @@ function CuadreFactura({
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Descripción</Table.Th>
+              <Table.Th>Fecha</Table.Th>
               <Table.Th style={{ textAlign: 'right' }}>Litros</Table.Th>
               <Table.Th style={{ textAlign: 'right' }}>Importe con IVA</Table.Th>
               <Table.Th>Recarga del sistema</Table.Th>
@@ -538,6 +539,15 @@ function CuadreFactura({
                 <Table.Tr key={r.id}>
                   <Table.Td>
                     <Text size="sm">{r.descripcion ?? '—'}</Text>
+                  </Table.Td>
+                  {/* La de la recarga elegida: el papel no fecha sus renglones y
+                      la factura cubre una semana; con ella se busca el ticket. */}
+                  <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                    {ticket ? (
+                      <Text size="sm">{formatFecha(ticket.fecha)}</Text>
+                    ) : (
+                      <Text size="sm" c="dimmed">—</Text>
+                    )}
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
                     <Text size="sm" fw={500}>{r.cantidad}</Text>
