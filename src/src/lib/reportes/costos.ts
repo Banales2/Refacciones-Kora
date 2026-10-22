@@ -118,27 +118,34 @@ export async function exportCostosPdf(a: AnalisisCostos) {
 
   // ── Gasolineras ──
   pdf.seccion(
-    'Precio por litro por gasolinera',
+    'Precio y rendimiento por gasolinera',
     'El sobreprecio es lo pagado de más contra la gasolinera más barata de las que ya se visitan con regularidad, ' +
-    'en el mismo combustible. Las cargas sin combustible especificado no se comparan.',
+    'en el mismo combustible. "Vs. modelo" es qué tanto recorren las unidades con lo que cargaron ahí, contra el ' +
+    'promedio de su mismo modelo (mínimo 5 tramos), y el $/L efectivo es el litro corregido por eso. ' +
+    'Las cargas sin combustible especificado no se comparan.',
   )
   if (a.gasolineras.length === 0) {
     pdf.vacio('Sin recargas registradas en el periodo.')
   } else {
     pdf.tabla({
-      head: ['Gasolinera', 'Combustible', 'Cargas', 'Litros', 'Gasto', '$/L', 'Sobreprecio'],
+      head: ['Gasolinera', 'Combustible', 'Cargas', 'Litros', 'Gasto', '$/L', 'Sobreprecio',
+             'km/L', 'Vs. modelo', '$/L efectivo'],
       body: [
         ...a.gasolineras.map((g) => [
           g.gasolinera, g.producto, String(g.recargas), formatLitros(g.litros), formatMXN(g.costo),
           g.precio_litro != null ? `$${g.precio_litro.toFixed(2)}` : '—',
           g.sobreprecio > 0 ? formatMXN(g.sobreprecio)
             : g.producto === SIN_PRODUCTO ? '—' : 'la más barata',
+          g.rendimiento != null ? g.rendimiento.toFixed(2) : '—',
+          g.eficiencia_pct != null ? `${g.eficiencia_pct > 0 ? '+' : ''}${g.eficiencia_pct.toFixed(1)}%` : '—',
+          g.precio_efectivo != null ? `$${g.precio_efectivo.toFixed(2)}` : '—',
         ]),
-        ['Total', '', '', '', '', '', formatMXN(t.ahorro_combustible)],
+        ['Total', '', '', '', '', '', formatMXN(t.ahorro_combustible), '', '', ''],
       ],
       columnStyles: {
         2: { halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'right' },
-        5: { halign: 'right' }, 6: { halign: 'right' },
+        5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' },
+        8: { halign: 'right' }, 9: { halign: 'right' },
       },
       totalAlFinal: true,
       fontSize: 9,
@@ -361,6 +368,10 @@ export async function exportCostosExcel(a: AnalisisCostos) {
     { header: 'Gasto',       width: 15, formato: 'moneda',  valor: (g) => g.costo },
     { header: 'Precio/litro',width: 13, formato: 'moneda',  valor: (g) => g.precio_litro ?? 0 },
     { header: 'Sobreprecio', width: 15, formato: 'moneda',  valor: (g) => g.sobreprecio },
+    { header: 'Tramos medidos',     width: 15, formato: 'numero',     valor: (g) => g.tramos },
+    { header: 'km/L',               width: 10, formato: 'decimal',    valor: (g) => g.rendimiento ?? 0 },
+    { header: 'Contra su modelo %', width: 17, formato: 'porcentaje', valor: (g) => g.eficiencia_pct ?? 0 },
+    { header: '$/L efectivo',       width: 13, formato: 'moneda',     valor: (g) => g.precio_efectivo ?? 0 },
   ], a.gasolineras, {
     totales: { 'Gasolinera': 'Total', 'Sobreprecio': t.ahorro_combustible },
     vacio: 'Sin recargas registradas en el periodo.',

@@ -386,6 +386,14 @@ export interface GasolineraCosto {
   sobreprecio:   number
   /** Cargas con el litro a más de 15 % de la mediana: casi siempre, mal capturadas. */
   atipicas:      number
+  /** Tramos entre cargas que cerró una carga de aquí: con ellos se mide lo que rinde. */
+  tramos:        number
+  /** km/L de esos tramos; revuelve modelos. */
+  rendimiento:   number | null
+  /** Contra el promedio del modelo de cada unidad, en %. Negativo = cada litro recorre menos. */
+  eficiencia_pct:  number | null
+  /** El litro corregido por lo que rinde: con lo que se decide a dónde mandar a cargar. */
+  precio_efectivo: number | null
 }
 
 /** El litro de una gasolinera y un combustible en un mes. */

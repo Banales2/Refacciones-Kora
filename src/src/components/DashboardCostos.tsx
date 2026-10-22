@@ -167,6 +167,9 @@ export default function DashboardCostos({
 // séptima en adelante salen en gris; con más gasolineras habría que agrupar.
 const COLORES_GASOLINERA = ['blue.7', 'orange.8', 'teal.7', 'grape.7', 'red.8', 'indigo.7']
 
+/** El mismo mínimo que usa el servicio para juzgar lo que rinde una gasolinera. */
+const TRAMOS_MIN_GASOLINERA = 5
+
 function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
   const t = data.totales
 
@@ -195,7 +198,7 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
 
   if (data.gasolineras.length === 0) {
     return (
-      <Seccion titulo="Precio por litro por gasolinera">
+      <Seccion titulo="Precio y rendimiento por gasolinera">
         <Vacio>Sin recargas registradas en el periodo.</Vacio>
       </Seccion>
     )
@@ -212,6 +215,18 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
     .map((g) => ({ gasolinera: g.gasolinera, diferencia: Math.round((g.precio_litro! - minimo) * 100) / 100 }))
     .sort((a, b) => b.diferencia - a.diferencia)
 
+  // Lo que rinde, contra el modelo de cada unidad. Solo las que juntaron
+  // suficientes tramos; las demás salen en la tabla sin el dato.
+  const rinden = renglones
+    .filter((g) => g.eficiencia_pct != null)
+    .map((g) => ({ gasolinera: g.gasolinera, eficiencia: g.eficiencia_pct! }))
+    .sort((a, b) => b.eficiencia - a.eficiencia)
+  const conEfectivo = renglones.filter((g) => g.precio_efectivo != null)
+  // Con una sola no hay a quién ganarle.
+  const mejorEfectivo = conEfectivo.length > 1
+    ? Math.min(...conEfectivo.map((g) => g.precio_efectivo!))
+    : null
+
   const mensual = data.precios_mensuales.filter((p) => p.producto === producto && p.precio_litro != null)
   const meses = [...new Set(mensual.map((p) => p.mes))].sort()
   const series = [...new Map(mensual.map((p) => [p.gasolinera_id, p.gasolinera])).entries()]
@@ -225,7 +240,7 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
 
   return (
     <Seccion
-      titulo="Precio por litro por gasolinera"
+      titulo="Precio y rendimiento por gasolinera"
       descripcion="Lo que costó el litro en cada una durante el periodo. El sobreprecio es lo que se pagó de más contra la más barata de las que ya se visitan con regularidad (al menos tres cargas), en el mismo combustible: un ahorro que solo requiere cambiar a dónde se manda a cargar. Las cargas con el litro a más de 15 % de lo normal no entran al precio —casi siempre son un dígito mal capturado— y aparecen en Anomalías."
       accion={t.ahorro_combustible > 0 && (
         <Tooltip label="Sobreprecio de todos los combustibles juntos" withArrow>
@@ -292,7 +307,34 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
           </div>
         </SimpleGrid>
 
-        <Table.ScrollContainer minWidth={560}>
+        <div>
+          <Text size="sm" fw={500}>Cuánto rinde cada litro</Text>
+          <Text size="xs" c="dimmed" mb={4}>
+            Los kilómetros que recorrieron las unidades con lo que cargaron aquí, contra el promedio de
+            su mismo modelo: a una gasolinera le cargan los camiones y a otra las camionetas. Cada tramo
+            se le cuenta a la carga que lo cierra, que es donde sale una bomba que marca más de lo que
+            despacha. Hacen falta {TRAMOS_MIN_GASOLINERA} tramos con kilometraje para juzgarla.
+          </Text>
+          {producto === SIN_PRODUCTO ? (
+            <Vacio>Sin combustible especificado no se compara: puede ser Magna o Premium.</Vacio>
+          ) : rinden.length === 0 ? (
+            <Vacio>Ninguna gasolinera tiene todavía {TRAMOS_MIN_GASOLINERA} tramos de {producto} con kilometraje en el periodo.</Vacio>
+          ) : (
+            <BarChart
+              h={Math.max(120, rinden.length * 40)}
+              data={rinden}
+              dataKey="gasolinera"
+              orientation="vertical"
+              yAxisProps={{ width: 150 }}
+              xAxisProps={{ tickFormatter: (v: number) => `${v > 0 ? '+' : ''}${v}%` }}
+              series={[{ name: 'eficiencia', color: 'blue.6', label: 'Contra su modelo' }]}
+              valueFormatter={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`}
+              gridAxis="x"
+            />
+          )}
+        </div>
+
+        <Table.ScrollContainer minWidth={820}>
           <Table striped withTableBorder>
             <Table.Thead>
               <Table.Tr>
@@ -302,6 +344,15 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
                 <Table.Th style={{ textAlign: 'right' }}>Gasto</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>$/L</Table.Th>
                 <Table.Th style={{ textAlign: 'right' }}>Sobreprecio</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Rendimiento</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>
+                  <Tooltip
+                    withArrow multiline w={280}
+                    label="El litro corregido por lo que rinde. Un litro más barato que recorre 10 % menos sale más caro: con este se decide a dónde mandar a cargar."
+                  >
+                    <span>$/L efectivo</span>
+                  </Tooltip>
+                </Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -334,6 +385,32 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
                       : minimo == null || g.precio_litro == null
                         ? <Guion />
                         : <Badge size="sm" variant="light" color="teal">La más barata</Badge>}
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
+                    {g.rendimiento == null ? (
+                      <Tooltip label={`${g.tramos} de ${TRAMOS_MIN_GASOLINERA} tramos con kilometraje`} withArrow>
+                        <Text size="xs" c="dimmed">Pocos datos</Text>
+                      </Tooltip>
+                    ) : (
+                      <Group gap={6} justify="flex-end" wrap="nowrap">
+                        <Text size="sm">{g.rendimiento.toFixed(2)} km/L</Text>
+                        {g.eficiencia_pct != null && (
+                          <Badge variant="light" color={colorEficiencia(g.eficiencia_pct)} size="sm">
+                            {g.eficiencia_pct > 0 ? '+' : ''}{g.eficiencia_pct.toFixed(1)}%
+                          </Badge>
+                        )}
+                      </Group>
+                    )}
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right' }}>
+                    {g.precio_efectivo == null ? <Guion /> : (
+                      <Group gap={6} justify="flex-end" wrap="nowrap">
+                        {g.precio_efectivo === mejorEfectivo && (
+                          <Badge size="sm" variant="light" color="teal">Rinde más por peso</Badge>
+                        )}
+                        <Text size="sm" fw={600}>${g.precio_efectivo.toFixed(2)}</Text>
+                      </Group>
+                    )}
                   </Table.Td>
                 </Table.Tr>
               ))}

@@ -19,6 +19,11 @@ import { fechaMexico } from '../shared/fechaMexico'
 const KM_ENTRE_CARGAS_MAX = 5_000
 /** Tramos mínimos para que el rendimiento de una unidad sea comparable. */
 const TRAMOS_MIN_RENDIMIENTO = 3
+/**
+ * Tramos mínimos para juzgar lo que rinde una gasolinera. Más que por unidad:
+ * aquí se juntan unidades distintas y un tanque mal llenado pesa mucho en pocos.
+ */
+const TRAMOS_MIN_GASOLINERA = 5
 /** Qué tan abajo del promedio de su modelo tiene que estar para marcarse. */
 const RENDIMIENTO_BAJO_PCT = -15
 /**
@@ -180,6 +185,29 @@ export interface GasolineraCosto {
   sobreprecio:   number
   /** Cargas con el litro muy lejos de la mediana: cuentan en litros y gasto, no en el precio. */
   atipicas:      number
+  /**
+   * Tramos con los que se midió cuánto rinde: los que cerró una carga de aquí.
+   * El tramo se le cobra a la carga que lo cierra porque esos litros son los
+   * que la bomba dice que cupieron: si despacha menos de lo que marca, aquí es
+   * donde sale. (La calidad del combustible saldría en el tramo siguiente,
+   * que ya cierra otra carga.)
+   */
+  tramos:        number
+  /** km/L de esos tramos. Mezcla los modelos que cargan aquí: ver `eficiencia_pct`. */
+  rendimiento:   number | null
+  /**
+   * Qué tanto rinden aquí las unidades contra el promedio de su propio modelo,
+   * en %. Es lo comparable entre gasolineras: a una le cargan los camiones y a
+   * otra las camionetas. Negativo = cada litro de aquí recorre menos.
+   * Null con menos de TRAMOS_MIN_GASOLINERA tramos.
+   */
+  eficiencia_pct:  number | null
+  /**
+   * El litro corregido por lo que rinde: `precio_litro / (1 + eficiencia)`.
+   * Un litro más barato que recorre 10 % menos sale más caro. Es el número con
+   * el que se decide a dónde mandar a cargar.
+   */
+  precio_efectivo: number | null
 }
 
 /** El litro de una gasolinera y un combustible en un mes, para ver cómo se mueve. */
@@ -437,6 +465,10 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   }
   const referenciaDe = referenciasDePrecio(recargas)
 
+  // Los tramos que cerró cada gasolinera, para medir cuánto rinde. Ver
+  // `GasolineraCosto.eficiencia_pct`.
+  const tramosGasolinera: { modelo_id: number; clave: string; km: number; litros: number }[] = []
+
   let previa: repo.RecargaCosto | null = null
   // Litros de emergencia cargados desde la última carga normal de la unidad.
   let emergencia = { vehiculo_id: 0, litros: 0 }
@@ -487,6 +519,16 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
         a.tramoKm     += deltaKm
         a.tramoLitros += r.litros + litrosEmergencia
         a.tramos      += 1
+        // Para la gasolinera, solo los tramos que cerró una carga suya completa:
+        // con litros de emergencia de por medio, parte del tramo se cargó en
+        // otro lado. La atípica tampoco: sus litros casi seguro están mal.
+        if (litrosEmergencia === 0 && r.gasolinera_id != null
+          && !esAtipica(desviacionPrecio(r, referenciaDe(r)))) {
+          tramosGasolinera.push({
+            modelo_id: a.v.modelo_id, clave: `${r.gasolinera_id}|${r.producto ?? SIN_PRODUCTO}`,
+            km: deltaKm, litros: r.litros,
+          })
+        }
       }
     }
 
@@ -714,7 +756,13 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   // no es "cara" ni "barata" en general, lo es en cada uno.
   // El litro de cada renglón sale solo de las cargas que no son atípicas;
   // litros y gasto sí las cuentan todas, porque se pagaron igual.
-  const porGasolinera = new Map<string, GasolineraCosto & { _litros: number; _costo: number }>()
+  // `_tramoKm` y `_tramoLitros` son los de sus tramos; `_efLitros` e `_ideales`,
+  // los de los tramos de unidades cuyo modelo tiene rendimiento de referencia.
+  type GasolineraAcum = GasolineraCosto & {
+    _litros: number; _costo: number
+    _tramoKm: number; _tramoLitros: number; _efLitros: number; _ideales: number
+  }
+  const porGasolinera = new Map<string, GasolineraAcum>()
   for (const r of recargas) {
     // La de emergencia se cargó donde se pudo: no dice nada de a qué
     // gasolinera conviene mandar a la flota.
@@ -724,7 +772,8 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     const g = porGasolinera.get(clave) ?? {
       gasolinera_id: r.gasolinera_id, gasolinera: r.gasolinera ?? '', producto,
       recargas: 0, litros: 0, costo: 0, precio_litro: null, sobreprecio: 0, atipicas: 0,
-      _litros: 0, _costo: 0,
+      tramos: 0, rendimiento: null, eficiencia_pct: null, precio_efectivo: null,
+      _litros: 0, _costo: 0, _tramoKm: 0, _tramoLitros: 0, _efLitros: 0, _ideales: 0,
     }
     g.recargas += 1
     g.litros   += r.litros
@@ -737,8 +786,35 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     }
     porGasolinera.set(clave, g)
   }
+  // Lo que rinde: cada tramo contra el rendimiento del modelo de su unidad. El
+  // km/L a secas revuelve modelos y premiaría a la gasolinera de las camionetas.
+  for (const t of tramosGasolinera) {
+    const g = porGasolinera.get(t.clave)
+    if (!g) continue
+    g.tramos       += 1
+    g._tramoKm     += t.km
+    g._tramoLitros += t.litros
+    const mod = porModelo.get(t.modelo_id)
+    const rendModelo = mod ? ratio(mod.km, mod.litros) : null
+    if (rendModelo != null && rendModelo > 0) {
+      g._efLitros += t.litros
+      g._ideales  += t.km / rendModelo
+    }
+  }
+
   const gasolineras = [...porGasolinera.values()]
-  for (const g of gasolineras) g.precio_litro = redondear(ratio(g._costo, g._litros))
+  for (const g of gasolineras) {
+    g.precio_litro = redondear(ratio(g._costo, g._litros))
+    if (g.tramos < TRAMOS_MIN_GASOLINERA) continue
+    g.rendimiento = redondear(ratio(g._tramoKm, g._tramoLitros))
+    if (g._efLitros > 0) {
+      const eficiencia = g._ideales / g._efLitros - 1
+      g.eficiencia_pct = redondear(eficiencia * 100, 1)
+      if (g.precio_litro != null && 1 + eficiencia > 0) {
+        g.precio_efectivo = redondear(g.precio_litro / (1 + eficiencia))
+      }
+    }
+  }
 
   // El sobreprecio se mide contra la gasolinera más barata a la que ya se va,
   // en el mismo combustible: es un ahorro alcanzable —basta mandar ahí las
@@ -762,7 +838,9 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   gasolineras.sort((a, b) =>
     ordenProducto(a.producto).localeCompare(ordenProducto(b.producto)) ||
     (b.precio_litro ?? 0) - (a.precio_litro ?? 0))
-  const gasolinerasSalida: GasolineraCosto[] = gasolineras.map(({ _litros, _costo, ...g }) => ({
+  const gasolinerasSalida: GasolineraCosto[] = gasolineras.map((
+    { _litros, _costo, _tramoKm, _tramoLitros, _efLitros, _ideales, ...g },
+  ) => ({
     ...g,
     litros: redondear(g.litros, 3)!,
     costo:  redondear(g.costo, 2)!,
