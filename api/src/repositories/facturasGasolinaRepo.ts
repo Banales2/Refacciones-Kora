@@ -56,6 +56,11 @@ export interface FacturaGasolina {
    * combustible eso da de más: el IVA no se cobra sobre el IEPS.
    */
   total_estimado: boolean
+  /**
+   * Cuántas recargas se registraron desde esta factura porque nadie las había
+   * reportado (migración 069). Se ve en el listado aunque ya esté sellada.
+   */
+  registradas: number
 }
 
 export interface RenglonFactura {
@@ -117,6 +122,10 @@ export interface TicketCandidato {
    * antes o el mismo día. Ver `DIAS_DE_GRACIA`.
    */
   dias_despues: number
+  /** Su recarga se registró desde ESTA factura: el chofer no la reportó. */
+  registrada_aqui: boolean
+  /** Y su vale también: el encargado no lo había registrado. */
+  vale_registrado_aqui: boolean
 }
 
 /**
@@ -155,7 +164,9 @@ const SELECT_FACTURA = `
          s.renglones, s.casados, s.subtotal,
          ${TOTAL_SQL} AS total,
          CAST(CASE WHEN f.iva IS NULL AND f.tasa_iva IS NOT NULL THEN 1 ELSE 0 END AS BIT)
-           AS total_estimado
+           AS total_estimado,
+         (SELECT COUNT(*) FROM recargas_combustible rd WHERE rd.desde_factura_id = f.id)
+           AS registradas
   ${FROM_FACTURA}
 `
 
@@ -508,7 +519,12 @@ export async function candidatas(facturaId: number): Promise<TicketCandidato[]> 
              CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
              co.nombre AS conductor, vg.folio AS vale_folio,
              CASE WHEN rc.fecha > f.fecha THEN DATEDIFF(day, f.fecha, rc.fecha) ELSE 0 END
-               AS dias_despues
+               AS dias_despues,
+             -- La marca de la 069, para que siga viéndose ya sellada la factura.
+             CAST(CASE WHEN rc.desde_factura_id = f.id THEN 1 ELSE 0 END AS BIT)
+               AS registrada_aqui,
+             CAST(CASE WHEN vg.desde_factura_id = f.id THEN 1 ELSE 0 END AS BIT)
+               AS vale_registrado_aqui
       -- El número se cuenta antes del filtro: "ticket 2 de 3" no cambia
       -- porque el 1 ya lo cobre otra factura.
       FROM (

@@ -44,6 +44,10 @@ export interface Recarga {
   capturado_por: string | null
   // Su nombre en `usuarios`; null si no tiene o no se sabe quién fue.
   capturado_por_nombre: string | null
+  // La factura de gasolinera desde la que se registró porque el chofer no la
+  // reportó. Null en las reportadas a tiempo.
+  desde_factura_id:    number | null
+  desde_factura_folio: string | null
   // De 1 a TICKETS_MAX. `litros` y `costo` de arriba son su suma.
   tickets:       TicketRecarga[]
 }

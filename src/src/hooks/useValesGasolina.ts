@@ -53,6 +53,12 @@ export interface ValeGasolina {
   recarga_gasolinera: string | null
   /** Días que lleva sin gastarse. `null` en cuanto se usó. */
   dias_sin_usar: number | null
+  /**
+   * La factura de gasolinera desde la que se registró porque el encargado no lo
+   * había capturado. Null en los registrados a tiempo.
+   */
+  desde_factura_id:    number | null
+  desde_factura_folio: string | null
 }
 
 export interface ValeGasolinaPayload {

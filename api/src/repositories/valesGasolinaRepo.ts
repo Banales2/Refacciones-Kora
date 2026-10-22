@@ -39,6 +39,12 @@ export interface ValeGasolina {
   recarga_gasolinera: string | null
   /** Días que lleva sin gastarse. `null` en cuanto se usó. */
   dias_sin_usar: number | null
+  /**
+   * La factura de gasolinera desde la que se registró porque el encargado no lo
+   * había capturado (migración 069), y su folio. Null en los registrados a tiempo.
+   */
+  desde_factura_id:    number | null
+  desde_factura_folio: string | null
 }
 
 const SELECT_VALE = `
@@ -61,7 +67,8 @@ const SELECT_VALE = `
          CASE WHEN rc.id IS NULL
               THEN DATEDIFF(day, vg.fecha,
                      CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'Central Standard Time (Mexico)' AS date))
-         END AS dias_sin_usar
+         END AS dias_sin_usar,
+         vg.desde_factura_id, fd.folio AS desde_factura_folio
   FROM vales_gasolina vg
   JOIN conductores c ON c.id = vg.conductor_id
   JOIN vehiculos   v ON v.id = vg.vehiculo_id
@@ -72,6 +79,7 @@ const SELECT_VALE = `
   -- así que este JOIN no puede multiplicar renglones.
   LEFT JOIN recargas_combustible rc ON rc.vale_id = vg.id
   LEFT JOIN gasolineras g ON g.id = rc.gasolinera_id
+  LEFT JOIN facturas_gasolina fd ON fd.id = vg.desde_factura_id
 `
 
 // mssql devuelve DECIMAL como string; los litros de la recarga se normalizan

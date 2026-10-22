@@ -48,6 +48,8 @@ export interface FacturaGasolina {
    * da de más: el IVA no se cobra sobre el IEPS.
    */
   total_estimado: boolean
+  /** Recargas que nadie había reportado y se registraron desde esta factura. */
+  registradas:    number
 }
 
 export interface RenglonFactura {
@@ -111,6 +113,10 @@ export interface TicketCandidato {
    * Se admiten unos días de gracia: la carga del sábado se registra el lunes.
    */
   dias_despues: number
+  /** Su recarga se registró desde ESTA factura: el chofer no la reportó. */
+  registrada_aqui:      boolean
+  /** Y su vale también: el encargado no lo había registrado. */
+  vale_registrado_aqui: boolean
 }
 
 export interface FacturasGasolinaFiltros {

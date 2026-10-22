@@ -226,6 +226,11 @@ Todo va en una transacción con la factura bloqueada, y la recarga nueva queda
 vale nuevo (migración 069): un vale que ya estaba no se marca, porque el
 encargado sí cumplió.
 
+La marca se ve siempre, no solo mientras la factura está abierta: en el renglón
+de la factura (también ya sellada), en el listado de facturas ("N sin
+reportar"), y en las recargas y los vales como *Desde factura G-44650*. En
+Recargas se encuentran buscando "sin reportar".
+
 ### La pestaña Sin reportar
 
 Junta lo que se registró así, **por chofer** (las recargas que no avisó) y **por

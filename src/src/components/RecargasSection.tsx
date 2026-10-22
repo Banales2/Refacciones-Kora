@@ -569,7 +569,16 @@ export function RecargasTabla<T extends Recarga>({
                   </>
                 )}
               </Table.Td>
-              <Table.Td><Text size="sm">{r.conductor}</Text></Table.Td>
+              <Table.Td>
+                <Text size="sm">{r.conductor}</Text>
+                {r.desde_factura_folio && (
+                  <Tooltip label="El chofer no la reportó: se registró al cuadrar la factura de la gasolinera">
+                    <Badge size="xs" variant="light" color="grape">
+                      Desde factura {r.desde_factura_folio}
+                    </Badge>
+                  </Tooltip>
+                )}
+              </Table.Td>
               <Table.Td>
                 {r.vale_id != null ? (
                   <>

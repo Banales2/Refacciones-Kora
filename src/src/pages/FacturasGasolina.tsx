@@ -359,7 +359,8 @@ function CuadreFactura({
   )
   const [nota, setNota] = useState(factura.nota ?? '')
   // El renglón cuya recarga se está registrando (llegó el ticket con el vale), y
-  // los que ya se registraron aquí, para señalarlos hasta cerrar.
+  // los que ya se registraron aquí. La marca de verdad viene en el ticket
+  // (`registrada_aqui`); esto solo la adelanta mientras vuelven las candidatas.
   const [registrando, setRegistrando] = useState<RenglonFactura | null>(null)
   const [registrados, setRegistrados] = useState<Record<number, boolean>>({})
 
@@ -576,10 +577,19 @@ function CuadreFactura({
                         {ticket.vale_folio ? ` · vale ${ticket.vale_folio}` : ''}
                       </Text>
                     )}
-                    {registrados[r.id] && elegida !== null && (
-                      <Badge size="xs" variant="light" color="grape" mt={2}>
-                        Registrada desde la factura · sin reportar
-                      </Badge>
+                    {(ticket?.registrada_aqui || (registrados[r.id] && elegida !== null)) && (
+                      <Group gap={4} mt={2}>
+                        <Tooltip label="El chofer no la reportó: se registró al cuadrar esta factura">
+                          <Badge size="xs" variant="light" color="grape">
+                            Registrada desde la factura · sin reportar
+                          </Badge>
+                        </Tooltip>
+                        {ticket?.vale_registrado_aqui && (
+                          <Tooltip label="El encargado tampoco había registrado el vale">
+                            <Badge size="xs" variant="light" color="grape">Vale sin registrar</Badge>
+                          </Tooltip>
+                        )}
+                      </Group>
                     )}
                     {/* Llegó el ticket con el vale y la recarga no está: se
                         registra aquí mismo y queda casada con este renglón. */}
@@ -1017,7 +1027,16 @@ export default function FacturasGasolina() {
                   style={{ cursor: 'pointer' }}
                   onClick={() => setConciliando(f.id)}
                 >
-                  <Table.Td><Text size="sm" fw={600}>{f.folio}</Text></Table.Td>
+                  <Table.Td>
+                    <Text size="sm" fw={600}>{f.folio}</Text>
+                    {f.registradas > 0 && (
+                      <Tooltip label="Recargas que nadie había reportado y se registraron al cuadrar esta factura">
+                        <Badge size="xs" variant="light" color="grape">
+                          {f.registradas} sin reportar
+                        </Badge>
+                      </Tooltip>
+                    )}
+                  </Table.Td>
                   <Table.Td><Text size="sm">{f.gasolinera}</Text></Table.Td>
                   <Table.Td>{formatFecha(f.fecha)}</Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>

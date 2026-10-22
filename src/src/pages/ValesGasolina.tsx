@@ -452,6 +452,13 @@ function ValesTabla({
               </Table.Td>
               <Table.Td>
                 <Badge size="xs" variant="light" color={est.color}>{est.label}</Badge>
+                {v.desde_factura_folio && (
+                  <Tooltip label="El encargado no lo registró: se capturó al cuadrar la factura de la gasolinera">
+                    <Badge size="xs" variant="light" color="grape" ml={4}>
+                      Desde factura {v.desde_factura_folio}
+                    </Badge>
+                  </Tooltip>
+                )}
                 {/* Debajo, lo que la etiqueta no alcanza a decir: dónde se gastó,
                     cuánto lleva esperando, o por qué se canceló. */}
                 {v.estado === 'usado' && v.recarga_fecha && (

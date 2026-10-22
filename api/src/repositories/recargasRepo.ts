@@ -41,6 +41,12 @@ export interface RecargaConGasolinera {
   // Null si no se sabe (migración 062).
   capturado_por: string | null
   capturado_por_nombre: string | null
+  /**
+   * La factura de gasolinera desde la que se registró porque el chofer no la
+   * reportó (migración 069), y su folio. Null en las reportadas a tiempo.
+   */
+  desde_factura_id:    number | null
+  desde_factura_folio: string | null
   // `litros` y `costo` de arriba son la suma de estos.
   tickets:       Ticket[]
 }
@@ -56,11 +62,13 @@ const SELECT_RECARGA = `
          g.nombre AS gasolinera, g.ubicacion,
          c.nombre AS conductor,
          vg.folio AS vale_folio,
-         CONVERT(char(10), vg.fecha, 23) AS vale_fecha
+         CONVERT(char(10), vg.fecha, 23) AS vale_fecha,
+         r.desde_factura_id, fd.folio AS desde_factura_folio
   FROM recargas_combustible r
   LEFT JOIN gasolineras g  ON g.id = r.gasolinera_id
   JOIN conductores c       ON c.id = r.conductor_id
   LEFT JOIN vales_gasolina vg ON vg.id = r.vale_id
+  LEFT JOIN facturas_gasolina fd ON fd.id = r.desde_factura_id
   -- El nombre de quien la capturó, para el seguimiento. APPLY y no JOIN: nada
   -- garantiza que el correo no se repita en usuarios, y un JOIN duplicaría
   -- la recarga.
@@ -128,6 +136,7 @@ export async function findAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
              c.nombre AS conductor,
              vg.folio AS vale_folio,
              CONVERT(char(10), vg.fecha, 23) AS vale_fecha,
+             r.desde_factura_id, fd.folio AS desde_factura_folio,
              m.marca, m.nombre AS modelo, v.numero_serie AS serie, v.placas
       FROM recargas_combustible r
       LEFT JOIN gasolineras g  ON g.id = r.gasolinera_id
@@ -135,6 +144,7 @@ export async function findAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
       JOIN vehiculos   v       ON v.id = r.vehiculo_id
       JOIN modelos     m       ON m.id = v.modelo_id
       LEFT JOIN vales_gasolina vg ON vg.id = r.vale_id
+      LEFT JOIN facturas_gasolina fd ON fd.id = r.desde_factura_id
       OUTER APPLY (
         SELECT TOP 1 NULLIF(LTRIM(RTRIM(u.nombre)), '') AS nombre
         FROM usuarios u WHERE LTRIM(RTRIM(u.email)) = r.capturado_por

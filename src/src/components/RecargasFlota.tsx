@@ -298,7 +298,9 @@ export default function RecargasFlota({
     if (!q) return items
     return items.filter((r) =>
       [vehiculoLabel(r), r.placas, r.conductor, r.gasolinera, r.vale_folio,
-       r.emergencia ? 'emergencia' : null]
+       r.emergencia ? 'emergencia' : null,
+       // "sin reportar" o el folio: encuentra las que salieron al cuadrar una factura.
+       r.desde_factura_folio ? `sin reportar ${r.desde_factura_folio}` : null]
         .some((t) => t?.toLowerCase().includes(q))
     )
   }, [items, busqueda])
