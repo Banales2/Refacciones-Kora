@@ -140,6 +140,8 @@ export interface VehiculoCosto {
   mano_obra:      number
   /** Refacciones consumidas por sus mantenimientos (no las compradas al almacén). */
   refacciones:    number
+  /** Lo que PASE cobró por sus cruces. Llega con la factura, cada diez días. */
+  casetas:        number
   total:          number
   costo_por_km:   number | null
   litros:         number
@@ -243,6 +245,13 @@ export interface AnalisisCostos {
   totales: {
     combustible:            number
     mano_obra:              number
+    /** Todos los cruces que PASE cobró, también los de tags sin unidad. */
+    casetas:                number
+    /**
+     * El último día con cruces facturados. PASE factura cada diez días, así que
+     * lo que va después de esta fecha todavía no tiene casetas. Null sin facturas.
+     */
+    casetas_hasta:          string | null
     /** Salió de caja: lo que se compró al almacén en el periodo. */
     refacciones_compradas:  number
     /** Se le puede achacar a una unidad: lo que consumieron los mantenimientos. */
@@ -286,6 +295,7 @@ interface Acumulado {
   refacciones: number
   mantenimientos: number
   recargas:    number
+  casetas:     number
   /** Lecturas de odómetro del periodo, vengan de una carga o de un servicio. */
   lecturas:    number[]
   /** Tramos completos entre dos cargas, que es lo único con lo que se mide km/l. */
@@ -312,21 +322,39 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   // Desde el día 1 para que el primer mes de la tendencia no salga a medias.
   const desdePrecios = `${desdeGasto.slice(0, 7)}-01`
 
-  const [recargas, mantenimientos, compras, gastoMensual, flota, recargasAnio] = await Promise.all([
+  const [
+    recargas, mantenimientos, compras, gastoMensual, flota, recargasAnio, casetas, casetasHasta,
+  ] = await Promise.all([
     repo.findRecargasEnRango(start, end),
     repo.findMantenimientosEnRango(start, end),
     repo.findComprasComparadas(start, end),
     repo.findGastoMensual(desdeGasto),
     repo.findFlotaEnOperacion(),
     repo.findRecargasEnRango(desdePrecios, addDias(hoy, 1)),
+    repo.findCasetasEnRango(start, end),
+    repo.findUltimoCruceFacturado(),
   ])
 
   const acum = new Map<number, Acumulado>()
   for (const v of flota) {
     acum.set(v.vehiculo_id, {
       v, combustible: 0, litros: 0, mano_obra: 0, refacciones: 0,
-      mantenimientos: 0, recargas: 0, lecturas: [], tramoKm: 0, tramoLitros: 0, tramos: 0,
+      mantenimientos: 0, recargas: 0, casetas: 0, lecturas: [], tramoKm: 0, tramoLitros: 0, tramos: 0,
     })
+  }
+
+  // ── Casetas ──
+  // Las de un tag sin unidad entran a la caja pero no a ninguna unidad, y por
+  // eso tampoco a `total_operacion`, que tiene que cuadrar con la suma por unidad.
+  let casetasCaja = 0
+  let casetasAsignadas = 0
+  for (const c of casetas) {
+    casetasCaja += c.total
+    const a = c.vehiculo_id != null ? acum.get(c.vehiculo_id) : undefined
+    if (a) {
+      a.casetas += c.total
+      casetasAsignadas += c.total
+    }
   }
 
   const anomalias: Anomalia[] = []
@@ -503,7 +531,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
 
   const vehiculos: VehiculoCosto[] = []
   for (const a of acum.values()) {
-    const total = a.combustible + a.mano_obra + a.refacciones
+    const total = a.combustible + a.mano_obra + a.refacciones + a.casetas
     // Sin gasto y sin cargas la unidad no aporta nada al análisis; sacarla evita
     // una tabla llena de ceros donde no se ve lo que importa.
     if (total === 0 && a.recargas === 0) continue
@@ -556,6 +584,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
       combustible: redondear(a.combustible, 2)!,
       mano_obra:   redondear(a.mano_obra, 2)!,
       refacciones: redondear(a.refacciones, 2)!,
+      casetas:     redondear(a.casetas, 2)!,
       total:       redondear(total, 2)!,
       costo_por_km: redondear(kmRecorridos ? ratio(total, kmRecorridos) : null),
       litros:       redondear(a.litros, 3)!,
@@ -700,7 +729,7 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
   // ── Totales de flota ──
   const kmFlota = vehiculos.reduce((s, v) => s + (v.km_recorridos ?? 0), 0)
   const refaccionesCompradas = compras.reduce((s, c) => s + c.cantidad * c.costo_unitario, 0)
-  const totalOperacion = costoCombustible + manoObra + piezasUsadas
+  const totalOperacion = costoCombustible + manoObra + piezasUsadas + casetasAsignadas
   const rendimientoFlota = ratio(
     [...acum.values()].reduce((s, a) => s + (a.tramos >= TRAMOS_MIN_RENDIMIENTO ? a.tramoKm : 0), 0),
     [...acum.values()].reduce((s, a) => s + (a.tramos >= TRAMOS_MIN_RENDIMIENTO ? a.tramoLitros : 0), 0),
@@ -723,9 +752,11 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     totales: {
       combustible:           redondear(costoCombustible, 2)!,
       mano_obra:             redondear(manoObra, 2)!,
+      casetas:               redondear(casetasCaja, 2)!,
+      casetas_hasta:         casetasHasta,
       refacciones_compradas: redondear(refaccionesCompradas, 2)!,
       refacciones_usadas:    redondear(piezasUsadas, 2)!,
-      total_caja:            redondear(costoCombustible + manoObra + refaccionesCompradas, 2)!,
+      total_caja:            redondear(costoCombustible + manoObra + refaccionesCompradas + casetasCaja, 2)!,
       total_operacion:       redondear(totalOperacion, 2)!,
       km_recorridos:         kmFlota,
       costo_por_km:          redondear(ratio(totalOperacion, kmFlota)),

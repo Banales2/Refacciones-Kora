@@ -4,6 +4,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { conPeriodo, type Periodo } from '../lib/reportes/periodo'
+import type { TipoHallazgo } from './useFacturasCasetas'
 
 export interface VehiculoConMantenimiento {
   vehiculo_id:     number
@@ -43,8 +44,19 @@ export interface ResumenMes {
     count:       number
     costo_total: number
   }
+  casetas: {
+    /** Cruces que PASE cobró en el periodo. */
+    count:       number
+    costo_total: number
+    /**
+     * El último día con cruces facturados. PASE factura cada diez días: lo que
+     * va después de esta fecha todavía no tiene casetas. Null sin facturas.
+     */
+    hasta:       string | null
+  }
   /**
-   * Gasto real del periodo: mano de obra + refacciones compradas + combustible.
+   * Gasto real del periodo: mano de obra + refacciones compradas + combustible
+   * + casetas.
    * Las piezas consumidas en mantenimientos no se suman porque ya se pagaron al
    * comprarlas; el combustible sí entra completo, porque la recarga se paga
    * cuando se carga y no se vuelve a cobrar después.
@@ -309,6 +321,8 @@ export interface VehiculoCosto {
   combustible:        number
   mano_obra:          number
   refacciones:        number
+  /** Lo que PASE cobró por sus cruces. */
+  casetas:            number
   total:              number
   costo_por_km:       number | null
   litros:             number
@@ -397,6 +411,7 @@ export interface GastoMes {
   mano_obra:   number
   refacciones: number
   combustible: number
+  casetas:     number
 }
 
 export interface AnalisisCostos {
@@ -404,6 +419,10 @@ export interface AnalisisCostos {
   totales: {
     combustible:           number
     mano_obra:             number
+    /** Todos los cruces que PASE cobró, también los de tags sin unidad. */
+    casetas:               number
+    /** Hasta dónde hay cruces facturados: lo que va después no tiene casetas todavía. */
+    casetas_hasta:         string | null
     refacciones_compradas: number
     refacciones_usadas:    number
     total_caja:            number
@@ -588,5 +607,147 @@ export function useFugas() {
   return useQuery({
     queryKey: ['dashboard', 'fugas'],
     queryFn: () => api.get<{ data: Fugas }>('/dashboard/fugas'),
+  })
+}
+
+// ─── Facturas ────────────────────────────────────────────────────────────────
+//
+// Lo que el tablero sabe de las facturas de proveedores: qué falta por cuadrar,
+// cuánto pudo cobrar PASE de más y qué encontró la conciliación de gasolina.
+// Cada uno vive en otra pestaña, y por eso son tres consultas.
+
+export interface BandejaFacturas {
+  pendientes: number
+  /** La fecha de la más vieja: es la que dice si la bandeja se atrasó. */
+  mas_vieja:  string | null
+}
+
+export interface FacturasPorCuadrar {
+  gasolina:    BandejaFacturas
+  casetas:     BandejaFacturas
+  refacciones: BandejaFacturas
+  taller:      BandejaFacturas
+  /** De gasolina con el total sacado de la tasa: falta capturar el IVA del papel. */
+  gasolina_total_estimado: number
+  tags_sin_unidad:         number
+  tags_sin_unidad_monto:   number
+}
+
+export function useFacturasPorCuadrar() {
+  return useQuery({
+    queryKey: ['dashboard', 'facturas-por-cuadrar'],
+    queryFn: () => api.get<{ data: FacturasPorCuadrar }>('/dashboard/facturas-por-cuadrar'),
+  })
+}
+
+export interface FacturaConCobros {
+  id:        number
+  serie:     string | null
+  folio:     string
+  periodo:   string | null
+  hasta:     string
+  total:     number
+  revisada:  boolean
+  /** Lo que pudo cobrarse de más: la suma de sus hallazgos de cobro. */
+  cobro:     number
+  hallazgos: number
+}
+
+export interface HallazgoDelPeriodo {
+  factura_id: number
+  serie:      string | null
+  folio:      string
+  tipo:       TipoHallazgo
+  tag:        string
+  vehiculo:   string | null
+  caseta:     string | null
+  renglones:  number[]
+  monto:      number
+  detalle:    string
+}
+
+export interface CobrosCasetas {
+  rango:       { start: string; end: string }
+  total:       number
+  por_tipo:    { tipo: TipoHallazgo; cantidad: number; monto: number }[]
+  facturas:    FacturaConCobros[]
+  principales: HallazgoDelPeriodo[]
+  errores:     string[]
+}
+
+/** Lo que PASE pudo cobrar de más en las facturas del periodo. Con la ventana del análisis de costos. */
+export function useCobrosCasetas(dias: VentanaCostos = 90) {
+  return useQuery({
+    queryKey: ['dashboard', 'cobros-casetas', dias],
+    queryFn: () => api.get<{ data: CobrosCasetas }>(`/dashboard/cobros-casetas?dias=${dias}`),
+  })
+}
+
+export interface FacturaConFaltantes {
+  id:         number
+  folio:      string
+  gasolinera: string
+  fecha:      string
+  renglones:  number
+  litros:     number
+  /** Con IVA: lo que se le paga a la gasolinera por esas cargas. */
+  monto:      number
+}
+
+export interface SinFacturarPorGasolinera {
+  gasolinera_id: number
+  gasolinera:    string
+  tickets:       number
+  costo:         number
+  dias_max:      number
+}
+
+export interface OmisionesDeChofer {
+  conductor_id: number
+  conductor:    string
+  recargas:     number
+  litros:       number
+  monto:        number
+}
+
+export interface OmisionesDeEncargado {
+  encargado: string | null
+  nombre:    string | null
+  vales:     number
+}
+
+export interface CargaEnOtraGasolinera {
+  factura_id:     number
+  folio:          string
+  /** La de la factura: donde de verdad se cargó. */
+  gasolinera:     string
+  conciliada:     boolean
+  /** Con la que quedó capturada. */
+  capturada_como: string
+  fecha:          string
+  litros:         number
+  costo:          number
+  vehiculo:       string
+  conductor:      string
+}
+
+export interface ConciliacionGasolina {
+  ventanas: { sin_factura: number; sin_reportar: number; otra_gasolinera: number }
+  errores:  string[]
+  sin_capturar: { facturas: FacturaConFaltantes[]; renglones: number; monto: number }
+  sin_factura:  { gasolineras: SinFacturarPorGasolinera[]; tickets: number; costo: number }
+  sin_reportar: {
+    por_chofer:    OmisionesDeChofer[]
+    por_encargado: OmisionesDeEncargado[]
+    recargas:      number
+    monto:         number
+  }
+  en_otra_gasolinera: CargaEnOtraGasolinera[]
+}
+
+export function useConciliacionGasolina() {
+  return useQuery({
+    queryKey: ['dashboard', 'conciliacion-gasolina'],
+    queryFn: () => api.get<{ data: ConciliacionGasolina }>('/dashboard/conciliacion-gasolina'),
   })
 }

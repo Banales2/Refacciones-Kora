@@ -16,11 +16,15 @@ import {
 import { BarChart } from '@mantine/charts'
 import {
   IconAlertTriangle, IconBox, IconGasStation, IconShieldCheck, IconTrendingUp,
-  IconScale, IconTool,
+  IconScale, IconTool, IconReceipt,
 } from '@tabler/icons-react'
-import { useFugas, type Fugas, type VidaPorMarca } from '../hooks/useDashboard'
-import { formatMXN, formatNum } from '../lib/formato'
+import {
+  useConciliacionGasolina, useFugas, type ConciliacionGasolina, type Fugas, type VidaPorMarca,
+} from '../hooks/useDashboard'
+import type { Seccion } from '../hooks/usePermisos'
+import { formatFecha, formatLitros, formatMXN, formatNum } from '../lib/formato'
 import { StatCard } from './StatCard'
+import { IrASeccion } from './IrASeccion'
 
 // Orden fijo de colores para las series por sucursal. Validado con el script de
 // la guía de visualización: pasa banda de luminosidad, piso de croma, separación
@@ -226,10 +230,251 @@ function Merma({ filas }: { filas: Fugas['merma'] }) {
   )
 }
 
+// ─── 4b. Lo que encontró la conciliación de gasolina ─────────────────────────
+
+/** Un subtítulo con su cifra, para los cuatro bloques de la conciliación. */
+function Subtitulo({ titulo, cifra, color }: { titulo: string; cifra?: string; color?: string }) {
+  return (
+    <Group justify="space-between" wrap="nowrap" mb={4}>
+      <Text size="sm" fw={600}>{titulo}</Text>
+      {cifra && <Badge variant="light" color={color ?? 'gray'}>{cifra}</Badge>}
+    </Group>
+  )
+}
+
+function ConciliacionGasolinaBloque({ c }: { c: ConciliacionGasolina }) {
+  const sr = c.sin_reportar
+  return (
+    <Stack gap="lg">
+      {c.errores.length > 0 && (
+        <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />}>
+          {c.errores.join(' · ')}
+        </Alert>
+      )}
+
+      {/* La gasolinera cobra y nadie capturó: el hallazgo de la conciliación. */}
+      <div>
+        <Subtitulo
+          titulo="Cobrado por la gasolinera y que nadie capturó"
+          cifra={c.sin_capturar.monto > 0 ? formatMXN(c.sin_capturar.monto) : undefined}
+          color="red"
+        />
+        <Text size="xs" c="dimmed" mb="xs">
+          Renglones de facturas ya conciliadas que se sellaron sin recarga. Se pagaron, pero
+          ninguna recarga dice a qué unidad fue ese combustible. Si llega el ticket, se reabre
+          la factura y se registra desde el renglón.
+        </Text>
+        {c.sin_capturar.facturas.length === 0 ? (
+          <Vacio>Toda factura conciliada casó completa.</Vacio>
+        ) : (
+          <Table.ScrollContainer minWidth={560}>
+            <Table striped withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Factura</Table.Th>
+                  <Table.Th>Fecha</Table.Th>
+                  <Table.Th ta="center">Renglones</Table.Th>
+                  <Table.Th ta="right">Litros</Table.Th>
+                  <Table.Th ta="right">Con IVA</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {c.sin_capturar.facturas.slice(0, 20).map((f) => (
+                  <Table.Tr key={f.id}>
+                    <Table.Td>
+                      <Text size="sm" fw={500}>{f.folio}</Text>
+                      <Text size="xs" c="dimmed">{f.gasolinera}</Text>
+                    </Table.Td>
+                    <Table.Td><Text size="sm">{formatFecha(f.fecha)}</Text></Table.Td>
+                    <Table.Td ta="center">{f.renglones}</Table.Td>
+                    <Table.Td ta="right">{formatLitros(f.litros)}</Table.Td>
+                    <Table.Td ta="right"><Text size="sm" fw={600} c="red">{formatMXN(f.monto)}</Text></Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+      </div>
+
+      {/* Capturadas en la gasolinera equivocada: se arregla corrigiendo la recarga. */}
+      {c.en_otra_gasolinera.length > 0 && (
+        <div>
+          <Subtitulo
+            titulo="Cargas que parecen capturadas en otra gasolinera"
+            cifra={`${c.en_otra_gasolinera.length}`}
+            color="orange"
+          />
+          <Text size="xs" c="dimmed" mb="xs">
+            Renglones sin casar de los últimos {c.ventanas.otra_gasolinera} días que son idénticos
+            a un ticket registrado con otra gasolinera. Se corrige la gasolinera de la recarga; si
+            la factura ya estaba conciliada, hay que reabrirla.
+          </Text>
+          <Table.ScrollContainer minWidth={640}>
+            <Table striped withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>La cobra</Table.Th>
+                  <Table.Th>Capturada como</Table.Th>
+                  <Table.Th>Carga</Table.Th>
+                  <Table.Th ta="right">Ticket</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {c.en_otra_gasolinera.map((a, i) => (
+                  <Table.Tr key={`${a.factura_id}-${i}`}>
+                    <Table.Td>
+                      <Text size="sm" fw={500}>{a.gasolinera}</Text>
+                      <Text size="xs" c="dimmed">
+                        Factura {a.folio}{a.conciliada ? ' · conciliada' : ''}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td><Text size="sm" c="orange.7" fw={500}>{a.capturada_como}</Text></Table.Td>
+                    <Table.Td>
+                      <Text size="sm">{a.vehiculo}</Text>
+                      <Text size="xs" c="dimmed">{formatFecha(a.fecha)} · {a.conductor}</Text>
+                    </Table.Td>
+                    <Table.Td ta="right">
+                      <Text size="sm">{formatMXN(a.costo)}</Text>
+                      <Text size="xs" c="dimmed">{formatLitros(a.litros)} L</Text>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </div>
+      )}
+
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+        {/* Quién no reporta: la lista que se le lleva a cada uno. */}
+        <div>
+          <Subtitulo
+            titulo="Recargas que el chofer no reportó"
+            cifra={sr.recargas > 0 ? `${sr.recargas} · ${formatMXN(sr.monto)}` : undefined}
+            color="grape"
+          />
+          <Text size="xs" c="dimmed" mb="xs">
+            Registradas desde una factura en los últimos {c.ventanas.sin_reportar} días porque
+            nadie las había capturado.
+          </Text>
+          {sr.por_chofer.length === 0 ? (
+            <Vacio>Todas las cargas del periodo se reportaron a tiempo.</Vacio>
+          ) : (
+            <Table striped withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Chofer</Table.Th>
+                  <Table.Th ta="center">Recargas</Table.Th>
+                  <Table.Th ta="right">Monto</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {sr.por_chofer.slice(0, 10).map((p) => (
+                  <Table.Tr key={p.conductor_id}>
+                    <Table.Td><Text size="sm">{p.conductor}</Text></Table.Td>
+                    <Table.Td ta="center">{p.recargas}</Table.Td>
+                    <Table.Td ta="right">{formatMXN(p.monto)}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
+        </div>
+        <div>
+          <Subtitulo
+            titulo="Vales que el encargado no registró"
+            cifra={sr.por_encargado.length > 0
+              ? String(sr.por_encargado.reduce((s, e) => s + e.vales, 0))
+              : undefined}
+            color="grape"
+          />
+          <Text size="xs" c="dimmed" mb="xs">
+            Vales que tampoco estaban y se capturaron desde la factura. Si el vale ya estaba, el
+            encargado sí cumplió y no cuenta aquí.
+          </Text>
+          {sr.por_encargado.length === 0 ? (
+            <Vacio>Todos los vales del periodo estaban registrados.</Vacio>
+          ) : (
+            <Table striped withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Encargado</Table.Th>
+                  <Table.Th ta="center">Vales</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {sr.por_encargado.slice(0, 10).map((e) => (
+                  <Table.Tr key={e.encargado ?? '—'}>
+                    <Table.Td>
+                      <Text size="sm">{e.nombre ?? e.encargado?.split('@')[0] ?? 'Sin identificar'}</Text>
+                    </Table.Td>
+                    <Table.Td ta="center">{e.vales}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
+        </div>
+      </SimpleGrid>
+
+      {/* El otro lado: capturado y que nadie cobra. Casi siempre la factura viene
+          en camino; pasado un mes ya no. */}
+      <div>
+        <Subtitulo
+          titulo={`Capturado y sin factura después de ${c.ventanas.sin_factura} días`}
+          cifra={c.sin_factura.tickets > 0
+            ? `${c.sin_factura.tickets} · ${formatMXN(c.sin_factura.costo)}`
+            : undefined}
+          color="yellow"
+        />
+        <Text size="xs" c="dimmed" mb="xs">
+          Tickets que ninguna factura ha cobrado. Por debajo de un mes la factura simplemente
+          viene en camino; por encima hay que preguntarle a la gasolinera, o revisar que la
+          recarga esté en la gasolinera correcta.
+        </Text>
+        {c.sin_factura.gasolineras.length === 0 ? (
+          <Vacio>Ninguna carga lleva más de {c.ventanas.sin_factura} días sin factura.</Vacio>
+        ) : (
+          <Table striped withTableBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Gasolinera</Table.Th>
+                <Table.Th ta="center">Tickets</Table.Th>
+                <Table.Th ta="right">La más vieja</Table.Th>
+                <Table.Th ta="right">Monto</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {c.sin_factura.gasolineras.map((g) => (
+                <Table.Tr key={g.gasolinera_id}>
+                  <Table.Td><Text size="sm">{g.gasolinera}</Text></Table.Td>
+                  <Table.Td ta="center">{g.tickets}</Table.Td>
+                  <Table.Td ta="right">
+                    <Badge size="sm" variant="light" color={g.dias_max >= 60 ? 'red' : 'yellow'}>
+                      {g.dias_max} días
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td ta="right">{formatMXN(g.costo)}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
+      </div>
+    </Stack>
+  )
+}
+
 // ─── Panel ───────────────────────────────────────────────────────────────────
 
-export default function DashboardFugas() {
+export default function DashboardFugas({ onNavigateSeccion }: {
+  /** Lleva a Facturas de gas, donde se reabre y se registra lo que falta. */
+  onNavigateSeccion?: (s: Seccion) => void
+}) {
   const { data, isLoading, isError } = useFugas()
+  // Aparte de las fugas: si una de las dos consultas falla, la otra sigue.
+  const conciliacion = useConciliacionGasolina()
 
   if (isLoading) return <Center py="xl"><Loader /></Center>
   if (isError || !data) {
@@ -255,7 +500,7 @@ export default function DashboardFugas() {
         </Alert>
       )}
 
-      <SimpleGrid cols={{ base: 1, sm: 2, md: 3, xl: 5 }} spacing="md">
+      <SimpleGrid cols={{ base: 1, sm: 2, md: 3, xl: 6 }} spacing="md">
         <StatCard
           label="Merma valorizada"
           value={formatMXN(t.merma)}
@@ -290,6 +535,15 @@ export default function DashboardFugas() {
           sub={`Últimos ${f.ventanas.vales} días`}
           color="yellow" icon={IconGasStation}
           ayuda="Vales entregados que ninguna recarga menciona. Puede ser captura pendiente o combustible que se fue sin registrarse."
+        />
+        <StatCard
+          label="Gasolina sin capturar"
+          value={conciliacion.data ? formatMXN(conciliacion.data.data.sin_capturar.monto) : '—'}
+          sub={conciliacion.data
+            ? `${conciliacion.data.data.sin_capturar.renglones} renglón(es) en facturas cerradas`
+            : 'Facturas de gasolinera'}
+          color="red" icon={IconReceipt}
+          ayuda="Lo que las gasolineras cobraron en facturas ya conciliadas y ninguna recarga explica: combustible pagado que no se sabe a qué unidad fue."
         />
       </SimpleGrid>
 
@@ -400,6 +654,23 @@ export default function DashboardFugas() {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+        )}
+      </Seccion>
+
+      {/* ── 4b ── */}
+      {/* El vale sin recarga es el hueco visto desde el papel del encargado;
+          esto es el mismo hueco visto desde la factura de la gasolinera. */}
+      <Seccion
+        titulo="Lo que encontró la conciliación de gasolina"
+        descripcion="Las facturas de las gasolineras puestas contra las recargas: lo que se cobró y nadie capturó, lo que se capturó en la gasolinera equivocada, quién no reporta, y lo capturado que nadie ha cobrado."
+        accion={<IrASeccion seccion="facturas-gasolina" onNavigate={onNavigateSeccion}>Facturas de gas</IrASeccion>}
+      >
+        {conciliacion.isLoading ? (
+          <Center py="lg"><Loader size="sm" /></Center>
+        ) : conciliacion.isError || !conciliacion.data ? (
+          <Alert color="red" variant="light">No se pudo leer la conciliación de gasolina.</Alert>
+        ) : (
+          <ConciliacionGasolinaBloque c={conciliacion.data.data} />
         )}
       </Seccion>
 

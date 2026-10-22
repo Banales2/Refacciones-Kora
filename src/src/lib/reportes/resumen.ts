@@ -33,15 +33,31 @@ function conceptos(resumen: ResumenMes): [string, string][] {
     ['    Costo de refacciones compradas', formatMXN(resumen.piezas.costo_total)],
     ['Recargas de combustible', String(resumen.combustible.count)],
     ['    Costo de combustible', formatMXN(resumen.combustible.costo_total)],
-    ['Costo total del periodo (mano de obra + refacciones compradas + combustible)', formatMXN(resumen.costo_total_periodo)],
+    ['Cruces de casetas', String(resumen.casetas.count)],
+    [`    Costo de casetas${casetasHasta(resumen)}`, formatMXN(resumen.casetas.costo_total)],
+    ['Costo total del periodo (mano de obra + refacciones compradas + combustible + casetas)', formatMXN(resumen.costo_total_periodo)],
   ]
+}
+
+/**
+ * PASE factura cada diez días: si el último cruce facturado es anterior al fin
+ * del periodo, las casetas de esos días todavía no están. Se dice en el renglón.
+ */
+function casetasHasta(resumen: ResumenMes): string {
+  const { hasta } = resumen.casetas
+  const ultimoDia = new Date(`${resumen.rango.end}T12:00:00`)
+  ultimoDia.setDate(ultimoDia.getDate() - 1)
+  return hasta && hasta < ultimoDia.toISOString().slice(0, 10)
+    ? ` (facturadas hasta el ${formatFecha(hasta)})`
+    : ''
 }
 
 const NOTA_TOTAL =
   'El costo total no suma las refacciones consumidas por los mantenimientos: ya se pagaron ' +
   'al comprarlas, y contarlas otra vez duplicaría el gasto. Por eso el total es mano de obra ' +
-  'más refacciones compradas más combustible. El combustible sí entra completo: la recarga se ' +
-  'paga cuando se carga y no se vuelve a cobrar al consumirse.'
+  'más refacciones compradas más combustible más casetas. El combustible sí entra completo: la recarga se ' +
+  'paga cuando se carga y no se vuelve a cobrar al consumirse. Las casetas van por la fecha del cruce ' +
+  'y llegan con la factura de PASE, cada diez días.'
 
 export async function exportResumenPdf(resumen: ResumenMes) {
   const pdf = await crearReportePdf({
@@ -108,12 +124,14 @@ export async function exportResumenExcel(resumen: ResumenMes) {
     ['    Costo de refacciones compradas', resumen.piezas.costo_total],
     ['Recargas de combustible', resumen.combustible.count],
     ['    Costo de combustible', resumen.combustible.costo_total],
-    ['Costo total del periodo (mano de obra + refacciones compradas + combustible)', resumen.costo_total_periodo],
+    ['Cruces de casetas', resumen.casetas.count],
+    [`    Costo de casetas${casetasHasta(resumen)}`, resumen.casetas.costo_total],
+    ['Costo total del periodo (mano de obra + refacciones compradas + combustible + casetas)', resumen.costo_total_periodo],
     ['', ''],
     ['Nota', NOTA_TOTAL],
     // `moneda` son posiciones dentro del arreglo de arriba, base 0: las dos
-    // filas de combustible corrieron el total del 7 al 9.
-  ], { moneda: [2, 3, 4, 6, 8, 9] })
+    // filas de combustible corrieron el total del 7 al 9, y las de casetas al 11.
+  ], { moneda: [2, 3, 4, 6, 8, 10, 11] })
 
   wb.hoja('Mantenimientos', [
     { header: 'Vehículo',       width: 34, valor: (v) => v.vehiculo_nombre },

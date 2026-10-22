@@ -192,6 +192,8 @@ export interface GastoMes {
   mano_obra:    number
   refacciones:  number
   combustible:  number
+  /** Lo que PASE cobró por los cruces del mes. Llega con la factura decenal. */
+  casetas:      number
 }
 
 // Las tres fuentes de gasto por mes calendario. Se suman con UNION ALL en vez
@@ -210,12 +212,14 @@ export async function findGastoMensual(desde: string): Promise<GastoMes[]> {
       SELECT mes,
              SUM(mano_obra)   AS mano_obra,
              SUM(refacciones) AS refacciones,
-             SUM(combustible) AS combustible
+             SUM(combustible) AS combustible,
+             SUM(casetas)     AS casetas
       FROM (
         SELECT CONVERT(char(7), m.fecha, 126) AS mes,
                m.costo                        AS mano_obra,
                CAST(0 AS DECIMAL(18,2))       AS refacciones,
-               CAST(0 AS DECIMAL(18,2))       AS combustible
+               CAST(0 AS DECIMAL(18,2))       AS combustible,
+               CAST(0 AS DECIMAL(18,2))       AS casetas
         FROM mantenimiento m
         JOIN vehiculos v ON v.id = m.vehiculo_id
         WHERE m.fecha >= @desde AND v.uso_personal = 0
@@ -225,6 +229,7 @@ export async function findGastoMensual(desde: string): Promise<GastoMes[]> {
         SELECT CONVERT(char(7), fac.fecha_compra, 126),
                CAST(0 AS DECIMAL(18,2)),
                l.cantidad_inicial * l.costo_unitario,
+               CAST(0 AS DECIMAL(18,2)),
                CAST(0 AS DECIMAL(18,2))
         FROM lotes_pieza l
         JOIN facturas fac ON fac.id = l.factura_id
@@ -235,16 +240,72 @@ export async function findGastoMensual(desde: string): Promise<GastoMes[]> {
         SELECT CONVERT(char(7), rc.fecha, 126),
                CAST(0 AS DECIMAL(18,2)),
                CAST(0 AS DECIMAL(18,2)),
-               rc.costo
+               rc.costo,
+               CAST(0 AS DECIMAL(18,2))
         FROM recargas_combustible rc
         JOIN vehiculos v ON v.id = rc.vehiculo_id
         -- Los personales no son gasto de la flotilla (migración 061).
         WHERE rc.fecha >= @desde AND v.uso_personal = 0
+
+        UNION ALL
+
+        -- Por la fecha del cruce, no la de la factura: el mes en que se viajó.
+        -- Los cruces de un tag sin unidad sí cuentan: PASE los cobra igual.
+        SELECT CONVERT(char(7), cc.fecha_hora, 126),
+               CAST(0 AS DECIMAL(18,2)),
+               CAST(0 AS DECIMAL(18,2)),
+               CAST(0 AS DECIMAL(18,2)),
+               cc.total
+        FROM facturas_casetas_cruces cc
+        LEFT JOIN vehiculos v ON v.id = cc.vehiculo_id
+        WHERE cc.fecha_hora >= @desde AND (v.id IS NULL OR v.uso_personal = 0)
       ) x
       GROUP BY mes
       ORDER BY mes
     `)
   return r.recordset
+}
+
+// ─── Casetas ────────────────────────────────────────────────────────────────
+
+export interface CasetasDeVehiculo {
+  /** Null: cruces de un tag que nadie ha ligado a una unidad. */
+  vehiculo_id: number | null
+  cruces:      number
+  total:       number
+}
+
+/**
+ * Lo que PASE cobró por los cruces del rango, por unidad.
+ *
+ * Va por la fecha del cruce y no por la de la factura, igual que una recarga va
+ * por el día que se cargó. La consecuencia es que los últimos días del rango
+ * siempre vienen incompletos: PASE factura cada diez días. Por eso va junto con
+ * `findUltimoCruceFacturado`, para poder decir hasta cuándo hay datos.
+ */
+export async function findCasetasEnRango(start: string, end: string): Promise<CasetasDeVehiculo[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('start', sql.Date, start)
+    .input('end',   sql.Date, end)
+    .query(`
+      SELECT cc.vehiculo_id, COUNT(*) AS cruces, SUM(cc.total) AS total
+      FROM facturas_casetas_cruces cc
+      LEFT JOIN vehiculos v ON v.id = cc.vehiculo_id
+      WHERE cc.fecha_hora >= @start AND cc.fecha_hora < @end
+        AND (v.id IS NULL OR v.uso_personal = 0)
+      GROUP BY cc.vehiculo_id
+    `)
+  return r.recordset.map((x) => ({ ...x, total: Number(x.total) })) as CasetasDeVehiculo[]
+}
+
+/** El cruce más reciente que ya facturó PASE: hasta ahí llega el dato de casetas. */
+export async function findUltimoCruceFacturado(): Promise<string | null> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT CONVERT(char(10), MAX(fecha_hora), 23) AS hasta FROM facturas_casetas_cruces
+  `)
+  return r.recordset[0]?.hasta ?? null
 }
 
 // ─── Flota en operación ─────────────────────────────────────────────────────

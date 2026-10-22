@@ -451,7 +451,7 @@ export async function crearImportada(
  *     por lo mismo.
  *   - sin IVA ni tasa → los importes ya lo incluían (migración 020).
  */
-const CON_IVA_SQL = `
+export const CON_IVA_SQL = `
   CAST(CASE
     WHEN fr.iva IS NOT NULL      THEN fr.importe + fr.iva
     WHEN f.iva IS NOT NULL       THEN fr.importe + f.iva * fr.importe / NULLIF(s.subtotal, 0)

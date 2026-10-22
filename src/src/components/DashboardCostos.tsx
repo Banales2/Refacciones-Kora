@@ -16,9 +16,14 @@ import {
   IconGasStation, IconRoad,
 } from '@tabler/icons-react'
 import {
-  useAnalisisCostos, type AnalisisCostos, type TipoAnomalia, type VentanaCostos,
+  useAnalisisCostos, useCobrosCasetas,
+  type AnalisisCostos, type CobrosCasetas, type TipoAnomalia, type VentanaCostos,
 } from '../hooks/useDashboard'
+import { useErroresCaptura } from '../hooks/useRevision'
+import { usePermisos, type Seccion } from '../hooks/usePermisos'
+import { COLOR_HALLAZGO, TITULO_HALLAZGO } from '../lib/hallazgosCasetas'
 import { StatCard } from './StatCard'
+import { IrASeccion } from './IrASeccion'
 import { formatMXN, formatMXNCorto, formatMes, formatNum, formatLitros, formatFecha } from '../lib/formato'
 import { TIPO_LABELS } from '../lib/tipoVehiculo'
 import { SIN_PRODUCTO } from '../lib/combustible'
@@ -101,14 +106,18 @@ const ANOMALIA_META: Record<TipoAnomalia, { label: string; color: string; ayuda:
 // La ventana la manda el Dashboard y no se guarda aqui: el boton de reportes
 // vive en la cabecera y tiene que exportar el mismo periodo que se esta viendo.
 export default function DashboardCostos({
-  ventana, onVentanaChange, onNavigateVehiculo, onNavigatePieza,
+  ventana, onVentanaChange, onNavigateVehiculo, onNavigatePieza, onNavigateSeccion,
 }: {
   ventana:          VentanaCostos
   onVentanaChange:  (v: VentanaCostos) => void
   onNavigateVehiculo?: (vehiculoId: number) => void
   onNavigatePieza?:    (piezaId: number) => void
+  onNavigateSeccion?:  (s: Seccion) => void
 }) {
   const { data, isLoading } = useAnalisisCostos(ventana)
+  // Aparte del análisis: recalcula los hallazgos de cada factura de PASE del
+  // periodo y tarda más. El resto de la pestaña no tiene por qué esperarlo.
+  const cobros = useCobrosCasetas(ventana)
 
   const selector = (
     <SegmentedControl
@@ -143,7 +152,9 @@ export default function DashboardCostos({
         {selector}
       </Group>
       <Contenido data={data.data} ventana={ventana}
-        onNavigateVehiculo={onNavigateVehiculo} onNavigatePieza={onNavigatePieza} />
+        cobros={cobros.data?.data} cargandoCobros={cobros.isLoading} errorCobros={cobros.isError}
+        onNavigateVehiculo={onNavigateVehiculo} onNavigatePieza={onNavigatePieza}
+        onNavigateSeccion={onNavigateSeccion} />
     </Stack>
   )
 }
@@ -334,13 +345,35 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
   )
 }
 
-function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
+/** El último día del periodo, YYYY-MM-DD: el rango llega semiabierto. */
+function ultimoDiaDe(rango: { end: string }): string {
+  const d = new Date(`${rango.end}T12:00:00`)
+  d.setDate(d.getDate() - 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function Contenido({
+  data, ventana, cobros, cargandoCobros, errorCobros,
+  onNavigateVehiculo, onNavigatePieza, onNavigateSeccion,
+}: {
   data: AnalisisCostos
   ventana: VentanaCostos
+  cobros?: CobrosCasetas
+  cargandoCobros: boolean
+  errorCobros: boolean
   onNavigateVehiculo?: (vehiculoId: number) => void
   onNavigatePieza?:    (piezaId: number) => void
+  onNavigateSeccion?:  (s: Seccion) => void
 }) {
   const t = data.totales
+  const { esAdmin } = usePermisos()
+
+  // PASE factura cada diez días: si su último cruce facturado no llega al fin
+  // del periodo, las casetas de esos días todavía no están sumadas.
+  const casetasIncompletas = t.casetas_hasta != null && t.casetas_hasta < ultimoDiaDe(data.rango)
+  const notaCasetas = casetasIncompletas
+    ? ` Las casetas están facturadas hasta el ${formatFecha(t.casetas_hasta!)}: los cruces posteriores todavía no se suman.`
+    : ''
 
   // La barra de cada renglón se mide contra el peor del periodo, no contra un
   // valor fijo: lo que interesa es el orden relativo dentro de la flota.
@@ -352,7 +385,9 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
     'Combustible': g.combustible,
     'Mano de obra': g.mano_obra,
     'Refacciones': g.refacciones,
+    'Casetas': g.casetas,
   }))
+  const hayCasetas = data.gasto_mensual.some((g) => g.casetas > 0)
 
   // Solo las unidades con suficientes cargas para que el km/L signifique algo;
   // el backend ya deja en null las que no llegan, aquí solo se filtran.
@@ -370,15 +405,25 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
   return (
     <>
       {/* ── El titular: lo identificado como recuperable ── */}
-      {t.ahorro_total > 0 && (
+      {(t.ahorro_total > 0 || (cobros?.total ?? 0) > 0) && (
         <Alert color="teal" icon={<IconDiscount2 size={18} />} title="Ahorro identificado en el periodo">
-          <Text size="sm">
-            <strong>{formatMXN(t.ahorro_total)}</strong> se pudieron no gastar:{' '}
-            {formatMXN(t.ahorro_refacciones)} comprando cada refacción con el proveedor
-            que la tiene más barata y {formatMXN(t.ahorro_combustible)} cargando siempre
-            en la gasolinera más económica de las que ya se visitan. El detalle de cada
-            peso está en las tablas de abajo.
-          </Text>
+          {t.ahorro_total > 0 && (
+            <Text size="sm">
+              <strong>{formatMXN(t.ahorro_total)}</strong> se pudieron no gastar:{' '}
+              {formatMXN(t.ahorro_refacciones)} comprando cada refacción con el proveedor
+              que la tiene más barata y {formatMXN(t.ahorro_combustible)} cargando siempre
+              en la gasolinera más económica de las que ya se visitan. El detalle de cada
+              peso está en las tablas de abajo.
+            </Text>
+          )}
+          {/* Aparte y sin sumarse: aquello se ahorra cambiando de proveedor, esto
+              se le reclama a PASE. Son dos acciones distintas. */}
+          {cobros && cobros.total > 0 && (
+            <Text size="sm" mt={t.ahorro_total > 0 ? 4 : 0}>
+              Además, PASE pudo cobrar <strong>{formatMXN(cobros.total)}</strong> de más en
+              casetas: eso no se ahorra cambiando de proveedor, se le reclama.
+            </Text>
+          )}
         </Alert>
       )}
 
@@ -395,7 +440,7 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
           value={t.costo_por_km != null ? formatMXN(t.costo_por_km) : '—'}
           sub={`${formatNum(t.km_recorridos)} km recorridos`}
           color="violet" icon={IconRoad}
-          ayuda="Combustible + mano de obra + refacciones consumidas, entre los kilómetros que avanzó el odómetro de la flota en el periodo."
+          ayuda="Combustible + mano de obra + refacciones consumidas + casetas de cada unidad, entre los kilómetros que avanzó el odómetro de la flota en el periodo. Las casetas de un tag sin unidad no entran: no se sabe de quién son."
         />
         <StatCard
           label="Rendimiento de la flota"
@@ -414,16 +459,16 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
         <StatCard
           label="Salida de caja"
           value={formatMXNCorto(t.total_caja)}
-          sub={`Combustible ${formatMXNCorto(t.combustible)} · Taller ${formatMXNCorto(t.mano_obra)}`}
+          sub={`Combustible ${formatMXNCorto(t.combustible)} · Taller ${formatMXNCorto(t.mano_obra)} · Casetas ${formatMXNCorto(t.casetas)}`}
           color="grape" icon={IconCashBanknote}
-          ayuda="Combustible + mano de obra + refacciones compradas al almacén. Las refacciones consumidas por los mantenimientos no se suman aparte: ya se pagaron al comprarlas."
+          ayuda={`Combustible + mano de obra + refacciones compradas al almacén + casetas. Las refacciones consumidas por los mantenimientos no se suman aparte: ya se pagaron al comprarlas.${notaCasetas}`}
         />
       </SimpleGrid>
 
       {/* ── Tendencia de gasto ── */}
       <Seccion
         titulo="En qué se va el dinero"
-        descripcion="Gasto mensual de los últimos doce meses, una línea por concepto. Las refacciones son las compradas al almacén, no las consumidas."
+        descripcion={`Gasto mensual de los últimos doce meses, una línea por concepto. Las refacciones son las compradas al almacén, no las consumidas. Las casetas van por el mes del cruce y llegan con la factura de PASE, así que el último mes suele venir corto.${notaCasetas}`}
       >
         {gastoMensual.length < 2 ? (
           <Vacio>Aún no hay suficiente historial para ver la tendencia.</Vacio>
@@ -445,6 +490,8 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
               { name: 'Combustible',  color: 'cyan.6'   },
               { name: 'Mano de obra', color: 'violet.6' },
               { name: 'Refacciones',  color: 'orange.6' },
+              // Sin facturas de PASE no hay línea: una en cero solo estorba.
+              ...(hayCasetas ? [{ name: 'Casetas', color: 'teal.6' }] : []),
             ]}
           />
         )}
@@ -514,6 +561,12 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
       {/* ── Gasolineras ── */}
       <SeccionGasolineras data={data} />
 
+      {/* ── Casetas: lo que PASE pudo cobrar de más ── */}
+      <SeccionCobrosCasetas
+        cobros={cobros} cargando={cargandoCobros} error={errorCobros}
+        onNavigateSeccion={onNavigateSeccion}
+      />
+
       {/* ── Costo por kilómetro ── */}
       <Seccion
         titulo="Cuánto cuesta cada kilómetro, unidad por unidad"
@@ -522,7 +575,7 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
         {data.vehiculos.length === 0 ? (
           <Vacio>Sin movimiento registrado en el periodo.</Vacio>
         ) : (
-          <Table.ScrollContainer minWidth={760}>
+          <Table.ScrollContainer minWidth={860}>
             <Table striped withTableBorder highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
@@ -530,6 +583,7 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
                   <Table.Th style={{ textAlign: 'right' }}>Km</Table.Th>
                   <Table.Th style={{ textAlign: 'right' }}>Combustible</Table.Th>
                   <Table.Th style={{ textAlign: 'right' }}>Taller</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Casetas</Table.Th>
                   <Table.Th style={{ textAlign: 'right' }}>Total</Table.Th>
                   <Table.Th style={{ width: 170 }}>Costo por km</Table.Th>
                 </Table.Tr>
@@ -550,6 +604,9 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
                     <Table.Td style={{ textAlign: 'right' }}>{formatMXN(v.combustible)}</Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       {formatMXN(v.mano_obra + v.refacciones)}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      {v.casetas > 0 ? formatMXN(v.casetas) : <Guion />}
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       <Text size="sm" fw={600}>{formatMXN(v.total)}</Text>
@@ -774,10 +831,231 @@ function Contenido({ data, ventana, onNavigateVehiculo, onNavigatePieza }: {
         )}
       </Seccion>
 
+      {/* El acumulado por persona es solo de admin: la API lo niega al resto, y
+          la sección ni se pide para no enseñar un error que no le toca. */}
+      {esAdmin && (
+        <SeccionErroresCaptura desde={data.rango.start} onNavigateSeccion={onNavigateSeccion} />
+      )}
+
       <Text size="xs" c="dimmed" ta="center">
         Periodo analizado: {formatFecha(data.rango.start)} a hoy ({ventana} días).
         El sobrecosto anual se extrapola del ritmo de este periodo.
       </Text>
     </>
+  )
+}
+
+// ─── Casetas ────────────────────────────────────────────────────────────────
+
+function SeccionCobrosCasetas({ cobros, cargando, error, onNavigateSeccion }: {
+  cobros?: CobrosCasetas
+  cargando: boolean
+  error: boolean
+  onNavigateSeccion?: (s: Seccion) => void
+}) {
+  const accion = (
+    <Group gap="xs" wrap="nowrap">
+      {cobros && cobros.total > 0 && (
+        <Badge color="red" variant="light" size="lg">{formatMXN(cobros.total)}</Badge>
+      )}
+      <IrASeccion seccion="facturas-casetas" onNavigate={onNavigateSeccion}>Facturas</IrASeccion>
+    </Group>
+  )
+
+  return (
+    <Seccion
+      titulo="Lo que PASE pudo cobrar de más"
+      descripcion="Los hallazgos de cobro de las facturas de casetas del periodo, sumados igual que en la pantalla de cada factura: fuera de tarifa, doble cobro, ya cobrado en otra factura, clase arriba de la habitual. No se suma al ahorro identificado: aquel se logra cambiando de proveedor, esto se le reclama a PASE con la partida de la factura."
+      accion={accion}
+    >
+      {cargando ? (
+        <Center py="xl"><Loader size="sm" /></Center>
+      ) : error || !cobros ? (
+        <Alert color="red" variant="light">No se pudieron calcular los cobros de casetas.</Alert>
+      ) : cobros.facturas.length === 0 ? (
+        <Vacio>Ninguna factura de PASE cobra cruces de este periodo.</Vacio>
+      ) : (
+        <Stack gap="md">
+          {cobros.errores.length > 0 && (
+            <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />}>
+              {cobros.errores.length} factura(s) no se pudieron revisar: {cobros.errores.join(' · ')}
+            </Alert>
+          )}
+          {cobros.por_tipo.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              Ningún cruce de las {cobros.facturas.length} facturas del periodo se cobró de más.
+            </Text>
+          ) : (
+            <Group gap="xs" wrap="wrap">
+              {cobros.por_tipo.map((p) => (
+                <Badge key={p.tipo} variant="light" color={COLOR_HALLAZGO[p.tipo]} size="lg">
+                  {TITULO_HALLAZGO[p.tipo]}: {p.cantidad} · {formatMXNCorto(p.monto)}
+                </Badge>
+              ))}
+            </Group>
+          )}
+
+          <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
+            <div>
+              <Text size="sm" fw={500} mb={4}>Por factura</Text>
+              <Table.ScrollContainer minWidth={420}>
+                <Table striped withTableBorder>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Factura</Table.Th>
+                      <Table.Th style={{ textAlign: 'right' }}>Total</Table.Th>
+                      <Table.Th style={{ textAlign: 'right' }}>De más</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {cobros.facturas.map((f) => (
+                      <Table.Tr key={f.id}>
+                        <Table.Td>
+                          <Group gap={6} wrap="nowrap">
+                            <Text size="sm" fw={500}>{f.serie ? `${f.serie}-` : ''}{f.folio}</Text>
+                            {!f.revisada && <Badge size="xs" variant="light" color="gray">Sin revisar</Badge>}
+                          </Group>
+                          <Text size="xs" c="dimmed" lineClamp={1}>{f.periodo ?? `Hasta ${formatFecha(f.hasta)}`}</Text>
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right' }}>{formatMXN(f.total)}</Table.Td>
+                        <Table.Td style={{ textAlign: 'right' }}>
+                          {f.cobro > 0
+                            ? <Text size="sm" fw={600} c="red">{formatMXN(f.cobro)}</Text>
+                            : <Guion />}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </div>
+            <div>
+              <Text size="sm" fw={500} mb={4}>Los que más pesan</Text>
+              {cobros.principales.length === 0 ? (
+                <Vacio>Nada que reclamar en el periodo.</Vacio>
+              ) : (
+                <Table.ScrollContainer minWidth={480}>
+                  <Table striped withTableBorder>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Hallazgo</Table.Th>
+                        <Table.Th>Factura</Table.Th>
+                        <Table.Th style={{ textAlign: 'right' }}>De más</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {cobros.principales.map((h, i) => (
+                        <Table.Tr key={`${h.factura_id}-${h.tipo}-${h.renglones.join(',')}-${i}`}>
+                          <Table.Td>
+                            <Tooltip label={h.detalle} multiline w={320} withArrow>
+                              <Badge size="xs" variant="light" color={COLOR_HALLAZGO[h.tipo]} style={{ cursor: 'help' }}>
+                                {TITULO_HALLAZGO[h.tipo]}
+                              </Badge>
+                            </Tooltip>
+                            <Text size="xs" c="dimmed" lineClamp={1}>
+                              {h.vehiculo ?? h.tag}{h.caseta ? ` · ${h.caseta}` : ''}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td>
+                            <Text size="sm">{h.serie ? `${h.serie}-` : ''}{h.folio}</Text>
+                            {/* La partida es como se le reclama a PASE. */}
+                            <Text size="xs" c="dimmed">
+                              Partida{h.renglones.length !== 1 ? 's' : ''} {h.renglones.slice(0, 4).join(', ')}
+                              {h.renglones.length > 4 ? '…' : ''}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text size="sm" fw={600} c="red">{formatMXN(h.monto)}</Text>
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </Table.ScrollContainer>
+              )}
+            </div>
+          </SimpleGrid>
+        </Stack>
+      )}
+    </Seccion>
+  )
+}
+
+// ─── Errores de captura ─────────────────────────────────────────────────────
+
+/** El correo sin dominio: es como se reconoce a la gente en el resto del sistema. */
+function persona(email: string | null): string {
+  return email ? email.split('@')[0] : 'Sin identificar'
+}
+
+/**
+ * Lo que la revisión de facturas de refacciones y taller corrigió en el
+ * periodo, por persona. Es el resumen de Administración → Errores de captura:
+ * las dos sumas van separadas por lo mismo que allá, porque no significan lo
+ * mismo y juntas dan un número que no quiere decir nada.
+ */
+function SeccionErroresCaptura({ desde, onNavigateSeccion }: {
+  desde: string
+  onNavigateSeccion?: (s: Seccion) => void
+}) {
+  const { data, isLoading, isError } = useErroresCaptura({ desde })
+  const filas = data?.data ?? []
+  const deMas = filas.reduce((s, f) => s + Number(f.de_mas), 0)
+  const sinRegistrar = filas.reduce((s, f) => s + Number(f.subregistrado), 0)
+
+  return (
+    <Seccion
+      titulo="Errores de captura que encontró la revisión"
+      descripcion="Lo que se corrigió al cuadrar las facturas de refacciones y de taller contra el papel, en el periodo. «De más» es dinero que el sistema tenía y no se debía: eso es lo que la revisión evita que se pague. «Sin registrar» es gasto que sí ocurrió y no estaba capturado: corregirlo no ahorra nada, deja de esconderlo."
+      accion={<IrASeccion seccion="errores-captura" onNavigate={onNavigateSeccion}>Detalle</IrASeccion>}
+    >
+      {isLoading ? (
+        <Center py="xl"><Loader size="sm" /></Center>
+      ) : isError ? (
+        <Alert color="red" variant="light">No se pudieron leer los errores de captura.</Alert>
+      ) : filas.length === 0 ? (
+        <Vacio>La revisión no corrigió nada en el periodo.</Vacio>
+      ) : (
+        <Stack gap="sm">
+          <Group gap="xs">
+            <Badge variant="light" color="teal" size="lg">De más: {formatMXN(deMas)}</Badge>
+            <Badge variant="light" color="orange" size="lg">Sin registrar: {formatMXN(sinRegistrar)}</Badge>
+          </Group>
+          <Table.ScrollContainer minWidth={480}>
+            <Table striped withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Capturó</Table.Th>
+                  <Table.Th style={{ textAlign: 'center' }}>Correcciones</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>De más</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Sin registrar</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {filas.slice(0, 8).map((f) => (
+                  <Table.Tr key={f.capturado_por ?? '—'}>
+                    <Table.Td>
+                      <Tooltip label={f.capturado_por ?? 'Capturado antes de que se guardara quién'} withArrow>
+                        <Text size="sm" fw={500}>{persona(f.capturado_por)}</Text>
+                      </Tooltip>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'center' }}>{f.correcciones}</Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      {Number(f.de_mas) > 0 ? formatMXN(Number(f.de_mas)) : <Guion />}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      {Number(f.subregistrado) > 0 ? formatMXN(Number(f.subregistrado)) : <Guion />}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+          {filas.length > 8 && (
+            <Text size="xs" c="dimmed">Se muestran las 8 personas con más dinero corregido; el detalle las trae todas.</Text>
+          )}
+        </Stack>
+      )}
+    </Seccion>
   )
 }

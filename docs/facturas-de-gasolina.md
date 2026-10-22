@@ -368,6 +368,23 @@ lo que la gasolinera cobró, con su estado. Juntas contestan la pregunta que de
 verdad se hace: qué está facturado y qué no. Desde ahí no se concilia — eso vive
 en la pantalla de arriba, que es donde está el cuadre completo.
 
+## En el tablero
+
+`GET /dashboard/conciliacion-gasolina` junta lo que encontró la conciliación, y
+la pestaña **Fugas** lo enseña junto a los vales sin recarga, que es el mismo
+hueco visto desde el otro papel:
+
+- **Cobrado y que nadie capturó**: renglones de facturas **conciliadas** sin
+  recarga, con IVA. Las abiertas no cuentan: ahí un renglón sin casar puede ser
+  solo que falta elegirlo.
+- **Capturadas en otra gasolinera**, de las facturas de los últimos 90 días, con
+  el mismo cruce que la pantalla de la factura.
+- **Sin reportar**, por chofer y por encargado, de los últimos 90 días.
+- **Sin factura después de 30 días**, por gasolinera.
+
+En **Pendientes** salen las facturas por conciliar y las que siguen con el total
+estimado (`GET /dashboard/facturas-por-cuadrar`).
+
 ## Lo que quedó fuera, a propósito
 
 - **La factura completa.** Régimen, sello, precio unitario: nada de eso ayuda a

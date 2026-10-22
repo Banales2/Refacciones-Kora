@@ -144,6 +144,37 @@ export async function findOrCreate(tx: sql.Transaction, c: FacturaCabecera): Pro
   return creada.recordset[0].id as number
 }
 
+// Las tres reglas de la bandeja, sobre el alias `f`. Exportadas porque el tablero
+// cuenta lo pendiente con exactamente las mismas: si cada lado escribiera la suya,
+// el número de allá y la lista de aquí acabarían diciendo cosas distintas.
+// Lo que significa cada una está explicado donde se usa, en `filtros`.
+export const POR_REVISAR_SQL = `(f.cabecera_revisada_en IS NULL
+                 OR EXISTS (SELECT 1 FROM lotes_pieza l
+                            WHERE l.factura_id = f.id AND l.revisado_en IS NULL)
+                 OR EXISTS (SELECT 1 FROM facturas_mano_obra fmo
+                            JOIN mantenimiento m ON m.id = fmo.mantenimiento_id
+                            WHERE fmo.factura_id = f.id AND m.revisado_en IS NULL))`
+
+export const CON_MANO_OBRA_SQL = `(
+      EXISTS (SELECT 1 FROM facturas_mano_obra fmo WHERE fmo.factura_id = f.id)
+      OR (
+        NOT EXISTS (SELECT 1 FROM lotes_pieza l WHERE l.factura_id = f.id)
+        AND f.hallada_en_revision = 0
+        AND EXISTS (SELECT 1 FROM tecnicos t WHERE t.proveedor_id = f.proveedor_id)
+      )
+    )`
+
+export const CON_REFACCIONES_SQL = `(
+      EXISTS (SELECT 1 FROM lotes_pieza l WHERE l.factura_id = f.id)
+      OR (
+        NOT EXISTS (SELECT 1 FROM facturas_mano_obra fmo WHERE fmo.factura_id = f.id)
+        AND (
+          f.hallada_en_revision = 1
+          OR NOT EXISTS (SELECT 1 FROM tecnicos t WHERE t.proveedor_id = f.proveedor_id)
+        )
+      )
+    )`
+
 function filtros(req: sql.Request, p: FacturaQuery): string {
   const where: string[] = []
   if (p.search) {
@@ -161,14 +192,7 @@ function filtros(req: sql.Request, p: FacturaQuery): string {
   // algún renglón sin sellar — las dos mitades son el mismo trabajo, y dar por
   // buena una factura con la cabecera revisada y tres renglones sin mirar es
   // exactamente lo que este filtro evita.
-  if (p.por_revisar) {
-    where.push(`(f.cabecera_revisada_en IS NULL
-                 OR EXISTS (SELECT 1 FROM lotes_pieza l
-                            WHERE l.factura_id = f.id AND l.revisado_en IS NULL)
-                 OR EXISTS (SELECT 1 FROM facturas_mano_obra fmo
-                            JOIN mantenimiento m ON m.id = fmo.mantenimiento_id
-                            WHERE fmo.factura_id = f.id AND m.revisado_en IS NULL))`)
-  }
+  if (p.por_revisar) where.push(POR_REVISAR_SQL)
   // La vista de facturas de taller. Cuenta cualquier renglón de mano de obra,
   // casado o no: una factura donde el papel cobra un trabajo que nadie registró
   // es justo la que hay que poder encontrar desde esa pantalla.
@@ -178,16 +202,7 @@ function filtros(req: sql.Request, p: FacturaQuery): string {
   // `con_refacciones` la excluye de allá con razón. Si aquí solo se pidiera
   // tener mano de obra, quien la diera de alta y no la terminara no volvería a
   // encontrarla nunca.
-  if (p.con_mano_obra) {
-    where.push(`(
-      EXISTS (SELECT 1 FROM facturas_mano_obra fmo WHERE fmo.factura_id = f.id)
-      OR (
-        NOT EXISTS (SELECT 1 FROM lotes_pieza l WHERE l.factura_id = f.id)
-        AND f.hallada_en_revision = 0
-        AND EXISTS (SELECT 1 FROM tecnicos t WHERE t.proveedor_id = f.proveedor_id)
-      )
-    )`)
-  }
+  if (p.con_mano_obra) where.push(CON_MANO_OBRA_SQL)
   // La vista de facturas de refacciones. No es la negación de la anterior, y si
   // se escribiera así saldría mal por los dos lados.
   //
@@ -200,18 +215,7 @@ function filtros(req: sql.Request, p: FacturaQuery): string {
   // tiene, sale solo cuando tampoco cobra mano de obra Y además no es de un
   // taller (o sí lo es pero se halló al revisar, que entonces es una compra que
   // alguien tiene que capturar).
-  if (p.con_refacciones) {
-    where.push(`(
-      EXISTS (SELECT 1 FROM lotes_pieza l WHERE l.factura_id = f.id)
-      OR (
-        NOT EXISTS (SELECT 1 FROM facturas_mano_obra fmo WHERE fmo.factura_id = f.id)
-        AND (
-          f.hallada_en_revision = 1
-          OR NOT EXISTS (SELECT 1 FROM tecnicos t WHERE t.proveedor_id = f.proveedor_id)
-        )
-      )
-    )`)
-  }
+  if (p.con_refacciones) where.push(CON_REFACCIONES_SQL)
   return where.length ? `WHERE ${where.join(' AND ')}` : ''
 }
 

@@ -39,7 +39,7 @@ import {
 } from '../hooks/useFacturasCasetas'
 import type {
   CasetaSinTarifa, CorreccionDeClase, CruceCaseta, CruceEnOtra, DetalleFacturaCasetas,
-  ImporteCobrado, Recorrido, TarifaCercana, TarifaTramo, TarifasDeCaseta, ValoresTarifa, Hallazgo, TagCaseta, TipoHallazgo,
+  ImporteCobrado, Recorrido, TarifaCercana, TarifaTramo, TarifasDeCaseta, ValoresTarifa, Hallazgo, TagCaseta,
 } from '../hooks/useFacturasCasetas'
 import { fetchTodosLosVehiculos, useVehiculos } from '../hooks/useVehiculos'
 import { exportTagsCasetasToPdf } from '../lib/exportTagsCasetas'
@@ -49,6 +49,7 @@ import { usePermisos } from '../hooks/usePermisos'
 import { ApiError } from '../lib/api'
 import { formatFecha, formatMXN } from '../lib/formato'
 import { leerFacturaPase, XmlPaseError } from '../lib/xmlPase'
+import { COLOR_HALLAZGO, TITULO_HALLAZGO } from '../lib/hallazgosCasetas'
 import type { FacturaPase } from '../lib/xmlPase'
 import {
   opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal,
@@ -57,34 +58,6 @@ import {
 const PAGE_SIZE = 15
 const CRUCES_POR_PAGINA = 50
 const RECORRIDOS_POR_PAGINA = 25
-
-const TITULO_HALLAZGO: Record<TipoHallazgo, string> = {
-  cobrado_antes: 'Ya cobrado en otra factura',
-  fuera_de_tarifa: 'Fuera de tarifa',
-  doble_cobro: 'Posible doble cobro',
-  clase_en_recorrido: 'Clase distinta en el recorrido',
-  clase_mayor: 'Clase arriba de la habitual',
-  clase_atipica: 'Clase distinta a la de siempre',
-  ajuste: 'Ajuste de PASE',
-  corregido: 'Corregido después',
-  fuera_de_periodo: 'Fuera del periodo',
-  tag_sin_unidad: 'Tag sin unidad',
-  caseta_inusual: 'Caseta que el tag no cruzaba',
-}
-
-const COLOR_HALLAZGO: Record<TipoHallazgo, string> = {
-  cobrado_antes: 'red',
-  fuera_de_tarifa: 'red',
-  doble_cobro: 'red',
-  clase_en_recorrido: 'orange',
-  clase_mayor: 'orange',
-  clase_atipica: 'orange',
-  ajuste: 'yellow',
-  corregido: 'gray',
-  fuera_de_periodo: 'yellow',
-  tag_sin_unidad: 'grape',
-  caseta_inusual: 'blue',
-}
 
 /** `2026-09-21T01:01:20` → `21 sep 2026 01:01`. */
 function fechaHora(fh: string): string {

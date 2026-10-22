@@ -6,7 +6,7 @@
 // con la información* —ver cómo va el mes, buscar dónde recortar, renovar
 // papeles, atender pendientes— y cada pestaña trae en su etiqueta el número de
 // cosas que reclaman atención, para no tener que entrar a averiguarlo.
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, Suspense, lazy, useMemo, useState } from 'react'
 import {
   SimpleGrid, Card, Text, Group, Stack, Loader, Center, Table, Divider, Badge, ActionIcon,
   Collapse, Button, Alert, Tabs, Tooltip,
@@ -17,14 +17,17 @@ import {
   IconShoppingCart, IconClockExclamation, IconExclamationCircle, IconCashBanknote,
   IconLayoutDashboard, IconDiscount2, IconCalendarExclamation, IconClipboardList,
   IconReportAnalytics, IconCalendar, IconArrowsExchange, IconTags, IconCoin,
-  IconClipboardCheck, IconMessageReport,
+  IconClipboardCheck, IconMessageReport, IconReceipt,
 } from '@tabler/icons-react'
 import {
   useResumenMes, usePreventivosVencidos, usePreventivosPorVencer, useHistorialPreventivos,
   useDocumentosPorVencer, useIncidenciasAbiertas, useAnalisisCostos,
-  usePendientesAlmacen,
+  usePendientesAlmacen, useFacturasPorCuadrar,
   type ServicioPreventivo, type VentanaCostos, type TraspasoPendienteDash, type HistorialDia,
+  type FacturasPorCuadrar,
 } from '../hooks/useDashboard'
+import type { Seccion } from '../hooks/usePermisos'
+import { IrASeccion } from './IrASeccion'
 import { useResumenChequeos } from '../hooks/useChequeos'
 import { SEVERIDAD_META } from '../lib/incidenciaMeta'
 import { useSucursales } from '../hooks/useSucursales'
@@ -33,10 +36,18 @@ import type { DestinoDocumento } from '../lib/documentosDashboard'
 import { TIPO_COLORS, TIPO_LABELS } from '../lib/tipoVehiculo'
 import { formatMXN, formatFecha, formatFechaCorta } from '../lib/formato'
 import { StatCard } from './StatCard'
-import DashboardCostos from './DashboardCostos'
 import ReportesDashboardModal from './ReportesDashboardModal'
-import DashboardFugas from './DashboardFugas'
 import Calendario from '../pages/Calendario'
+
+// Las dos pestañas de análisis van en su propio pedazo del bundle: solo se
+// montan al abrirlas (`keepMounted={false}`), y juntas con el resto el archivo
+// principal pasaba del tope de 2 MiB que el service worker guarda sin conexión.
+const DashboardCostos = lazy(() => import('./DashboardCostos'))
+const DashboardFugas  = lazy(() => import('./DashboardFugas'))
+
+function Cargando() {
+  return <Center py="xl"><Loader /></Center>
+}
 
 // ─── Piezas compartidas ──────────────────────────────────────────────────────
 
@@ -281,6 +292,101 @@ function tendenciaSemanal(dias: HistorialDia[]) {
   return semanas
 }
 
+// Las cuatro bandejas de facturas en una tabla: el trabajo del segundo par de
+// ojos. La fecha de la más vieja va junto al conteo porque dos facturas de ayer
+// no son el mismo pendiente que dos del mes pasado.
+const BANDEJAS: {
+  clave: 'gasolina' | 'casetas' | 'refacciones' | 'taller'
+  nombre: string
+  accion: string
+  seccion: Seccion
+}[] = [
+  { clave: 'gasolina',    nombre: 'Gasolina',    accion: 'por conciliar', seccion: 'facturas-gasolina' },
+  { clave: 'casetas',     nombre: 'Casetas',     accion: 'por revisar',   seccion: 'facturas-casetas' },
+  { clave: 'refacciones', nombre: 'Refacciones', accion: 'por cuadrar',   seccion: 'facturas' },
+  { clave: 'taller',      nombre: 'Taller',      accion: 'por cuadrar',   seccion: 'facturas-mantenimientos' },
+]
+
+/** Días desde una fecha YYYY-MM-DD hasta hoy. */
+function diasDesde(fecha: string): number {
+  const hoy = new Date()
+  hoy.setHours(12, 0, 0, 0)
+  return Math.round((hoy.getTime() - new Date(`${fecha}T12:00:00`).getTime()) / 86_400_000)
+}
+
+function FacturasPorCuadrarTabla({ data, onNavigateSeccion }: {
+  data: FacturasPorCuadrar
+  onNavigateSeccion?: (s: Seccion) => void
+}) {
+  return (
+    <Stack gap="sm">
+      <Table.ScrollContainer minWidth={480}>
+        <Table striped withTableBorder>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Facturas de</Table.Th>
+              <Table.Th ta="center">Pendientes</Table.Th>
+              <Table.Th>La más vieja</Table.Th>
+              <Table.Th />
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {BANDEJAS.map((b) => {
+              const bandeja = data[b.clave]
+              const dias = bandeja.mas_vieja ? diasDesde(bandeja.mas_vieja) : null
+              return (
+                <Table.Tr key={b.clave}>
+                  <Table.Td fw={500}>{b.nombre}</Table.Td>
+                  <Table.Td ta="center">
+                    <Badge variant="light" color={bandeja.pendientes === 0 ? 'teal' : 'orange'}>
+                      {bandeja.pendientes === 0 ? 'Al día' : `${bandeja.pendientes} ${b.accion}`}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    {bandeja.mas_vieja ? (
+                      <Text size="sm" c={dias != null && dias > 30 ? 'red' : undefined}>
+                        {formatFecha(bandeja.mas_vieja)}
+                        {dias != null && dias > 0 && (
+                          <Text component="span" size="xs" c="dimmed"> · hace {dias} día{dias !== 1 ? 's' : ''}</Text>
+                        )}
+                      </Text>
+                    ) : <Text size="sm" c="dimmed">—</Text>}
+                  </Table.Td>
+                  <Table.Td ta="right">
+                    {bandeja.pendientes > 0 && (
+                      <IrASeccion seccion={b.seccion} onNavigate={onNavigateSeccion}>Abrir</IrASeccion>
+                    )}
+                  </Table.Td>
+                </Table.Tr>
+              )
+            })}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+      {data.gasolina_total_estimado > 0 && (
+        <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
+          {data.gasolina_total_estimado} factura{data.gasolina_total_estimado !== 1 ? 's' : ''} de
+          gasolina {data.gasolina_total_estimado !== 1 ? 'tienen' : 'tiene'} el total estimado con
+          la tasa: da de más, porque el IVA no se cobra sobre el IEPS. Al abrirlas se pide el IVA
+          del papel.
+        </Alert>
+      )}
+      {data.tags_sin_unidad > 0 && (
+        <Alert color="grape" variant="light" icon={<IconAlertTriangle size={16} />}>
+          <Group justify="space-between" wrap="nowrap" gap="xs">
+            <Text size="sm">
+              {data.tags_sin_unidad} tag{data.tags_sin_unidad !== 1 ? 's' : ''} de casetas sin
+              unidad: {formatMXN(data.tags_sin_unidad_monto)} en cruces que no se le pueden
+              achacar a ningún vehículo. Se ligan en Facturas de casetas → Tags.
+            </Text>
+            <IrASeccion seccion="facturas-casetas" onNavigate={onNavigateSeccion}>Abrir</IrASeccion>
+          </Group>
+        </Alert>
+      )}
+    </Stack>
+  )
+}
+
 function TraspasosPendientesTable({ items }: { items: TraspasoPendienteDash[] }) {
   if (items.length === 0) {
     return <Text c="dimmed" size="sm" py="md">No hay traspasos esperando aceptación.</Text>
@@ -326,7 +432,7 @@ function TraspasosPendientesTable({ items }: { items: TraspasoPendienteDash[] })
 }
 
 export default function Dashboard({
-  onNavigateVehiculo, onNavigatePieza, onNavigateDocumento, onNavigateSolicitudes,
+  onNavigateVehiculo, onNavigatePieza, onNavigateDocumento, onNavigateSolicitudes, onNavigateSeccion,
 }: {
   onNavigateVehiculo?: (vehiculoId: number) => void
   onNavigatePieza?:    (piezaId: number) => void
@@ -334,6 +440,8 @@ export default function Dashboard({
   onNavigateDocumento?: (destino: DestinoDocumento) => void
   /** Lleva a la bandeja de solicitudes, que es donde se contestan. */
   onNavigateSolicitudes?: () => void
+  /** Lleva a la pantalla donde se resuelve: las facturas, los errores de captura. */
+  onNavigateSeccion?: (s: Seccion) => void
 }) {
   const { data: resumen, isLoading: loadingResumen } = useResumenMes()
   const { data: vencidosData, isLoading: loadingVencidos } = usePreventivosVencidos()
@@ -344,6 +452,7 @@ export default function Dashboard({
   const { data: sucursalesData } = useSucursales()
   const { data: almacenData, isLoading: loadingAlmacen } = usePendientesAlmacen()
   const { data: chequeos, isLoading: loadingChequeos } = useResumenChequeos()
+  const { data: porCuadrarData, isLoading: loadingPorCuadrar } = useFacturasPorCuadrar()
   const [tab, setTab] = useState<string | null>('resumen')
   const [reportesAbierto, setReportesAbierto] = useState(false)
   // La ventana del análisis de costos vive aquí y no dentro de la pestaña
@@ -355,6 +464,11 @@ export default function Dashboard({
   const traspasosPendientes = almacenData?.data.traspasos ?? []
   const sinMarca            = almacenData?.data.refacciones_sin_marca ?? 0
   const solicitudes         = almacenData?.data.solicitudes ?? 0
+
+  const porCuadrar = porCuadrarData?.data
+  const nFacturas  = porCuadrar
+    ? BANDEJAS.reduce((s, b) => s + porCuadrar[b.clave].pendientes, 0)
+    : 0
 
   const vencidos = vencidosData?.data ?? []
   const porVencer = porVencerData?.data ?? []
@@ -393,7 +507,20 @@ export default function Dashboard({
   // deuda de captura que no crece sola y taparía a lo que sí urge.
   // Las solicitudes cuentan por lo mismo que los traspasos: hay alguien del
   // otro lado esperando una respuesta que solo puede dar quien mira esto.
+  // Las facturas por cuadrar y los tags sin unidad, por lo mismo: nadie más los
+  // va a resolver, y mientras tanto el gasto que dicen no está verificado.
   const nPendientes   = vencidos.length + incidencias.length + traspasosPendientes.length + solicitudes
+    + nFacturas + (porCuadrar?.tags_sin_unidad ?? 0)
+
+  // PASE factura cada diez días. Si su último cruce facturado no llega al fin
+  // del periodo, las casetas de esos días todavía no están en el costo, y se dice.
+  const casetasHasta = resumen?.data.casetas.hasta ?? null
+  const ultimoDiaResumen = resumen ? (() => {
+    const d = new Date(`${resumen.data.rango.end}T12:00:00`)
+    d.setDate(d.getDate() - 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })() : null
+  const casetasIncompletas = casetasHasta != null && ultimoDiaResumen != null && casetasHasta < ultimoDiaResumen
 
   const vehiculosChartData = (resumen?.data.mantenimientos.por_vehiculo ?? []).map(v => ({
     vehiculo: v.vehiculo_nombre,
@@ -549,9 +676,11 @@ export default function Dashboard({
               <StatCard
                 label="Costo total"
                 value={loadingResumen ? '—' : formatMXN(resumen?.data.costo_total_periodo ?? 0)}
-                sub="Últimos 30 días"
+                sub={casetasIncompletas
+                  ? `Últimos 30 días · casetas al ${formatFechaCorta(casetasHasta!)}`
+                  : 'Últimos 30 días'}
                 color="blue" icon={IconCashBanknote}
-                ayuda="Lo que salió de caja: mano de obra, refacciones compradas y combustible. Las refacciones consumidas por los servicios no se suman aparte porque ya se pagaron al comprarlas."
+                ayuda="Lo que salió de caja: mano de obra, refacciones compradas, combustible y casetas. Las refacciones consumidas por los servicios no se suman aparte porque ya se pagaron al comprarlas. Las casetas llegan con la factura de PASE, cada diez días: los días después de la última todavía no las traen."
               />
               <StatCard
                 label="Traspasos por aceptar"
@@ -570,6 +699,14 @@ export default function Dashboard({
                 color="grape" icon={IconClipboardList}
                 onClick={onNavigateSolicitudes}
                 ayuda="Refacciones que una sucursal pidió y nadie ha aprobado ni rechazado. Mientras nadie conteste, quien pidió no sabe si tiene que conseguirlas por otro lado."
+              />
+              <StatCard
+                label="Facturas por cuadrar"
+                value={loadingPorCuadrar ? '—' : String(nFacturas)}
+                sub={nFacturas > 0 ? 'Gasolina, casetas, refacciones y taller' : 'Todas revisadas'}
+                color={nFacturas > 0 ? 'orange' : 'teal'} icon={IconReceipt}
+                onClick={() => setTab('pendientes')}
+                ayuda="Facturas de proveedores que nadie ha cuadrado contra lo capturado. Mientras no se revisen, el gasto que dicen no está verificado."
               />
               <StatCard
                 label="Refacciones sin marca"
@@ -684,12 +821,15 @@ export default function Dashboard({
 
         {/* ══ Costos y ahorro ══ */}
         <Tabs.Panel value="costos" pt="lg">
-          <DashboardCostos
-            ventana={ventanaCostos}
-            onVentanaChange={setVentanaCostos}
-            onNavigateVehiculo={onNavigateVehiculo}
-            onNavigatePieza={onNavigatePieza}
-          />
+          <Suspense fallback={<Cargando />}>
+            <DashboardCostos
+              ventana={ventanaCostos}
+              onVentanaChange={setVentanaCostos}
+              onNavigateVehiculo={onNavigateVehiculo}
+              onNavigatePieza={onNavigatePieza}
+              onNavigateSeccion={onNavigateSeccion}
+            />
+          </Suspense>
         </Tabs.Panel>
 
         {/* ══ Vencimientos ══ */}
@@ -938,6 +1078,17 @@ export default function Dashboard({
             </Seccion>
 
             <Seccion
+              titulo="Facturas por cuadrar"
+              descripcion="Las facturas de proveedores que esperan su segundo par de ojos. Se cuadran en su pantalla: la de gasolina contra las recargas, la de casetas contra la historia de cada tag, la de refacciones y taller contra lo capturado."
+            >
+              {loadingPorCuadrar || !porCuadrar ? (
+                <Center py="xl"><Loader size="sm" /></Center>
+              ) : (
+                <FacturasPorCuadrarTabla data={porCuadrar} onNavigateSeccion={onNavigateSeccion} />
+              )}
+            </Seccion>
+
+            <Seccion
               titulo="Traspasos esperando aceptación"
               descripcion="Salieron del almacén de origen y no han entrado al de destino, así que ahora mismo no están en el inventario de ninguna sucursal. Se aceptan o se rechazan en Inventario → Traspasos."
             >
@@ -1034,7 +1185,9 @@ export default function Dashboard({
             Sus consultas son pesadas, y el `keepMounted={false}` del <Tabs> hace
             que solo corran al abrir la pestaña. */}
         <Tabs.Panel value="fugas" pt="lg">
-          <DashboardFugas />
+          <Suspense fallback={<Cargando />}>
+            <DashboardFugas onNavigateSeccion={onNavigateSeccion} />
+          </Suspense>
         </Tabs.Panel>
 
         {/* ══ Calendario ══ */}

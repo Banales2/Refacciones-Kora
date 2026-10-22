@@ -323,6 +323,38 @@ export async function findCombustibleEnRango(
   return r.recordset[0] as CombustibleEnRango
 }
 
+export interface CasetasEnRango {
+  /** Cruces que PASE cobró en el periodo. */
+  count: number
+  costo_total: number
+  /**
+   * El último día con cruces facturados, de cualquier periodo. PASE factura
+   * cada diez días: lo que va después de esta fecha todavía no tiene casetas.
+   */
+  hasta: string | null
+}
+
+/**
+ * Lo que PASE cobró por los cruces del periodo, por la fecha del cruce. Los de
+ * un tag sin unidad cuentan: se pagan igual. Los de unidades de uso personal no,
+ * por lo mismo que su combustible (migración 061).
+ */
+export async function findCasetasEnRango(start: string, end: string): Promise<CasetasEnRango> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('start', sql.Date, start)
+    .input('end',   sql.Date, end)
+    .query(`
+      SELECT COUNT(*) AS count, COALESCE(SUM(cc.total), 0) AS costo_total,
+             (SELECT CONVERT(char(10), MAX(fecha_hora), 23) FROM facturas_casetas_cruces) AS hasta
+      FROM facturas_casetas_cruces cc
+      LEFT JOIN vehiculos v ON v.id = cc.vehiculo_id
+      WHERE cc.fecha_hora >= @start AND cc.fecha_hora < @end
+        AND (v.id IS NULL OR v.uso_personal = 0)`)
+  const x = r.recordset[0]
+  return { count: x.count, costo_total: Number(x.costo_total), hasta: x.hasta ?? null }
+}
+
 export interface IncidenciaAbiertaFleet {
   id:              number
   nombre:          string

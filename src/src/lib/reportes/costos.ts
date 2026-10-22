@@ -28,6 +28,11 @@ function ultimoDia(a: AnalisisCostos): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** PASE factura cada diez días: si su último cruce facturado no llega al fin del periodo, faltan casetas. */
+export function casetasIncompletas(a: AnalisisCostos): boolean {
+  return a.totales.casetas_hasta != null && a.totales.casetas_hasta < ultimoDia(a)
+}
+
 // Se nombra el periodo por sus dos fechas y no como "últimos N días", porque
 // ahora puede ser un año cerrado o un rango elegido a mano: en un documento que
 // se archiva, "últimos 90 días" deja de querer decir nada al mes siguiente.
@@ -68,8 +73,15 @@ export async function exportCostosPdf(a: AnalisisCostos) {
     ['Combustible', formatMXN(t.combustible)],
     ['Mano de obra', formatMXN(t.mano_obra)],
     ['Refacciones compradas', formatMXN(t.refacciones_compradas)],
+    ['Casetas', formatMXN(t.casetas)],
     ['Salida de caja', formatMXN(t.total_caja)],
   ], { destacarUltimo: true })
+  if (casetasIncompletas(a)) {
+    pdf.nota(
+      `PASE factura cada diez días: las casetas están facturadas hasta el ${formatFecha(t.casetas_hasta!)}. ` +
+      'Los cruces posteriores todavía no se suman.'
+    )
+  }
   pdf.datos([
     ['Kilómetros recorridos', km(t.km_recorridos)],
     ['Costo por kilómetro', t.costo_por_km != null ? formatMXN(t.costo_por_km) : '—'],
@@ -142,17 +154,18 @@ export async function exportCostosPdf(a: AnalisisCostos) {
     pdf.vacio('Sin movimiento registrado en el periodo.')
   } else {
     pdf.tabla({
-      head: ['Vehículo', 'Tipo', 'Km', 'Combustible', 'Taller', 'Total', 'Costo/km', 'Mttos.', 'Cargas'],
+      head: ['Vehículo', 'Tipo', 'Km', 'Combustible', 'Taller', 'Casetas', 'Total', 'Costo/km', 'Mttos.', 'Cargas'],
       body: a.vehiculos.map((v) => [
         v.vehiculo, TIPO_LABELS[v.tipo] ?? v.tipo, km(v.km_recorridos),
-        formatMXN(v.combustible), formatMXN(v.mano_obra + v.refacciones), formatMXN(v.total),
+        formatMXN(v.combustible), formatMXN(v.mano_obra + v.refacciones), formatMXN(v.casetas),
+        formatMXN(v.total),
         v.costo_por_km != null ? formatMXN(v.costo_por_km) : '—',
         String(v.mantenimientos), String(v.recargas),
       ]),
       columnStyles: {
         2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
-        5: { halign: 'right' }, 6: { halign: 'right' },
-        7: { halign: 'center' }, 8: { halign: 'center' },
+        5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' },
+        8: { halign: 'center' }, 9: { halign: 'center' },
       },
     })
   }
@@ -275,6 +288,7 @@ export async function exportCostosExcel(a: AnalisisCostos) {
     ['Combustible', t.combustible],
     ['Mano de obra', t.mano_obra],
     ['Refacciones compradas', t.refacciones_compradas],
+    ['Casetas', t.casetas],
     ['Salida de caja', t.total_caja],
     ['', ''],
     ['OPERACIÓN', ''],
@@ -283,14 +297,15 @@ export async function exportCostosExcel(a: AnalisisCostos) {
     ['Litros cargados', t.litros],
     ['Rendimiento de la flota (km/L)', t.rendimiento ?? 0],
     ['Precio por litro (promedio ponderado)', t.precio_litro ?? 0],
-  ], { moneda: [4, 5, 6, 9, 10, 11, 12, 16, 19] })
+  ], { moneda: [4, 5, 6, 9, 10, 11, 12, 13, 17, 20] })
 
   wb.hoja('Gasto mensual', [
     { header: 'Mes',         width: 14, valor: (g) => formatMes(g.mes) },
     { header: 'Combustible', width: 16, formato: 'moneda', valor: (g) => g.combustible },
     { header: 'Mano de obra',width: 16, formato: 'moneda', valor: (g) => g.mano_obra },
     { header: 'Refacciones', width: 16, formato: 'moneda', valor: (g) => g.refacciones },
-    { header: 'Total',       width: 16, formato: 'moneda', valor: (g) => g.combustible + g.mano_obra + g.refacciones },
+    { header: 'Casetas',     width: 16, formato: 'moneda', valor: (g) => g.casetas },
+    { header: 'Total',       width: 16, formato: 'moneda', valor: (g) => g.combustible + g.mano_obra + g.refacciones + g.casetas },
   ], a.gasto_mensual, { vacio: 'Sin historial de gasto todavía.' })
 
   wb.hoja('Ahorro refacciones', [
@@ -328,6 +343,7 @@ export async function exportCostosExcel(a: AnalisisCostos) {
     { header: 'Combustible',         width: 14, formato: 'moneda',  valor: (v) => v.combustible },
     { header: 'Mano de obra',        width: 14, formato: 'moneda',  valor: (v) => v.mano_obra },
     { header: 'Refacciones usadas',  width: 16, formato: 'moneda',  valor: (v) => v.refacciones },
+    { header: 'Casetas',             width: 14, formato: 'moneda',  valor: (v) => v.casetas },
     { header: 'Total',               width: 14, formato: 'moneda',  valor: (v) => v.total },
     { header: 'Costo por km',        width: 13, formato: 'moneda',  valor: (v) => v.costo_por_km ?? 0 },
     { header: 'Litros',              width: 11, formato: 'litros', valor: (v) => v.litros },

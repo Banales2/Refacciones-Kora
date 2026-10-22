@@ -566,6 +566,7 @@ export default function Layout() {
             onNavigatePieza={navigateToPiezaId}
             onNavigateDocumento={navigateToDocumento}
             onNavigateSolicitudes={() => setSection('solicitudes')}
+            onNavigateSeccion={navigate}
           />
         )}
         {section === 'piezas'    && puedeVerSeccion('piezas') && <Piezas initialPiezaId={pendingPiezaId ?? undefined} />}

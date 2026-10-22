@@ -326,6 +326,25 @@ ninguna, y solo a esos.
 Los hallazgos se calculan al pedir el detalle, no se guardan: dependen de la
 historia de cada tag, que cambia con cada factura nueva.
 
+## En el tablero
+
+Las casetas son gasto y entran como tal: en el **Costo total** del Resumen, en
+**Salida de caja**, en la gráfica mensual y en el costo por kilómetro de cada
+unidad (`costosRepo.findCasetasEnRango`). Van por la **fecha del cruce**, igual
+que una recarga va por el día que se cargó. Como PASE factura cada diez días,
+el final de cualquier periodo casi siempre está incompleto: la API devuelve
+`casetas_hasta` (el último cruce facturado) y la pantalla lo dice cuando no
+llega al fin del periodo. Los cruces de un tag sin unidad entran a la caja pero
+no al costo por kilómetro: no se sabe de quién son.
+
+En **Costos y ahorro**, *Lo que PASE pudo cobrar de más* suma los hallazgos de
+cobro de las facturas cuyo periodo termina dentro de la ventana
+(`GET /dashboard/cobros-casetas?dias=`). Se recalculan con el mismo `detalle`
+de la pantalla de la factura y se suman igual que ella. **No se suman al ahorro
+identificado**: aquel se logra cambiando de proveedor; esto se le reclama a PASE.
+
+En **Pendientes** salen las facturas sin revisar y los tags sin unidad.
+
 ## La pantalla
 
 `src/src/pages/FacturasCasetas.tsx`, bajo **Facturas → Casetas**, con tres
