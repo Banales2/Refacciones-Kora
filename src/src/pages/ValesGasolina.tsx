@@ -491,7 +491,7 @@ function ValesTabla({
                   )}
                   {/* Cancelar es para lo que se perdió: un vale usado no se
                       perdió, se gastó. Uno sin usar todavía puede aparecer esta
-                      tarde, así que adelantarse a los dos días es del admin
+                      tarde, así que adelantarse a los tres días es del admin
                       (la API también lo impone). */}
                   {((puedeArchivarVale(v) && v.estado === 'perdido') || (esAdmin && v.estado === 'creado')) && (
                     <Tooltip label="Cancelar vale">

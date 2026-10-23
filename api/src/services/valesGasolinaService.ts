@@ -112,7 +112,7 @@ export async function getAll(incluirArchivados = false): Promise<ValeGasolina[]>
  * archivarlo escondería la recarga que cuelga de él.
  *
  * Uno que todavía está en plazo (`creado`) solo lo archiva un admin: el
- * editor archiva lo que ya se dio por perdido, y adelantarse a los dos días es
+ * editor archiva lo que ya se dio por perdido, y adelantarse a los tres días es
  * sacar de la lista un papel que todavía puede cargarse esta tarde.
  *
  * `soloPropiosDe`: el responsable archiva solo sus vales —los que quedaron a su

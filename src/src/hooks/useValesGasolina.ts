@@ -9,7 +9,7 @@ import { api } from '../lib/api'
  *
  *   creado    se entregó y todavía no se gasta.
  *   usado     tiene una recarga colgando.
- *   perdido   lleva dos días sin usarse y nadie sabe de él.
+ *   perdido   lleva tres días sin usarse y nadie sabe de él.
  *   archivado alguien lo canceló: aceptó que no va a aparecer. En pantalla se
  *             llama "Cancelado" para no confundirlo con el perdido, que es
  *             solo el plazo vencido; por dentro sigue siendo el archivado.

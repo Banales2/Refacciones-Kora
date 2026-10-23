@@ -62,7 +62,7 @@ export interface Permisos {
   puedeCorregirCaptura: (capturadoPor: string | null) => boolean
   /**
    * Si puede dar por perdido un vale (o restaurarlo), sin contar el plazo de
-   * los dos días, que es aparte. El editor, cualquiera; el responsable, solo
+   * los tres días, que es aparte. El editor, cualquiera; el responsable, solo
    * los suyos: a su nombre o capturados por él. Espejo de `esValePropio` de la
    * API.
    */

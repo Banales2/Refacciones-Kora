@@ -10,14 +10,14 @@ export type EstadoVale = 'creado' | 'usado' | 'perdido' | 'archivado'
  * Cuántos días sin usarse convierten un vale en perdido.
  *
  * Vive aquí y no en la base porque es una política, no una regla del dato: el
- * día que se quiera pasar a tres días, esto es una línea y no una migración.
+ * día que se quiera cambiar el plazo, esto es una línea y no una migración.
  *
- * Dos es corto a propósito. Un vale se entrega para cargar ese día o el
- * siguiente; si a las 48 horas nadie lo gastó, o se perdió o alguien lo trae en
+ * Tres es corto a propósito. Un vale se entrega para cargar ese día o el
+ * siguiente; si a las 72 horas nadie lo gastó, o se perdió o alguien lo trae en
  * la cartera, y las dos cosas hay que salir a preguntarlas mientras todavía se
- * acuerdan de él.
+ * acuerdan de él. (Eran dos; se subió a tres para darle un día más de margen.)
  */
-export const DIAS_PARA_PERDERSE = 2
+export const DIAS_PARA_PERDERSE = 3
 
 /**
  * El estado de un vale, como expresión SQL.
