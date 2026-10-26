@@ -1,7 +1,7 @@
 // Consultas del tablero principal: resumen de costos del mes, mantenimientos
 // vencidos y por vencer, historial para la gráfica, mantenimientos del
 // calendario y el reporte de flota completo (este último bajo demanda).
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { conPeriodo, type Periodo } from '../lib/reportes/periodo'
 import type { TipoHallazgo } from './useFacturasCasetas'
@@ -314,6 +314,24 @@ export function fetchAnomaliasCostos(dias: VentanaCostos, sucursal: string | nul
   return api.get<{ data: AnomaliasCostos }>(`/dashboard/analisis-costos/anomalias?dias=${dias}${q}`)
 }
 
+/**
+ * Dar por buena una carga a revisar (migración 078), o deshacerlo. Es por
+ * bandera y por recarga: la que no trae vale ni kilometraje tiene dos cosas
+ * distintas que aclarar. El rendimiento bajo no se puede: es de la unidad.
+ */
+export function useRevisarAnomalia() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ tipo, recarga_id, nota, quitar }: {
+      tipo: TipoAnomalia; recarga_id: number; nota?: string | null; quitar?: boolean
+    }) => {
+      const ruta = `/dashboard/anomalias-revisadas/${tipo}/${recarga_id}`
+      return quitar ? api.accion(`${ruta}/quitar`) : api.put(ruta, { nota: nota || null })
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboard', 'analisis-costos'] }),
+  })
+}
+
 export function fetchDocumentosPorVencer(rango: Periodo) {
   return api.get<{ data: DocumentosPorVencer }>(
     conPeriodo('/dashboard/documentos-por-vencer', rango))
@@ -457,12 +475,16 @@ export interface Anomalia {
   severidad:   'alta' | 'media'
   vehiculo_id: number
   vehiculo:    string
+  /** La carga marcada. Null en el rendimiento bajo, que es de la unidad. */
+  recarga_id:  number | null
   /** La base de la unidad; null es "Sin base fija". */
   sucursal_id: number | null
   sucursal:    string
   fecha:       string
   detalle:     string
   monto:       number | null
+  /** Solo en `anomalias_revisadas`: quién dijo que está bien y por qué. */
+  revision?:   { por: string; en: string; nota: string | null }
 }
 
 export interface Retrabajo {
@@ -530,6 +552,8 @@ export interface AnalisisCostos {
   ahorro_refacciones: OportunidadAhorro[]
   anomalias:          Anomalia[]
   anomalias_resumen:  { tipo: TipoAnomalia; cantidad: number; monto: number }[]
+  /** Las que alguien ya revisó y dio por buenas: fuera de la lista y de los conteos. */
+  anomalias_revisadas: Anomalia[]
   retrabajos:         Retrabajo[]
 }
 

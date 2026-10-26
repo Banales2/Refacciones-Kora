@@ -40,6 +40,8 @@ export interface RecargaCosto {
   emergencia:      boolean
   /** Diesel, Magna o Premium. Null = no se sabe (migración 063). */
   producto:        string | null
+  /** La factura desde la que se registró porque nadie la reportó (migración 069). */
+  desde_factura_id: number | null
 }
 
 // Las recargas del rango, de la flota en operación, ordenadas por vehículo y
@@ -59,7 +61,8 @@ export async function findRecargasEnRango(start: string, end: string): Promise<R
              rc.conductor_id, co.nombre AS conductor,
              rc.vale_id,
              CONVERT(char(10), rc.fecha, 23) AS fecha,
-             rc.litros, rc.costo, rc.kilometraje, rc.emergencia, rc.producto
+             rc.litros, rc.costo, rc.kilometraje, rc.emergencia, rc.producto,
+             rc.desde_factura_id
       FROM recargas_combustible rc
       JOIN vehiculos   v  ON v.id  = rc.vehiculo_id
       JOIN modelos     mo ON mo.id = v.modelo_id
@@ -71,6 +74,64 @@ export async function findRecargasEnRango(start: string, end: string): Promise<R
       ORDER BY rc.vehiculo_id, rc.fecha, rc.id
     `)
   return r.recordset
+}
+
+// ─── Cargas a revisar que ya se revisaron ───────────────────────────────────
+// Ver migración 078.
+
+export interface AnomaliaRevisada {
+  tipo:         string
+  recarga_id:   number
+  nota:         string | null
+  revisado_por: string
+  revisado_en:  string
+}
+
+// Las de las recargas del rango: son las únicas que puede marcar el análisis.
+export async function findAnomaliasRevisadas(start: string, end: string): Promise<AnomaliaRevisada[]> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('start', sql.Date, start)
+    .input('end',   sql.Date, end)
+    .query(`
+      SELECT ar.tipo, ar.recarga_id, ar.nota, ar.revisado_por,
+             CONVERT(char(10), ar.revisado_en, 23) AS revisado_en
+      FROM anomalias_revisadas ar
+      JOIN recargas_combustible rc ON rc.id = ar.recarga_id
+      WHERE rc.fecha >= @start AND rc.fecha < @end
+    `)
+  return r.recordset
+}
+
+/** False: la recarga no existe. Volver a marcar una ya revisada no hace nada. */
+export async function marcarAnomaliaRevisada(
+  tipo: string, recargaId: number, nota: string | null, usuario: string,
+): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('tipo',    sql.NVarChar(30),  tipo)
+    .input('recarga', sql.Int,           recargaId)
+    .input('nota',    sql.NVarChar(500), nota)
+    .input('usuario', sql.NVarChar(255), usuario)
+    .query(`
+      IF NOT EXISTS (SELECT 1 FROM recargas_combustible WHERE id = @recarga)
+        SELECT CAST(0 AS bit) AS ok
+      ELSE BEGIN
+        IF NOT EXISTS (SELECT 1 FROM anomalias_revisadas WHERE recarga_id = @recarga AND tipo = @tipo)
+          INSERT INTO anomalias_revisadas (tipo, recarga_id, nota, revisado_por)
+          VALUES (@tipo, @recarga, @nota, @usuario)
+        SELECT CAST(1 AS bit) AS ok
+      END`)
+  return !!r.recordset[0]?.ok
+}
+
+export async function quitarAnomaliaRevisada(tipo: string, recargaId: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('tipo',    sql.NVarChar(30), tipo)
+    .input('recarga', sql.Int,          recargaId)
+    .query(`DELETE FROM anomalias_revisadas WHERE recarga_id = @recarga AND tipo = @tipo`)
+  return (r.rowsAffected[0] ?? 0) > 0
 }
 
 // ─── Mantenimientos ─────────────────────────────────────────────────────────

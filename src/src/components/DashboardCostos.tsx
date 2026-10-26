@@ -7,17 +7,17 @@
 // porcentaje no autoriza una decisión y una cifra en pesos sí.
 import { useMemo, useState } from 'react'
 import {
-  Alert, Badge, Button, Card, Center, Group, Loader, Popover, Progress, SegmentedControl, Select,
-  SimpleGrid, Stack, Table, Text, Tooltip,
+  ActionIcon, Alert, Badge, Button, Card, Center, Collapse, Group, Loader, Popover, Progress,
+  SegmentedControl, Select, SimpleGrid, Stack, Table, Text, Textarea, Tooltip,
 } from '@mantine/core'
 import { AreaChart, BarChart, LineChart } from '@mantine/charts'
 import {
-  IconAlertTriangle, IconCashBanknote, IconDiscount2, IconDroplet,
-  IconFileTypePdf, IconGasStation, IconRoad,
+  IconAlertTriangle, IconArrowBackUp, IconCashBanknote, IconCheck, IconChevronDown, IconChevronUp,
+  IconDiscount2, IconDroplet, IconFileTypePdf, IconGasStation, IconRoad,
 } from '@tabler/icons-react'
 import {
-  useAnalisisCostos, useCobrosCasetas, fetchAnomaliasCostos, NOMBRE_GRUPO,
-  type AnalisisCostos, type CobrosCasetas, type TipoAnomalia, type VentanaCostos,
+  useAnalisisCostos, useCobrosCasetas, useRevisarAnomalia, fetchAnomaliasCostos, NOMBRE_GRUPO,
+  type AnalisisCostos, type Anomalia, type CobrosCasetas, type TipoAnomalia, type VentanaCostos,
 } from '../hooks/useDashboard'
 import { useErroresCaptura } from '../hooks/useRevision'
 import { usePermisos, type Seccion } from '../hooks/usePermisos'
@@ -1059,17 +1059,68 @@ function Contenido({
       </Seccion>
 
       {/* ── Anomalías de combustible ── */}
-      <Seccion
-        titulo="Cargas que conviene revisar"
-        accion={data.anomalias.length > 0 && (
-          <PdfAnomalias ventana={ventana} sucursales={data.sucursales} />
-        )}
-        descripcion="Registros de combustible que no cuadran: rendimiento fuera de rango, odómetros que retroceden, cargas sin vale o sin kilometraje. No todas son un problema —una carga sin vale puede ser solo captura pendiente—, pero son las que hay que mirar antes de firmar el gasto del mes. El importe es lo que costó esa carga, salvo en el rendimiento bajo, que se anualiza."
-      >
+      <SeccionAnomalias data={data} ventana={ventana} onNavigateVehiculo={onNavigateVehiculo} />
+
+      {/* El acumulado por persona es solo de admin: la API lo niega al resto, y
+          la sección ni se pide para no enseñar un error que no le toca. */}
+      {esAdmin && (
+        <SeccionErroresCaptura desde={data.rango.start} onNavigateSeccion={onNavigateSeccion} />
+      )}
+
+      <Text size="xs" c="dimmed" ta="center">
+        Periodo analizado: {formatFecha(data.rango.start)} a hoy ({ventana} días).
+        El sobrecosto anual se extrapola del ritmo de este periodo.
+      </Text>
+    </>
+  )
+}
+
+// ─── Cargas que conviene revisar ────────────────────────────────────────────
+
+function ImporteAnomalia({ a }: { a: Anomalia }) {
+  // El importe no significa lo mismo en todos los renglones: en una carga es lo
+  // que costó esa carga, y en un rendimiento bajo es lo que ese faltante cuesta
+  // al año. Se marca en el propio renglón para que nadie sume peras con manzanas.
+  if (a.monto == null || a.monto <= 0) return <Guion />
+  return (
+    <Text size="sm" style={{ whiteSpace: 'nowrap' }}>
+      {formatMXN(a.monto)}
+      {a.tipo === 'rendimiento_bajo' && <Text component="span" size="xs" c="dimmed"> /año</Text>}
+    </Text>
+  )
+}
+
+function SeccionAnomalias({ data, ventana, onNavigateVehiculo }: {
+  data:    AnalisisCostos
+  ventana: VentanaCostos
+  onNavigateVehiculo?: (vehiculoId: number) => void
+}) {
+  const { esAdmin, rol } = usePermisos()
+  // Igual que la API: dar una carga por buena es decisión de quien firma el gasto.
+  const puedeRevisar = esAdmin || rol === 'editor'
+  const [verRevisadas, setVerRevisadas] = useState(false)
+  const revisadas = data.anomalias_revisadas
+
+  const link = (a: Anomalia) => (
+    <LinkVehiculo
+      nombre={a.vehiculo}
+      onClick={onNavigateVehiculo ? () => onNavigateVehiculo(a.vehiculo_id) : undefined}
+    />
+  )
+
+  return (
+    <Seccion
+      titulo="Cargas que conviene revisar"
+      accion={data.anomalias.length > 0 && (
+        <PdfAnomalias ventana={ventana} sucursales={data.sucursales} />
+      )}
+      descripcion="Registros de combustible que no cuadran: rendimiento fuera de rango, odómetros que retroceden, cargas sin vale o sin kilometraje. No todas son un problema —una carga sin vale puede ser solo captura pendiente—, pero son las que hay que mirar antes de firmar el gasto del mes. Las que ya se revisaron y están bien se marcan como revisadas para que no vuelvan a salir. A las registradas desde una factura no se les pide kilometraje: el ticket no lo trae. El importe es lo que costó esa carga, salvo en el rendimiento bajo, que se anualiza."
+    >
+      <Stack gap="md">
         {data.anomalias.length === 0 ? (
           <Vacio>Ninguna carga del periodo levanta bandera.</Vacio>
         ) : (
-          <Stack gap="md">
+          <>
             <Group gap="xs" wrap="wrap">
               {data.anomalias_resumen.map((r) => {
                 const meta = ANOMALIA_META[r.tipo]
@@ -1098,6 +1149,7 @@ function Contenido({
                     <Table.Th>Fecha</Table.Th>
                     <Table.Th>Detalle</Table.Th>
                     <Table.Th style={{ textAlign: 'right' }}>Importe</Table.Th>
+                    {puedeRevisar && <Table.Th />}
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -1108,49 +1160,137 @@ function Contenido({
                         <Table.Td>
                           <Badge variant="light" color={meta.color} size="sm">{meta.label}</Badge>
                         </Table.Td>
-                        <Table.Td>
-                          <LinkVehiculo
-                            nombre={a.vehiculo}
-                            onClick={onNavigateVehiculo ? () => onNavigateVehiculo(a.vehiculo_id) : undefined}
-                          />
-                        </Table.Td>
+                        <Table.Td>{link(a)}</Table.Td>
                         <Table.Td><Text size="sm" c="dimmed">{formatFecha(a.fecha)}</Text></Table.Td>
                         <Table.Td><Text size="sm">{a.detalle}</Text></Table.Td>
-                        {/* El importe no significa lo mismo en todos los renglones: en
-                            una carga es lo que costó esa carga, y en un rendimiento bajo
-                            es lo que ese faltante cuesta al año. Se marca en el propio
-                            renglón para que nadie sume peras con manzanas. */}
-                        <Table.Td style={{ textAlign: 'right' }}>
-                          {a.monto == null || a.monto <= 0 ? <Guion /> : (
-                            <Text size="sm" style={{ whiteSpace: 'nowrap' }}>
-                              {formatMXN(a.monto)}
-                              {a.tipo === 'rendimiento_bajo' && (
-                                <Text component="span" size="xs" c="dimmed"> /año</Text>
-                              )}
-                            </Text>
-                          )}
-                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right' }}><ImporteAnomalia a={a} /></Table.Td>
+                        {/* El rendimiento bajo no se puede dar por bueno: es de la
+                            unidad, y se escondería aunque la unidad empeorara. */}
+                        {puedeRevisar && (
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            {a.recarga_id != null && <MarcarRevisada anomalia={a} />}
+                          </Table.Td>
+                        )}
                       </Table.Tr>
                     )
                   })}
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
-          </Stack>
+          </>
         )}
-      </Seccion>
 
-      {/* El acumulado por persona es solo de admin: la API lo niega al resto, y
-          la sección ni se pide para no enseñar un error que no le toca. */}
-      {esAdmin && (
-        <SeccionErroresCaptura desde={data.rango.start} onNavigateSeccion={onNavigateSeccion} />
-      )}
+        {revisadas.length > 0 && (
+          <div>
+            <Button
+              size="xs" variant="subtle" color="gray"
+              leftSection={verRevisadas ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
+              onClick={() => setVerRevisadas((v) => !v)}
+            >
+              {verRevisadas ? 'Ocultar' : 'Ver'} las {revisadas.length} ya revisadas del periodo
+            </Button>
+            <Collapse expanded={verRevisadas}>
+              <Table.ScrollContainer minWidth={720} mt="xs">
+                <Table striped withTableBorder>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Tipo</Table.Th>
+                      <Table.Th>Vehículo</Table.Th>
+                      <Table.Th>Fecha</Table.Th>
+                      <Table.Th>Detalle</Table.Th>
+                      <Table.Th>Revisada</Table.Th>
+                      {puedeRevisar && <Table.Th />}
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {revisadas.map((a) => (
+                      <Table.Tr key={a.key}>
+                        <Table.Td>
+                          <Badge variant="light" color="gray" size="sm">{ANOMALIA_META[a.tipo].label}</Badge>
+                        </Table.Td>
+                        <Table.Td>{link(a)}</Table.Td>
+                        <Table.Td><Text size="sm" c="dimmed">{formatFecha(a.fecha)}</Text></Table.Td>
+                        <Table.Td><Text size="sm" c="dimmed">{a.detalle}</Text></Table.Td>
+                        <Table.Td>
+                          <Text size="sm">{a.revision?.por} · {a.revision && formatFecha(a.revision.en)}</Text>
+                          {a.revision?.nota && <Text size="xs" c="dimmed">{a.revision.nota}</Text>}
+                        </Table.Td>
+                        {puedeRevisar && (
+                          <Table.Td style={{ textAlign: 'right' }}><DeshacerRevision anomalia={a} /></Table.Td>
+                        )}
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </Collapse>
+          </div>
+        )}
+      </Stack>
+    </Seccion>
+  )
+}
 
-      <Text size="xs" c="dimmed" ta="center">
-        Periodo analizado: {formatFecha(data.rango.start)} a hoy ({ventana} días).
-        El sobrecosto anual se extrapola del ritmo de este periodo.
-      </Text>
-    </>
+function MarcarRevisada({ anomalia }: { anomalia: Anomalia }) {
+  const [abierto, setAbierto] = useState(false)
+  const [nota, setNota] = useState('')
+  const revisar = useRevisarAnomalia()
+
+  function marcar() {
+    revisar.mutate(
+      { tipo: anomalia.tipo, recarga_id: anomalia.recarga_id!, nota: nota.trim() || null },
+      { onSuccess: () => setAbierto(false) },
+    )
+  }
+
+  return (
+    <Popover opened={abierto} onChange={setAbierto} position="bottom-end" width={300} withArrow shadow="md">
+      <Popover.Target>
+        <Tooltip label="Ya se revisó, está bien" withArrow>
+          <ActionIcon
+            variant="subtle" color="green" aria-label="Marcar como revisada"
+            onClick={() => setAbierto((o) => !o)}
+          >
+            <IconCheck size={16} />
+          </ActionIcon>
+        </Tooltip>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Stack gap="sm">
+          <Text size="sm">Deja de salir aquí, en los conteos y en el PDF. Se puede deshacer.</Text>
+          <Textarea
+            label="Nota (opcional)"
+            placeholder="Ej. viaje largo, cargó dos veces"
+            value={nota}
+            onChange={(e) => setNota(e.currentTarget.value)}
+            maxLength={500}
+            autosize minRows={2}
+          />
+          {revisar.error && (
+            <Text size="xs" c="red">{revisar.error.message || 'No se pudo marcar.'}</Text>
+          )}
+          <Button size="xs" color="green" loading={revisar.isPending} onClick={marcar}>
+            Marcar como revisada
+          </Button>
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
+  )
+}
+
+function DeshacerRevision({ anomalia }: { anomalia: Anomalia }) {
+  const revisar = useRevisarAnomalia()
+  return (
+    <Tooltip label={revisar.error ? 'No se pudo deshacer' : 'Que vuelva a salir para revisar'} withArrow>
+      <Button
+        size="compact-xs" variant="subtle" color={revisar.error ? 'red' : 'gray'}
+        leftSection={<IconArrowBackUp size={14} />}
+        loading={revisar.isPending}
+        onClick={() => revisar.mutate({ tipo: anomalia.tipo, recarga_id: anomalia.recarga_id!, quitar: true })}
+      >
+        Deshacer
+      </Button>
+    </Tooltip>
   )
 }
 

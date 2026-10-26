@@ -374,6 +374,8 @@ export interface Anomalia {
   severidad:   'alta' | 'media'
   vehiculo_id: number
   vehiculo:    string
+  /** La carga marcada. Null en el rendimiento bajo, que es de la unidad. */
+  recarga_id:  number | null
   /** La base de la unidad, igual que en `SucursalCosto`: null es "Sin base fija". */
   sucursal_id: number | null
   sucursal:    string
@@ -381,6 +383,8 @@ export interface Anomalia {
   detalle:     string
   /** Pesos que cuesta —o que no se pueden auditar por— esta anomalía. */
   monto:       number | null
+  /** Solo en `anomalias_revisadas`: quién dijo que está bien y por qué. */
+  revision?:   { por: string; en: string; nota: string | null }
 }
 
 type ResumenAnomalias = { tipo: TipoAnomalia; cantidad: number; monto: number }[]
@@ -455,6 +459,8 @@ export interface AnalisisCostos {
   ahorro_refacciones: OportunidadAhorro[]
   anomalias:          Anomalia[]
   anomalias_resumen:  ResumenAnomalias
+  /** Las que alguien ya revisó y dio por buenas: fuera de la lista y de los conteos. */
+  anomalias_revisadas: Anomalia[]
   retrabajos:         Retrabajo[]
 }
 
@@ -466,6 +472,11 @@ export interface AnomaliasCostos {
   anomalias:         Anomalia[]
   anomalias_resumen: ResumenAnomalias
 }
+
+/** Las banderas que se pueden dar por revisadas: las que son de una carga. */
+export const TIPOS_REVISABLES = [
+  'odometro_retrocede', 'precio_alto', 'precio_bajo', 'carga_duplicada', 'sin_vale', 'sin_odometro',
+] as const satisfies readonly TipoAnomalia[]
 
 // ─── Cálculo ────────────────────────────────────────────────────────────────
 
@@ -509,6 +520,7 @@ export async function getAnalisisCostos(
 
   const [
     recargas, mantenimientos, compras, gastoMensual, flota, recargasAnio, casetas, casetasHasta,
+    revisadas,
   ] = await Promise.all([
     repo.findRecargasEnRango(start, end),
     repo.findMantenimientosEnRango(start, end),
@@ -518,6 +530,7 @@ export async function getAnalisisCostos(
     repo.findRecargasEnRango(desdePrecios, addDias(hoy, 1)),
     repo.findCasetasEnRango(start, end),
     repo.findUltimoCruceFacturado(),
+    repo.findAnomaliasRevisadas(start, end),
   ])
 
   const acum = new Map<number, Acumulado>()
@@ -598,20 +611,25 @@ export async function getAnalisisCostos(
     const mismaUnidad = previa != null && previa.vehiculo_id === r.vehiculo_id
 
     // Sin odómetro no hay forma de saber qué rindió esa carga: ni entra al
-    // rendimiento ni se puede auditar. Se marca para que se capture.
+    // rendimiento ni se puede auditar. Se marca para que se capture, salvo la
+    // registrada desde la factura (069): el ticket casi nunca trae el
+    // kilometraje y ya no hay a quién pedírselo. Esa omisión ya la reporta
+    // "Sin reportar", contra el chofer.
     if (r.kilometraje == null) {
-      anomalias.push({
-        key: `sin_odometro-${r.id}`, tipo: 'sin_odometro', severidad: 'media',
-        vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, fecha: r.fecha,
-        detalle: `Carga de ${r.litros.toFixed(1)} L sin kilometraje capturado — no se puede medir qué rindió`,
-        monto: r.costo,
-      })
+      if (r.desde_factura_id == null) {
+        anomalias.push({
+          key: `sin_odometro-${r.id}`, tipo: 'sin_odometro', severidad: 'media',
+          vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, recarga_id: r.id, fecha: r.fecha,
+          detalle: `Carga de ${r.litros.toFixed(1)} L sin kilometraje capturado — no se puede medir qué rindió`,
+          monto: r.costo,
+        })
+      }
     } else if (mismaUnidad && previa!.kilometraje != null) {
       const deltaKm = r.kilometraje - previa!.kilometraje
       if (deltaKm < 0) {
         anomalias.push({
           key: `odometro-${r.id}`, tipo: 'odometro_retrocede', severidad: 'alta',
-          vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, fecha: r.fecha,
+          vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, recarga_id: r.id, fecha: r.fecha,
           detalle: `El odómetro bajó de ${previa!.kilometraje!.toLocaleString('es-MX')} a ${r.kilometraje.toLocaleString('es-MX')} km`,
           monto: r.costo,
         })
@@ -638,7 +656,7 @@ export async function getAnalisisCostos(
     if (mismaUnidad && previa!.fecha === r.fecha) {
       anomalias.push({
         key: `duplicada-${r.id}`, tipo: 'carga_duplicada', severidad: 'media',
-        vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, fecha: r.fecha,
+        vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, recarga_id: r.id, fecha: r.fecha,
         detalle: `Dos cargas el mismo día (${previa!.litros.toFixed(1)} L y ${r.litros.toFixed(1)} L)`,
         monto: r.costo,
       })
@@ -648,7 +666,7 @@ export async function getAnalisisCostos(
     if (r.vale_id == null) {
       anomalias.push({
         key: `sin_vale-${r.id}`, tipo: 'sin_vale', severidad: 'media',
-        vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, fecha: r.fecha,
+        vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, recarga_id: r.id, fecha: r.fecha,
         detalle: `Carga de ${r.litros.toFixed(1)} L en ${r.gasolinera} sin vale (${r.conductor})`,
         monto: r.costo,
       })
@@ -663,7 +681,7 @@ export async function getAnalisisCostos(
       if (desviacion >= PRECIO_LITRO_ATIPICO_PCT) {
         anomalias.push({
           key: `precio-${r.id}`, tipo: 'precio_alto', severidad: 'media',
-          vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, fecha: r.fecha,
+          vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, recarga_id: r.id, fecha: r.fecha,
           detalle: `${r.producto} a $${precio.toFixed(2)}/L en ${r.gasolinera}, ${desviacion.toFixed(0)}% arriba de lo que costó el ${r.producto} ese mes`,
           monto: (precio - referencia) * r.litros,
         })
@@ -672,7 +690,7 @@ export async function getAnalisisCostos(
         // capturados. El monto es lo que faltaría si los litros están bien.
         anomalias.push({
           key: `precio_bajo-${r.id}`, tipo: 'precio_bajo', severidad: 'media',
-          vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, fecha: r.fecha,
+          vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, recarga_id: r.id, fecha: r.fecha,
           detalle: `${r.producto} a $${precio.toFixed(2)}/L en ${r.gasolinera} (${r.litros.toFixed(2)} L por $${r.costo.toFixed(2)}), ${Math.abs(desviacion).toFixed(0)}% abajo de lo que costó el ${r.producto} ese mes. Revisa el costo y los litros contra el ticket`,
           monto: (referencia - precio) * r.litros,
         })
@@ -801,7 +819,7 @@ export async function getAnalisisCostos(
     if (desviacion != null && desviacion <= RENDIMIENTO_BAJO_PCT && rendimiento != null) {
       anomalias.push({
         key: `rendimiento-${a.v.vehiculo_id}`, tipo: 'rendimiento_bajo', severidad: 'alta',
-        vehiculo_id: a.v.vehiculo_id, vehiculo: a.v.vehiculo, fecha: hoy,
+        vehiculo_id: a.v.vehiculo_id, vehiculo: a.v.vehiculo, recarga_id: null, fecha: hoy,
         detalle: `${rendimiento.toFixed(2)} km/L contra ${rendModelo!.toFixed(2)} del ${a.v.modelo} (${desviacion.toFixed(0)}%)`,
         monto: redondear(sobrecostoAnual),
       })
@@ -1023,14 +1041,22 @@ export async function getAnalisisCostos(
     (b.monto ?? 0) - (a.monto ?? 0) ||
     b.fecha.localeCompare(a.fecha)
   )
-  // Una unidad fuera de la flota en operación (ya dada de baja) cae en "Sin base fija".
-  const anomaliasConSucursal: Anomalia[] = anomalias.map((an) => {
+  // Las que alguien ya revisó y dio por buenas (078) se apartan: no cuentan en
+  // ningún lado, pero se devuelven para poder deshacer la revisión.
+  const revisionDe = new Map(revisadas.map((r) => [`${r.tipo}|${r.recarga_id}`, r]))
+  const pendientes: Anomalia[] = []
+  const yaRevisadas: Anomalia[] = []
+  for (const an of anomalias) {
+    // Una unidad fuera de la flota en operación (ya dada de baja) cae en "Sin base fija".
     const v = acum.get(an.vehiculo_id)?.v
-    return { ...an, sucursal_id: v?.sucursal_id ?? null, sucursal: v?.sucursal ?? SIN_BASE }
-  })
+    const conSucursal = { ...an, sucursal_id: v?.sucursal_id ?? null, sucursal: v?.sucursal ?? SIN_BASE }
+    const rev = an.recarga_id != null ? revisionDe.get(`${an.tipo}|${an.recarga_id}`) : undefined
+    if (rev) yaRevisadas.push({ ...conSucursal, revision: { por: rev.revisado_por, en: rev.revisado_en, nota: rev.nota } })
+    else pendientes.push(conSucursal)
+  }
   // Las anomalías de cada sucursal, por la base de la unidad. Antes de recortar
   // a MAX_ANOMALIAS: el conteo es de todas, no de las que caben en la tabla.
-  for (const an of anomalias) {
+  for (const an of pendientes) {
     const a = acum.get(an.vehiculo_id)
     if (!a) continue
     const s = porSucursal.get(claveSucursal(a.v))!
@@ -1120,8 +1146,10 @@ export async function getAnalisisCostos(
     precios_mensuales: preciosMensuales,
     gasto_mensual: gastoMensual,
     ahorro_refacciones: ahorroRefacciones,
-    anomalias: anomaliasCompletas ? anomaliasConSucursal : anomaliasConSucursal.slice(0, MAX_ANOMALIAS),
-    anomalias_resumen: resumirAnomalias(anomaliasConSucursal),
+    anomalias: anomaliasCompletas ? pendientes : pendientes.slice(0, MAX_ANOMALIAS),
+    anomalias_resumen: resumirAnomalias(pendientes),
+    // Las más recientes primero: lo normal es querer deshacer la que se acaba de marcar.
+    anomalias_revisadas: yaRevisadas.sort((a, b) => b.revision!.en.localeCompare(a.revision!.en)),
     retrabajos,
   }
 }
@@ -1162,4 +1190,15 @@ export async function getAnomaliasCostos(
     anomalias,
     anomalias_resumen: resumirAnomalias(anomalias),
   }
+}
+
+/** False: la recarga no existe. */
+export async function marcarRevisada(
+  tipo: string, recargaId: number, nota: string | null, usuario: string,
+): Promise<boolean> {
+  return repo.marcarAnomaliaRevisada(tipo, recargaId, nota, usuario)
+}
+
+export async function quitarRevisada(tipo: string, recargaId: number): Promise<boolean> {
+  return repo.quitarAnomaliaRevisada(tipo, recargaId)
 }
