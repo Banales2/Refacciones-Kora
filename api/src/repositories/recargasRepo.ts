@@ -480,3 +480,44 @@ export async function findConsumosDeGasolinera(
     costo:  Number(row.costo),
   }))
 }
+
+// ─── Kilometraje contra las recargas de otras fechas ────────────────────────
+
+export interface LecturaRecarga {
+  id:          number
+  fecha:       string
+  kilometraje: number
+}
+
+/**
+ * Las lecturas que acotan a una recarga de `fecha`: la más alta de los días
+ * anteriores y la más baja de los posteriores. Las del mismo día no cuentan:
+ * no se sabe en qué orden se cargó. Las de emergencia no llevan lectura.
+ * `excluir`: al corregir una recarga, ella misma no se acota.
+ */
+export async function kmVecinos(
+  vehiculoId: number, fecha: string, excluir?: number,
+): Promise<{ anterior: LecturaRecarga | null; siguiente: LecturaRecarga | null }> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('vehiculo', sql.Int,  vehiculoId)
+    .input('fecha',    sql.Date, fecha)
+    .input('excluir',  sql.Int,  excluir ?? null)
+    .query(`
+      SELECT TOP 1 'anterior' AS lado, id, CONVERT(char(10), fecha, 23) AS fecha, kilometraje
+      FROM recargas_combustible
+      WHERE vehiculo_id = @vehiculo AND kilometraje > 0
+        AND CAST(fecha AS date) < @fecha AND (@excluir IS NULL OR id <> @excluir)
+      ORDER BY kilometraje DESC, fecha DESC;
+
+      SELECT TOP 1 'siguiente' AS lado, id, CONVERT(char(10), fecha, 23) AS fecha, kilometraje
+      FROM recargas_combustible
+      WHERE vehiculo_id = @vehiculo AND kilometraje > 0
+        AND CAST(fecha AS date) > @fecha AND (@excluir IS NULL OR id <> @excluir)
+      ORDER BY kilometraje ASC, fecha ASC;
+    `)
+  const sets = r.recordsets as unknown as { id: number; fecha: string; kilometraje: number }[][]
+  const lectura = (row?: { id: number; fecha: string; kilometraje: number }) =>
+    row ? { id: row.id, fecha: row.fecha, kilometraje: Number(row.kilometraje) } : null
+  return { anterior: lectura(sets[0]?.[0]), siguiente: lectura(sets[1]?.[0]) }
+}

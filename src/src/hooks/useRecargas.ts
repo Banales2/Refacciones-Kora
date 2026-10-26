@@ -92,6 +92,24 @@ export function useRecargasTodas() {
   })
 }
 
+export interface KmVecinos {
+  /** La lectura más alta de los días anteriores. */
+  anterior:  { id: number; fecha: string; kilometraje: number } | null
+  /** La más baja de los días posteriores. */
+  siguiente: { id: number; fecha: string; kilometraje: number } | null
+}
+
+/** Entre qué lecturas tiene que caer una recarga de `fecha`. Ver AlertaKmRecarga. */
+export function useKmVecinos(vehiculoId: number | undefined, fecha: string, excluir?: number) {
+  const q = `fecha=${fecha}${excluir ? `&excluir=${excluir}` : ''}`
+  return useQuery({
+    // Bajo ['recargas', id]: cualquier alta o corrección de recargas lo refresca.
+    queryKey: ['recargas', vehiculoId, 'km-vecinos', fecha, excluir ?? null],
+    queryFn: () => api.get<{ data: KmVecinos }>(`/vehiculos/${vehiculoId}/recargas/km-vecinos?${q}`),
+    enabled: !!vehiculoId && vehiculoId > 0,
+  })
+}
+
 export function useRecargas(vehiculoId: number) {
   return useQuery({
     queryKey: ['recargas', vehiculoId],

@@ -4,7 +4,7 @@ import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import type { AgregarTicketDesdeFactura, RegistrarDesdeFactura } from '../schemas/registroDesdeFacturaSchema'
 import { TICKETS_MAX } from '../schemas/recargaSchema'
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../shared/errors'
-import { productoPara } from './recargasService'
+import { productoPara, validarKmPorFecha } from './recargasService'
 import { resolverCreador, validarReferencias } from './valesGasolinaService'
 import { FACTURA_CONCILIADA } from './facturasGasolinaService'
 
@@ -101,6 +101,7 @@ export async function registrar(
 
   const producto = await productoPara(data.vehiculo_id, data.producto)
   const kilometraje = data.kilometraje ?? null
+  await validarKmPorFecha(data.vehiculo_id, data.fecha, kilometraje)
 
   const r = await facturasRepo.registrarDesdeFactura(facturaId, {
     renglonId,

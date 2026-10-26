@@ -28,6 +28,7 @@ import { FechaInput } from './FechaInput'
 import SelectCatalogo from './SelectCatalogo'
 import ConfirmarAvanceKm from './ConfirmarAvanceKm'
 import { avanzaOdometro } from '../lib/odometro'
+import { AlertaKmRecarga, useKmFueraDeOrden } from './AlertaKmRecarga'
 import { formatLitros as fmtLitros } from '../lib/formato'
 import { usePermisos } from '../hooks/usePermisos'
 import { agrupar, calcularRendimientos } from '../lib/recargas'
@@ -116,9 +117,11 @@ export function recargaAFormulario(r: Recarga): RecargaFormValues {
 }
 
 export function RecargaForm({
-  vehiculoId, kmVehiculo, combustibleVehiculo, valesUsados, vale, initial, isPending, error, onSubmit, onCancel,
+  vehiculoId, recargaId, kmVehiculo, combustibleVehiculo, valesUsados, vale, initial, isPending, error, onSubmit, onCancel,
 }: {
   vehiculoId: number
+  // Al corregir, la recarga misma: no se compara su kilometraje consigo.
+  recargaId?: number
   // Odómetro actual del vehículo, o null si no tiene (o no lleva). Sirve para
   // avisar cuando la lectura capturada lo va a hacer avanzar.
   kmVehiculo: number | null
@@ -205,6 +208,10 @@ export function RecargaForm({
   // guarda. Al editar no aplica: la edición no toca el odómetro.
   const [porConfirmar, setPorConfirmar] = useState<RecargaFormValues | null>(null)
 
+  // El kilometraje contra el de las recargas de otras fechas. Mientras no
+  // cuadre no se guarda: la API la rechazaría igual.
+  const kmFueraDeOrden = useKmFueraDeOrden(vehiculoId, form.values.fecha, form.values.kilometraje, recargaId)
+
   // Elegir el vale trae al chofer a quien se le entregó. Se puede cambiar
   // después si el papel lo cargó otro.
   function elegirVale(id: string | null) {
@@ -231,6 +238,7 @@ export function RecargaForm({
   }
 
   function handleSubmit(v: RecargaFormValues) {
+    if (kmFueraDeOrden) return
     const esAlta = initial === undefined
     if (esAlta && avanzaOdometro(Number(v.kilometraje), kmVehiculo)) {
       setPorConfirmar(v)
@@ -359,13 +367,14 @@ export function RecargaForm({
             : 'Kilometraje del vehículo al momento de la recarga'}
           {...form.getInputProps('kilometraje')}
         />
+        {kmFueraDeOrden && <AlertaKmRecarga problema={kmFueraDeOrden} km={form.values.kilometraje} />}
         {precioLitro !== null && (
           <Text size="xs" c="dimmed">Precio por litro: {formatMXN(precioLitro)}</Text>
         )}
         {error && <Alert color="red" title="Error">{error}</Alert>}
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onCancel} disabled={isPending}>Cancelar</Button>
-          <Button type="submit" loading={isPending}>Guardar</Button>
+          <Button type="submit" loading={isPending} disabled={!!kmFueraDeOrden}>Guardar</Button>
         </Group>
       </Stack>
     </form>
@@ -819,6 +828,7 @@ export default function RecargasSection({
       >
         <RecargaForm
           vehiculoId={vehiculoId}
+          recargaId={editing?.id}
           kmVehiculo={kmVehiculo}
           combustibleVehiculo={combustibleVehiculo}
           valesUsados={valesUsados}

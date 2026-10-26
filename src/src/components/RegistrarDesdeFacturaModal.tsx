@@ -38,6 +38,7 @@ import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCort
 import { CODIGO, KM_MAX, limpiarCodigo, validarKm } from '../lib/validaciones'
 import { GASOLINAS, esGasolina, familiaCombustible } from '../lib/combustible'
 import { avanzaOdometro } from '../lib/odometro'
+import { AlertaKmRecarga, useKmFueraDeOrden } from './AlertaKmRecarga'
 import { formatFecha, formatLitros, formatMXN } from '../lib/formato'
 
 const FOLIO_MAX = 30
@@ -160,6 +161,8 @@ function Formulario({
   const preguntaProducto = familiaCombustible(vehiculo?.combustible) === 'gasolina'
   const [producto, setProducto] = useState<string>(esGasolina(renglon.descripcion) ? renglon.descripcion : '')
   const [porConfirmarKm, setPorConfirmarKm] = useState(false)
+  // El kilometraje contra el de las recargas de otras fechas de la unidad.
+  const kmFueraDeOrden = useKmFueraDeOrden(vehiculoId, fecha, km)
 
   function elegirVale(id: string | null) {
     setValeId(id)
@@ -204,7 +207,7 @@ function Formulario({
   function guardar(confirmadoKm = false) {
     const e = validar()
     setErrores(e)
-    if (Object.keys(e).length > 0 || vehiculoId === undefined) return
+    if (Object.keys(e).length > 0 || vehiculoId === undefined || kmFueraDeOrden) return
     const kmNum = km === '' ? null : Number(km)
     if (!confirmadoKm && kmNum != null && avanzaOdometro(kmNum, vehiculo?.kilometraje ?? null)) {
       setPorConfirmarKm(true)
@@ -398,6 +401,7 @@ function Formulario({
           : 'Sin él no avanza el odómetro ni cuenta para el rendimiento.'}
         value={km} onChange={setKm} error={errores.km}
       />
+      {kmFueraDeOrden && <AlertaKmRecarga problema={kmFueraDeOrden} km={km} />}
 
       {registrar.error && (
         <Alert color="red" title="No se pudo registrar" icon={<IconAlertTriangle size={16} />}>
@@ -406,7 +410,7 @@ function Formulario({
       )}
       <Group justify="flex-end" mt="xs">
         <Button variant="default" onClick={onClose} disabled={registrar.isPending}>Volver</Button>
-        <Button onClick={() => guardar()} loading={registrar.isPending}>
+        <Button onClick={() => guardar()} loading={registrar.isPending} disabled={!!kmFueraDeOrden}>
           {modo === 'nuevo' ? 'Registrar vale y recarga' : 'Registrar recarga'}
         </Button>
       </Group>

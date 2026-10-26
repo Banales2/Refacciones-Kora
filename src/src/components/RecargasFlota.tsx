@@ -479,6 +479,7 @@ export default function RecargasFlota({
           <RecargaForm
             key={editing.id}
             vehiculoId={editing.vehiculo_id}
+            recargaId={editing.id}
             kmVehiculo={null}
             combustibleVehiculo={editing.vehiculo_combustible}
             valesUsados={valesUsados}

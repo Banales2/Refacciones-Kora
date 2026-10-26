@@ -77,6 +77,7 @@ export async function getByVehiculo(vehiculoId: number): Promise<RecargaConGasol
 export async function create(
   vehiculoId: number, data: RecargaCreate, capturadoPor: string,
 ): Promise<RecargaConGasolinera> {
+  await validarKmPorFecha(vehiculoId, data.fecha, data.kilometraje)
   const producto = await productoPara(vehiculoId, data.producto)
   const corregirVale = await validarVale(data.vale_id, vehiculoId, undefined, data.corregir_vale)
   const recarga = await repo.create(vehiculoId, data, producto, capturadoPor, corregirVale)
@@ -117,6 +118,16 @@ export async function update(
 
   const tickets = resolverTickets(actual, data)
   await protegerCuadre(id, data, tickets)
+  // Solo si se toca la lectura o la fecha: corregir el costo de una recarga
+  // vieja que ya estaba chueca no tiene por qué exigir arreglar el kilometraje.
+  if (data.kilometraje !== undefined || data.fecha !== undefined) {
+    await validarKmPorFecha(
+      actual.vehiculo_id,
+      data.fecha ?? diaDe(actual.fecha),
+      data.kilometraje ?? actual.kilometraje,
+      id,
+    )
+  }
 
   if (data.vale_id !== undefined) {
     await validarVale(data.vale_id, actual.vehiculo_id, id)
@@ -211,3 +222,51 @@ async function protegerCuadre(
   }
 }
 
+// `fecha` llega de la base como Date aunque el tipo diga string (columna DATE,
+// medianoche UTC): se normaliza al día.
+function diaDe(f: string | Date): string {
+  return f instanceof Date ? f.toISOString().slice(0, 10) : String(f).slice(0, 10)
+}
+
+/** `2026-10-03` → `03/10/2026`, como se lee en pantalla. */
+function fechaLegible(iso: string): string {
+  const [a, m, d] = iso.slice(0, 10).split('-')
+  return `${d}/${m}/${a}`
+}
+
+/**
+ * El odómetro no retrocede: una recarga no puede marcar menos kilómetros que
+ * una de días anteriores, ni más que una de días posteriores. Pasa sobre todo
+ * al capturar una carga atrasada: se pone la fecha de hoy en lugar de la del
+ * ticket, o se teclea mal un dígito. Se rechaza en lugar de avisar porque una
+ * lectura así tumba el rendimiento de los dos tramos que toca y deja la carga
+ * marcada como "odómetro inconsistente" en el tablero.
+ *
+ * Sin lectura (0 o null) no hay nada que comparar.
+ */
+export async function validarKmPorFecha(
+  vehiculoId: number, fecha: string, km: number | null | undefined, excluir?: number,
+): Promise<void> {
+  if (km == null || !(km > 0)) return
+  const { anterior, siguiente } = await repo.kmVecinos(vehiculoId, fecha.slice(0, 10), excluir)
+  const fmt = (n: number) => n.toLocaleString('es-MX')
+  if (anterior && km < anterior.kilometraje) {
+    throw new ValidationError(
+      `El kilometraje (${fmt(km)} km) es menor que el de la recarga del ${fechaLegible(anterior.fecha)} ` +
+      `(${fmt(anterior.kilometraje)} km). Revisa el kilometraje y la fecha de esta recarga.`,
+      { kilometraje: km, anterior, siguiente },
+    )
+  }
+  if (siguiente && km > siguiente.kilometraje) {
+    throw new ValidationError(
+      `El kilometraje (${fmt(km)} km) es mayor que el de la recarga del ${fechaLegible(siguiente.fecha)} ` +
+      `(${fmt(siguiente.kilometraje)} km), que es posterior. Revisa el kilometraje y la fecha de esta recarga.`,
+      { kilometraje: km, anterior, siguiente },
+    )
+  }
+}
+
+/** Para avisar en el formulario mientras se captura, antes de guardar. */
+export async function kmVecinos(vehiculoId: number, fecha: string, excluir?: number) {
+  return repo.kmVecinos(vehiculoId, fecha, excluir)
+}
