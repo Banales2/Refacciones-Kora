@@ -7,16 +7,16 @@
 // porcentaje no autoriza una decisión y una cifra en pesos sí.
 import { useMemo, useState } from 'react'
 import {
-  Alert, Badge, Card, Center, Group, Loader, Progress, SegmentedControl, SimpleGrid,
-  Stack, Table, Text, Tooltip,
+  Alert, Badge, Button, Card, Center, Group, Loader, Popover, Progress, SegmentedControl, Select,
+  SimpleGrid, Stack, Table, Text, Tooltip,
 } from '@mantine/core'
 import { AreaChart, BarChart, LineChart } from '@mantine/charts'
 import {
   IconAlertTriangle, IconCashBanknote, IconDiscount2, IconDroplet,
-  IconGasStation, IconRoad,
+  IconFileTypePdf, IconGasStation, IconRoad,
 } from '@tabler/icons-react'
 import {
-  useAnalisisCostos, useCobrosCasetas, NOMBRE_GRUPO,
+  useAnalisisCostos, useCobrosCasetas, fetchAnomaliasCostos, NOMBRE_GRUPO,
   type AnalisisCostos, type CobrosCasetas, type TipoAnomalia, type VentanaCostos,
 } from '../hooks/useDashboard'
 import { useErroresCaptura } from '../hooks/useRevision'
@@ -27,6 +27,7 @@ import { IrASeccion } from './IrASeccion'
 import { formatMXN, formatMXNCorto, formatMes, formatNum, formatLitros, formatFecha } from '../lib/formato'
 import { TIPO_LABELS } from '../lib/tipoVehiculo'
 import { SIN_PRODUCTO } from '../lib/combustible'
+import { exportAnomaliasPdf } from '../lib/reportes/costos'
 
 // ─── Piezas de presentación ─────────────────────────────────────────────────
 
@@ -1060,6 +1061,9 @@ function Contenido({
       {/* ── Anomalías de combustible ── */}
       <Seccion
         titulo="Cargas que conviene revisar"
+        accion={data.anomalias.length > 0 && (
+          <PdfAnomalias ventana={ventana} sucursales={data.sucursales} />
+        )}
         descripcion="Registros de combustible que no cuadran: rendimiento fuera de rango, odómetros que retroceden, cargas sin vale o sin kilometraje. No todas son un problema —una carga sin vale puede ser solo captura pendiente—, pero son las que hay que mirar antes de firmar el gasto del mes. El importe es lo que costó esa carga, salvo en el rendimiento bajo, que se anualiza."
       >
         {data.anomalias.length === 0 ? (
@@ -1147,6 +1151,73 @@ function Contenido({
         El sobrecosto anual se extrapola del ritmo de este periodo.
       </Text>
     </>
+  )
+}
+
+// El PDF se pide aparte y no sale de `data`: el tablero trae solo las 100
+// anomalías más relevantes, y la hoja de una sucursal tiene que ir completa.
+const TODAS = 'todas'
+
+function PdfAnomalias({ ventana, sucursales }: {
+  ventana:    VentanaCostos
+  sucursales: AnalisisCostos['sucursales']
+}) {
+  const [abierto, setAbierto]   = useState(false)
+  const [sucursal, setSucursal] = useState<string>(TODAS)
+  const [generando, setGenerando] = useState(false)
+  const [error, setError]       = useState<string | null>(null)
+
+  const opciones = [
+    { value: TODAS, label: 'Todas las sucursales' },
+    ...sucursales
+      .filter((s) => s.anomalias > 0)
+      .map((s) => ({ value: String(s.sucursal_id ?? 'sin'), label: `${s.sucursal} (${s.anomalias})` })),
+  ]
+
+  async function generar() {
+    setGenerando(true)
+    setError(null)
+    try {
+      const { data } = await fetchAnomaliasCostos(ventana, sucursal === TODAS ? null : sucursal)
+      await exportAnomaliasPdf(data)
+      setAbierto(false)
+    } catch (e) {
+      setError((e as Error).message || 'No se pudo generar el reporte.')
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  return (
+    <Popover opened={abierto} onChange={setAbierto} position="bottom-end" width={280} withArrow shadow="md">
+      <Popover.Target>
+        <Button
+          size="xs" variant="light" leftSection={<IconFileTypePdf size={14} />}
+          onClick={() => setAbierto((o) => !o)}
+        >
+          PDF
+        </Button>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Stack gap="sm">
+          <Select
+            label="Sucursal"
+            data={opciones}
+            value={sucursal}
+            onChange={(v) => setSucursal(v ?? TODAS)}
+            allowDeselect={false}
+            comboboxProps={{ withinPortal: false }}
+          />
+          <Text size="xs" c="dimmed">
+            Incluye todas las cargas del periodo ({ventana} días), no solo las que caben en la pantalla.
+          </Text>
+          {error && <Text size="xs" c="red">{error}</Text>}
+          <Button size="xs" loading={generando} onClick={generar} leftSection={<IconFileTypePdf size={14} />}>
+            Generar reporte
+          </Button>
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
   )
 }
 

@@ -4,8 +4,8 @@
 // accionable —cuánto se puede dejar de gastar y dónde— y deja el detalle
 // operativo después. El orden de la pantalla se respeta para que quien lo
 // reciba pueda seguirlo en el sistema renglón por renglón.
-import type { AnalisisCostos, TipoAnomalia } from '../../hooks/useDashboard'
-import { crearReportePdf, COLOR, type CellHookData } from './pdfDoc'
+import type { AnalisisCostos, AnomaliasCostos, TipoAnomalia } from '../../hooks/useDashboard'
+import { crearReportePdf, COLOR, type CellHookData, type ReportePdf } from './pdfDoc'
 import { crearLibroExcel } from './excelDoc'
 import { formatMXN, formatNum, formatLitros, formatFecha, formatMes } from '../formato'
 import { TIPO_LABELS } from '../tipoVehiculo'
@@ -22,7 +22,7 @@ const ANOMALIA_LABEL: Record<TipoAnomalia, string> = {
 }
 
 // `rango.end` es exclusivo: el último día que entró al análisis es el anterior.
-function ultimoDia(a: AnalisisCostos): string {
+function ultimoDia(a: Pick<AnalisisCostos, 'rango'>): string {
   const d = new Date(`${a.rango.end}T12:00:00`)
   d.setDate(d.getDate() - 1)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -36,7 +36,7 @@ export function casetasIncompletas(a: AnalisisCostos): boolean {
 // Se nombra el periodo por sus dos fechas y no como "últimos N días", porque
 // ahora puede ser un año cerrado o un rango elegido a mano: en un documento que
 // se archiva, "últimos 90 días" deja de querer decir nada al mes siguiente.
-function subtitulo(a: AnalisisCostos): string {
+function subtitulo(a: Pick<AnalisisCostos, 'rango'>): string {
   return `Del ${formatFecha(a.rango.start)} al ${formatFecha(ultimoDia(a))} · ${a.rango.dias} días`
 }
 
@@ -289,39 +289,76 @@ export async function exportCostosPdf(a: AnalisisCostos) {
     'No todas son un problema —una carga sin vale puede ser captura pendiente—, pero son las que hay que ' +
     'mirar antes de firmar el gasto. El importe es lo que costó la carga, salvo en el rendimiento bajo, que se anualiza.',
   )
-  if (a.anomalias.length === 0) {
-    pdf.vacio('Ninguna carga del periodo levanta bandera.')
-  } else {
-    pdf.tabla({
-      head: ['Tipo', 'Cantidad', 'Importe'],
-      body: a.anomalias_resumen.map((r) => [
-        ANOMALIA_LABEL[r.tipo], String(r.cantidad),
-        r.monto > 0 ? formatMXN(r.monto) + (r.tipo === 'rendimiento_bajo' ? '/año' : '') : '—',
-      ]),
-      columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' } },
-      fontSize: 9,
-    })
-    pdf.subseccion(`Detalle (${a.anomalias.length} registros, de mayor a menor impacto)`)
-    pdf.tabla({
-      head: ['Tipo', 'Vehículo', 'Fecha', 'Detalle', 'Importe'],
-      body: a.anomalias.map((an) => [
-        ANOMALIA_LABEL[an.tipo], an.vehiculo, formatFecha(an.fecha), an.detalle,
-        an.monto != null && an.monto > 0
-          ? formatMXN(an.monto) + (an.tipo === 'rendimiento_bajo' ? '/año' : '')
-          : '—',
-      ]),
-      columnStyles: { 4: { halign: 'right' } },
-      didParseCell: (d: CellHookData) => {
-        if (d.section !== 'body' || d.column.index !== 0) return
-        const label = String(d.cell.raw)
-        if (label === ANOMALIA_LABEL.rendimiento_bajo || label === ANOMALIA_LABEL.odometro_retrocede) {
-          d.cell.styles.textColor = COLOR.rojo
-        }
-      },
-    })
-  }
+  tablasAnomalias(pdf, a.anomalias, a.anomalias_resumen)
 
   pdf.guardar(nombreBase(a))
+}
+
+/** El resumen por tipo y el detalle renglón por renglón; lo comparten los dos reportes. */
+function tablasAnomalias(
+  pdf: ReportePdf,
+  anomalias: AnalisisCostos['anomalias'],
+  resumen: AnalisisCostos['anomalias_resumen'],
+  { conSucursal = false }: { conSucursal?: boolean } = {},
+) {
+  if (anomalias.length === 0) {
+    pdf.vacio('Ninguna carga del periodo levanta bandera.')
+    return
+  }
+  pdf.tabla({
+    head: ['Tipo', 'Cantidad', 'Importe'],
+    body: resumen.map((r) => [
+      ANOMALIA_LABEL[r.tipo], String(r.cantidad),
+      r.monto > 0 ? formatMXN(r.monto) + (r.tipo === 'rendimiento_bajo' ? '/año' : '') : '—',
+    ]),
+    columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' } },
+    fontSize: 9,
+  })
+  pdf.subseccion(`Detalle (${anomalias.length} registros, de mayor a menor impacto)`)
+  // Con todas las sucursales juntas se agrega la columna, para poder repartir la hoja.
+  const head = ['Tipo', 'Vehículo', ...(conSucursal ? ['Sucursal'] : []), 'Fecha', 'Detalle', 'Importe']
+  pdf.tabla({
+    head,
+    body: anomalias.map((an) => [
+      ANOMALIA_LABEL[an.tipo], an.vehiculo, ...(conSucursal ? [an.sucursal] : []),
+      formatFecha(an.fecha), an.detalle,
+      an.monto != null && an.monto > 0
+        ? formatMXN(an.monto) + (an.tipo === 'rendimiento_bajo' ? '/año' : '')
+        : '—',
+    ]),
+    columnStyles: { [head.length - 1]: { halign: 'right' } },
+    didParseCell: (d: CellHookData) => {
+      if (d.section !== 'body' || d.column.index !== 0) return
+      const label = String(d.cell.raw)
+      if (label === ANOMALIA_LABEL.rendimiento_bajo || label === ANOMALIA_LABEL.odometro_retrocede) {
+        d.cell.styles.textColor = COLOR.rojo
+      }
+    },
+  })
+}
+
+/**
+ * Solo las cargas a revisar, de una sucursal o de todas. Es la hoja que se le
+ * pasa al encargado para que aclare sus cargas antes del cierre del mes, así
+ * que lleva el detalle completo y no el tope de 100 del tablero.
+ */
+export async function exportAnomaliasPdf(d: AnomaliasCostos) {
+  const pdf = await crearReportePdf({
+    titulo: d.sucursal ? `Cargas que conviene revisar · ${d.sucursal}` : 'Cargas que conviene revisar',
+    subtitulo: `${d.sucursal ?? 'Todas las sucursales'} · ${subtitulo(d)}`,
+    orientacion: 'landscape',
+  })
+  pdf.nota(
+    'Registros de combustible que no cuadran: rendimiento fuera de rango, odómetros que retroceden, cargas sin vale ' +
+    'o sin kilometraje. No todas son un problema —una carga sin vale puede ser captura pendiente—, pero son las que ' +
+    'hay que mirar antes de firmar el gasto. El importe es lo que costó la carga, salvo en el rendimiento bajo, que se anualiza. ' +
+    'Cada unidad cuenta en la sucursal donde tiene base.'
+  )
+  tablasAnomalias(pdf, d.anomalias, d.anomalias_resumen, { conSucursal: d.sucursal == null })
+  const sufijo = d.sucursal
+    ? d.sucursal.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    : 'todas'
+  pdf.guardar(`cargas-a-revisar-${sufijo}-${d.rango.start}_${ultimoDia(d)}`)
 }
 
 export async function exportCostosExcel(a: AnalisisCostos) {

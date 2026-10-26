@@ -299,6 +299,21 @@ export function fetchAnalisisCostos(rango: Periodo, dias: VentanaCostos = 90) {
     conPeriodo(`/dashboard/analisis-costos?dias=${dias}`, rango))
 }
 
+/** Las cargas a revisar de una sucursal, completas (el tablero solo trae 100). */
+export interface AnomaliasCostos {
+  rango:             AnalisisCostos['rango']
+  /** Null: todas las sucursales. */
+  sucursal:          string | null
+  anomalias:         Anomalia[]
+  anomalias_resumen: AnalisisCostos['anomalias_resumen']
+}
+
+/** `sucursal`: el id, 'sin' para "Sin base fija" o null para todas. */
+export function fetchAnomaliasCostos(dias: VentanaCostos, sucursal: string | null) {
+  const q = sucursal != null ? `&sucursal=${encodeURIComponent(sucursal)}` : ''
+  return api.get<{ data: AnomaliasCostos }>(`/dashboard/analisis-costos/anomalias?dias=${dias}${q}`)
+}
+
 export function fetchDocumentosPorVencer(rango: Periodo) {
   return api.get<{ data: DocumentosPorVencer }>(
     conPeriodo('/dashboard/documentos-por-vencer', rango))
@@ -442,6 +457,9 @@ export interface Anomalia {
   severidad:   'alta' | 'media'
   vehiculo_id: number
   vehiculo:    string
+  /** La base de la unidad; null es "Sin base fija". */
+  sucursal_id: number | null
+  sucursal:    string
   fecha:       string
   detalle:     string
   monto:       number | null

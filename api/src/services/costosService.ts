@@ -374,11 +374,16 @@ export interface Anomalia {
   severidad:   'alta' | 'media'
   vehiculo_id: number
   vehiculo:    string
+  /** La base de la unidad, igual que en `SucursalCosto`: null es "Sin base fija". */
+  sucursal_id: number | null
+  sucursal:    string
   fecha:       string
   detalle:     string
   /** Pesos que cuesta —o que no se pueden auditar por— esta anomalía. */
   monto:       number | null
 }
+
+type ResumenAnomalias = { tipo: TipoAnomalia; cantidad: number; monto: number }[]
 
 export interface Retrabajo {
   vehiculo_id:  number
@@ -449,8 +454,17 @@ export interface AnalisisCostos {
   gasto_mensual:      repo.GastoMes[]
   ahorro_refacciones: OportunidadAhorro[]
   anomalias:          Anomalia[]
-  anomalias_resumen:  { tipo: TipoAnomalia; cantidad: number; monto: number }[]
+  anomalias_resumen:  ResumenAnomalias
   retrabajos:         Retrabajo[]
+}
+
+/** Las cargas a revisar de una sucursal, completas: lo que pide su reporte. */
+export interface AnomaliasCostos {
+  rango:             { start: string; end: string; dias: number }
+  /** Null: todas las sucursales. */
+  sucursal:          string | null
+  anomalias:         Anomalia[]
+  anomalias_resumen: ResumenAnomalias
 }
 
 // ─── Cálculo ────────────────────────────────────────────────────────────────
@@ -480,7 +494,10 @@ interface Acumulado {
  * gráfica de tendencia, que siempre cierra en el día de hoy porque es el
  * contexto contra el que se leen los números, no parte del corte.
  */
-export async function getAnalisisCostos(rango: { start: string; end: string }): Promise<AnalisisCostos> {
+export async function getAnalisisCostos(
+  rango: { start: string; end: string },
+  { anomaliasCompletas = false }: { anomaliasCompletas?: boolean } = {},
+): Promise<AnalisisCostos> {
   const hoy   = fechaMexico()
   const start = rango.start
   const end   = rango.end
@@ -525,7 +542,8 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     }
   }
 
-  const anomalias: Anomalia[] = []
+  // La sucursal se les pone al final, de una vez para todas.
+  const anomalias: Omit<Anomalia, 'sucursal_id' | 'sucursal'>[] = []
 
   // ── Combustible: recorrido de cargas, unidad por unidad ──
   // Vienen ordenadas por (vehículo, fecha, id) desde el repo, así que basta
@@ -1005,13 +1023,11 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     (b.monto ?? 0) - (a.monto ?? 0) ||
     b.fecha.localeCompare(a.fecha)
   )
-  const resumenMap = new Map<TipoAnomalia, { tipo: TipoAnomalia; cantidad: number; monto: number }>()
-  for (const an of anomalias) {
-    const e = resumenMap.get(an.tipo) ?? { tipo: an.tipo, cantidad: 0, monto: 0 }
-    e.cantidad += 1
-    e.monto    += an.monto ?? 0
-    resumenMap.set(an.tipo, e)
-  }
+  // Una unidad fuera de la flota en operación (ya dada de baja) cae en "Sin base fija".
+  const anomaliasConSucursal: Anomalia[] = anomalias.map((an) => {
+    const v = acum.get(an.vehiculo_id)?.v
+    return { ...an, sucursal_id: v?.sucursal_id ?? null, sucursal: v?.sucursal ?? SIN_BASE }
+  })
   // Las anomalías de cada sucursal, por la base de la unidad. Antes de recortar
   // a MAX_ANOMALIAS: el conteo es de todas, no de las que caben en la tabla.
   for (const an of anomalias) {
@@ -1045,10 +1061,6 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     }))
     .sort((a, b) =>
       (a.sucursal_id == null ? 1 : 0) - (b.sucursal_id == null ? 1 : 0) || b.total - a.total)
-
-  const anomaliasResumen = [...resumenMap.values()]
-    .map((e) => ({ ...e, monto: redondear(e.monto, 2)! }))
-    .sort((a, b) => b.monto - a.monto)
 
   // ── Totales de flota ──
   const kmFlota = vehiculos.reduce((s, v) => s + (v.km_recorridos ?? 0), 0)
@@ -1108,8 +1120,46 @@ export async function getAnalisisCostos(rango: { start: string; end: string }): 
     precios_mensuales: preciosMensuales,
     gasto_mensual: gastoMensual,
     ahorro_refacciones: ahorroRefacciones,
-    anomalias: anomalias.slice(0, MAX_ANOMALIAS),
-    anomalias_resumen: anomaliasResumen,
+    anomalias: anomaliasCompletas ? anomaliasConSucursal : anomaliasConSucursal.slice(0, MAX_ANOMALIAS),
+    anomalias_resumen: resumirAnomalias(anomaliasConSucursal),
     retrabajos,
+  }
+}
+
+/** Cuántas hay de cada tipo y cuánto suman, de la que más pesa a la que menos. */
+function resumirAnomalias(anomalias: Anomalia[]): ResumenAnomalias {
+  const porTipo = new Map<TipoAnomalia, { tipo: TipoAnomalia; cantidad: number; monto: number }>()
+  for (const an of anomalias) {
+    const e = porTipo.get(an.tipo) ?? { tipo: an.tipo, cantidad: 0, monto: 0 }
+    e.cantidad += 1
+    e.monto    += an.monto ?? 0
+    porTipo.set(an.tipo, e)
+  }
+  return [...porTipo.values()]
+    .map((e) => ({ ...e, monto: redondear(e.monto, 2)! }))
+    .sort((a, b) => b.monto - a.monto)
+}
+
+/**
+ * Las cargas a revisar sin el tope de la pantalla, para el reporte que se le
+ * pasa a cada sucursal. `sucursal` es el id, 'sin' para "Sin base fija" o null
+ * para todas. Se recalcula el análisis entero: es un reporte que se pide de vez
+ * en cuando y así no hay una segunda versión de las reglas que pueda divergir.
+ */
+export async function getAnomaliasCostos(
+  rango: { start: string; end: string },
+  sucursal: string | null,
+): Promise<AnomaliasCostos> {
+  const a = await getAnalisisCostos(rango, { anomaliasCompletas: true })
+  const anomalias = sucursal == null
+    ? a.anomalias
+    : a.anomalias.filter((an) => String(an.sucursal_id ?? 'sin') === sucursal)
+  return {
+    rango: a.rango,
+    sucursal: sucursal == null ? null
+      : sucursal === 'sin' ? SIN_BASE
+      : anomalias[0]?.sucursal ?? a.sucursales.find((s) => String(s.sucursal_id) === sucursal)?.sucursal ?? null,
+    anomalias,
+    anomalias_resumen: resumirAnomalias(anomalias),
   }
 }

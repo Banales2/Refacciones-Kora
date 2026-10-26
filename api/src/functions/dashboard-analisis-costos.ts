@@ -22,16 +22,33 @@ function ventanaMovil(dias: number): { start: string; end: string } {
   return { start: corrida(-(dias - 1)), end: corrida(1) }
 }
 
+// Un rango explícito (?anio o ?desde/?hasta) gana sobre ?dias: lo pide el
+// reporte, mientras que ?dias es lo que trae el tablero. `parseRango` ya
+// acota la amplitud, así que sigue sin poder barrerse la base entera.
+function rangoPedido(req: HttpRequest): { start: string; end: string } {
+  const pedido = Number(req.query.get('dias'))
+  const dias = DIAS_VALIDOS.includes(pedido) ? pedido : DIAS_DEFAULT
+  return parseRango(req.query) ?? ventanaMovil(dias)
+}
+
 export async function dashboardAnalisisCostos(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   try {
     requireRole(req, 'admin', 'editor', 'lector')
-    // Un rango explícito (?anio o ?desde/?hasta) gana sobre ?dias: lo pide el
-    // reporte, mientras que ?dias es lo que trae el tablero. `parseRango` ya
-    // acota la amplitud, así que sigue sin poder barrerse la base entera.
-    const pedido = Number(req.query.get('dias'))
-    const dias = DIAS_VALIDOS.includes(pedido) ? pedido : DIAS_DEFAULT
-    const rango = parseRango(req.query) ?? ventanaMovil(dias)
-    const data = await service.getAnalisisCostos(rango)
+    const data = await service.getAnalisisCostos(rangoPedido(req))
+    return { status: 200, jsonBody: { data } }
+  } catch (err) { return handleError(err, ctx) }
+}
+
+// Las cargas a revisar completas, sin el tope del tablero, para el PDF por
+// sucursal. `?sucursal=` es el id o 'sin' ("Sin base fija"); sin él, todas.
+export async function dashboardAnomaliasCostos(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
+  try {
+    requireRole(req, 'admin', 'editor', 'lector')
+    const sucursal = req.query.get('sucursal') || null
+    if (sucursal != null && sucursal !== 'sin' && !/^[1-9]\d*$/.test(sucursal)) {
+      return { status: 400, jsonBody: { error: 'Sucursal inválida.' } }
+    }
+    const data = await service.getAnomaliasCostos(rangoPedido(req), sucursal)
     return { status: 200, jsonBody: { data } }
   } catch (err) { return handleError(err, ctx) }
 }
@@ -41,4 +58,11 @@ app.http('dashboard-analisis-costos', {
   route: 'dashboard/analisis-costos',
   authLevel: 'anonymous',
   handler: dashboardAnalisisCostos,
+})
+
+app.http('dashboard-analisis-costos-anomalias', {
+  methods: ['GET'],
+  route: 'dashboard/analisis-costos/anomalias',
+  authLevel: 'anonymous',
+  handler: dashboardAnomaliasCostos,
 })
