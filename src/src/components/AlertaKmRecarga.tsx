@@ -6,7 +6,7 @@
 // kilometraje sin esperar al error.
 import { Alert, Text } from '@mantine/core'
 import { IconAlertTriangle } from '@tabler/icons-react'
-import { useKmVecinos, type KmVecinos } from '../hooks/useRecargas'
+import { useKmVecinos, type KmVecinos, type LecturaVecina } from '../hooks/useRecargas'
 import { formatFecha } from '../lib/formato'
 
 export interface KmFueraDeOrden {
@@ -38,6 +38,28 @@ export function useKmFueraDeOrden(
   const { data } = useKmVecinos(valida ? vehiculoId : undefined, fecha, excluir)
   const n = km === '' || km == null ? 0 : Number(km)
   return fueraDeOrden(n, data?.data)
+}
+
+/**
+ * La recarga con lectura del día anterior más cercano a `fecha`: es contra la
+ * que se captura, y la que se le muestra a quien llena el formulario en lugar
+ * del km actual de la unidad, que puede venir de un chequeo posterior y no
+ * sirve para una carga atrasada. Comparte la consulta con `useKmFueraDeOrden`.
+ */
+export function useUltimaRecarga(
+  vehiculoId: number | undefined, fecha: string, excluir?: number,
+): LecturaVecina | null {
+  const valida = /^\d{4}-\d{2}-\d{2}$/.test(fecha)
+  const { data } = useKmVecinos(valida ? vehiculoId : undefined, fecha, excluir)
+  return data?.data.anterior ?? null
+}
+
+/** "Última recarga: 152,300 km (03/10/2026)", o el km actual si no hay recargas antes. */
+export function referenciaKm(ultima: LecturaVecina | null, kmVehiculo: number | null | undefined): string | null {
+  const fmt = (n: number) => n.toLocaleString('es-MX')
+  if (ultima) return `Última recarga: ${fmt(ultima.kilometraje)} km (${formatFecha(ultima.fecha)})`
+  if (kmVehiculo != null) return `Actual: ${fmt(kmVehiculo)} km`
+  return null
 }
 
 export function AlertaKmRecarga({ problema, km }: { problema: KmFueraDeOrden; km: number | string }) {

@@ -38,7 +38,7 @@ import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCort
 import { CODIGO, KM_MAX, limpiarCodigo, validarKm } from '../lib/validaciones'
 import { GASOLINAS, esGasolina, familiaCombustible } from '../lib/combustible'
 import { avanzaOdometro } from '../lib/odometro'
-import { AlertaKmRecarga, useKmFueraDeOrden } from './AlertaKmRecarga'
+import { AlertaKmRecarga, referenciaKm, useKmFueraDeOrden, useUltimaRecarga } from './AlertaKmRecarga'
 import { formatFecha, formatLitros, formatMXN } from '../lib/formato'
 
 const FOLIO_MAX = 30
@@ -163,6 +163,7 @@ function Formulario({
   const [porConfirmarKm, setPorConfirmarKm] = useState(false)
   // El kilometraje contra el de las recargas de otras fechas de la unidad.
   const kmFueraDeOrden = useKmFueraDeOrden(vehiculoId, fecha, km)
+  const refKm = referenciaKm(useUltimaRecarga(vehiculoId, fecha), vehiculo?.kilometraje)
 
   function elegirVale(id: string | null) {
     setValeId(id)
@@ -396,8 +397,8 @@ function Formulario({
         label="Kilometraje (opcional)"
         placeholder="Si el ticket lo trae"
         min={0} max={KM_MAX} suffix=" km" thousandSeparator="," allowNegative={false} clampBehavior="strict"
-        description={vehiculo?.kilometraje != null
-          ? `Sin él no avanza el odómetro ni cuenta para el rendimiento. Actual: ${vehiculo.kilometraje.toLocaleString('es-MX')} km`
+        description={refKm
+          ? `Sin él no avanza el odómetro ni cuenta para el rendimiento. ${refKm}`
           : 'Sin él no avanza el odómetro ni cuenta para el rendimiento.'}
         value={km} onChange={setKm} error={errores.km}
       />

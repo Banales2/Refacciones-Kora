@@ -28,7 +28,7 @@ import { FechaInput } from './FechaInput'
 import SelectCatalogo from './SelectCatalogo'
 import ConfirmarAvanceKm from './ConfirmarAvanceKm'
 import { avanzaOdometro } from '../lib/odometro'
-import { AlertaKmRecarga, useKmFueraDeOrden } from './AlertaKmRecarga'
+import { AlertaKmRecarga, referenciaKm, useKmFueraDeOrden, useUltimaRecarga } from './AlertaKmRecarga'
 import { formatLitros as fmtLitros } from '../lib/formato'
 import { usePermisos } from '../hooks/usePermisos'
 import { agrupar, calcularRendimientos } from '../lib/recargas'
@@ -217,6 +217,7 @@ export function RecargaForm({
     || form.values.fecha !== initial.fecha
     || Number(form.values.kilometraje || 0) !== Number(initial.kilometraje || 0)
   const kmFueraDeOrden = tocoKmOFecha ? kmFueraDeOrdenSiempre : null
+  const refKm = referenciaKm(useUltimaRecarga(vehiculoId, form.values.fecha, recargaId), kmVehiculo)
 
   // Elegir el vale trae al chofer a quien se le entregó. Se puede cambiar
   // después si el papel lo cargó otro.
@@ -368,8 +369,8 @@ export function RecargaForm({
         <NumberInput decimalScale={1}
           label="Kilometraje" placeholder="0" required
           min={0} max={KM_MAX} suffix=" km" thousandSeparator="," allowNegative={false} clampBehavior="strict"
-          description={kmVehiculo != null
-            ? `Kilometraje al momento de la recarga. Actual: ${kmVehiculo.toLocaleString('es-MX')} km`
+          description={refKm
+            ? `Kilometraje al momento de la recarga. ${refKm}`
             : 'Kilometraje del vehículo al momento de la recarga'}
           {...form.getInputProps('kilometraje')}
         />
