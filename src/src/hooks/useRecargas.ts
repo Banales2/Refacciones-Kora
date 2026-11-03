@@ -92,11 +92,21 @@ export function useRecargasTodas() {
   })
 }
 
+export interface LecturaVecina {
+  id:          number
+  fecha:       string
+  /** Lo que marcaba el tablero ese día: lo que se muestra. */
+  kilometraje: number
+  /** La misma lectura en la escala del tablero de la fecha consultada: contra
+   *  ésta se compara. Solo difiere si hubo un reinicio de odómetro de por medio. */
+  km_comparable: number
+}
+
 export interface KmVecinos {
-  /** La lectura más alta de los días anteriores. */
-  anterior:  { id: number; fecha: string; kilometraje: number } | null
-  /** La más baja de los días posteriores. */
-  siguiente: { id: number; fecha: string; kilometraje: number } | null
+  /** La lectura del día anterior más cercano (la más alta, si hubo varias). */
+  anterior:  LecturaVecina | null
+  /** La del día posterior más cercano (la más baja). */
+  siguiente: LecturaVecina | null
 }
 
 /** Entre qué lecturas tiene que caer una recarga de `fecha`. Ver AlertaKmRecarga. */

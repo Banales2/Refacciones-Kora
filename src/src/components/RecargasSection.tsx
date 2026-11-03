@@ -209,8 +209,14 @@ export function RecargaForm({
   const [porConfirmar, setPorConfirmar] = useState<RecargaFormValues | null>(null)
 
   // El kilometraje contra el de las recargas de otras fechas. Mientras no
-  // cuadre no se guarda: la API la rechazaría igual.
-  const kmFueraDeOrden = useKmFueraDeOrden(vehiculoId, form.values.fecha, form.values.kilometraje, recargaId)
+  // cuadre no se guarda: la API la rechazaría igual. Al corregir, solo si se
+  // tocó la lectura o la fecha: arreglar el costo de una recarga vieja que ya
+  // estaba chueca no exige arreglarle el kilometraje (la API tampoco lo pide).
+  const kmFueraDeOrdenSiempre = useKmFueraDeOrden(vehiculoId, form.values.fecha, form.values.kilometraje, recargaId)
+  const tocoKmOFecha = initial === undefined
+    || form.values.fecha !== initial.fecha
+    || Number(form.values.kilometraje || 0) !== Number(initial.kilometraje || 0)
+  const kmFueraDeOrden = tocoKmOFecha ? kmFueraDeOrdenSiempre : null
 
   // Elegir el vale trae al chofer a quien se le entregó. Se puede cambiar
   // después si el papel lo cargó otro.

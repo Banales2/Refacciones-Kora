@@ -118,15 +118,14 @@ export async function update(
 
   const tickets = resolverTickets(actual, data)
   await protegerCuadre(id, data, tickets)
-  // Solo si se toca la lectura o la fecha: corregir el costo de una recarga
+  // Solo si cambia la lectura o la fecha: corregir el costo de una recarga
   // vieja que ya estaba chueca no tiene por qué exigir arreglar el kilometraje.
-  if (data.kilometraje !== undefined || data.fecha !== undefined) {
-    await validarKmPorFecha(
-      actual.vehiculo_id,
-      data.fecha ?? diaDe(actual.fecha),
-      data.kilometraje ?? actual.kilometraje,
-      id,
-    )
+  // Se compara contra lo guardado y no contra lo que viene, porque el
+  // formulario manda siempre los dos aunque no se hayan tocado.
+  const fechaNueva = (data.fecha ?? diaDe(actual.fecha)).slice(0, 10)
+  const kmNuevo    = data.kilometraje ?? actual.kilometraje
+  if (fechaNueva !== diaDe(actual.fecha) || Number(kmNuevo ?? 0) !== Number(actual.kilometraje ?? 0)) {
+    await validarKmPorFecha(actual.vehiculo_id, fechaNueva, kmNuevo, id)
   }
 
   if (data.vale_id !== undefined) {
@@ -242,6 +241,10 @@ function fechaLegible(iso: string): string {
  * lectura así tumba el rendimiento de los dos tramos que toca y deja la carga
  * marcada como "odómetro inconsistente" en el tablero.
  *
+ * Solo contra la recarga más cercana de cada lado (ver `repo.kmVecinos`): una
+ * lectura mal tecleada hace meses no debe trabar todo lo que vino después. Y en
+ * kilómetros de vida, para que un reinicio de odómetro no cuente como retroceso.
+ *
  * Sin lectura (0 o null) no hay nada que comparar.
  */
 export async function validarKmPorFecha(
@@ -250,14 +253,14 @@ export async function validarKmPorFecha(
   if (km == null || !(km > 0)) return
   const { anterior, siguiente } = await repo.kmVecinos(vehiculoId, fecha.slice(0, 10), excluir)
   const fmt = (n: number) => n.toLocaleString('es-MX')
-  if (anterior && km < anterior.kilometraje) {
+  if (anterior && km < anterior.km_comparable) {
     throw new ValidationError(
       `El kilometraje (${fmt(km)} km) es menor que el de la recarga del ${fechaLegible(anterior.fecha)} ` +
       `(${fmt(anterior.kilometraje)} km). Revisa el kilometraje y la fecha de esta recarga.`,
       { kilometraje: km, anterior, siguiente },
     )
   }
-  if (siguiente && km > siguiente.kilometraje) {
+  if (siguiente && km > siguiente.km_comparable) {
     throw new ValidationError(
       `El kilometraje (${fmt(km)} km) es mayor que el de la recarga del ${fechaLegible(siguiente.fecha)} ` +
       `(${fmt(siguiente.kilometraje)} km), que es posterior. Revisa el kilometraje y la fecha de esta recarga.`,

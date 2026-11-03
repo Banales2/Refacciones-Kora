@@ -4,7 +4,7 @@ import { SQL_KM } from '../shared/km'
 import { RecargaCreate, RecargaEmergencia, RecargaUpdate, TicketRecarga } from '../schemas/recargaSchema'
 import { Alcance, conAlcance, vehiculoEnAlcance } from '../shared/alcance'
 import type { ProductoRecarga } from '../shared/combustible'
-import { combustibleDe } from './vehiculosSql'
+import { combustibleDe, kmAbsoluto } from './vehiculosSql'
 
 /** Un ticket de la bomba. Los trailers traen uno por tanque (migración 059). */
 export interface Ticket {
@@ -486,38 +486,62 @@ export async function findConsumosDeGasolinera(
 export interface LecturaRecarga {
   id:          number
   fecha:       string
+  /** Lo que marcaba el tablero ese día, como está en el ticket. */
   kilometraje: number
+  /**
+   * La misma lectura llevada a la escala del tablero de la fecha consultada:
+   * contra ésta se compara lo capturado. Solo difiere de `kilometraje` si hubo
+   * un reinicio de odómetro entre las dos fechas.
+   */
+  km_comparable: number
 }
 
 /**
- * Las lecturas que acotan a una recarga de `fecha`: la más alta de los días
- * anteriores y la más baja de los posteriores. Las del mismo día no cuentan:
- * no se sabe en qué orden se cargó. Las de emergencia no llevan lectura.
+ * Las lecturas que acotan a una recarga de `fecha`: la del día anterior más
+ * cercano con lectura (la más alta, si ese día hubo varias) y la del día
+ * posterior más cercano (la más baja). Solo la más cercana: con la más alta de
+ * toda la historia, un dígito de más tecleado hace meses trababa todas las
+ * recargas que siguieron. Las del mismo día no cuentan: no se sabe en qué orden
+ * se cargó. Las de emergencia no llevan lectura.
  * `excluir`: al corregir una recarga, ella misma no se acota.
  */
 export async function kmVecinos(
   vehiculoId: number, fecha: string, excluir?: number,
 ): Promise<{ anterior: LecturaRecarga | null; siguiente: LecturaRecarga | null }> {
   const pool = await getPool()
+  // Lo que se capture para `fecha` está en la escala del tablero de ese día;
+  // cada vecina se lleva a kilómetros de vida y se le restan los reinicios que
+  // ya contaba `fecha` (ver `kmAbsoluto`).
+  const comparable = `${kmAbsoluto('rc.kilometraje', 'CAST(rc.fecha AS date)', 'rc.vehiculo_id')} - @reinicios`
   const r = await pool.request()
     .input('vehiculo', sql.Int,  vehiculoId)
     .input('fecha',    sql.Date, fecha)
     .input('excluir',  sql.Int,  excluir ?? null)
     .query(`
-      SELECT TOP 1 'anterior' AS lado, id, CONVERT(char(10), fecha, 23) AS fecha, kilometraje
-      FROM recargas_combustible
-      WHERE vehiculo_id = @vehiculo AND kilometraje > 0
-        AND CAST(fecha AS date) < @fecha AND (@excluir IS NULL OR id <> @excluir)
-      ORDER BY kilometraje DESC, fecha DESC;
+      DECLARE @reinicios DECIMAL(12, 1) = COALESCE((
+        SELECT SUM(km_al_reiniciar) FROM odometro_reinicios
+        WHERE vehiculo_id = @vehiculo AND fecha <= @fecha), 0);
 
-      SELECT TOP 1 'siguiente' AS lado, id, CONVERT(char(10), fecha, 23) AS fecha, kilometraje
-      FROM recargas_combustible
-      WHERE vehiculo_id = @vehiculo AND kilometraje > 0
-        AND CAST(fecha AS date) > @fecha AND (@excluir IS NULL OR id <> @excluir)
-      ORDER BY kilometraje ASC, fecha ASC;
+      SELECT TOP 1 rc.id, CONVERT(char(10), rc.fecha, 23) AS fecha, rc.kilometraje,
+             ${comparable} AS km_comparable
+      FROM recargas_combustible rc
+      WHERE rc.vehiculo_id = @vehiculo AND rc.kilometraje > 0
+        AND CAST(rc.fecha AS date) < @fecha AND (@excluir IS NULL OR rc.id <> @excluir)
+      ORDER BY CAST(rc.fecha AS date) DESC, rc.kilometraje DESC;
+
+      SELECT TOP 1 rc.id, CONVERT(char(10), rc.fecha, 23) AS fecha, rc.kilometraje,
+             ${comparable} AS km_comparable
+      FROM recargas_combustible rc
+      WHERE rc.vehiculo_id = @vehiculo AND rc.kilometraje > 0
+        AND CAST(rc.fecha AS date) > @fecha AND (@excluir IS NULL OR rc.id <> @excluir)
+      ORDER BY CAST(rc.fecha AS date) ASC, rc.kilometraje ASC;
     `)
-  const sets = r.recordsets as unknown as { id: number; fecha: string; kilometraje: number }[][]
-  const lectura = (row?: { id: number; fecha: string; kilometraje: number }) =>
-    row ? { id: row.id, fecha: row.fecha, kilometraje: Number(row.kilometraje) } : null
+  type Fila = { id: number; fecha: string; kilometraje: number; km_comparable: number }
+  const sets = r.recordsets as unknown as Fila[][]
+  const lectura = (row?: Fila): LecturaRecarga | null =>
+    row ? {
+      id: row.id, fecha: row.fecha,
+      kilometraje: Number(row.kilometraje), km_comparable: Number(row.km_comparable),
+    } : null
   return { anterior: lectura(sets[0]?.[0]), siguiente: lectura(sets[1]?.[0]) }
 }

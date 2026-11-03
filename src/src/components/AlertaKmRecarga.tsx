@@ -17,10 +17,10 @@ export interface KmFueraDeOrden {
 
 function fueraDeOrden(km: number, v: KmVecinos | undefined): KmFueraDeOrden | null {
   if (!v || !(km > 0)) return null
-  if (v.anterior && km < v.anterior.kilometraje) {
+  if (v.anterior && km < v.anterior.km_comparable) {
     return { lado: 'anterior', fecha: v.anterior.fecha, km: v.anterior.kilometraje }
   }
-  if (v.siguiente && km > v.siguiente.kilometraje) {
+  if (v.siguiente && km > v.siguiente.km_comparable) {
     return { lado: 'siguiente', fecha: v.siguiente.fecha, km: v.siguiente.kilometraje }
   }
   return null
