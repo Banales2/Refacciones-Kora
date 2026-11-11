@@ -48,6 +48,7 @@ import { useGasolineras } from '../hooks/useGasolineras'
 import ImportarFacturasGasolina from '../components/ImportarFacturasGasolina'
 import RegistrarDesdeFacturaModal, { type Registro } from '../components/RegistrarDesdeFacturaModal'
 import SinReportarPanel from '../components/SinReportarPanel'
+import CoberturaGasolinaPanel from '../components/CoberturaGasolinaPanel'
 import ValeEnFacturas from '../components/ValeEnFacturas'
 import { SelectCatalogo } from '../components/SelectCatalogo'
 import {
@@ -955,6 +956,7 @@ export default function FacturasGasolina() {
       <Tabs defaultValue="facturas">
         <Tabs.List>
           <Tabs.Tab value="facturas">Facturas</Tabs.Tab>
+          <Tabs.Tab value="cobertura">Cobertura</Tabs.Tab>
           <Tabs.Tab value="sin-facturar">Recargas sin factura</Tabs.Tab>
           <Tabs.Tab value="sin-reportar">Sin reportar</Tabs.Tab>
         </Tabs.List>
@@ -1084,6 +1086,12 @@ export default function FacturasGasolina() {
       )}
 
           </Stack>
+        </Tabs.Panel>
+
+        {/* Qué días de una gasolinera cobra cada factura, y los huecos entre
+            ellas: la factura perdida sale como días sin cobrar. */}
+        <Tabs.Panel value="cobertura" pt="md">
+          <CoberturaGasolinaPanel onAbrir={setConciliando} />
         </Tabs.Panel>
 
         <Tabs.Panel value="sin-facturar" pt="md">

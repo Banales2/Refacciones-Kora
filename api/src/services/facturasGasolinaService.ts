@@ -158,6 +158,135 @@ export async function sinFacturar(p: SinFacturarQuery) {
   return { ...r, page: p.page, pageSize: p.pageSize }
 }
 
+// ── Cobertura ────────────────────────────────────────────────────────────────
+
+type FacturaRef = Pick<repo.FacturaEnCobertura, 'id' | 'folio' | 'fecha'>
+
+/**
+ * Cargas seguidas de la gasolinera que ninguna factura cobra: entre la última
+ * carga facturada y la siguiente que también lo está.
+ */
+export interface HuecoDeCobertura {
+  desde:   string
+  hasta:   string
+  tickets: repo.TicketEnCobertura[]
+  litros:  number
+  costo:   number
+  /** La factura de la carga facturada justo antes y justo después. */
+  antes:   FacturaRef | null
+  despues: FacturaRef | null
+  /**
+   * Después de la última carga facturada: lo normal es que la factura todavía
+   * no llegue. No es un hueco, es lo que falta por cobrar.
+   */
+  al_final: boolean
+  /**
+   * Facturas de la gasolinera sin conciliar que todavía pueden cobrar estas
+   * cargas (mismo corte que las candidatas). Mientras existan, el hueco puede
+   * ser solo que falta conciliar.
+   */
+  abiertas: FacturaRef[]
+}
+
+export type ItemDeCobertura =
+  | { tipo: 'factura'; factura: repo.FacturaEnCobertura; cargas: number }
+  | { tipo: 'hueco'; hueco: HuecoDeCobertura }
+
+function restarDias(iso: string, dias: number): string {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - dias)
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * Qué días de una gasolinera están facturados y cuáles no.
+ *
+ * La factura de gasolinera solo trae la fecha de emisión; lo que cobra se sabe
+ * por las recargas que casaron con ella. Se recorren los tickets en orden de
+ * fecha y cada tramo de cargas seguidas sin factura es un hueco: si se perdió
+ * una factura entera, sale aquí como varios días sin cobrar entre dos que sí.
+ *
+ * Dentro del mismo día van primero las facturadas, para que las sin factura
+ * de días seguidos queden en un solo hueco.
+ */
+export async function cobertura(gasolineraId: number, desde: string, hasta: string) {
+  const { facturas, tickets } = await repo.cobertura(gasolineraId, desde, hasta)
+  const porId = new Map(facturas.map((f) => [f.id, f]))
+  const ref = (id: number | null): FacturaRef | null => {
+    const f = id === null ? undefined : porId.get(id)
+    return f ? { id: f.id, folio: f.folio, fecha: f.fecha } : null
+  }
+  const abiertas = facturas
+    .filter((f) => !f.conciliada && f.casados < f.renglones)
+    .sort((a, b) => a.fecha.localeCompare(b.fecha))
+
+  const ordenados = [...tickets].sort((a, b) =>
+    a.fecha.localeCompare(b.fecha)
+    || Number(a.factura_id === null) - Number(b.factura_id === null)
+    || a.id - b.id)
+
+  const huecos: HuecoDeCobertura[] = []
+  let anterior: number | null = null
+  let tramo: repo.TicketEnCobertura[] = []
+  const cerrar = (siguiente: number | null) => {
+    if (tramo.length === 0) return
+    const d = tramo[0].fecha
+    huecos.push({
+      desde: d,
+      hasta: tramo[tramo.length - 1].fecha,
+      tickets: tramo,
+      litros: Math.round(tramo.reduce((s, t) => s + t.litros, 0) * 1000) / 1000,
+      costo: aCentavos(tramo.reduce((s, t) => s + t.costo, 0)),
+      antes: ref(anterior),
+      despues: ref(siguiente),
+      al_final: siguiente === null,
+      abiertas: abiertas
+        .filter((f) => f.fecha >= restarDias(d, repo.DIAS_DE_GRACIA))
+        .slice(0, 3)
+        .map((f) => ({ id: f.id, folio: f.folio, fecha: f.fecha })),
+    })
+    tramo = []
+  }
+  for (const t of ordenados) {
+    if (t.factura_id === null) { tramo.push(t); continue }
+    cerrar(t.factura_id)
+    anterior = t.factura_id
+  }
+  cerrar(null)
+
+  const cargasPorFactura = new Map<number, number>()
+  for (const t of tickets) {
+    if (t.factura_id !== null) {
+      cargasPorFactura.set(t.factura_id, (cargasPorFactura.get(t.factura_id) ?? 0) + 1)
+    }
+  }
+
+  const items: (ItemDeCobertura & { clave: string })[] = [
+    ...facturas.map((f) => ({
+      tipo: 'factura' as const, factura: f, cargas: cargasPorFactura.get(f.id) ?? 0,
+      clave: f.cubre_desde ?? f.fecha,
+    })),
+    ...huecos.map((h) => ({ tipo: 'hueco' as const, hueco: h, clave: h.desde })),
+  ].sort((a, b) => a.clave.localeCompare(b.clave))
+
+  const enMedio = huecos.filter((h) => !h.al_final)
+  const alFinal = huecos.find((h) => h.al_final)
+  return {
+    items: items.map(({ clave: _clave, ...i }) => i as ItemDeCobertura),
+    resumen: {
+      facturas: facturas.length,
+      facturas_sin_casar: facturas.filter((f) => f.casados === 0).length,
+      cargas: tickets.length,
+      cargas_facturadas: tickets.filter((t) => t.factura_id !== null).length,
+      huecos: enMedio.length,
+      cargas_en_huecos: enMedio.reduce((s, h) => s + h.tickets.length, 0),
+      costo_en_huecos: aCentavos(enMedio.reduce((s, h) => s + h.costo, 0)),
+      cargas_por_cobrar: alFinal?.tickets.length ?? 0,
+      costo_por_cobrar: alFinal?.costo ?? 0,
+    },
+  }
+}
+
 /** Las cantidades se comparan en milésimas: es lo que guarda la columna. */
 function mismaCantidad(a: number, b: number): boolean {
   return Math.round(a * 1000) === Math.round(b * 1000)

@@ -167,6 +167,12 @@ export const SinFacturarQuerySchema = z.object({
   hasta: fecha.optional(),
 })
 
+export const CoberturaQuerySchema = z.object({
+  gasolinera_id: z.coerce.number().int().min(1),
+  desde: fecha,
+  hasta: fecha,
+}).refine((q) => q.desde <= q.hasta, { message: 'La fecha inicial va antes que la final.', path: ['desde'] })
+
 export const ConciliarGasolinaSchema = z.object({
   /**
    * A qué ticket de recarga corresponde cada renglón. Va el conjunto COMPLETO,
@@ -195,3 +201,4 @@ export type ConciliarGasolina = z.infer<typeof ConciliarGasolinaSchema>
 export type IvaFactura = z.infer<typeof IvaFacturaSchema>
 export type FacturaGasolinaImport = z.infer<typeof FacturaGasolinaImportSchema>
 export type SinFacturarQuery = z.infer<typeof SinFacturarQuerySchema>
+export type CoberturaQuery = z.infer<typeof CoberturaQuerySchema>

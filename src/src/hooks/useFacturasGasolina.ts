@@ -229,6 +229,82 @@ export function useRecargasSinFacturar(filtros: SinFacturarFiltros, enabled = tr
   })
 }
 
+// ── Cobertura ────────────────────────────────────────────────────────────────
+
+export interface FacturaEnCobertura {
+  id:          number
+  folio:       string
+  fecha:       string
+  total:       number
+  renglones:   number
+  casados:     number
+  conciliada:  boolean
+  /** La recarga casada más vieja y la más nueva. null si no casó ninguna. */
+  cubre_desde: string | null
+  cubre_hasta: string | null
+}
+
+export interface TicketEnCobertura {
+  id:         number
+  recarga_id: number
+  fecha:      string
+  litros:     number
+  costo:      number
+  vehiculo:   string
+  conductor:  string
+  vale_folio: string | null
+  factura_id: number | null
+}
+
+export interface FacturaRef { id: number; folio: string; fecha: string }
+
+export interface HuecoDeCobertura {
+  desde:    string
+  hasta:    string
+  tickets:  TicketEnCobertura[]
+  litros:   number
+  costo:    number
+  antes:    FacturaRef | null
+  despues:  FacturaRef | null
+  /** Después de la última carga facturada: la factura puede venir en camino. */
+  al_final: boolean
+  /** Facturas sin conciliar que todavía pueden cobrar estas cargas. */
+  abiertas: FacturaRef[]
+}
+
+export type ItemDeCobertura =
+  | { tipo: 'factura'; factura: FacturaEnCobertura; cargas: number }
+  | { tipo: 'hueco'; hueco: HuecoDeCobertura }
+
+export interface Cobertura {
+  items: ItemDeCobertura[]
+  resumen: {
+    facturas:           number
+    facturas_sin_casar: number
+    cargas:             number
+    cargas_facturadas:  number
+    huecos:             number
+    cargas_en_huecos:   number
+    costo_en_huecos:    number
+    cargas_por_cobrar:  number
+    costo_por_cobrar:   number
+  }
+}
+
+/**
+ * Qué días de una gasolinera están facturados. La factura solo trae su fecha
+ * de emisión: lo que cubre sale de sus recargas casadas, y lo que ninguna
+ * cobra sale como hueco entre dos facturas.
+ */
+export function useCoberturaGasolina(gasolineraId: number | null, desde: string, hasta: string) {
+  return useQuery({
+    queryKey: ['facturas-gasolina', 'cobertura', gasolineraId, desde, hasta],
+    queryFn: () => api.get<{ data: Cobertura }>(
+      `/facturas-gasolina/cobertura?gasolinera_id=${gasolineraId}&desde=${desde}&hasta=${hasta}`),
+    enabled: gasolineraId !== null && !!desde && !!hasta && desde <= hasta,
+  })
+}
+
 function invalidar(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['facturas-gasolina'] })
   // Las recargas cambian de "sin facturar" a "facturada", y eso se ve en las

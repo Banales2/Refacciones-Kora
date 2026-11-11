@@ -142,6 +142,33 @@ litros y su costo. El vale sigue siendo uno: autoriza la carga completa.
 - **Recargas sin factura** se lista por ticket: una recarga de tres tanques puede
   tener dos cobrados y uno pendiente.
 
+## La cobertura
+
+La factura de gasolinera **solo trae su fecha de emisión**: no dice qué días
+cobra. Si se pierde una entera, nada lo avisaba: sus cargas se quedaban en
+*Recargas sin factura* revueltas con las que simplemente vienen en camino.
+
+La pestaña **Cobertura** (`GET /facturas-gasolina/cobertura`) se ve por
+gasolinera y por fechas (de entrada, los últimos 180 días):
+
+- **Cada factura con lo que cobra**: de la recarga casada más vieja a la más
+  nueva. Es lo único que dice qué días cubre. Una factura sin renglones casados
+  sale en su fecha de emisión, avisando que no se sabe qué cobra hasta
+  conciliarla.
+- **Los huecos**: se recorren los tickets de la gasolinera por fecha y cada
+  tramo de cargas seguidas que ninguna factura cobra es uno, con las facturas
+  de antes y de después. En el mismo día van primero las facturadas, para que
+  las sin factura de días seguidos queden en un solo hueco.
+- **Lo que va después de la última carga facturada** no es hueco: es lo que
+  falta por cobrar, y lo normal es que la factura no haya llegado.
+
+Un hueco no es una conclusión. Si hay facturas de esa gasolinera **sin
+conciliar** que todavía pueden cobrar esas cargas (mismo corte que las
+candidatas: emitidas desde `DIAS_DE_GRACIA` días antes de la primera carga), el
+hueco las nombra: puede ser solo que falta conciliar. Y solo ve cargas
+capturadas: si se perdió la factura **y** nadie capturó las cargas, no hay nada
+que enseñar.
+
 ## Las dos mitades de la pregunta
 
 | | qué dice |
@@ -343,6 +370,7 @@ pegó.
 | `POST /facturas-gasolina/{id}/conciliar` | **admin** | Guarda los emparejamientos y sella |
 | `POST /facturas-gasolina/{id}/reabrir` | **admin** | Suelta el sello |
 | `GET /facturas-gasolina/sin-facturar` | admin, editor, lector | Los tickets que ninguna factura ha reclamado |
+| `GET /facturas-gasolina/cobertura?gasolinera_id=&desde=&hasta=` | admin, editor, lector | Las facturas de una gasolinera con lo que cobra cada una, y los huecos de cargas sin factura entre ellas |
 | `POST /facturas-gasolina/{id}/renglones/{renglonId}/registrar` | **admin** | Registra la recarga no reportada (y su vale, si faltaba) y la casa con el renglón |
 | `GET /facturas-gasolina/{id}/recargas-para-ticket` | **admin** | Recargas de su gasolinera que admiten otro ticket |
 | `POST /facturas-gasolina/{id}/renglones/{renglonId}/agregar-ticket` | **admin** | Agrega a una recarga el ticket que el chofer no entregó y lo casa con el renglón |
@@ -358,7 +386,7 @@ segundo par de ojos sobre lo capturado.
 
 `src/src/pages/FacturasGasolina.tsx`, en **Operación → Facturas de gas**.
 
-Tres pestañas: **Facturas**, **Recargas sin factura** y **Sin reportar**.
+Cuatro pestañas: **Facturas**, **Cobertura**, **Recargas sin factura** y **Sin reportar**.
 
 La primera lista con estado (`Por conciliar`, `Cuadrada`, `N sin capturar`), y al
 abrir una factura: tres tarjetas —total, renglones casados, importe sin capturar— y la

@@ -929,6 +929,93 @@ export async function recargasSinFacturar(p: {
   }
 }
 
+// ── Cobertura ────────────────────────────────────────────────────────────────
+
+/** Una factura de la gasolinera con los días que cobra, según sus casados. */
+export interface FacturaEnCobertura {
+  id:           number
+  folio:        string
+  fecha:        string
+  total:        number
+  renglones:    number
+  casados:      number
+  conciliada:   boolean
+  /** La recarga casada más vieja y la más nueva. null si no casó ninguna. */
+  cubre_desde:  string | null
+  cubre_hasta:  string | null
+}
+
+/** Un ticket de la gasolinera, con la factura que lo cobra si hay una. */
+export interface TicketEnCobertura {
+  id:         number
+  recarga_id: number
+  fecha:      string
+  litros:     number
+  costo:      number
+  vehiculo:   string
+  conductor:  string
+  vale_folio: string | null
+  factura_id: number | null
+}
+
+/**
+ * Lo necesario para ver qué días de una gasolinera están facturados: sus
+ * tickets entre `desde` y `hasta`, y las facturas que cobran alguno de ellos o
+ * que se emitieron en esas fechas (más los días de gracia, porque la factura
+ * llega después de la carga).
+ *
+ * Lo que cubre una factura sale de las recargas casadas: el papel solo trae la
+ * fecha de emisión. Una factura sin casados no dice qué días cobra.
+ */
+export async function cobertura(
+  gasolineraId: number, desde: string, hasta: string,
+): Promise<{ facturas: FacturaEnCobertura[]; tickets: TicketEnCobertura[] }> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('gid', sql.Int, gasolineraId)
+    .input('desde', sql.Date, desde)
+    .input('hasta', sql.Date, hasta)
+    .input('gracia', sql.Int, DIAS_DE_GRACIA)
+    .query(`
+      SELECT t.id, t.recarga_id, CONVERT(char(10), rc.fecha, 23) AS fecha,
+             t.litros, t.costo,
+             CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
+             co.nombre AS conductor, vg.folio AS vale_folio,
+             fr.factura_id
+      FROM recargas_combustible_tickets t
+      JOIN recargas_combustible rc ON rc.id = t.recarga_id
+      JOIN vehiculos   v  ON v.id  = rc.vehiculo_id
+      JOIN modelos     mo ON mo.id = v.modelo_id
+      JOIN conductores co ON co.id = rc.conductor_id
+      LEFT JOIN vales_gasolina vg ON vg.id = rc.vale_id
+      LEFT JOIN facturas_gasolina_renglones fr ON fr.ticket_id = t.id
+      WHERE rc.gasolinera_id = @gid AND rc.fecha BETWEEN @desde AND @hasta
+      ORDER BY rc.fecha, rc.id, t.id;
+
+      SELECT f.id, f.folio, CONVERT(char(10), f.fecha, 23) AS fecha,
+             ${TOTAL_SQL} AS total, s.renglones, s.casados,
+             CAST(CASE WHEN f.conciliada_en IS NULL THEN 0 ELSE 1 END AS BIT) AS conciliada,
+             CONVERT(char(10), c.desde, 23) AS cubre_desde,
+             CONVERT(char(10), c.hasta, 23) AS cubre_hasta
+      ${FROM_FACTURA}
+      OUTER APPLY (
+        SELECT MIN(rc.fecha) AS desde, MAX(rc.fecha) AS hasta
+        FROM facturas_gasolina_renglones r
+        JOIN recargas_combustible rc ON rc.id = r.recarga_id
+        WHERE r.factura_id = f.id
+      ) c
+      WHERE f.gasolinera_id = @gid
+        AND (f.fecha BETWEEN @desde AND DATEADD(day, @gracia, @hasta)
+             OR (c.desde <= @hasta AND c.hasta >= @desde))
+      ORDER BY COALESCE(c.desde, f.fecha), f.fecha, f.id;
+    `)
+  const tickets = (r.recordsets[0] as unknown as TicketEnCobertura[])
+    .map((t) => ({ ...t, litros: Number(t.litros), costo: Number(t.costo) }))
+  const facturas = (r.recordsets[1] as unknown as FacturaEnCobertura[])
+    .map((f) => ({ ...f, total: Number(f.total), conciliada: !!f.conciliada }))
+  return { facturas, tickets }
+}
+
 /**
  * Los tickets de la recarga que ya cobra una factura CONCILIADA, con los litros
  * con que casaron. Es lo que no se puede mover sin reabrir esa factura.
