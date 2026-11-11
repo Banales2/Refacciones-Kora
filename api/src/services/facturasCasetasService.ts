@@ -1025,11 +1025,19 @@ export async function detalle(facturaId: number): Promise<DetalleFactura> {
     const fuera = (factura.periodo_desde && fechaDe(c) < factura.periodo_desde)
       || (factura.periodo_hasta && fechaDe(c) > factura.periodo_hasta)
     if (fuera) {
+      // Siempre en $0: si el cruce vino también en otra factura, el dinero ya
+      // lo cuenta "Ya cobrado en otra factura"; si no, es un cobro tardío y no
+      // hay nada que reclamar. Contarlo aquí lo sumaba dos veces.
+      const otras = otrasPorRenglon.get(c.renglon) ?? []
       agregar({
         tipo: 'fuera_de_periodo', renglones: [c.renglon], tag: c.tag, vehiculo: c.vehiculo,
-        caseta: c.descripcion, monto: c.total,
-        detalle: `Cruce del ${fechaDe(c)}, fuera del periodo que cobra la factura. ` +
-          'Revisa que no venga también en la anterior.',
+        caseta: c.descripcion, monto: 0,
+        detalle: `Cruce del ${fechaDe(c)}, fuera del periodo que cobra la factura. ` + (
+          otras.length > 0
+            ? `También viene en ${otras.map(folioDe).join(', ')}: ver "Ya cobrado en otra factura".`
+            : 'Cobro tardío: no aparece en ninguna otra factura importada. ' +
+              'Si la del periodo anterior aún no se importa, revisa que no venga ahí.'
+        ),
       })
     }
   }

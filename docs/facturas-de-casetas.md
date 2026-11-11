@@ -62,7 +62,7 @@ preguntas distintas:
 | **Clase arriba de la habitual** | cobro | el tag pagó en esa caseta una clase mayor que la que suele pagar, y no es la que paga casi siempre | lo que pagó por encima de lo **más caro** que ha pagado en su clase habitual |
 | **Clase distinta a la de siempre** | cobro | la clase está 2 o más arriba de la que el tag paga casi siempre (todas sus casetas), y ese día no pagó una parecida en otra caseta | contra la tarifa de su clase de siempre en el mismo tramo; $0 sin tarifa |
 | **Ajuste de PASE** | cobro | clase 0 o "AJUSTE …"; con tarifa, busca el cruce que corrige | $0 si la corrección deja la tarifa que el tag suele pagar; lo de encima si la pasa; el cargo entero si no se sabe |
-| **Fuera del periodo** | cobro | cruce con fecha fuera de las del periodo | el cruce |
+| **Fuera del periodo** | cobro | cruce con fecha fuera de las del periodo | $0: si vino en otra factura lo cuenta "Ya cobrado en otra factura"; si no, es un cobro tardío |
 | **Tag sin unidad** | uso | nadie ha dicho de qué unidad es | lo que suman sus cruces |
 | **Caseta que el tag no cruzaba** | uso | con 30+ cruces en otras facturas, nunca por esta caseta | lo que suman |
 

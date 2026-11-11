@@ -582,6 +582,8 @@ function TarjetaHallazgo({
               ? 'La corrección deja la tarifa que el tag suele pagar: no hay nada que reclamar'
               : h.tipo === 'corregido'
                 ? 'El ajuste se revisa en su factura'
+                : h.tipo === 'fuera_de_periodo'
+                  ? 'Si se cobró dos veces, lo cuenta "Ya cobrado en otra factura"'
                 : (h.tipo === 'clase_atipica' || h.tipo === 'clase_en_recorrido') && h.monto === 0
                   ? 'Sin tarifa de esta caseta no se puede calcular cuánto es de más'
                   : h.grupo === 'cobro' ? 'Lo que pudo cobrarse de más' : 'Lo que suman esos cruces'
