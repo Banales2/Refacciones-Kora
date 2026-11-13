@@ -1,6 +1,7 @@
 import * as repo from '../repositories/valesGasolinaRepo'
 import type { ValeGasolina } from '../repositories/valesGasolinaRepo'
 import type { ValeGasolinaCreate, ValeGasolinaUpdate } from '../schemas/valeGasolinaSchema'
+import { FOLIO_VALE, FOLIO_VALE_MENSAJE } from '../schemas/valeGasolinaSchema'
 import { AppError, NotFoundError, ConflictError, ValidationError } from '../shared/errors'
 import * as archivadoRepo from '../repositories/archivadoRepo'
 import * as recargasRepo from '../repositories/recargasRepo'
@@ -187,6 +188,11 @@ export async function update(
 
   const vale = await repo.findById(id)
   if (!vale) throw new NotFoundError('Vale')
+  // Un vale de antes de la regla conserva su folio; uno nuevo, o un folio que
+  // se corrige, ya va con el formato del talonario.
+  if (data.folio !== undefined && data.folio !== vale.folio && !FOLIO_VALE.test(data.folio)) {
+    throw new ValidationError(`Folio: ${FOLIO_VALE_MENSAJE}`)
+  }
   const recarga = vale.recarga_id != null ? await recargasRepo.findById(vale.recarga_id) : null
   const cambios = recarga ? await cambiosParaLaRecarga(recarga, data) : null
 

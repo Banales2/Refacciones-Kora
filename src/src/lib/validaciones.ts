@@ -39,6 +39,18 @@ export function limpiarTelefono(valor: string, max: number): string {
 // mayúsculas, números y guiones. Espeja CODIGO del backend.
 export const CODIGO = /^[A-Z0-9-]+$/
 
+// Folio de un vale: dos letras, guion y el número del talonario, de cualquier
+// largo ("TN-0001"). Se exige al crear y al cambiar el folio; los vales de
+// antes conservan el suyo. Espeja FOLIO_VALE del backend.
+export const FOLIO_VALE = /^[A-Z]{2}-[0-9]+$/
+export const FOLIO_VALE_MENSAJE = 'Dos letras, guion y el número (ej. TN-0001)'
+
+// Como limpiarCodigo, y además pone el guion si escriben "TN0001" de corrido:
+// en el papel casi nunca se ve, y así nadie tiene que adivinar por qué no pasa.
+export function limpiarFolioVale(valor: string, max: number): string {
+  return limpiarCodigo(valor, max).replace(/^([A-Z]{2})([0-9])/, '$1-$2').slice(0, max)
+}
+
 // Pasa a mayúsculas, quita lo que no sea código y recorta al máximo permitido.
 export function limpiarCodigo(valor: string, max: number): string {
   return valor.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, max)

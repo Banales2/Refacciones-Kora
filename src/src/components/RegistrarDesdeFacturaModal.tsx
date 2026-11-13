@@ -35,7 +35,7 @@ import ConfirmarAvanceKm from './ConfirmarAvanceKm'
 import { opcionVale, renderOpcionVale, filtrarVales, normalizar } from './OpcionVale'
 import { filtrarTickets } from './OpcionTicket'
 import { opcionVehiculo, renderOpcionVehiculo, sinFiltroLocal, vehiculoLabelCorto } from './OpcionVehiculo'
-import { CODIGO, KM_MAX, limpiarCodigo, validarKm } from '../lib/validaciones'
+import { FOLIO_VALE, FOLIO_VALE_MENSAJE, KM_MAX, limpiarFolioVale, validarKm } from '../lib/validaciones'
 import { GASOLINAS, esGasolina, familiaCombustible } from '../lib/combustible'
 import { avanzaOdometro } from '../lib/odometro'
 import { AlertaKmRecarga, referenciaKm, useKmFueraDeOrden, useUltimaRecarga } from './AlertaKmRecarga'
@@ -185,7 +185,7 @@ function Formulario({
       else if (fecha && fecha < vale.fecha) e.fecha = `No puede ser anterior al vale (${formatFecha(vale.fecha)})`
     } else {
       if (!folio.trim()) e.folio = 'Folio requerido'
-      else if (!CODIGO.test(folio)) e.folio = 'Solo mayúsculas, números y guiones'
+      else if (!FOLIO_VALE.test(folio)) e.folio = FOLIO_VALE_MENSAJE
       if (!elegido) e.vehiculo = 'Vehículo requerido'
       if (eligeSucursal && !sucursalId) e.sucursal = 'Sucursal requerida'
       if (!fechaVale) e.fechaVale = 'Fecha requerida'
@@ -293,10 +293,11 @@ function Formulario({
         <>
           <TextInput
             label="Folio del vale"
-            placeholder="Número impreso en el vale"
+            placeholder="Ej. TN-0001"
+            description="Dos letras, guion y el número impreso en el vale"
             required
             value={folio}
-            onChange={(e) => setFolio(limpiarCodigo(e.currentTarget.value, FOLIO_MAX))}
+            onChange={(e) => setFolio(limpiarFolioVale(e.currentTarget.value, FOLIO_MAX))}
             error={errores.folio}
           />
           <Select

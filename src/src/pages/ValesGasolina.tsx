@@ -39,7 +39,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useUsuarioActual } from '../hooks/useUsuarioActual'
 import { useSucursales } from '../hooks/useSucursales'
 import { FechaInput } from '../components/FechaInput'
-import { CODIGO, limpiarCodigo } from '../lib/validaciones'
+import { CODIGO, FOLIO_VALE, FOLIO_VALE_MENSAJE, limpiarFolioVale } from '../lib/validaciones'
 import NuevoConductorModal from '../components/NuevoConductorModal'
 import SelectCatalogo from '../components/SelectCatalogo'
 import RecargasFlota from '../components/RecargasFlota'
@@ -208,6 +208,9 @@ function ValeForm({
       folio: (v) => {
         if (!v.trim()) return 'Folio requerido'
         if (!CODIGO.test(v)) return 'Solo mayúsculas, números y guiones'
+        // Un vale de antes de la regla puede quedarse con su folio; si se
+        // escribe uno nuevo, ya va con el formato del talonario.
+        if (v !== initial?.folio && !FOLIO_VALE.test(v)) return FOLIO_VALE_MENSAJE
         return null
       },
       conductor_id: (v) => (!v ? 'Chofer requerido' : null),
@@ -268,10 +271,11 @@ function ValeForm({
               se genera, y no se repite entre vales. */}
           <TextInput
             label="Folio"
-            placeholder="Número impreso en el vale"
+            placeholder="Ej. TN-0001"
+            description="Dos letras, guion y el número impreso en el vale"
             required
             value={form.values.folio}
-            onChange={(e) => form.setFieldValue('folio', limpiarCodigo(e.currentTarget.value, FOLIO_MAX))}
+            onChange={(e) => form.setFieldValue('folio', limpiarFolioVale(e.currentTarget.value, FOLIO_MAX))}
             error={form.errors.folio as string}
           />
           {esAlta ? (
