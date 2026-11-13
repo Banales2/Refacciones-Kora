@@ -384,7 +384,15 @@ export interface VehiculoCosto {
   vehiculo:           string
   tipo:               string
   modelo_id:          number
+  /** Marca y nombre, sin el año: el año viene en `modelo_anio`. */
   modelo:             string
+  modelo_anio:        string | null
+  /**
+   * Contra quién se compara su rendimiento: marca y modelo sin el año, y todos
+   * los tractocamiones juntos. La clave agrupa; `familia` es para mostrar.
+   */
+  familia_clave:      string
+  familia:            string
   /** Null: sin base fija (tractocamiones, sucursal múltiple, utilitarios sin asignar). */
   sucursal_id:        number | null
   sucursal:           string | null
@@ -397,7 +405,12 @@ export interface VehiculoCosto {
   total:              number
   costo_por_km:       number | null
   litros:             number
+  /** Tramos entre cargas con los que se mide el km/L, y sus km y litros (para sumar grupos). */
+  tramos:             number
+  tramo_km:           number
+  tramo_litros:       number
   rendimiento:        number | null
+  /** km/L de las demás unidades de su familia (sin ella). Null si no hay otra medible. */
   rendimiento_modelo: number | null
   desviacion_pct:     number | null
   sobrecosto_anual:   number | null

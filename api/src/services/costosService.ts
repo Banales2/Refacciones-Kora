@@ -24,7 +24,7 @@ const TRAMOS_MIN_RENDIMIENTO = 3
  * aquí se juntan unidades distintas y un tanque mal llenado pesa mucho en pocos.
  */
 const TRAMOS_MIN_GASOLINERA = 5
-/** Qué tan abajo del promedio de su modelo tiene que estar para marcarse. */
+/** Qué tan abajo de las demás de su familia tiene que estar para marcarse. */
 const RENDIMIENTO_BAJO_PCT = -15
 /**
  * Qué tan lejos de la mediana de su combustible tiene que estar el litro de
@@ -170,6 +170,26 @@ function grupoDe(tipo: string): GrupoRendimiento {
 }
 
 /**
+ * La familia de una unidad: contra quién se compara lo que rinde. Es la marca
+ * y el nombre del modelo sin el año —un modelo en la base lleva el año, y por
+ * año un Isuzu ELF 100 2018 quedaba con dos o tres gemelos, o solo—, y sin las
+ * diferencias de captura ("ELF-100" y "elf 100" son lo mismo; si alguien metió
+ * el año en el nombre, también se le quita). Los tractocamiones son todos una
+ * sola familia sin importar la marca: hacen el mismo trabajo y lo que importa
+ * es cuál lo hace gastando menos. El tipo va en la clave para que un modelo
+ * que se usa como reparto y como utilitario no se revuelva.
+ */
+function sinAnio(modelo: string): string {
+  return modelo.replace(/\b(19|20)\d{2}\b/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+export function familiaDe(v: { tipo: string; modelo: string }): { clave: string; nombre: string } {
+  if (v.tipo === 'tractocamion') return { clave: 'tractocamion', nombre: 'Tractocamiones' }
+  const nombre = sinAnio(v.modelo)
+  return { clave: `${v.tipo}|${nombre.toLowerCase().replace(/[-_.]/g, ' ').replace(/\s+/g, ' ')}`, nombre }
+}
+
+/**
  * Lo que se junta para medir cuánto rinde un conjunto de tramos. `_efLitros` e
  * `_ideales` son solo los de unidades cuyo modelo tiene rendimiento de
  * referencia: los litros que gastaron y los que habrían gastado al del modelo.
@@ -210,6 +230,10 @@ export interface VehiculoCosto {
   tipo:           string
   modelo_id:      number
   modelo:         string
+  modelo_anio:    string | null
+  /** Contra quién se compara su rendimiento. Ver `familiaDe`. */
+  familia_clave:  string
+  familia:        string
   /** Null: sin base fija. Ver `SucursalCosto`. */
   sucursal_id:    number | null
   sucursal:       string | null
@@ -224,10 +248,24 @@ export interface VehiculoCosto {
   total:          number
   costo_por_km:   number | null
   litros:         number
+  /**
+   * Los tramos completos entre dos cargas con los que se midió `rendimiento`,
+   * y sus km y litros. Van sueltos para que un grupo de unidades se mida
+   * sumando km y litros, no promediando km/L: una unidad que casi no se movió
+   * no debe pesar lo mismo que una que no paró.
+   */
+  tramos:         number
+  tramo_km:       number
+  tramo_litros:   number
   rendimiento:    number | null
-  /** Promedio km/l de las demás unidades del mismo modelo, para comparar contra algo justo. */
+  /**
+   * km/L de las DEMÁS unidades de su familia, para comparar contra algo justo.
+   * Sin ella: con el promedio que la incluye, la que era única de su familia
+   * daba 0 % siempre y una mala jalaba el promedio hacia sí. Null si no hay
+   * otra medible.
+   */
   rendimiento_modelo:  number | null
-  /** Qué tanto se aleja del modelo, en porcentaje. Negativo = gasta de más. */
+  /** Qué tanto se aleja de su familia, en porcentaje. Negativo = gasta de más. */
   desviacion_pct:      number | null
   /** Pesos al año que explica esa desviación. Solo si se puede estimar. */
   sobrecosto_anual:    number | null
@@ -345,7 +383,7 @@ export interface SucursalCosto {
   /** km/L de sus unidades medibles. Mezcla modelos: ver `eficiencia_pct`. */
   rendimiento:        number | null
   /**
-   * Qué tanto rinden sus unidades contra las del mismo modelo en OTRAS
+   * Qué tanto rinden sus unidades contra las de su misma familia en OTRAS
    * sucursales, en %. Es la comparación justa entre sucursales: una con
    * camionetas siempre tiene mejor km/L que una con camiones, y eso no dice
    * nada de cómo se manejan. Negativo = gastan de más. Null si ninguno de sus
@@ -580,7 +618,7 @@ export async function getAnalisisCostos(
   // Los tramos que cerró cada gasolinera, para medir cuánto rinde. Ver
   // `GasolineraCosto.eficiencia_pct`.
   const tramosGasolinera: {
-    modelo_id: number; grupo: GrupoRendimiento; clave: string; km: number; litros: number
+    familia: string; grupo: GrupoRendimiento; clave: string; km: number; litros: number
   }[] = []
 
   let previa: repo.RecargaCosto | null = null
@@ -644,7 +682,7 @@ export async function getAnalisisCostos(
         if (litrosEmergencia === 0 && r.gasolinera_id != null
           && !esAtipica(desviacionPrecio(r, referenciaDe(r)))) {
           tramosGasolinera.push({
-            modelo_id: a.v.modelo_id, grupo: grupoDe(a.v.tipo), clave: `${r.gasolinera_id}|${r.producto ?? SIN_PRODUCTO}`,
+            familia: familiaDe(a.v).clave, grupo: grupoDe(a.v.tipo), clave: `${r.gasolinera_id}|${r.producto ?? SIN_PRODUCTO}`,
             km: deltaKm, litros: r.litros,
           })
         }
@@ -737,30 +775,33 @@ export async function getAnalisisCostos(
     }
   }
 
-  // ── Rendimiento por modelo ──
-  // El promedio del modelo es la vara de medir: comparar un tractocamión contra
-  // una camioneta no dice nada, contra otro tractocamión igual sí.
+  // ── Rendimiento por familia ──
+  // La familia es la vara de medir: comparar un tractocamión contra una
+  // camioneta no dice nada, contra otro tractocamión sí. Ver `familiaDe`.
   const claveSucursal = (v: repo.VehiculoFlota) => String(v.sucursal_id ?? 'sin')
-  const porModelo = new Map<number, { km: number; litros: number }>()
+  const porModelo = new Map<string, { km: number; litros: number; unidades: number }>()
   // Lo mismo, partido por sucursal: para comparar una sucursal hay que restarle
   // sus propias unidades al promedio. Ver `eficiencia_pct` en SucursalCosto.
-  const porModeloSucursal = new Map<string, { km: number; litros: number }>()
+  const porModeloSucursal = new Map<string, { km: number; litros: number; unidades: number }>()
   for (const a of acum.values()) {
     if (a.tramos < TRAMOS_MIN_RENDIMIENTO) continue
-    const e = porModelo.get(a.v.modelo_id) ?? { km: 0, litros: 0 }
-    e.km     += a.tramoKm
-    e.litros += a.tramoLitros
-    porModelo.set(a.v.modelo_id, e)
-    const k = `${a.v.modelo_id}|${claveSucursal(a.v)}`
-    const s = porModeloSucursal.get(k) ?? { km: 0, litros: 0 }
-    s.km     += a.tramoKm
-    s.litros += a.tramoLitros
+    const fam = familiaDe(a.v).clave
+    const e = porModelo.get(fam) ?? { km: 0, litros: 0, unidades: 0 }
+    e.km       += a.tramoKm
+    e.litros   += a.tramoLitros
+    e.unidades += 1
+    porModelo.set(fam, e)
+    const k = `${fam}|${claveSucursal(a.v)}`
+    const s = porModeloSucursal.get(k) ?? { km: 0, litros: 0, unidades: 0 }
+    s.km       += a.tramoKm
+    s.litros   += a.tramoLitros
+    s.unidades += 1
     porModeloSucursal.set(k, s)
   }
 
   // Por sucursal: se llena en el mismo recorrido que las unidades. Los campos
   // con guion bajo son de las unidades medibles; `_ideales`, los litros que
-  // habrían gastado al rendimiento de su modelo.
+  // habrían gastado al rendimiento de su familia.
   type SucursalAcum = SucursalCosto & {
     _totalConKm: number; _combConKm: number
     _tramoKm: number; _tramoLitros: number
@@ -795,8 +836,15 @@ export async function getAnalisisCostos(
       ? ratio(a.tramoKm, a.tramoLitros)
       : null
 
-    const mod = porModelo.get(a.v.modelo_id)
-    const rendModelo = mod ? ratio(mod.km, mod.litros) : null
+    const familia = familiaDe(a.v)
+    const mod = porModelo.get(familia.clave)
+    // Las demás de su familia: sin ella misma, que solo entra al acumulado si
+    // juntó los tramos mínimos. Se cuenta por unidades y no por litros que
+    // sobren: restar los suyos puede dejar un residuo de punto flotante.
+    const rendModelo = !mod ? null
+      : rendimiento == null ? ratio(mod.km, mod.litros)
+      : mod.unidades > 1 ? ratio(mod.km - a.tramoKm, mod.litros - a.tramoLitros)
+      : null
 
     let desviacion: number | null = null
     let sobrecostoAnual: number | null = null
@@ -806,7 +854,7 @@ export async function getAnalisisCostos(
       // promedio de la flota: un Diesel no cuesta lo que una Magna.
       const precioUnidad = ratio(a.combustible, a.litros)
       if (desviacion < 0 && precioUnidad != null && a.tramoKm > 0) {
-        // Litros que habría gastado al rendimiento del modelo, contra los que
+        // Litros que habría gastado al rendimiento de su familia, contra los que
         // gastó de verdad, extrapolados al año con el ritmo del periodo.
         const litrosIdeales = a.tramoKm / rendModelo
         const extraPeriodo  = (a.tramoLitros - litrosIdeales) * precioUnidad
@@ -820,7 +868,7 @@ export async function getAnalisisCostos(
       anomalias.push({
         key: `rendimiento-${a.v.vehiculo_id}`, tipo: 'rendimiento_bajo', severidad: 'alta',
         vehiculo_id: a.v.vehiculo_id, vehiculo: a.v.vehiculo, recarga_id: null, fecha: hoy,
-        detalle: `${rendimiento.toFixed(2)} km/L contra ${rendModelo!.toFixed(2)} del ${a.v.modelo} (${desviacion.toFixed(0)}%)`,
+        detalle: `${rendimiento.toFixed(2)} km/L contra ${rendModelo!.toFixed(2)} de las demás de su familia, ${familia.nombre} (${desviacion.toFixed(0)}%)`,
         monto: redondear(sobrecostoAnual),
       })
     }
@@ -843,11 +891,12 @@ export async function getAnalisisCostos(
     if (rendimiento != null) {
       s._tramoKm     += a.tramoKm
       s._tramoLitros += a.tramoLitros
-      // Contra las gemelas de OTRAS sucursales. Con el promedio de todas, un
-      // modelo que solo tiene una sucursal se compara contra sí mismo y da
+      // Contra su familia en OTRAS sucursales. Con el promedio de todas, una
+      // familia que solo está en una sucursal se compara contra sí misma y da
       // 0 % siempre: parecía "en el promedio" cuando no había contra quién.
-      const propia = porModeloSucursal.get(`${a.v.modelo_id}|${claveSucursal(a.v)}`)
-      const rendOtras = mod && propia ? ratio(mod.km - propia.km, mod.litros - propia.litros) : null
+      const propia = porModeloSucursal.get(`${familia.clave}|${claveSucursal(a.v)}`)
+      const rendOtras = mod && propia && mod.unidades > propia.unidades
+        ? ratio(mod.km - propia.km, mod.litros - propia.litros) : null
       if (rendOtras != null && rendOtras > 0) {
         s._efLitros += a.tramoLitros
         s._ideales  += a.tramoKm / rendOtras
@@ -861,6 +910,9 @@ export async function getAnalisisCostos(
       tipo:        a.v.tipo,
       modelo_id:   a.v.modelo_id,
       modelo:      a.v.modelo,
+      modelo_anio: a.v.modelo_anio,
+      familia_clave: familia.clave,
+      familia:       familia.nombre,
       sucursal_id: a.v.sucursal_id,
       sucursal:    a.v.sucursal,
       km_recorridos: kmRecorridos,
@@ -871,6 +923,9 @@ export async function getAnalisisCostos(
       total:       redondear(total, 2)!,
       costo_por_km: redondear(kmRecorridos ? ratio(total, kmRecorridos) : null),
       litros:       redondear(a.litros, 3)!,
+      tramos:       a.tramos,
+      tramo_km:     a.tramoKm,
+      tramo_litros: redondear(a.tramoLitros, 3)!,
       rendimiento:  redondear(rendimiento),
       rendimiento_modelo: redondear(rendModelo),
       desviacion_pct:     redondear(desviacion, 1),
@@ -911,7 +966,7 @@ export async function getAnalisisCostos(
     }
     porGasolinera.set(clave, g)
   }
-  // Lo que rinde: cada tramo contra el rendimiento del modelo de su unidad. El
+  // Lo que rinde: cada tramo contra el rendimiento de la familia de su unidad. El
   // km/L a secas revuelve modelos y premiaría a la gasolinera de las camionetas.
   // Lo mismo, separado en tráileres y el resto: el km/L de un tractocamión no
   // se parece al de una camioneta, y revueltos, la gasolinera donde cargan más
@@ -920,7 +975,7 @@ export async function getAnalisisCostos(
   for (const t of tramosGasolinera) {
     const g = porGasolinera.get(t.clave)
     if (!g) continue
-    const mod = porModelo.get(t.modelo_id)
+    const mod = porModelo.get(t.familia)
     const rendModelo = mod ? ratio(mod.km, mod.litros) : null
     const kGrupo = `${t.clave}|${t.grupo}`
     const mg = porGrupo.get(kGrupo) ?? nuevaMedicion()
@@ -1080,7 +1135,7 @@ export async function getAnalisisCostos(
       precio_litro:       redondear(ratio(s.combustible, s.litros)),
       gasto_por_unidad:   redondear(ratio(s.total, s.unidades), 2),
       rendimiento:        redondear(ratio(_tramoKm, _tramoLitros)),
-      // Litros que habrían gastado al rendimiento de su modelo entre los que
+      // Litros que habrían gastado al rendimiento de su familia entre los que
       // gastaron: arriba de 1, rinden más que sus gemelas.
       eficiencia_pct:     _efLitros > 0 ? redondear((_ideales / _efLitros - 1) * 100, 1) : null,
       sobrecosto_anual:   redondear(s.sobrecosto_anual, 0)!,

@@ -51,7 +51,7 @@ function grupo(g: Gasolinera, nombre: Grupo['grupo']): Grupo | undefined {
   return g.por_grupo.find((p) => p.grupo === nombre)
 }
 
-/** "2.21 (−0.2%)": el km/L del grupo y, entre paréntesis, contra su modelo. */
+/** "2.21 (−0.2%)": el km/L del grupo y, entre paréntesis, contra su familia. */
 function rendimientoDeGrupo(p: Grupo | undefined): string {
   if (!p) return '—'
   if (p.rendimiento == null) return 'pocos datos'
@@ -136,7 +136,7 @@ export async function exportCostosPdf(a: AnalisisCostos) {
     'Precio y rendimiento por gasolinera',
     'El sobreprecio es lo pagado de más contra la gasolinera más barata de las que ya se visitan con regularidad, ' +
     'en el mismo combustible. El rendimiento va con los tráileres aparte, que rinden mucho menos por su tamaño: ' +
-    'km/L y, entre paréntesis, qué tanto recorren contra el promedio de su mismo modelo (mínimo 5 tramos). ' +
+    'km/L y, entre paréntesis, qué tanto recorren contra el promedio de su familia —su modelo de cualquier año— (mínimo 5 tramos). ' +
     'El $/L efectivo es el litro corregido por eso. Las cargas sin combustible especificado no se comparan.',
   )
   if (a.gasolineras.length === 0) {
@@ -171,7 +171,7 @@ export async function exportCostosPdf(a: AnalisisCostos) {
   pdf.seccion(
     'Sucursales lado a lado',
     'Cada unidad cuenta en la sucursal donde tiene base. Se comparan el costo por km (solo unidades con kilometraje) ' +
-    'y el rendimiento contra las unidades del mismo modelo en otras sucursales. "Sin base fija": tractocamiones, unidades que rotan ' +
+    'y el rendimiento contra las unidades de la misma familia en otras sucursales. "Sin base fija": tractocamiones, unidades que rotan ' +
     'y utilitarios sin sucursal asignada.',
   )
   if (a.sucursales.length === 0) {
@@ -179,7 +179,7 @@ export async function exportCostosPdf(a: AnalisisCostos) {
   } else {
     pdf.tabla({
       head: ['Sucursal', 'Unidades', 'Km', 'Combustible', '$/L', 'Taller', 'Casetas', 'Total',
-             'Costo/km', 'km/L', 'Vs. modelo', 'Sobrecosto anual'],
+             'Costo/km', 'km/L', 'Vs. familia', 'Sobrecosto anual'],
       body: a.sucursales.map((s) => [
         s.sucursal, `${s.unidades} de ${s.unidades_flota}`, km(s.km_recorridos || null),
         formatMXN(s.combustible), s.precio_litro != null ? `$${s.precio_litro.toFixed(2)}` : '—',
@@ -228,17 +228,18 @@ export async function exportCostosPdf(a: AnalisisCostos) {
     .filter((v) => v.rendimiento != null)
     .sort((x, y) => (x.desviacion_pct ?? 0) - (y.desviacion_pct ?? 0))
   pdf.seccion(
-    'Rendimiento contra las unidades del mismo modelo',
-    'Una unidad muy por debajo de sus gemelas suele traer algo mecánico o combustible que no llega al tanque. ' +
+    'Rendimiento contra las demás de su familia',
+    'La familia es el mismo modelo sin importar el año, y todos los tractocamiones juntos. ' +
+    'Una unidad muy por debajo de sus hermanas suele traer algo mecánico o combustible que no llega al tanque. ' +
     'El sobrecosto anual extrapola el faltante del periodo a doce meses.',
   )
   if (conRendimiento.length === 0) {
     pdf.vacio('Hacen falta al menos tres cargas con kilometraje capturado por unidad para medir el rendimiento.')
   } else {
     pdf.tabla({
-      head: ['Vehículo', 'Modelo', 'km/L', 'Promedio del modelo', 'Diferencia', 'Sobrecosto anual'],
+      head: ['Vehículo', 'Familia', 'km/L', 'Las demás de su familia', 'Diferencia', 'Sobrecosto anual'],
       body: conRendimiento.map((v) => [
-        v.vehiculo, v.modelo, v.rendimiento!.toFixed(2),
+        v.vehiculo, v.familia, v.rendimiento!.toFixed(2),
         v.rendimiento_modelo != null ? v.rendimiento_modelo.toFixed(2) : '—',
         v.desviacion_pct != null ? `${v.desviacion_pct > 0 ? '+' : ''}${v.desviacion_pct.toFixed(1)}%` : '—',
         v.sobrecosto_anual != null && v.sobrecosto_anual > 0 ? formatMXN(v.sobrecosto_anual) : '—',
@@ -422,9 +423,9 @@ export async function exportCostosExcel(a: AnalisisCostos) {
     { header: 'Sobreprecio', width: 15, formato: 'moneda',  valor: (g) => g.sobreprecio },
     { header: 'Tramos medidos',     width: 15, formato: 'numero',     valor: (g) => g.tramos },
     { header: 'Tráileres km/L',     width: 15, formato: 'decimal',    valor: (g) => grupo(g, 'traileres')?.rendimiento ?? 0 },
-    { header: 'Tráileres vs. modelo %', width: 21, formato: 'porcentaje', valor: (g) => grupo(g, 'traileres')?.eficiencia_pct ?? 0 },
+    { header: 'Tráileres vs. familia %', width: 21, formato: 'porcentaje', valor: (g) => grupo(g, 'traileres')?.eficiencia_pct ?? 0 },
     { header: 'Unidades km/L',      width: 15, formato: 'decimal',    valor: (g) => grupo(g, 'unidades')?.rendimiento ?? 0 },
-    { header: 'Unidades vs. modelo %', width: 21, formato: 'porcentaje', valor: (g) => grupo(g, 'unidades')?.eficiencia_pct ?? 0 },
+    { header: 'Unidades vs. familia %', width: 21, formato: 'porcentaje', valor: (g) => grupo(g, 'unidades')?.eficiencia_pct ?? 0 },
     { header: '$/L efectivo',       width: 13, formato: 'moneda',     valor: (g) => g.precio_efectivo ?? 0 },
   ], a.gasolineras, {
     totales: { 'Gasolinera': 'Total', 'Sobreprecio': t.ahorro_combustible },
@@ -448,7 +449,7 @@ export async function exportCostosExcel(a: AnalisisCostos) {
     { header: 'Costo por km',         width: 13, formato: 'moneda',  valor: (s) => s.costo_por_km ?? 0 },
     { header: 'Combustible por km',   width: 18, formato: 'moneda',  valor: (s) => s.combustible_por_km ?? 0 },
     { header: 'km/L',                 width: 10, formato: 'decimal', valor: (s) => s.rendimiento ?? 0 },
-    { header: 'Contra su modelo %',   width: 17, formato: 'porcentaje', valor: (s) => s.eficiencia_pct ?? 0 },
+    { header: 'Contra su familia %',  width: 17, formato: 'porcentaje', valor: (s) => s.eficiencia_pct ?? 0 },
     { header: 'Sobrecosto anual',     width: 16, formato: 'moneda',  valor: (s) => s.sobrecosto_anual },
     { header: 'Cargas sin vale',      width: 15, formato: 'numero',  valor: (s) => s.sin_vale },
     { header: 'Cargas sin km',        width: 14, formato: 'numero',  valor: (s) => s.sin_odometro },
@@ -459,6 +460,7 @@ export async function exportCostosExcel(a: AnalisisCostos) {
     { header: 'Tipo',                width: 20, valor: (v) => TIPO_LABELS[v.tipo] ?? v.tipo },
     { header: 'Sucursal',            width: 20, valor: (v) => v.sucursal ?? 'Sin base fija' },
     { header: 'Modelo',              width: 26, valor: (v) => v.modelo },
+    { header: 'Familia',             width: 26, valor: (v) => v.familia },
     { header: 'Km recorridos',       width: 14, formato: 'numero',  valor: (v) => v.km_recorridos ?? 0 },
     { header: 'Combustible',         width: 14, formato: 'moneda',  valor: (v) => v.combustible },
     { header: 'Mano de obra',        width: 14, formato: 'moneda',  valor: (v) => v.mano_obra },
@@ -468,7 +470,7 @@ export async function exportCostosExcel(a: AnalisisCostos) {
     { header: 'Costo por km',        width: 13, formato: 'moneda',  valor: (v) => v.costo_por_km ?? 0 },
     { header: 'Litros',              width: 11, formato: 'litros', valor: (v) => v.litros },
     { header: 'km/L',                width: 10, formato: 'decimal', valor: (v) => v.rendimiento ?? 0 },
-    { header: 'km/L del modelo',     width: 15, formato: 'decimal', valor: (v) => v.rendimiento_modelo ?? 0 },
+    { header: 'km/L de su familia',  width: 17, formato: 'decimal', valor: (v) => v.rendimiento_modelo ?? 0 },
     { header: 'Diferencia %',        width: 13, formato: 'porcentaje', valor: (v) => v.desviacion_pct ?? 0 },
     { header: 'Sobrecosto anual',    width: 16, formato: 'moneda',  valor: (v) => v.sobrecosto_anual ?? 0 },
     { header: 'Mantenimientos',      width: 15, formato: 'numero',  valor: (v) => v.mantenimientos },

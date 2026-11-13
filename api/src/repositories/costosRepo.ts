@@ -377,6 +377,8 @@ export interface VehiculoFlota {
   tipo:        string
   modelo_id:   number
   modelo:      string
+  /** El año del modelo, aparte: el reporte de rendimiento junta los años de un mismo modelo. */
+  modelo_anio: string | null
   kilometraje: number | null
   /**
    * La sucursal donde tiene base. Null en tractocamiones y cajas, que no la
@@ -396,6 +398,7 @@ export async function findFlotaEnOperacion(): Promise<VehiculoFlota[]> {
     SELECT v.id AS vehiculo_id,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
            v.tipo, v.modelo_id, CONCAT(mo.marca, ' ', mo.nombre) AS modelo,
+           mo.anio AS modelo_anio,
            ${KILOMETRAJE_SQL} AS kilometraje,
            sb.id AS sucursal_id, sb.nombre AS sucursal
     FROM vehiculos v

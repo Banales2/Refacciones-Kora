@@ -74,7 +74,7 @@ function LinkVehiculo({ nombre, onClick }: { nombre: string; onClick?: () => voi
 const ANOMALIA_META: Record<TipoAnomalia, { label: string; color: string; ayuda: string }> = {
   rendimiento_bajo: {
     label: 'Rendimiento bajo', color: 'red',
-    ayuda: 'La unidad rinde bastante menos que otras del mismo modelo. Suele ser falla mecánica o combustible que no llega al tanque.',
+    ayuda: 'La unidad rinde bastante menos que las demás de su familia (su modelo de cualquier año; los tractocamiones, todos juntos). Suele ser falla mecánica o combustible que no llega al tanque.',
   },
   odometro_retrocede: {
     label: 'Odómetro inconsistente', color: 'red',
@@ -222,7 +222,7 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
     .map((g) => ({ gasolinera: g.gasolinera, diferencia: Math.round((g.precio_litro! - minimo) * 100) / 100 }))
     .sort((a, b) => b.diferencia - a.diferencia)
 
-  // Lo que rinde, contra el modelo de cada unidad. Solo las que juntaron
+  // Lo que rinde, contra la familia de cada unidad. Solo las que juntaron
   // suficientes tramos; las demás salen en la tabla sin el dato.
   // Tráileres y unidades en barras separadas: revueltos, la gasolinera donde
   // cargan más tractocamiones salía rindiendo menos solo por quién carga ahí.
@@ -336,7 +336,7 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
           <Text size="sm" fw={500}>Cuánto rinde cada litro</Text>
           <Text size="xs" c="dimmed" mb={4}>
             Los kilómetros que recorrieron las unidades con lo que cargaron aquí, contra el promedio de
-            su mismo modelo, con los tráileres aparte: rinden mucho menos por su tamaño, y donde cargan
+            su familia (su modelo de cualquier año), con los tráileres aparte: rinden mucho menos por su tamaño, y donde cargan
             más tráileres el rendimiento baja aunque la gasolinera no tenga nada. Cada tramo se le cuenta
             a la carga que lo cierra, que es donde sale una bomba que marca más de lo que despacha.
             Hacen falta {TRAMOS_MIN_GASOLINERA} tramos con kilometraje por grupo para juzgarla.
@@ -355,7 +355,7 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
               yAxisProps={{ width: 150 }}
               xAxisProps={{ tickFormatter: (v: number) => `${v > 0 ? '+' : ''}${v}%` }}
               series={seriesRinden}
-              valueFormatter={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}% contra su modelo`}
+              valueFormatter={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}% contra su familia`}
               gridAxis="x"
             />
           )}
@@ -488,7 +488,7 @@ function SeccionSucursales({ data, notaCasetas }: { data: AnalisisCostos; notaCa
   return (
     <Seccion
       titulo="Sucursales lado a lado"
-      descripcion={`Cada unidad cuenta en la sucursal donde tiene base. El total depende de cuántas unidades tiene cada una; lo que se compara es el costo por kilómetro y el rendimiento contra las unidades del mismo modelo en otras sucursales. Los km se suman lectura por lectura y se descartan los saltos imposibles del odómetro. "Sin base fija" son los tractocamiones, las unidades que rotan entre sucursales y los utilitarios sin sucursal asignada: van aparte.${notaCasetas}`}
+      descripcion={`Cada unidad cuenta en la sucursal donde tiene base. El total depende de cuántas unidades tiene cada una; lo que se compara es el costo por kilómetro y el rendimiento contra las unidades de la misma familia en otras sucursales. Los km se suman lectura por lectura y se descartan los saltos imposibles del odómetro. "Sin base fija" son los tractocamiones, las unidades que rotan entre sucursales y los utilitarios sin sucursal asignada: van aparte.${notaCasetas}`}
     >
       {conBase.length === 0 ? (
         <Vacio>Ninguna unidad con sucursal tuvo movimiento en el periodo.</Vacio>
@@ -530,7 +530,7 @@ function SeccionSucursales({ data, notaCasetas }: { data: AnalisisCostos; notaCa
                   </Table.Th>
                   <Table.Th style={{ textAlign: 'right' }}>Combustible por km</Table.Th>
                   <Table.Th style={{ textAlign: 'right' }}>
-                    <Tooltip label="El km/L revuelve modelos. La etiqueta es la comparación justa: qué tanto rinden sus unidades contra el promedio de su mismo modelo" withArrow multiline w={280}>
+                    <Tooltip label="El km/L revuelve modelos. La etiqueta es la comparación justa: qué tanto rinden sus unidades contra el promedio de su misma familia" withArrow multiline w={280}>
                       <span>Rendimiento</span>
                     </Tooltip>
                   </Table.Th>
@@ -600,14 +600,14 @@ function SeccionSucursales({ data, notaCasetas }: { data: AnalisisCostos; notaCa
                           <Group gap={6} justify="flex-end" wrap="nowrap">
                             <Text size="sm">{s.rendimiento.toFixed(2)} km/L</Text>
                             {s.eficiencia_pct != null ? (
-                              <Tooltip label="Contra las unidades del mismo modelo en otras sucursales" withArrow>
+                              <Tooltip label="Contra las unidades de la misma familia en otras sucursales" withArrow>
                                 <Badge variant="light" color={colorEficiencia(s.eficiencia_pct)} size="sm">
                                   {s.eficiencia_pct > 0 ? '+' : ''}{s.eficiencia_pct.toFixed(1)}%
                                 </Badge>
                               </Tooltip>
                             ) : (
                               <Tooltip
-                                label="Ninguno de sus modelos tiene en otra sucursal unidades con suficientes cargas para comparar. El km/L solo no sirve: revuelve modelos."
+                                label="Ninguna de sus familias tiene en otra sucursal unidades con suficientes cargas para comparar. El km/L solo no sirve: revuelve modelos."
                                 withArrow multiline w={260}
                               >
                                 <Text size="xs" c="dimmed">sin con quién comparar</Text>
@@ -948,10 +948,10 @@ function Contenido({
         )}
       </Seccion>
 
-      {/* ── Rendimiento contra el propio modelo ── */}
+      {/* ── Rendimiento contra su familia ── */}
       <Seccion
         titulo="Rendimiento contra las unidades gemelas"
-        descripcion="Cada unidad comparada contra el promedio de las de su mismo modelo, que es la única comparación justa. Una unidad muy por debajo casi siempre trae algo mecánico o combustible que no llega al tanque; la columna de la derecha estima lo que ese faltante cuesta al año si sigue igual."
+        descripcion="Cada unidad comparada contra las demás de su familia: el mismo modelo sin importar el año, y todos los tractocamiones juntos sin importar la marca. Una unidad muy por debajo casi siempre trae algo mecánico o combustible que no llega al tanque; la columna de la derecha estima lo que ese faltante cuesta al año si sigue igual."
       >
         {conRendimiento.length === 0 ? (
           <Vacio>
@@ -964,9 +964,9 @@ function Contenido({
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Vehículo</Table.Th>
-                  <Table.Th>Modelo</Table.Th>
+                  <Table.Th>Familia</Table.Th>
                   <Table.Th style={{ textAlign: 'right' }}>km/L</Table.Th>
-                  <Table.Th style={{ textAlign: 'right' }}>Promedio del modelo</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Las demás de su familia</Table.Th>
                   <Table.Th style={{ textAlign: 'center' }}>Diferencia</Table.Th>
                   <Table.Th style={{ textAlign: 'right' }}>Sobrecosto anual</Table.Th>
                 </Table.Tr>
@@ -983,7 +983,7 @@ function Contenido({
                           onClick={onNavigateVehiculo ? () => onNavigateVehiculo(v.vehiculo_id) : undefined}
                         />
                       </Table.Td>
-                      <Table.Td><Text size="sm" c="dimmed">{v.modelo}</Text></Table.Td>
+                      <Table.Td><Text size="sm" c="dimmed">{v.familia}</Text></Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
                         <Text size="sm" fw={600}>{v.rendimiento!.toFixed(2)}</Text>
                       </Table.Td>

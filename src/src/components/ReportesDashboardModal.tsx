@@ -13,7 +13,7 @@ import {
   Alert, Button, Divider, Group, Modal, Select, Stack, Text,
 } from '@mantine/core'
 import {
-  IconAlertTriangle, IconFileSpreadsheet, IconFileTypePdf, IconTruck,
+  IconAlertTriangle, IconFileSpreadsheet, IconFileTypePdf, IconGasStation, IconTruck,
 } from '@tabler/icons-react'
 import type {
   ResumenMes, DocumentosPorVencer, AnalisisCostos, PeriodoComparacion,
@@ -26,6 +26,7 @@ import { exportResumenPdf, exportResumenExcel } from '../lib/reportes/resumen'
 import { exportCostosPdf, exportCostosExcel } from '../lib/reportes/costos'
 import { exportVencimientosPdf, exportVencimientosExcel } from '../lib/reportes/vencimientos'
 import { exportPendientesPdf, exportPendientesExcel, type DatosPendientes } from '../lib/reportes/pendientes'
+import { exportRendimientoPdf, exportRendimientoExcel } from '../lib/reportes/rendimiento'
 import {
   exportReporteFlotaPdf, exportReporteFlotaExcel, etiquetaFiltro, type FiltroFlota,
 } from '../lib/reportes/flota'
@@ -103,6 +104,7 @@ export default function ReportesDashboardModal({
   // reportes distintos y casi nunca se piden por el mismo corte.
   const [rangoTab, setRangoTab]     = useState<Periodo>(PERIODO_DEFAULT)
   const [rangoFlota, setRangoFlota] = useState<Periodo>(PERIODO_DEFAULT)
+  const [rangoRend, setRangoRend]   = useState<Periodo>(PERIODO_DEFAULT)
 
   const meta = PESTANA[tab] ?? PESTANA.resumen
 
@@ -167,6 +169,15 @@ export default function ReportesDashboardModal({
     })
   }
 
+  function reporteRendimiento(formato: Formato) {
+    return correr(`rend-${formato}`, async () => {
+      // Siempre se pide: el tablero puede estar en otra ventana que la del
+      // reporte, y el rendimiento necesita tramos —con 30 días casi nadie junta tres—.
+      const datos = (await fetchAnalisisCostos(rangoRend, 90)).data
+      await (formato === 'pdf' ? exportRendimientoPdf : exportRendimientoExcel)(datos)
+    })
+  }
+
   const opcionesAlcance = [
     { value: VALOR_TODA, label: 'Flota completa' },
     ...sucursales.map((s) => ({ value: `suc-${s.id}`, label: `Sucursal: ${s.nombre}` })),
@@ -179,6 +190,7 @@ export default function ReportesDashboardModal({
   // las dos fechas en vez de mandar una petición que la API va a rechazar.
   const tabListo    = datosListos && periodoValido(rangoTab)
   const flotaLista  = periodoValido(rangoFlota)
+  const rendListo   = periodoValido(rangoRend)
 
   return (
     <Modal opened={opened} onClose={onClose} title="Generar reporte" size="lg" centered>
@@ -314,6 +326,46 @@ export default function ReportesDashboardModal({
               variant="light" color="green" leftSection={<IconFileSpreadsheet size={16} />}
               loading={ocupado === 'flota-excel'} disabled={!flotaLista || ocupado !== null}
               onClick={() => reporteFlota('excel')}
+            >
+              Excel
+            </Button>
+          </Group>
+        </Stack>
+
+        <Divider />
+
+        {/* ── Rendimiento por familia ── */}
+        <Stack gap="xs">
+          <div>
+            <Group gap={6}>
+              <IconGasStation size={16} />
+              <Text fw={600}>Rendimiento de combustible</Text>
+            </Group>
+            <Text size="xs" c="dimmed">
+              km/L de cada unidad contra las de su mismo modelo sin importar el año, con todos los
+              tractocamiones en un solo grupo. Muestra si la sucursal o el año hacen diferencia.
+            </Text>
+          </div>
+
+          <SelectorPeriodoReporte
+            value={rangoRend}
+            onChange={setRangoRend}
+            etiquetaDefault="Últimos 90 días"
+            disabled={ocupado !== null}
+          />
+
+          <Group gap="xs">
+            <Button
+              variant="light" leftSection={<IconFileTypePdf size={16} />}
+              loading={ocupado === 'rend-pdf'} disabled={!rendListo || ocupado !== null}
+              onClick={() => reporteRendimiento('pdf')}
+            >
+              PDF
+            </Button>
+            <Button
+              variant="light" color="green" leftSection={<IconFileSpreadsheet size={16} />}
+              loading={ocupado === 'rend-excel'} disabled={!rendListo || ocupado !== null}
+              onClick={() => reporteRendimiento('excel')}
             >
               Excel
             </Button>
