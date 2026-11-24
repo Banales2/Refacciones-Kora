@@ -366,7 +366,8 @@ export function useImportarFacturaGasolina() {
         '/facturas-gasolina/importar',
         {
           uuid: factura.uuid, serie: factura.serie, folio: factura.folio, fecha: factura.fecha,
-          permiso_cre: factura.permiso_cre, emisor_rfc: factura.emisor_rfc, gasolinera_id,
+          permiso_cre: factura.permiso_cre, emisor_rfc: factura.emisor_rfc,
+          receptor_rfc: factura.receptor_rfc, gasolinera_id,
           subtotal: factura.subtotal, iva: factura.iva, total: factura.total,
           renglones: factura.renglones,
         },

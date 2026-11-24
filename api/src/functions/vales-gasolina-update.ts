@@ -1,7 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole, exigirCapturaPropia } from '../shared/auth'
 import { handleError } from '../shared/errors'
-import { alcanceDe } from '../shared/alcance'
+import { alcanceDe, exigirVehiculo } from '../shared/alcance'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { ValeGasolinaUpdateSchema } from '../schemas/valeGasolinaSchema'
@@ -21,12 +21,16 @@ export async function valesGasolinaUpdate(
     exigirCapturaPropia(user, vale.capturado_por)
 
     const data = ValeGasolinaUpdateSchema.parse(await request.json())
+    // Acotado a una sucursal: solo vales de sus unidades, y solo a una de ellas.
+    const alcance = await alcanceDe(user)
+    await exigirVehiculo(vale.vehiculo_id, alcance)
+    if (data.vehiculo_id !== undefined) await exigirVehiculo(data.vehiculo_id, alcance)
     const antes = await capturar('vales_gasolina', id)
     // Si el vale ya se gastó, corregirlo corrige también su recarga (chofer y
     // unidad): esa también va a la bitácora, con su propio antes y después.
     const recargaId = vale.recarga_id
     const recargaAntes = recargaId != null ? await capturar('recargas_combustible', recargaId) : null
-    const updated = await service.update(id, data, (await alcanceDe(user)).sucursalId)
+    const updated = await service.update(id, data, alcance.sucursalId)
 
     await audit({
       user,

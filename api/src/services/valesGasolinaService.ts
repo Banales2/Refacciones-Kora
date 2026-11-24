@@ -8,6 +8,7 @@ import * as recargasRepo from '../repositories/recargasRepo'
 import * as vehiculosRepo from '../repositories/vehiculosRepo'
 import type { RecargaConGasolinera } from '../repositories/recargasRepo'
 import { familiaCombustible } from '../shared/combustible'
+import { validarKmPorFecha } from './recargasService'
 
 /**
  * Lo que la corrección del vale le cambia a la recarga que lo gastó.
@@ -195,6 +196,13 @@ export async function update(
   }
   const recarga = vale.recarga_id != null ? await recargasRepo.findById(vale.recarga_id) : null
   const cambios = recarga ? await cambiosParaLaRecarga(recarga, data) : null
+  // La lectura pasa a la otra unidad: tiene que caber entre sus recargas, igual
+  // que al registrarla. Si no, entraría un kilometraje fuera de orden.
+  if (cambios?.vehiculo_id !== undefined && recarga!.kilometraje != null && recarga!.kilometraje > 0) {
+    const f = recarga!.fecha as string | Date
+    const dia = f instanceof Date ? f.toISOString().slice(0, 10) : String(f).slice(0, 10)
+    await validarKmPorFecha(cambios.vehiculo_id, dia, recarga!.kilometraje, recarga!.id)
+  }
 
   const result = await repo.update(id, data, cambios)
   if (!result) throw new NotFoundError('Vale')

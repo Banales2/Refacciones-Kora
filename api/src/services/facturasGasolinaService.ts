@@ -6,6 +6,7 @@ import {
 } from '../schemas/facturaGasolinaSchema'
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../shared/errors'
 import { aCentavos } from '../shared/totales'
+import { RFC_EMPRESA } from '../shared/empresa'
 
 // Conciliar la factura de la gasolinera: casar cada renglón del papel con el
 // ticket de recarga que le corresponde (un tráiler trae uno por tanque, y cada
@@ -61,6 +62,12 @@ const TOLERANCIA = 0.01
 export async function importar(
   data: FacturaGasolinaImport, capturadoPor: string,
 ): Promise<{ id: number; gasolinera: string; ligada: boolean }> {
+  // La pantalla ya la descarta; aquí se repite porque no se puede fiar de ella.
+  if (data.receptor_rfc !== RFC_EMPRESA) {
+    throw new ValidationError(
+      `La factura está a nombre de ${data.receptor_rfc}, no de ${RFC_EMPRESA}. No es gasto de aquí.`,
+    )
+  }
   const repetida = await repo.findByUuid(data.uuid)
   if (repetida) {
     throw new AppError(
@@ -147,6 +154,11 @@ export async function corregirIva(facturaId: number, iva: number): Promise<void>
       'Esta factura ya está conciliada. Reábrela para corregirle el IVA.',
       409, FACTURA_CONCILIADA,
     )
+  }
+  // La importada trae el IVA de cada concepto y la API comprobó que sumaran lo
+  // impreso: cambiarle el de la cabecera dejaría un total que no es el papel.
+  if (await repo.tieneIvaPorRenglon(facturaId)) {
+    throw new ValidationError('Esta factura se importó del XML: su IVA ya es el del papel.')
   }
   if (!(await repo.setIva(facturaId, iva))) {
     throw new ConflictError('Alguien acaba de conciliar esta factura.')
@@ -450,6 +462,15 @@ export async function conciliar(
 ): Promise<ResultadoConciliacion> {
   // Dos renglones no pueden llevarse el mismo ticket. El índice único lo
   // rechazaría de todos modos, pero con un error de constraint que no dice cuál.
+  // Ni el mismo renglón dos veces: el segundo pisaría al primero sin avisar.
+  const renglonesVistos = new Set<number>()
+  for (const c of datos.casados) {
+    if (renglonesVistos.has(c.renglon_id)) {
+      throw new ValidationError('Un renglón viene dos veces en la conciliación.')
+    }
+    renglonesVistos.add(c.renglon_id)
+  }
+
   const vistos = new Set<number>()
   for (const c of datos.casados) {
     if (c.ticket_id === null) continue

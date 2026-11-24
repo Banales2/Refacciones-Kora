@@ -21,6 +21,8 @@
 // combustible, un impuesto que no es IVA, conceptos de dos estaciones. La API
 // vuelve a comprobar las sumas antes de guardar.
 
+import { RFC_EMPRESA } from './empresa'
+
 const NS_CFDI = 'http://www.sat.gob.mx/cfd/4'
 const NS_TFD = 'http://www.sat.gob.mx/TimbreFiscalDigital'
 const NS_HYP = 'http://www.sat.gob.mx/hidrocarburospetroliferos'
@@ -96,6 +98,12 @@ export function leerFacturaGasolina(xml: string): FacturaGasolinaXml {
   const receptor = hijos(comp, NS_CFDI, 'Receptor')[0]
   const conceptos = hijos(comp, NS_CFDI, 'Conceptos')[0]
   if (!emisor || !receptor || !conceptos) throw new XmlGasolinaError('Al CFDI le faltan partes.')
+  // Una factura a nombre de otro no es gasto de aquí, aunque se haya colado en
+  // la carpeta: sus renglones se casarían con recargas de la flota.
+  const receptorRfc = attr(receptor, 'Rfc', 'el receptor').toUpperCase()
+  if (receptorRfc !== RFC_EMPRESA) {
+    throw new XmlGasolinaError(`Está a nombre de ${receptorRfc}, no de la empresa.`)
+  }
 
   const permisos = new Set<string>()
   const renglones = hijos(conceptos, NS_CFDI, 'Concepto').map((c, i): RenglonGasolina => {
@@ -159,7 +167,7 @@ export function leerFacturaGasolina(xml: string): FacturaGasolinaXml {
     permiso_cre: [...permisos][0],
     emisor_rfc: attr(emisor, 'Rfc', 'el emisor').toUpperCase(),
     emisor_nombre: emisor.getAttribute('Nombre') ?? '',
-    receptor_rfc: attr(receptor, 'Rfc', 'el receptor').toUpperCase(),
+    receptor_rfc: receptorRfc,
     subtotal,
     // Lo que el documento declara de IVA; si no lo trae, la suma de conceptos.
     iva: numero(

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { fechaMexico } from '../shared/fechaMexico'
 import { CODIGO } from './common'
 
 /**
@@ -10,10 +11,10 @@ import { CODIGO } from './common'
 export const FOLIO_VALE = /^[A-Z]{2}-[0-9]+$/
 export const FOLIO_VALE_MENSAJE = 'Dos letras, guion y el número (ej. TN-0001)'
 
-// Fecha local (no UTC) para no rechazar "hoy" en zonas horarias detrás de UTC.
+// "Hoy" en México: el servidor corre en UTC, y por la tarde ya sería mañana y
+// se aceptaría una fecha futura.
 function todayIso() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return fechaMexico()
 }
 
 const fecha = z

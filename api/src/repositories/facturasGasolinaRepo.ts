@@ -806,6 +806,19 @@ async function porQueNoCasa(
  * Pone el IVA del papel a una factura capturada con tasa. Solo a las que no
  * están conciliadas: lo sellado no se mueve sin reabrir.
  */
+/**
+ * ¿Los renglones traen su propio IVA? Es lo que tiene una factura importada del
+ * XML: su IVA ya es la suma de los conceptos y no se reescribe a mano.
+ */
+export async function tieneIvaPorRenglon(facturaId: number): Promise<boolean> {
+  const pool = await getPool()
+  const r = await pool.request()
+    .input('id', sql.Int, facturaId)
+    .query(`SELECT TOP 1 1 AS si FROM facturas_gasolina_renglones
+            WHERE factura_id = @id AND iva IS NOT NULL`)
+  return r.recordset.length > 0
+}
+
 export async function setIva(facturaId: number, iva: number): Promise<boolean> {
   const pool = await getPool()
   const r = await pool.request()
@@ -912,7 +925,7 @@ export async function recargasSinFacturar(p: {
            t.litros, t.costo,
            CONCAT(mo.marca, ' ', mo.nombre, ' — ', v.numero_serie) AS vehiculo,
            co.nombre AS conductor, vg.folio AS vale_folio,
-           DATEDIFF(day, rc.fecha, CAST(SYSDATETIME() AS date)) AS dias
+           DATEDIFF(day, rc.fecha, CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'Central Standard Time (Mexico)' AS date)) AS dias
     ${joins}
     ORDER BY rc.fecha DESC, rc.id DESC, t.id
     OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
@@ -1431,8 +1444,19 @@ export async function sinReportar(p: { desde?: string; hasta?: string }): Promis
            -- El ticket no guarda quién lo agregó; queda en la bitácora.
            CASE WHEN o.ticket_id IS NULL THEN r.capturado_por END AS capturado_por
     FROM (
-      SELECT id AS recarga_id, CAST(NULL AS INT) AS ticket_id, litros, costo, desde_factura_id
-      FROM recargas_combustible WHERE desde_factura_id IS NOT NULL
+      -- Sin los tickets que se le agregaron después desde otra factura: esos
+      -- salen en su propio renglón, y con los litros de la recarga se contaban
+      -- dos veces.
+      SELECT rr.id AS recarga_id, CAST(NULL AS INT) AS ticket_id,
+             COALESCE(pt.litros, rr.litros) AS litros, COALESCE(pt.costo, rr.costo) AS costo,
+             rr.desde_factura_id
+      FROM recargas_combustible rr
+      OUTER APPLY (
+        SELECT SUM(tt.litros) AS litros, SUM(tt.costo) AS costo
+        FROM recargas_combustible_tickets tt
+        WHERE tt.recarga_id = rr.id AND tt.desde_factura_id IS NULL
+      ) pt
+      WHERE rr.desde_factura_id IS NOT NULL
       UNION ALL
       SELECT recarga_id, id, litros, costo, desde_factura_id
       FROM recargas_combustible_tickets WHERE desde_factura_id IS NOT NULL

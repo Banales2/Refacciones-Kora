@@ -1,11 +1,12 @@
 import { z } from 'zod'
+import { fechaMexico } from '../shared/fechaMexico'
 import { KM_MAX, lecturaKm } from './common'
 import { GASOLINAS } from '../shared/combustible'
 
-// Fecha local (no UTC) para no rechazar "hoy" en zonas horarias detrás de UTC.
+// "Hoy" en México: el servidor corre en UTC, y por la tarde ya sería mañana y
+// se aceptaría una fecha futura.
 function todayIso() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return fechaMexico()
 }
 
 // La bomba despacha con milésimas de litro y el ticket las imprime así; la

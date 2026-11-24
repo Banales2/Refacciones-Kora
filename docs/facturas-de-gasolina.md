@@ -329,7 +329,7 @@ sola. Si se ligó a la equivocada, se desliga desde Catálogos → Gasolineras.
 
 Se pueden importar varios XML a la vez. Cada uno se enseña antes de guardar, y la
 API rechaza **entera** la factura cuyos renglones no sumen el subtotal, el IVA o
-el total impresos, la que ya se importó (409 `FACTURA_DUPLICADA`, por UUID) y la
+el total impresos, la que no está a nombre de la empresa (`RFC_EMPRESA`), la que ya se importó (409 `FACTURA_DUPLICADA`, por UUID) y la
 que ya estaba capturada a mano con ese folio —con o sin serie—. También se
 rechaza, para capturarla a mano, la que traiga algo que no sea combustible, un
 impuesto que no sea IVA o cargas de dos estaciones.

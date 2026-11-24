@@ -4,7 +4,7 @@ import * as facturasGasolinaRepo from '../repositories/facturasGasolinaRepo'
 import type { RecargaConGasolinera, RecargaConVehiculo } from '../repositories/recargasRepo'
 import type { Alcance } from '../shared/alcance'
 import type { RecargaCreate, RecargaEmergencia, RecargaUpdate, TicketRecarga } from '../schemas/recargaSchema'
-import { AppError, NotFoundError, ValidationError, ConflictError } from '../shared/errors'
+import { AppError, NotFoundError, ValidationError, ConflictError, esLlaveDuplicada } from '../shared/errors'
 import { familiaCombustible, type ProductoRecarga } from '../shared/combustible'
 
 // Qué se cargó, según el combustible de la unidad. A la de Diesel no se le
@@ -80,7 +80,15 @@ export async function create(
   await validarKmPorFecha(vehiculoId, data.fecha, data.kilometraje)
   const producto = await productoPara(vehiculoId, data.producto)
   const corregirVale = await validarVale(data.vale_id, vehiculoId, undefined, data.corregir_vale)
-  const recarga = await repo.create(vehiculoId, data, producto, capturadoPor, corregirVale)
+  let recarga: RecargaConGasolinera
+  try {
+    recarga = await repo.create(vehiculoId, data, producto, capturadoPor, corregirVale)
+  } catch (err) {
+    // `validarVale` corre fuera de la transacción: si otra recarga lo gastó
+    // entre tanto, el índice lo detiene (migración 079).
+    if (esLlaveDuplicada(err, 'UQ_recargas_vale')) throw new ConflictError('Ese vale ya se usó en otra recarga')
+    throw err
+  }
   if (data.kilometraje > 0) {
     await vehiculosRepo.avanzarKilometraje(vehiculoId, data.kilometraje)
   }
@@ -117,7 +125,7 @@ export async function update(
   }
 
   const tickets = resolverTickets(actual, data)
-  await protegerCuadre(id, data, tickets)
+  await protegerCuadre(actual, data, tickets)
   // Solo si cambia la lectura o la fecha: corregir el costo de una recarga
   // vieja que ya estaba chueca no tiene por qué exigir arreglar el kilometraje.
   // Se compara contra lo guardado y no contra lo que viene, porque el
@@ -197,12 +205,15 @@ function mismaCantidad(a: number, b: number): boolean {
 // operación, no del papel de la gasolinera. Para lo otro hay que reabrir la
 // factura, volver a cuadrarla y sellarla.
 async function protegerCuadre(
-  recargaId: number, data: RecargaUpdate, tickets: TicketRecarga[] | undefined,
+  actual: RecargaConGasolinera, data: RecargaUpdate, tickets: TicketRecarga[] | undefined,
 ): Promise<void> {
-  const tocaGasolinera = data.gasolinera_id !== undefined
+  // Contra lo guardado: el formulario manda siempre la gasolinera, y mandar la
+  // misma no es cambiarla. Sin esto, corregir el chofer o el costo de una
+  // recarga conciliada salía como 409.
+  const tocaGasolinera = data.gasolinera_id !== undefined && data.gasolinera_id !== actual.gasolinera_id
   if (!tocaGasolinera && data.fecha === undefined && !tickets) return
 
-  const conciliados = await facturasGasolinaRepo.ticketsConciliados(recargaId)
+  const conciliados = await facturasGasolinaRepo.ticketsConciliados(actual.id)
   const roto = conciliados.find((c) => {
     if (tocaGasolinera) return true
     const corte = sumarDias(c.fecha_factura, facturasGasolinaRepo.DIAS_DE_GRACIA)

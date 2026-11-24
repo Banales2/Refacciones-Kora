@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { requireRole, exigirCapturaPropia } from '../shared/auth'
 import { handleError } from '../shared/errors'
+import { alcanceDe, exigirVehiculo } from '../shared/alcance'
 import { audit, getClientIp } from '../shared/audit'
 import { capturar } from '../shared/snapshot'
 import { RecargaUpdateSchema } from '../schemas/recargaSchema'
@@ -16,7 +17,10 @@ export async function recargaUpdate(
     const user = requireRole(request, 'admin', 'editor', 'practicante')
     const id = parseInt(request.params.id, 10)
     if (isNaN(id)) return { status: 400, jsonBody: { error: 'ID inválido' } }
-    exigirCapturaPropia(user, (await service.getById(id)).capturado_por)
+    const recarga = await service.getById(id)
+    // Quien está acotado a una sucursal solo corrige las recargas de sus unidades.
+    await exigirVehiculo(recarga.vehiculo_id, await alcanceDe(user))
+    exigirCapturaPropia(user, recarga.capturado_por)
 
     const data = RecargaUpdateSchema.parse(await request.json())
 

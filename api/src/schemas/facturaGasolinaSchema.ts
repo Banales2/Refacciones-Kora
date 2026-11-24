@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { fechaMexico } from '../shared/fechaMexico'
 import { permisoCre, rfc } from './gasolineraSchema'
 
 // La factura de la gasolinera, desglosada en renglones.
@@ -9,10 +10,10 @@ import { permisoCre, rfc } from './gasolineraSchema'
 //
 // Ver `db/migrations/041_facturas_de_gasolina.sql`.
 
-// Fecha local (no UTC) para no rechazar "hoy" en zonas horarias detrás de UTC.
+// "Hoy" en México: el servidor corre en UTC, y por la tarde ya sería mañana y
+// se aceptaría una fecha futura.
 function todayIso() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return fechaMexico()
 }
 
 const fecha = z
@@ -122,6 +123,8 @@ export const FacturaGasolinaImportSchema = z.object({
   fecha,
   permiso_cre: permisoCre,
   emisor_rfc: rfc,
+  /** Tiene que ser la empresa: ver `RFC_EMPRESA`. */
+  receptor_rfc: rfc,
   gasolinera_id: z.coerce.number().int().positive().optional(),
   subtotal: z.coerce.number().min(0).max(99999999),
   iva: ivaDelPapel,

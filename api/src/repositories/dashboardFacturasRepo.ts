@@ -167,12 +167,12 @@ export async function sinFacturarViejas(dias: number): Promise<SinFacturarPorGas
     .query(`
       SELECT rc.gasolinera_id, g.nombre AS gasolinera,
              COUNT(*) AS tickets, SUM(t.costo) AS costo,
-             MAX(DATEDIFF(day, rc.fecha, CAST(SYSDATETIME() AS date))) AS dias_max
+             MAX(DATEDIFF(day, rc.fecha, CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'Central Standard Time (Mexico)' AS date))) AS dias_max
       FROM recargas_combustible_tickets t
       JOIN recargas_combustible rc ON rc.id = t.recarga_id
       JOIN gasolineras g ON g.id = rc.gasolinera_id
       WHERE NOT EXISTS (SELECT 1 FROM facturas_gasolina_renglones fgr WHERE fgr.ticket_id = t.id)
-        AND rc.fecha < DATEADD(day, -@dias, CAST(SYSDATETIME() AS date))
+        AND rc.fecha < DATEADD(day, -@dias, CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'Central Standard Time (Mexico)' AS date))
       GROUP BY rc.gasolinera_id, g.nombre
       ORDER BY SUM(t.costo) DESC`)
   return r.recordset.map((x) => ({ ...x, costo: Number(x.costo) })) as SinFacturarPorGasolinera[]
