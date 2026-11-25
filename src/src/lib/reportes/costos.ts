@@ -12,7 +12,7 @@ import { TIPO_LABELS } from '../tipoVehiculo'
 import { SIN_PRODUCTO } from '../combustible'
 
 export const ANOMALIA_LABEL: Record<TipoAnomalia, string> = {
-  rendimiento_bajo:   'Rendimiento bajo',
+  tramo_bajo:         'Tramo con rendimiento muy bajo',
   odometro_retrocede: 'Odómetro inconsistente',
   km_sin_avance:      'Kilometraje que casi no avanzó',
   precio_alto:       'Precio por litro alto',
@@ -289,7 +289,8 @@ export async function exportCostosPdf(a: AnalisisCostos) {
   pdf.seccion(
     'Cargas de combustible que conviene revisar',
     'No todas son un problema —una carga sin vale puede ser captura pendiente—, pero son las que hay que ' +
-    'mirar antes de firmar el gasto. El importe es lo que costó la carga, salvo en el rendimiento bajo, que se anualiza.',
+    'mirar antes de firmar el gasto. El importe es lo que costó la carga, salvo en el tramo con rendimiento bajo, ' +
+    'que es lo que valen los litros de más.',
   )
   tablasAnomalias(pdf, a.anomalias, a.anomalias_resumen)
 
@@ -311,7 +312,7 @@ function tablasAnomalias(
     head: ['Tipo', 'Cantidad', 'Importe'],
     body: resumen.map((r) => [
       ANOMALIA_LABEL[r.tipo], String(r.cantidad),
-      r.monto > 0 ? formatMXN(r.monto) + (r.tipo === 'rendimiento_bajo' ? '/año' : '') : '—',
+      r.monto > 0 ? formatMXN(r.monto) : '—',
     ]),
     columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' } },
     fontSize: 9,
@@ -324,15 +325,13 @@ function tablasAnomalias(
     body: anomalias.map((an) => [
       ANOMALIA_LABEL[an.tipo], an.vehiculo, ...(conSucursal ? [an.sucursal] : []),
       formatFecha(an.fecha), an.detalle,
-      an.monto != null && an.monto > 0
-        ? formatMXN(an.monto) + (an.tipo === 'rendimiento_bajo' ? '/año' : '')
-        : '—',
+      an.monto != null && an.monto > 0 ? formatMXN(an.monto) : '—',
     ]),
     columnStyles: { [head.length - 1]: { halign: 'right' } },
     didParseCell: (d: CellHookData) => {
       if (d.section !== 'body' || d.column.index !== 0) return
       const label = String(d.cell.raw)
-      if (label === ANOMALIA_LABEL.rendimiento_bajo || label === ANOMALIA_LABEL.odometro_retrocede
+      if (label === ANOMALIA_LABEL.tramo_bajo || label === ANOMALIA_LABEL.odometro_retrocede
         || label === ANOMALIA_LABEL.km_sin_avance) {
         d.cell.styles.textColor = COLOR.rojo
       }
@@ -352,9 +351,11 @@ export async function exportAnomaliasPdf(d: AnomaliasCostos) {
     orientacion: 'landscape',
   })
   pdf.nota(
-    'Registros de combustible que no cuadran: rendimiento fuera de rango, odómetros que retroceden, cargas sin vale ' +
+    'Registros de combustible que no cuadran: tramos que rindieron mucho menos de lo normal para la unidad, ' +
+    'odómetros que retroceden o casi no avanzan, cargas sin vale ' +
     'o sin kilometraje. No todas son un problema —una carga sin vale puede ser captura pendiente—, pero son las que ' +
-    'hay que mirar antes de firmar el gasto. El importe es lo que costó la carga, salvo en el rendimiento bajo, que se anualiza. ' +
+    'hay que mirar antes de firmar el gasto. El importe es lo que costó la carga, salvo en el tramo con rendimiento bajo, ' +
+    'que es lo que valen los litros de más. ' +
     'Cada unidad cuenta en la sucursal donde tiene base.'
   )
   tablasAnomalias(pdf, d.anomalias, d.anomalias_resumen, { conSucursal: d.sucursal == null })

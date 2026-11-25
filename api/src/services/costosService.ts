@@ -34,8 +34,15 @@ const TRAMOS_MIN_RENDIMIENTO = 3
  * aquí se juntan unidades distintas y un tanque mal llenado pesa mucho en pocos.
  */
 const TRAMOS_MIN_GASOLINERA = 5
-/** Qué tan abajo de las demás de su familia tiene que estar para marcarse. */
-const RENDIMIENTO_BAJO_PCT = -15
+/**
+ * Qué tan abajo de lo que la unidad rinde normalmente tiene que quedar un tramo
+ * para marcarse: 35 %. Lo normal es la mediana de sus propios tramos del
+ * periodo. Más cerca es ruido: el tanque nunca queda igual de lleno, y un tramo
+ * sale 20 % abajo y el siguiente 20 % arriba sin que falte nada.
+ */
+const TRAMO_BAJO_PCT = -35
+/** Tramos que tiene que juntar la unidad para que su mediana sirva de vara. */
+const TRAMOS_MIN_MEDIANA_UNIDAD = 4
 /**
  * Qué tan lejos de la mediana de su combustible tiene que estar el litro de
  * una carga para marcarse, hacia arriba o hacia abajo. Hacia abajo casi siempre
@@ -71,6 +78,11 @@ function addDias(fechaYMD: string, dias: number): string {
   const d = new Date(`${fechaYMD}T12:00:00`)
   d.setDate(d.getDate() + dias)
   return fechaMexico(d)
+}
+
+/** 'YYYY-MM-DD' → '12/11', para los detalles. */
+function diaMes(ymd: string): string {
+  return `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`
 }
 
 function diasEntre(a: string, b: string): number {
@@ -408,7 +420,7 @@ export interface SucursalCosto {
 }
 
 export type TipoAnomalia =
-  | 'rendimiento_bajo'
+  | 'tramo_bajo'
   | 'odometro_retrocede'
   | 'km_sin_avance'
   | 'precio_alto'
@@ -423,7 +435,7 @@ export interface Anomalia {
   severidad:   'alta' | 'media'
   vehiculo_id: number
   vehiculo:    string
-  /** La carga marcada. Null en el rendimiento bajo, que es de la unidad. */
+  /** La carga marcada. Hoy todas las banderas son de una carga; el null queda por compatibilidad. */
   recarga_id:  number | null
   /** La base de la unidad, igual que en `SucursalCosto`: null es "Sin base fija". */
   sucursal_id: number | null
@@ -437,7 +449,7 @@ export interface Anomalia {
   /**
    * La carga marcada y la anterior de la misma unidad en el periodo (sin las de
    * emergencia), para el Word de evidencia: quién cargó, qué km dio. Null en el
-   * rendimiento bajo, y `anterior` null si es su primera carga del periodo.
+   * caso de que no haya carga, y `anterior` null si es su primera carga del periodo.
    */
   carga:       CargaEvidencia | null
   anterior:    CargaEvidencia | null
@@ -548,7 +560,7 @@ export interface AnomaliasCostos {
 
 /** Las banderas que se pueden dar por revisadas: las que son de una carga. */
 export const TIPOS_REVISABLES = [
-  'odometro_retrocede', 'km_sin_avance', 'precio_alto', 'precio_bajo', 'carga_duplicada', 'sin_vale',
+  'tramo_bajo', 'odometro_retrocede', 'km_sin_avance', 'precio_alto', 'precio_bajo', 'carga_duplicada', 'sin_vale',
   'sin_odometro',
 ] as const satisfies readonly TipoAnomalia[]
 
@@ -661,7 +673,7 @@ export async function getAnalisisCostos(
   // imposiblemente poco hace falta la mediana de su familia, y esa sale de
   // todos los tramos. Ver TRAMO_KM_L_MIN_FRACCION.
   const candidatos: {
-    a: Acumulado; r: repo.RecargaCosto; kmPrevio: number; km: number; litros: number
+    a: Acumulado; r: repo.RecargaCosto; kmPrevio: number; fechaPrevia: string; km: number; litros: number
     /** Sin litros de emergencia de por medio ni precio atípico: cuenta para su gasolinera. */
     paraGasolinera: boolean
     /** Mismo día que la anterior: ya lo marca "Dos cargas el mismo día". */
@@ -727,7 +739,7 @@ export async function getAnalisisCostos(
         // Tramo: los kilómetros desde la carga anterior los pagó esta. Todavía
         // no se cuenta; ver `candidatos`.
         candidatos.push({
-          a, r, kmPrevio: previa!.kilometraje!, km: deltaKm, litros: r.litros + litrosEmergencia,
+          a, r, kmPrevio: previa!.kilometraje!, fechaPrevia: previa!.fecha, km: deltaKm, litros: r.litros + litrosEmergencia,
           // Para la gasolinera, solo los tramos que cerró una carga suya completa:
           // con litros de emergencia de por medio, parte del tramo se cargó en
           // otro lado. La atípica tampoco: sus litros casi seguro están mal.
@@ -801,6 +813,8 @@ export async function getAnalisisCostos(
     medianaFamilia.set(fam, valores.length >= TRAMOS_MIN_MEDIANA_FAMILIA ? mediana(valores) : null)
   }
 
+  // Los que sí entran, para medir después cada uno contra la propia unidad.
+  const aceptados: typeof candidatos = []
   for (const c of candidatos) {
     const { a, r } = c
     const fam = familiaDe(a.v).clave
@@ -827,12 +841,47 @@ export async function getAnalisisCostos(
     a.tramoKm     += c.km
     a.tramoLitros += c.litros
     a.tramos      += 1
+    aceptados.push(c)
     if (c.paraGasolinera) {
       tramosGasolinera.push({
         familia: fam, grupo: grupoDe(a.v.tipo), clave: `${r.gasolinera_id}|${r.producto ?? SIN_PRODUCTO}`,
         km: c.km, litros: r.litros,
       })
     }
+  }
+
+  // ── Tramos que rindieron mucho menos que la propia unidad ──
+  // Contra ella misma y no contra su familia: "esta unidad rinde poco" ya lo
+  // dice la tabla de gemelas. Esto busca el lapso concreto entre dos cargas en
+  // que se fue más combustible del que esa unidad suele gastar —una fuga, una
+  // ordeña, una carga que no fue a su tanque—, con fechas y chofer para ir a
+  // preguntar. Sigue contando en el rendimiento: a diferencia del km que casi no
+  // avanzó, aquí el combustible pudo gastarse de verdad.
+  const kmLPorUnidad = new Map<number, number[]>()
+  for (const c of aceptados) {
+    if (c.km <= 0) continue
+    kmLPorUnidad.set(c.r.vehiculo_id, [...(kmLPorUnidad.get(c.r.vehiculo_id) ?? []), c.km / c.litros])
+  }
+  for (const c of aceptados) {
+    const propios = kmLPorUnidad.get(c.r.vehiculo_id) ?? []
+    if (propios.length < TRAMOS_MIN_MEDIANA_UNIDAD || c.km <= 0) continue
+    const normal = mediana(propios)!
+    const kmL = c.km / c.litros
+    const pct = (kmL / normal - 1) * 100
+    if (pct > TRAMO_BAJO_PCT) continue
+    const { r } = c
+    // Los litros que se fueron de más contra lo que la unidad suele gastar en
+    // esos km, al precio de la carga que cierra el tramo.
+    const litrosDeMas = c.litros - c.km / normal
+    const precio = ratio(r.costo, r.litros) ?? 0
+    anomalias.push({
+      key: `tramo_bajo-${r.id}`, tipo: 'tramo_bajo', severidad: 'alta',
+      vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, recarga_id: r.id, fecha: r.fecha,
+      detalle: `Del ${diaMes(c.fechaPrevia)} al ${diaMes(r.fecha)} recorrió ${c.km.toLocaleString('es-MX')} km `
+        + `con ${c.litros.toFixed(1)} L: ${kmL.toFixed(2)} km/L contra ${normal.toFixed(2)} que rinde normalmente `
+        + `(${pct.toFixed(0)}%). Se fueron unos ${litrosDeMas.toFixed(0)} L de más (cargó ${r.conductor})`,
+      monto: redondear(litrosDeMas * precio, 2),
+    })
   }
 
   // ── Mantenimientos ──
@@ -959,16 +1008,10 @@ export async function getAnalisisCostos(
       }
     }
 
-    // Una unidad que gasta bastante menos que sus gemelas casi siempre trae algo
-    // mecánico —o una fuga—, y son pesos que se van sin factura de por medio.
-    if (desviacion != null && desviacion <= RENDIMIENTO_BAJO_PCT && rendimiento != null) {
-      anomalias.push({
-        key: `rendimiento-${a.v.vehiculo_id}`, tipo: 'rendimiento_bajo', severidad: 'alta',
-        vehiculo_id: a.v.vehiculo_id, vehiculo: a.v.vehiculo, recarga_id: null, fecha: hoy,
-        detalle: `${rendimiento.toFixed(2)} km/L contra ${rendModelo!.toFixed(2)} de las demás de su familia, ${familia.nombre} (${desviacion.toFixed(0)}%)`,
-        monto: redondear(sobrecostoAnual),
-      })
-    }
+    // La unidad que rinde menos que sus gemelas ya no va a las cargas a revisar:
+    // la tabla de gemelas la enseña con su sobrecosto anual, y aquí llenaba la
+    // lista de renglones sin carga que revisar. Lo que sí va es el tramo concreto
+    // que rindió poco; ver "Tramos que rindieron mucho menos".
 
     const s = porSucursal.get(claveSucursal(a.v))!
     s.unidades    += 1

@@ -317,7 +317,7 @@ export function fetchAnomaliasCostos(dias: VentanaCostos, sucursal: string | nul
 /**
  * Dar por buena una carga a revisar (migración 078), o deshacerlo. Es por
  * bandera y por recarga: la que no trae vale ni kilometraje tiene dos cosas
- * distintas que aclarar. El rendimiento bajo no se puede: es de la unidad.
+ * distintas que aclarar.
  */
 export function useRevisarAnomalia() {
   const qc = useQueryClient()
@@ -479,7 +479,7 @@ export interface PrecioProducto {
 }
 
 export type TipoAnomalia =
-  | 'rendimiento_bajo' | 'odometro_retrocede' | 'km_sin_avance' | 'precio_alto' | 'precio_bajo'
+  | 'tramo_bajo' | 'odometro_retrocede' | 'km_sin_avance' | 'precio_alto' | 'precio_bajo'
   | 'carga_duplicada'  | 'sin_vale'           | 'sin_odometro'
 
 export interface Anomalia {
@@ -488,7 +488,7 @@ export interface Anomalia {
   severidad:   'alta' | 'media'
   vehiculo_id: number
   vehiculo:    string
-  /** La carga marcada. Null en el rendimiento bajo, que es de la unidad. */
+  /** La carga marcada. Hoy todas las banderas son de una carga; el null queda por compatibilidad. */
   recarga_id:  number | null
   /** La base de la unidad; null es "Sin base fija". */
   sucursal_id: number | null

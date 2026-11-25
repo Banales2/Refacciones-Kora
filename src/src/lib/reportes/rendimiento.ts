@@ -3,8 +3,8 @@
 // Cada unidad se compara contra su *familia*: la marca y el nombre del modelo
 // sin el año, con todos los tractocamiones juntos sin importar la marca. La
 // familia la decide la API (`familiaDe` en costosService) y llega en cada
-// vehículo, para que este reporte, la pestaña Costos y la alerta de
-// rendimiento bajo midan contra lo mismo.
+// vehículo, para que este reporte y la tabla de gemelas de la pestaña Costos
+// midan contra lo mismo.
 //
 // Con la familia como vara se contestan tres preguntas, cada una midiendo a
 // un grupo contra *el resto* de su familia (no contra el promedio que lo

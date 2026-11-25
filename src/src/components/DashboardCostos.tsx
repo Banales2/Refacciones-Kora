@@ -72,9 +72,9 @@ function LinkVehiculo({ nombre, onClick }: { nombre: string; onClick?: () => voi
 }
 
 const ANOMALIA_META: Record<TipoAnomalia, { label: string; color: string; ayuda: string }> = {
-  rendimiento_bajo: {
-    label: 'Rendimiento bajo', color: 'red',
-    ayuda: 'La unidad rinde bastante menos que las demás de su familia (su modelo de cualquier año; los tractocamiones, todos juntos). Suele ser falla mecánica o combustible que no llega al tanque.',
+  tramo_bajo: {
+    label: 'Tramo con rendimiento muy bajo', color: 'red',
+    ayuda: 'Entre esta carga y la anterior la unidad rindió 35 % o menos de lo que rinde normalmente ella misma (la mediana de sus tramos del periodo). Puede ser una fuga, combustible que no llegó al tanque o una falla. También sale si la carga anterior no llenó el tanque: entonces el tramo anterior sale alto y este bajo, sin que falte nada. El importe son los litros de más a precio de esta carga. Que la unidad rinda poco en general contra sus gemelas está en la tabla de gemelas.',
   },
   odometro_retrocede: {
     label: 'Odómetro inconsistente', color: 'red',
@@ -1096,16 +1096,10 @@ function Contenido({
 // ─── Cargas que conviene revisar ────────────────────────────────────────────
 
 function ImporteAnomalia({ a }: { a: Anomalia }) {
-  // El importe no significa lo mismo en todos los renglones: en una carga es lo
-  // que costó esa carga, y en un rendimiento bajo es lo que ese faltante cuesta
-  // al año. Se marca en el propio renglón para que nadie sume peras con manzanas.
+  // En casi todas es lo que costó esa carga; en el tramo bajo, lo que valen los
+  // litros que se fueron de más.
   if (a.monto == null || a.monto <= 0) return <Guion />
-  return (
-    <Text size="sm" style={{ whiteSpace: 'nowrap' }}>
-      {formatMXN(a.monto)}
-      {a.tipo === 'rendimiento_bajo' && <Text component="span" size="xs" c="dimmed"> /año</Text>}
-    </Text>
-  )
+  return <Text size="sm" style={{ whiteSpace: 'nowrap' }}>{formatMXN(a.monto)}</Text>
 }
 
 function SeccionAnomalias({ data, ventana, onNavigateVehiculo }: {
@@ -1135,7 +1129,7 @@ function SeccionAnomalias({ data, ventana, onNavigateVehiculo }: {
           <PdfAnomalias ventana={ventana} sucursales={data.sucursales} />
         </Group>
       )}
-      descripcion="Registros de combustible que no cuadran: rendimiento fuera de rango, odómetros que retroceden o casi no avanzan, cargas sin vale o sin kilometraje. No todas son un problema —una carga sin vale puede ser solo captura pendiente—, pero son las que hay que mirar antes de firmar el gasto del mes. Las que ya se revisaron y están bien se marcan como revisadas para que no vuelvan a salir. A las registradas desde una factura no se les pide kilometraje: el ticket no lo trae. El importe es lo que costó esa carga, salvo en el rendimiento bajo, que se anualiza."
+      descripcion="Registros de combustible que no cuadran: tramos entre dos cargas que rindieron mucho menos de lo normal para la unidad, odómetros que retroceden o casi no avanzan, cargas sin vale o sin kilometraje. No todas son un problema —una carga sin vale puede ser solo captura pendiente—, pero son las que hay que mirar antes de firmar el gasto del mes. Las que ya se revisaron y están bien se marcan como revisadas para que no vuelvan a salir. A las registradas desde una factura no se les pide kilometraje: el ticket no lo trae. El importe es lo que costó esa carga, salvo en el tramo con rendimiento bajo, que es lo que valen los litros de más. Que una unidad rinda poco en general contra sus gemelas está en la tabla de gemelas, más arriba."
     >
       <Stack gap="md">
         {data.anomalias.length === 0 ? (
@@ -1149,7 +1143,7 @@ function SeccionAnomalias({ data, ventana, onNavigateVehiculo }: {
                   <Tooltip key={r.tipo} label={meta.ayuda} multiline w={280} withArrow>
                     <Badge variant="light" color={meta.color} size="lg" style={{ cursor: 'help' }}>
                       {meta.label}: {r.cantidad}
-                      {r.monto > 0 && ` · ${formatMXNCorto(r.monto)}${r.tipo === 'rendimiento_bajo' ? '/año' : ''}`}
+                      {r.monto > 0 && ` · ${formatMXNCorto(r.monto)}`}
                     </Badge>
                   </Tooltip>
                 )
@@ -1185,8 +1179,6 @@ function SeccionAnomalias({ data, ventana, onNavigateVehiculo }: {
                         <Table.Td><Text size="sm" c="dimmed">{formatFecha(a.fecha)}</Text></Table.Td>
                         <Table.Td><Text size="sm">{a.detalle}</Text></Table.Td>
                         <Table.Td style={{ textAlign: 'right' }}><ImporteAnomalia a={a} /></Table.Td>
-                        {/* El rendimiento bajo no se puede dar por bueno: es de la
-                            unidad, y se escondería aunque la unidad empeorara. */}
                         {puedeRevisar && (
                           <Table.Td style={{ textAlign: 'right' }}>
                             {a.recarga_id != null && <MarcarRevisada anomalia={a} />}
@@ -1404,11 +1396,9 @@ function EvidenciaWord({ ventana, sucursales, resumen }: {
       .filter((s) => s.anomalias > 0)
       .map((s) => ({ value: String(s.sucursal_id ?? 'sin'), label: s.sucursal })),
   ]
-  // El rendimiento bajo es de la unidad, no de una carga: no hay foto que pegar.
   const opcionesTipo = [
     { value: TODOS_TIPOS, label: 'Todos los tipos' },
     ...resumen
-      .filter((r) => r.tipo !== 'rendimiento_bajo')
       .map((r) => ({ value: r.tipo, label: `${ANOMALIA_META[r.tipo].label} (${r.cantidad})` })),
   ]
 
@@ -1456,7 +1446,7 @@ function EvidenciaWord({ ventana, sucursales, resumen }: {
           />
           <Text size="xs" c="dimmed">
             Una hoja por carga, con la anterior de la misma unidad al lado y el espacio para
-            pegar la foto del odómetro. No incluye el rendimiento bajo: es de la unidad, no de una carga.
+            pegar la foto del odómetro.
           </Text>
           {error && <Text size="xs" c="red">{error}</Text>}
           <Button size="xs" loading={generando} onClick={generar} leftSection={<IconFileTypeDocx size={14} />}>
