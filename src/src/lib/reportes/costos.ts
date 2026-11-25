@@ -11,7 +11,7 @@ import { formatMXN, formatNum, formatLitros, formatFecha, formatMes } from '../f
 import { TIPO_LABELS } from '../tipoVehiculo'
 import { SIN_PRODUCTO } from '../combustible'
 
-const ANOMALIA_LABEL: Record<TipoAnomalia, string> = {
+export const ANOMALIA_LABEL: Record<TipoAnomalia, string> = {
   rendimiento_bajo:   'Rendimiento bajo',
   odometro_retrocede: 'Odómetro inconsistente',
   km_sin_avance:      'Kilometraje que casi no avanzó',

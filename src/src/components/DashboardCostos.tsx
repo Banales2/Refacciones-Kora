@@ -13,7 +13,7 @@ import {
 import { AreaChart, BarChart, LineChart } from '@mantine/charts'
 import {
   IconAlertTriangle, IconArrowBackUp, IconCashBanknote, IconCheck, IconChevronDown, IconChevronUp,
-  IconDiscount2, IconDroplet, IconFileTypePdf, IconGasStation, IconRoad,
+  IconDiscount2, IconDroplet, IconFileTypeDocx, IconFileTypePdf, IconGasStation, IconRoad,
 } from '@tabler/icons-react'
 import {
   useAnalisisCostos, useCobrosCasetas, useRevisarAnomalia, fetchAnomaliasCostos, NOMBRE_GRUPO,
@@ -1130,7 +1130,10 @@ function SeccionAnomalias({ data, ventana, onNavigateVehiculo }: {
     <Seccion
       titulo="Cargas que conviene revisar"
       accion={data.anomalias.length > 0 && (
-        <PdfAnomalias ventana={ventana} sucursales={data.sucursales} />
+        <Group gap="xs" wrap="nowrap">
+          <EvidenciaWord ventana={ventana} sucursales={data.sucursales} resumen={data.anomalias_resumen} />
+          <PdfAnomalias ventana={ventana} sucursales={data.sucursales} />
+        </Group>
       )}
       descripcion="Registros de combustible que no cuadran: rendimiento fuera de rango, odómetros que retroceden o casi no avanzan, cargas sin vale o sin kilometraje. No todas son un problema —una carga sin vale puede ser solo captura pendiente—, pero son las que hay que mirar antes de firmar el gasto del mes. Las que ya se revisaron y están bien se marcan como revisadas para que no vuelvan a salir. A las registradas desde una factura no se les pide kilometraje: el ticket no lo trae. El importe es lo que costó esa carga, salvo en el rendimiento bajo, que se anualiza."
     >
@@ -1372,6 +1375,92 @@ function PdfAnomalias({ ventana, sucursales }: {
           {error && <Text size="xs" c="red">{error}</Text>}
           <Button size="xs" loading={generando} onClick={generar} leftSection={<IconFileTypePdf size={14} />}>
             Generar reporte
+          </Button>
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
+  )
+}
+
+// El Word para pegar las fotos del odómetro que llegan por WhatsApp. Igual que
+// el PDF se pide completo a la API; aparte se filtra por tipo, porque las fotos
+// se juntan por problema ("todas las de kilometraje que no avanzó").
+const TODOS_TIPOS = 'todos'
+
+function EvidenciaWord({ ventana, sucursales, resumen }: {
+  ventana:    VentanaCostos
+  sucursales: AnalisisCostos['sucursales']
+  resumen:    AnalisisCostos['anomalias_resumen']
+}) {
+  const [abierto, setAbierto]     = useState(false)
+  const [sucursal, setSucursal]   = useState<string>(TODAS)
+  const [tipo, setTipo]           = useState<string>(TODOS_TIPOS)
+  const [generando, setGenerando] = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+
+  const opcionesSucursal = [
+    { value: TODAS, label: 'Todas las sucursales' },
+    ...sucursales
+      .filter((s) => s.anomalias > 0)
+      .map((s) => ({ value: String(s.sucursal_id ?? 'sin'), label: s.sucursal })),
+  ]
+  // El rendimiento bajo es de la unidad, no de una carga: no hay foto que pegar.
+  const opcionesTipo = [
+    { value: TODOS_TIPOS, label: 'Todos los tipos' },
+    ...resumen
+      .filter((r) => r.tipo !== 'rendimiento_bajo')
+      .map((r) => ({ value: r.tipo, label: `${ANOMALIA_META[r.tipo].label} (${r.cantidad})` })),
+  ]
+
+  async function generar() {
+    setGenerando(true)
+    setError(null)
+    try {
+      const [{ data }, { exportEvidenciaWord }] = await Promise.all([
+        fetchAnomaliasCostos(ventana, sucursal === TODAS ? null : sucursal),
+        import('../lib/reportes/evidencia'),
+      ])
+      const filtrado = tipo === TODOS_TIPOS ? data : { ...data, anomalias: data.anomalias.filter((a) => a.tipo === tipo) }
+      await exportEvidenciaWord(filtrado, {
+        tipoLabel: tipo === TODOS_TIPOS ? undefined : ANOMALIA_META[tipo as TipoAnomalia].label,
+      })
+      setAbierto(false)
+    } catch (e) {
+      setError((e as Error).message || 'No se pudo generar el documento.')
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  return (
+    <Popover opened={abierto} onChange={setAbierto} position="bottom-end" width={300} withArrow shadow="md">
+      <Popover.Target>
+        <Button
+          size="xs" variant="light" leftSection={<IconFileTypeDocx size={14} />}
+          onClick={() => setAbierto((o) => !o)}
+        >
+          Word
+        </Button>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Stack gap="sm">
+          <Select
+            label="Sucursal" data={opcionesSucursal} value={sucursal}
+            onChange={(v) => setSucursal(v ?? TODAS)} allowDeselect={false}
+            comboboxProps={{ withinPortal: false }}
+          />
+          <Select
+            label="Tipo" data={opcionesTipo} value={tipo}
+            onChange={(v) => setTipo(v ?? TODOS_TIPOS)} allowDeselect={false}
+            comboboxProps={{ withinPortal: false }}
+          />
+          <Text size="xs" c="dimmed">
+            Una hoja por carga, con la anterior de la misma unidad al lado y el espacio para
+            pegar la foto del odómetro. No incluye el rendimiento bajo: es de la unidad, no de una carga.
+          </Text>
+          {error && <Text size="xs" c="red">{error}</Text>}
+          <Button size="xs" loading={generando} onClick={generar} leftSection={<IconFileTypeDocx size={14} />}>
+            Generar Word
           </Button>
         </Stack>
       </Popover.Dropdown>

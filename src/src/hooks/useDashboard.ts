@@ -498,6 +498,20 @@ export interface Anomalia {
   monto:       number | null
   /** Solo en `anomalias_revisadas`: quién dijo que está bien y por qué. */
   revision?:   { por: string; en: string; nota: string | null }
+  /** La carga marcada y la anterior de la unidad, para el Word de evidencia. */
+  carga:       CargaEvidencia | null
+  /** Null si es su primera carga del periodo. */
+  anterior:    CargaEvidencia | null
+}
+
+export interface CargaEvidencia {
+  recarga_id:  number
+  fecha:       string
+  conductor:   string
+  gasolinera:  string | null
+  kilometraje: number | null
+  litros:      number
+  costo:       number
 }
 
 export interface Retrabajo {

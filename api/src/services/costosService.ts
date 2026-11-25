@@ -434,6 +434,30 @@ export interface Anomalia {
   monto:       number | null
   /** Solo en `anomalias_revisadas`: quién dijo que está bien y por qué. */
   revision?:   { por: string; en: string; nota: string | null }
+  /**
+   * La carga marcada y la anterior de la misma unidad en el periodo (sin las de
+   * emergencia), para el Word de evidencia: quién cargó, qué km dio. Null en el
+   * rendimiento bajo, y `anterior` null si es su primera carga del periodo.
+   */
+  carga:       CargaEvidencia | null
+  anterior:    CargaEvidencia | null
+}
+
+export interface CargaEvidencia {
+  recarga_id:  number
+  fecha:       string
+  conductor:   string
+  gasolinera:  string | null
+  kilometraje: number | null
+  litros:      number
+  costo:       number
+}
+
+function evidenciaDe(r: repo.RecargaCosto): CargaEvidencia {
+  return {
+    recarga_id: r.id, fecha: r.fecha, conductor: r.conductor, gasolinera: r.gasolinera,
+    kilometraje: r.kilometraje, litros: r.litros, costo: r.costo,
+  }
 }
 
 type ResumenAnomalias = { tipo: TipoAnomalia; cantidad: number; monto: number }[]
@@ -606,7 +630,7 @@ export async function getAnalisisCostos(
   }
 
   // La sucursal se les pone al final, de una vez para todas.
-  const anomalias: Omit<Anomalia, 'sucursal_id' | 'sucursal'>[] = []
+  const anomalias: Omit<Anomalia, 'sucursal_id' | 'sucursal' | 'carga' | 'anterior'>[] = []
 
   // ── Combustible: recorrido de cargas, unidad por unidad ──
   // Vienen ordenadas por (vehículo, fecha, id) desde el repo, así que basta
@@ -644,6 +668,10 @@ export async function getAnalisisCostos(
     mismoDia: boolean
   }[] = []
 
+  // La carga marcada y la anterior de la misma unidad, para el reporte de
+  // evidencia. Ver `Anomalia.carga`.
+  const contextoCarga = new Map<number, { carga: CargaEvidencia; anterior: CargaEvidencia | null }>()
+
   let previa: repo.RecargaCosto | null = null
   // Litros de emergencia cargados desde la última carga normal de la unidad.
   let emergencia = { vehiculo_id: 0, litros: 0 }
@@ -670,6 +698,7 @@ export async function getAnalisisCostos(
     emergencia = { vehiculo_id: 0, litros: 0 }
 
     const mismaUnidad = previa != null && previa.vehiculo_id === r.vehiculo_id
+    contextoCarga.set(r.id, { carga: evidenciaDe(r), anterior: mismaUnidad ? evidenciaDe(previa!) : null })
 
     // Sin odómetro no hay forma de saber qué rindió esa carga: ni entra al
     // rendimiento ni se puede auditar. Se marca para que se capture, salvo la
@@ -1172,7 +1201,11 @@ export async function getAnalisisCostos(
   for (const an of anomalias) {
     // Una unidad fuera de la flota en operación (ya dada de baja) cae en "Sin base fija".
     const v = acum.get(an.vehiculo_id)?.v
-    const conSucursal = { ...an, sucursal_id: v?.sucursal_id ?? null, sucursal: v?.sucursal ?? SIN_BASE }
+    const ctx = an.recarga_id != null ? contextoCarga.get(an.recarga_id) : undefined
+    const conSucursal = {
+      ...an, sucursal_id: v?.sucursal_id ?? null, sucursal: v?.sucursal ?? SIN_BASE,
+      carga: ctx?.carga ?? null, anterior: ctx?.anterior ?? null,
+    }
     const rev = an.recarga_id != null ? revisionDe.get(`${an.tipo}|${an.recarga_id}`) : undefined
     if (rev) yaRevisadas.push({ ...conSucursal, revision: { por: rev.revisado_por, en: rev.revisado_en, nota: rev.nota } })
     else pendientes.push(conSucursal)
