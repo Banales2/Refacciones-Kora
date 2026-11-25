@@ -80,6 +80,10 @@ const ANOMALIA_META: Record<TipoAnomalia, { label: string; color: string; ayuda:
     label: 'Odómetro inconsistente', color: 'red',
     ayuda: 'El kilometraje capturado bajó respecto de la carga anterior. Mientras no cuadre, no se puede auditar el consumo.',
   },
+  km_sin_avance: {
+    label: 'Kilometraje que casi no avanzó', color: 'red',
+    ayuda: 'Entre esta carga y la anterior el odómetro avanzó muy poco para los litros cargados (menos de la cuarta parte de lo que rinde normalmente su familia), por ejemplo 1 km con 40 L. Casi siempre es el kilometraje de la carga anterior repetido o mal capturado. Ese tramo no entra al rendimiento hasta que se corrija: si entrara, hundiría el rendimiento de la unidad sin que se viera por qué.',
+  },
   precio_alto: {
     label: 'Precio por litro alto', color: 'orange',
     ayuda: 'Se pagó el litro muy por encima de lo que costó ese combustible el mismo mes.',
@@ -170,6 +174,8 @@ const COLORES_GASOLINERA = ['blue.7', 'orange.8', 'teal.7', 'grape.7', 'red.8', 
 
 /** El mismo mínimo que usa el servicio para juzgar lo que rinde una gasolinera. */
 const TRAMOS_MIN_GASOLINERA = 5
+/** Cargas con precio normal para que una gasolinera sirva de "la más barata". El mismo que el servicio. */
+const CARGAS_MIN_REFERENCIA = 3
 /**
  * Cuánto tiene que ganarle al segundo lugar el litro efectivo para llamarse
  * "rinde más por peso": 1 %. Por debajo es ruido de la medición —el tanque
@@ -411,7 +417,19 @@ function SeccionGasolineras({ data }: { data: AnalisisCostos }) {
                       // se comparó con nadie: no es "la más barata", es no saberlo.
                       : minimo == null || g.precio_litro == null
                         ? <Guion />
-                        : <Badge size="sm" variant="light" color="teal">La más barata</Badge>}
+                        // Solo la que fija la referencia. Una con una o dos cargas
+                        // más baratas también queda en cero, pero no sirve de vara:
+                        // pudo ser casualidad, y coronarla contradecía el mínimo de arriba.
+                        : g.recargas - g.atipicas >= CARGAS_MIN_REFERENCIA && g.precio_litro <= minimo
+                          ? <Badge size="sm" variant="light" color="teal">La más barata</Badge>
+                          : (
+                            <Tooltip
+                              withArrow multiline w={260}
+                              label={`Le faltan cargas para compararla: hacen falta ${CARGAS_MIN_REFERENCIA} con precio normal para servir de referencia.`}
+                            >
+                              <Text size="xs" c="dimmed">pocas cargas</Text>
+                            </Tooltip>
+                          )}
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right' }}>
                     {g.por_grupo.length === 0 ? <Guion /> : (
@@ -1114,7 +1132,7 @@ function SeccionAnomalias({ data, ventana, onNavigateVehiculo }: {
       accion={data.anomalias.length > 0 && (
         <PdfAnomalias ventana={ventana} sucursales={data.sucursales} />
       )}
-      descripcion="Registros de combustible que no cuadran: rendimiento fuera de rango, odómetros que retroceden, cargas sin vale o sin kilometraje. No todas son un problema —una carga sin vale puede ser solo captura pendiente—, pero son las que hay que mirar antes de firmar el gasto del mes. Las que ya se revisaron y están bien se marcan como revisadas para que no vuelvan a salir. A las registradas desde una factura no se les pide kilometraje: el ticket no lo trae. El importe es lo que costó esa carga, salvo en el rendimiento bajo, que se anualiza."
+      descripcion="Registros de combustible que no cuadran: rendimiento fuera de rango, odómetros que retroceden o casi no avanzan, cargas sin vale o sin kilometraje. No todas son un problema —una carga sin vale puede ser solo captura pendiente—, pero son las que hay que mirar antes de firmar el gasto del mes. Las que ya se revisaron y están bien se marcan como revisadas para que no vuelvan a salir. A las registradas desde una factura no se les pide kilometraje: el ticket no lo trae. El importe es lo que costó esa carga, salvo en el rendimiento bajo, que se anualiza."
     >
       <Stack gap="md">
         {data.anomalias.length === 0 ? (

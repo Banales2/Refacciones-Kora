@@ -479,7 +479,7 @@ export interface PrecioProducto {
 }
 
 export type TipoAnomalia =
-  | 'rendimiento_bajo' | 'odometro_retrocede' | 'precio_alto' | 'precio_bajo'
+  | 'rendimiento_bajo' | 'odometro_retrocede' | 'km_sin_avance' | 'precio_alto' | 'precio_bajo'
   | 'carga_duplicada'  | 'sin_vale'           | 'sin_odometro'
 
 export interface Anomalia {

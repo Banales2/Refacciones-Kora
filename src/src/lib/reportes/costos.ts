@@ -14,7 +14,8 @@ import { SIN_PRODUCTO } from '../combustible'
 const ANOMALIA_LABEL: Record<TipoAnomalia, string> = {
   rendimiento_bajo:   'Rendimiento bajo',
   odometro_retrocede: 'Odómetro inconsistente',
-  precio_alto:        'Precio por litro alto',
+  km_sin_avance:      'Kilometraje que casi no avanzó',
+  precio_alto:       'Precio por litro alto',
   precio_bajo:        'Precio por litro sospechosamente bajo',
   carga_duplicada:    'Dos cargas el mismo día',
   sin_vale:           'Carga sin vale',
@@ -331,7 +332,8 @@ function tablasAnomalias(
     didParseCell: (d: CellHookData) => {
       if (d.section !== 'body' || d.column.index !== 0) return
       const label = String(d.cell.raw)
-      if (label === ANOMALIA_LABEL.rendimiento_bajo || label === ANOMALIA_LABEL.odometro_retrocede) {
+      if (label === ANOMALIA_LABEL.rendimiento_bajo || label === ANOMALIA_LABEL.odometro_retrocede
+        || label === ANOMALIA_LABEL.km_sin_avance) {
         d.cell.styles.textColor = COLOR.rojo
       }
     },

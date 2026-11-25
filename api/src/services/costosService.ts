@@ -17,6 +17,16 @@ import { fechaMexico } from '../shared/fechaMexico'
 
 /** Salto de odómetro entre dos cargas que ya no es creíble: es captura errónea. */
 const KM_ENTRE_CARGAS_MAX = 5_000
+/**
+ * Un tramo que rinde menos de esta fracción de la mediana de su familia no es
+ * consumo, es un odómetro que casi no avanzó: 1 km con 40 L. Casi siempre es
+ * el kilometraje de la carga anterior repetido o con un dígito de menos. No
+ * entra al rendimiento —un solo tramo así hundía a la unidad y salía como
+ * "rendimiento bajo" sin que se viera por qué— y se marca para corregirlo.
+ */
+const TRAMO_KM_L_MIN_FRACCION = 0.25
+/** Tramos mínimos de una familia para que su mediana sirva de vara. */
+const TRAMOS_MIN_MEDIANA_FAMILIA = 5
 /** Tramos mínimos para que el rendimiento de una unidad sea comparable. */
 const TRAMOS_MIN_RENDIMIENTO = 3
 /**
@@ -400,6 +410,7 @@ export interface SucursalCosto {
 export type TipoAnomalia =
   | 'rendimiento_bajo'
   | 'odometro_retrocede'
+  | 'km_sin_avance'
   | 'precio_alto'
   | 'precio_bajo'
   | 'carga_duplicada'
@@ -513,7 +524,8 @@ export interface AnomaliasCostos {
 
 /** Las banderas que se pueden dar por revisadas: las que son de una carga. */
 export const TIPOS_REVISABLES = [
-  'odometro_retrocede', 'precio_alto', 'precio_bajo', 'carga_duplicada', 'sin_vale', 'sin_odometro',
+  'odometro_retrocede', 'km_sin_avance', 'precio_alto', 'precio_bajo', 'carga_duplicada', 'sin_vale',
+  'sin_odometro',
 ] as const satisfies readonly TipoAnomalia[]
 
 // ─── Cálculo ────────────────────────────────────────────────────────────────
@@ -621,6 +633,17 @@ export async function getAnalisisCostos(
     familia: string; grupo: GrupoRendimiento; clave: string; km: number; litros: number
   }[] = []
 
+  // Los tramos se juntan primero y se cuentan después: para saber si uno rinde
+  // imposiblemente poco hace falta la mediana de su familia, y esa sale de
+  // todos los tramos. Ver TRAMO_KM_L_MIN_FRACCION.
+  const candidatos: {
+    a: Acumulado; r: repo.RecargaCosto; kmPrevio: number; km: number; litros: number
+    /** Sin litros de emergencia de por medio ni precio atípico: cuenta para su gasolinera. */
+    paraGasolinera: boolean
+    /** Mismo día que la anterior: ya lo marca "Dos cargas el mismo día". */
+    mismoDia: boolean
+  }[] = []
+
   let previa: repo.RecargaCosto | null = null
   // Litros de emergencia cargados desde la última carga normal de la unidad.
   let emergencia = { vehiculo_id: 0, litros: 0 }
@@ -671,21 +694,18 @@ export async function getAnalisisCostos(
           detalle: `El odómetro bajó de ${previa!.kilometraje!.toLocaleString('es-MX')} a ${r.kilometraje.toLocaleString('es-MX')} km`,
           monto: r.costo,
         })
-      } else if (deltaKm > 0 && deltaKm <= KM_ENTRE_CARGAS_MAX && r.litros > 0 && a) {
-        // Tramo válido: los kilómetros desde la carga anterior los pagó esta.
-        a.tramoKm     += deltaKm
-        a.tramoLitros += r.litros + litrosEmergencia
-        a.tramos      += 1
-        // Para la gasolinera, solo los tramos que cerró una carga suya completa:
-        // con litros de emergencia de por medio, parte del tramo se cargó en
-        // otro lado. La atípica tampoco: sus litros casi seguro están mal.
-        if (litrosEmergencia === 0 && r.gasolinera_id != null
-          && !esAtipica(desviacionPrecio(r, referenciaDe(r)))) {
-          tramosGasolinera.push({
-            familia: familiaDe(a.v).clave, grupo: grupoDe(a.v.tipo), clave: `${r.gasolinera_id}|${r.producto ?? SIN_PRODUCTO}`,
-            km: deltaKm, litros: r.litros,
-          })
-        }
+      } else if (deltaKm <= KM_ENTRE_CARGAS_MAX && r.litros > 0 && a) {
+        // Tramo: los kilómetros desde la carga anterior los pagó esta. Todavía
+        // no se cuenta; ver `candidatos`.
+        candidatos.push({
+          a, r, kmPrevio: previa!.kilometraje!, km: deltaKm, litros: r.litros + litrosEmergencia,
+          // Para la gasolinera, solo los tramos que cerró una carga suya completa:
+          // con litros de emergencia de por medio, parte del tramo se cargó en
+          // otro lado. La atípica tampoco: sus litros casi seguro están mal.
+          paraGasolinera: litrosEmergencia === 0 && r.gasolinera_id != null
+            && !esAtipica(desviacionPrecio(r, referenciaDe(r))),
+          mismoDia: previa!.fecha === r.fecha,
+        })
       }
     }
 
@@ -736,6 +756,54 @@ export async function getAnalisisCostos(
     }
 
     previa = r
+  }
+
+  // ── Tramos: fuera los que el odómetro casi no avanzó ──
+  // La vara es la mediana del km/L de los tramos de su familia, no su promedio:
+  // el promedio lo jalan justo los tramos que se quieren detectar.
+  const kmLPorFamilia = new Map<string, number[]>()
+  for (const c of candidatos) {
+    if (c.km <= 0) continue
+    const fam = familiaDe(c.a.v).clave
+    kmLPorFamilia.set(fam, [...(kmLPorFamilia.get(fam) ?? []), c.km / c.litros])
+  }
+  const medianaFamilia = new Map<string, number | null>()
+  for (const [fam, valores] of kmLPorFamilia) {
+    medianaFamilia.set(fam, valores.length >= TRAMOS_MIN_MEDIANA_FAMILIA ? mediana(valores) : null)
+  }
+
+  for (const c of candidatos) {
+    const { a, r } = c
+    const fam = familiaDe(a.v).clave
+    const vara = medianaFamilia.get(fam) ?? null
+    const kmL = c.km / c.litros
+    // Cero km con litros nunca es consumo; arriba de cero, solo si hay contra
+    // qué medirlo. Una familia sin vara se queda sin el filtro.
+    const sinAvance = c.km === 0 || (vara != null && kmL < vara * TRAMO_KM_L_MIN_FRACCION)
+    if (sinAvance) {
+      if (!c.mismoDia) {
+        anomalias.push({
+          key: `km_sin_avance-${r.id}`, tipo: 'km_sin_avance', severidad: 'alta',
+          vehiculo_id: r.vehiculo_id, vehiculo: r.vehiculo_nombre, recarga_id: r.id, fecha: r.fecha,
+          detalle: `El odómetro solo avanzó ${c.km.toLocaleString('es-MX')} km `
+            + `(${c.kmPrevio.toLocaleString('es-MX')} → ${r.kilometraje!.toLocaleString('es-MX')}) `
+            + `con ${c.litros.toFixed(1)} L`
+            + (vara != null ? `: ${kmL.toFixed(2)} km/L contra ${vara.toFixed(2)} de su familia` : '')
+            + `. Revisa el kilometraje contra el ticket; mientras tanto no entra al rendimiento`,
+          monto: r.costo,
+        })
+      }
+      continue
+    }
+    a.tramoKm     += c.km
+    a.tramoLitros += c.litros
+    a.tramos      += 1
+    if (c.paraGasolinera) {
+      tramosGasolinera.push({
+        familia: fam, grupo: grupoDe(a.v.tipo), clave: `${r.gasolinera_id}|${r.producto ?? SIN_PRODUCTO}`,
+        km: c.km, litros: r.litros,
+      })
+    }
   }
 
   // ── Mantenimientos ──
