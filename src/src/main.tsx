@@ -58,6 +58,22 @@ const theme = createTheme({
   defaultRadius: 'md',
 })
 
+// Las pantallas se cargan al abrirlas (ver Layout). Tras un despliegue, una
+// pestaña que se quedó en la versión vieja pide un pedazo que ya no existe: el
+// service worker nuevo borró los viejos de su caché y el servidor solo tiene
+// los nuevos. Recargar trae la versión nueva y ahí sí está. Una vez por minuto
+// como mucho: si falla por no haber conexión, recargar en bucle no lo arregla, y
+// para eso está el aviso de PantallaBoundary.
+window.addEventListener('vite:preloadError', (event) => {
+  const CLAVE = 'recarga-por-pedazo'
+  let ultima = 0
+  try { ultima = Number(sessionStorage.getItem(CLAVE) ?? 0) } catch { /* sin storage */ }
+  if (Date.now() - ultima < 60_000) return
+  try { sessionStorage.setItem(CLAVE, String(Date.now())) } catch { /* sin storage */ }
+  event.preventDefault()
+  window.location.reload()
+})
+
 createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={queryClient}>
     <MantineProvider theme={theme} defaultColorScheme="auto">

@@ -2,9 +2,11 @@
 // navegación, encabezado con usuario/rol y render de la sección activa. La
 // navegación es por estado local (sin router); navigateToVehiculo permite
 // saltar desde cualquier pantalla al detalle de un vehículo.
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import {
   AppShell,
+  Center,
+  Loader,
   Burger,
   Group,
   NavLink,
@@ -32,25 +34,32 @@ import {
 import type { Icon } from '@tabler/icons-react'
 import { useAuth } from '../hooks/useAuth'
 import { usePermisos } from '../hooks/usePermisos'
-import Dashboard from './Dashboard'
-import Piezas from '../pages/Piezas'
-import Inventario from '../pages/Inventario'
-import Vehiculos from '../pages/Vehiculos'
-import Incidencias from '../pages/Incidencias'
-import ChequeoPatio from '../pages/ChequeoPatio'
-import Modelos from '../pages/Modelos'
-import SitiosYRutas from '../pages/SitiosYRutas'
-import ValesGasolina from '../pages/ValesGasolina'
-import Solicitudes from '../pages/Solicitudes'
-import RegistrosCambios from '../pages/RegistrosCambios'
-import ErroresCaptura from '../pages/ErroresCaptura'
-import Facturas from '../pages/Facturas'
-import FacturasGasolina from '../pages/FacturasGasolina'
-import FacturasMantenimientos from '../pages/FacturasMantenimientos'
-import FacturasCasetas from '../pages/FacturasCasetas'
-import Mantenimientos from '../pages/Mantenimientos'
+import PantallaBoundary from './PantallaBoundary'
 import type { VehiculoRow } from '../hooks/useVehiculos'
 import type { DestinoDocumento } from '../lib/documentosDashboard'
+
+// Cada pantalla se carga al abrirla. Importadas de entrada, el archivo principal
+// llevaba la app completa —pasó de 2 MiB y se salía del precache del PWA—, y
+// cada quien bajaba pantallas que su rol ni puede abrir. El service worker
+// igual las guarda todas (globPatterns), así que sin conexión siguen abriendo.
+// Si un pedazo no llega: main.tsx recarga una vez, y PantallaBoundary avisa.
+const Dashboard              = lazy(() => import('./Dashboard'))
+const Piezas                 = lazy(() => import('../pages/Piezas'))
+const Inventario             = lazy(() => import('../pages/Inventario'))
+const Vehiculos              = lazy(() => import('../pages/Vehiculos'))
+const Incidencias            = lazy(() => import('../pages/Incidencias'))
+const ChequeoPatio           = lazy(() => import('../pages/ChequeoPatio'))
+const Modelos                = lazy(() => import('../pages/Modelos'))
+const SitiosYRutas           = lazy(() => import('../pages/SitiosYRutas'))
+const ValesGasolina          = lazy(() => import('../pages/ValesGasolina'))
+const Solicitudes            = lazy(() => import('../pages/Solicitudes'))
+const RegistrosCambios       = lazy(() => import('../pages/RegistrosCambios'))
+const ErroresCaptura         = lazy(() => import('../pages/ErroresCaptura'))
+const Facturas               = lazy(() => import('../pages/Facturas'))
+const FacturasGasolina       = lazy(() => import('../pages/FacturasGasolina'))
+const FacturasMantenimientos = lazy(() => import('../pages/FacturasMantenimientos'))
+const FacturasCasetas        = lazy(() => import('../pages/FacturasCasetas'))
+const Mantenimientos         = lazy(() => import('../pages/Mantenimientos'))
 
 type Section =
   | 'dashboard' | 'piezas' | 'inventario' | 'modelos' | 'vehiculos' | 'incidencias'
@@ -560,6 +569,9 @@ export default function Layout() {
             sección en el menú.
           </Alert>
         )}
+        {/* `key`: cambiar de sección limpia el error de la anterior. */}
+        <PantallaBoundary key={section}>
+        <Suspense fallback={<Center py="xl"><Loader /></Center>}>
         {section === 'dashboard' && puedeVerSeccion('dashboard') && (
           <Dashboard
             onNavigateVehiculo={navigateToVehiculoId}
@@ -628,6 +640,8 @@ export default function Layout() {
         {section === 'facturas-gasolina' && puedeVerSeccion('facturas-gasolina') && <FacturasGasolina />}
         {section === 'facturas-mantenimientos' && puedeVerSeccion('facturas-mantenimientos') && <FacturasMantenimientos />}
         {section === 'facturas-casetas' && puedeVerSeccion('facturas-casetas') && <FacturasCasetas />}
+        </Suspense>
+        </PantallaBoundary>
       </AppShell.Main>
     </AppShell>
   )
