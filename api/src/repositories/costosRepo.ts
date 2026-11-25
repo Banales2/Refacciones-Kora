@@ -71,6 +71,8 @@ export async function findRecargasEnRango(start: string, end: string): Promise<R
       ${JOINS_HIJAS}
       WHERE rc.fecha >= @start AND rc.fecha < @end
         AND ${EN_SEGUIMIENTO}
+        -- Archivada no cuenta para nada (migración 081).
+        AND rc.archivado_en IS NULL
       ORDER BY rc.vehiculo_id, rc.fecha, rc.id
     `)
   return r.recordset
@@ -306,7 +308,7 @@ export async function findGastoMensual(desde: string): Promise<GastoMes[]> {
         FROM recargas_combustible rc
         JOIN vehiculos v ON v.id = rc.vehiculo_id
         -- Los personales no son gasto de la flotilla (migración 061).
-        WHERE rc.fecha >= @desde AND v.uso_personal = 0
+        WHERE rc.fecha >= @desde AND v.uso_personal = 0 AND rc.archivado_en IS NULL
 
         UNION ALL
 

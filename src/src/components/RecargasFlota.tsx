@@ -21,6 +21,7 @@ import {
 } from '../hooks/useRecargas'
 import type { RecargaConVehiculo, RecargaEmergenciaPayload, RecargaPayload } from '../hooks/useRecargas'
 import { usePermisos } from '../hooks/usePermisos'
+import { ArchivarRecargaModal, RecargasArchivadasPanel } from './RecargasArchivadas'
 import { useVehiculo, useVehiculos, vehiculoLabel } from '../hooks/useVehiculos'
 import { useValesGasolina } from '../hooks/useValesGasolina'
 import SelectCatalogo from './SelectCatalogo'
@@ -282,7 +283,11 @@ export default function RecargasFlota({
   const emergenciaMut = useCreateRecargaEmergencia()
   const updateMut = useUpdateRecarga()
   // Registrar una recarga de emergencia es solo del admin (la API lo impone).
-  const { esAdmin, esPracticante, puedeCorregirCaptura } = usePermisos()
+  const { esAdmin, esPracticante, puedeCorregirCaptura, rol } = usePermisos()
+  // Archivar saca la recarga de los costos: quien firma el gasto. La de
+  // emergencia, igual que corregirla, solo el admin.
+  const puedeArchivar = esAdmin || rol === 'editor'
+  const [archivando, setArchivando] = useState<RecargaConVehiculo | null>(null)
 
   const items = useMemo(() => data?.data ?? [], [data])
   const rendimientos = useMemo(() => rendimientosPorVehiculo(items), [items])
@@ -427,6 +432,8 @@ export default function RecargasFlota({
                             vehiculo={celdaVehiculo}
                             onEdit={esAdmin || esPracticante ? abrirEdicion : undefined}
                             editable={(r) => esAdmin || (!r.emergencia && puedeCorregirCaptura(r.capturado_por))}
+                            onArchivar={puedeArchivar ? setArchivando : undefined}
+                            archivable={(r) => esAdmin || !r.emergencia}
                           />
                         </Accordion.Panel>
                       </Accordion.Item>
@@ -437,7 +444,19 @@ export default function RecargasFlota({
             ))}
           </Accordion>
         )}
+
+        {!isLoading && !error && (
+          <RecargasArchivadasPanel
+            vehiculoId="todas" puedeRestaurar={puedeArchivar} onNavigateVehiculo={onNavigateVehiculo}
+          />
+        )}
       </Stack>
+
+      <ArchivarRecargaModal
+        recarga={archivando}
+        titulo={archivando ? vehiculoLabel(archivando) : undefined}
+        onClose={() => setArchivando(null)}
+      />
 
       <Modal
         opened={formOpen} onClose={() => setFormOpen(false)}

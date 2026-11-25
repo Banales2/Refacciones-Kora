@@ -49,6 +49,12 @@ export interface RecargaConGasolinera {
   desde_factura_folio: string | null
   // `litros` y `costo` de arriba son la suma de estos.
   tickets:       Ticket[]
+  /**
+   * Archivada: se capturó de más y ya no cuenta para nada (migración 081).
+   * Los listados no la traen salvo que se pidan las archivadas.
+   */
+  archivado_en:     string | null
+  archivado_motivo: string | null
 }
 
 // El vale entra con LEFT JOIN: las recargas registradas antes de que el vale
@@ -63,7 +69,8 @@ const SELECT_RECARGA = `
          c.nombre AS conductor,
          vg.folio AS vale_folio,
          CONVERT(char(10), vg.fecha, 23) AS vale_fecha,
-         r.desde_factura_id, fd.folio AS desde_factura_folio
+         r.desde_factura_id, fd.folio AS desde_factura_folio,
+         CONVERT(varchar(19), r.archivado_en, 126) AS archivado_en, r.archivado_motivo
   FROM recargas_combustible r
   LEFT JOIN gasolineras g  ON g.id = r.gasolinera_id
   JOIN conductores c       ON c.id = r.conductor_id
@@ -103,11 +110,21 @@ async function conTickets<T extends { id: number; tickets: Ticket[] }>(
   return recargas.map((r) => ({ ...r, tickets: porRecarga.get(r.id) ?? [] }) as T)
 }
 
-export async function findByVehiculo(vehiculoId: number): Promise<RecargaConGasolinera[]> {
+/**
+ * Las activas, o con `archivadas` solo las archivadas: nunca revueltas. Los
+ * listados alimentan totales, rendimiento y reportes en la pantalla, y una
+ * archivada que se colara contaría sin que nadie lo notara.
+ */
+function filtroArchivadas(archivadas: boolean): string {
+  return archivadas ? 'r.archivado_en IS NOT NULL' : 'r.archivado_en IS NULL'
+}
+
+export async function findByVehiculo(vehiculoId: number, archivadas = false): Promise<RecargaConGasolinera[]> {
   const pool = await getPool()
   const r = await pool.request()
     .input('vid', sql.Int, vehiculoId)
-    .query(`${SELECT_RECARGA} WHERE r.vehiculo_id = @vid ORDER BY r.fecha DESC, r.id DESC`)
+    .query(`${SELECT_RECARGA} WHERE r.vehiculo_id = @vid AND ${filtroArchivadas(archivadas)}
+            ORDER BY r.fecha DESC, r.id DESC`)
   return conTickets<RecargaConGasolinera>(r.recordset)
 }
 
@@ -123,7 +140,7 @@ export interface RecargaConVehiculo extends RecargaConGasolinera {
 // El alcance se aplica aquí y no con `soloVisibles`: a diferencia de los vales,
 // las recargas se acumulan con cada carga y no tiene caso traerlas todas para
 // tirar la mayoría en memoria.
-export async function findAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
+export async function findAll(alcance: Alcance, archivadas = false): Promise<RecargaConVehiculo[]> {
   const pool = await getPool()
   const r = await conAlcance(pool.request(), alcance)
     .query(`
@@ -137,6 +154,7 @@ export async function findAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
              vg.folio AS vale_folio,
              CONVERT(char(10), vg.fecha, 23) AS vale_fecha,
              r.desde_factura_id, fd.folio AS desde_factura_folio,
+             CONVERT(varchar(19), r.archivado_en, 126) AS archivado_en, r.archivado_motivo,
              m.marca, m.nombre AS modelo, v.numero_serie AS serie, v.placas
       FROM recargas_combustible r
       LEFT JOIN gasolineras g  ON g.id = r.gasolinera_id
@@ -149,7 +167,7 @@ export async function findAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
         SELECT TOP 1 NULLIF(LTRIM(RTRIM(u.nombre)), '') AS nombre
         FROM usuarios u WHERE LTRIM(RTRIM(u.email)) = r.capturado_por
       ) cap
-      WHERE ${vehiculoEnAlcance('r.vehiculo_id')}
+      WHERE ${vehiculoEnAlcance('r.vehiculo_id')} AND ${filtroArchivadas(archivadas)}
       ORDER BY r.fecha DESC, r.id DESC`)
   return conTickets<RecargaConVehiculo>(r.recordset)
 }
@@ -372,7 +390,8 @@ export async function valeUsado(valeId: number, exceptId?: number): Promise<bool
     .input('vale_id', sql.Int, valeId)
     .input('except',  sql.Int, exceptId ?? null)
     .query(`SELECT TOP 1 id FROM recargas_combustible
-            WHERE vale_id = @vale_id AND (@except IS NULL OR id <> @except)`)
+            WHERE vale_id = @vale_id AND archivado_en IS NULL
+              AND (@except IS NULL OR id <> @except)`)
   return r.recordset.length > 0
 }
 
@@ -471,7 +490,7 @@ export async function findConsumosDeGasolinera(
           WHERE fgr.recarga_id = r.id
         ) f
       ) fg
-      WHERE r.gasolinera_id = @gid
+      WHERE r.gasolinera_id = @gid AND r.archivado_en IS NULL
       ORDER BY r.fecha DESC, r.id DESC`)
   // mssql devuelve DECIMAL como string cuando no cabe en un number seguro.
   return r.recordset.map((row) => ({
@@ -525,14 +544,14 @@ export async function kmVecinos(
       SELECT TOP 1 rc.id, CONVERT(char(10), rc.fecha, 23) AS fecha, rc.kilometraje,
              ${comparable} AS km_comparable
       FROM recargas_combustible rc
-      WHERE rc.vehiculo_id = @vehiculo AND rc.kilometraje > 0
+      WHERE rc.vehiculo_id = @vehiculo AND rc.kilometraje > 0 AND rc.archivado_en IS NULL
         AND CAST(rc.fecha AS date) < @fecha AND (@excluir IS NULL OR rc.id <> @excluir)
       ORDER BY CAST(rc.fecha AS date) DESC, rc.kilometraje DESC;
 
       SELECT TOP 1 rc.id, CONVERT(char(10), rc.fecha, 23) AS fecha, rc.kilometraje,
              ${comparable} AS km_comparable
       FROM recargas_combustible rc
-      WHERE rc.vehiculo_id = @vehiculo AND rc.kilometraje > 0
+      WHERE rc.vehiculo_id = @vehiculo AND rc.kilometraje > 0 AND rc.archivado_en IS NULL
         AND CAST(rc.fecha AS date) > @fecha AND (@excluir IS NULL OR rc.id <> @excluir)
       ORDER BY CAST(rc.fecha AS date) ASC, rc.kilometraje ASC;
     `)
@@ -544,4 +563,81 @@ export async function kmVecinos(
       kilometraje: Number(row.kilometraje), km_comparable: Number(row.km_comparable),
     } : null
   return { anterior: lectura(sets[0]?.[0]), siguiente: lectura(sets[1]?.[0]) }
+}
+
+// ─── Archivar y restaurar (migración 081) ───────────────────────────────────
+
+export type ResultadoArchivar =
+  | { estado: 'archivada' }
+  | { estado: 'no_existe' }
+  | { estado: 'ya_archivada' }
+  /** Cuadrada en una factura: soltarla descuadraría lo que la gasolinera cobró. */
+  | { estado: 'en_factura'; folios: string }
+
+/**
+ * Bajo candado de la recarga: entre revisar que ninguna factura la cobra y
+ * archivarla, nadie puede casarla. Las consultas de casar ya no ven las
+ * archivadas, así que después tampoco.
+ */
+export async function archivar(id: number, motivo: string): Promise<ResultadoArchivar> {
+  return enTransaccion(async (tx) => {
+    const r = await tx.request()
+      .input('id', sql.Int, id)
+      .query(`
+        SELECT r.archivado_en,
+               (SELECT STRING_AGG(f.folio, ', ')
+                  FROM (SELECT DISTINCT f.folio
+                          FROM facturas_gasolina_renglones fr
+                          JOIN facturas_gasolina f ON f.id = fr.factura_id
+                         WHERE fr.recarga_id = r.id) f) AS folios
+        FROM recargas_combustible r WITH (UPDLOCK, HOLDLOCK)
+        WHERE r.id = @id`)
+    const fila = r.recordset[0]
+    if (!fila) return { estado: 'no_existe' } as const
+    if (fila.archivado_en != null) return { estado: 'ya_archivada' } as const
+    if (fila.folios != null) return { estado: 'en_factura', folios: fila.folios as string } as const
+    await tx.request()
+      .input('id',     sql.Int, id)
+      .input('motivo', sql.NVarChar(200), motivo)
+      .query(`UPDATE recargas_combustible
+              SET archivado_en = SYSDATETIME(), archivado_motivo = @motivo
+              WHERE id = @id`)
+    return { estado: 'archivada' } as const
+  })
+}
+
+export type ResultadoRestaurar =
+  | { estado: 'restaurada' }
+  | { estado: 'no_existe' }
+  | { estado: 'no_archivada' }
+  /** Su vale ya lo gasta otra recarga: volverían a ser dos. */
+  | { estado: 'vale_usado'; folio: string; recarga_id: number }
+  | { estado: 'vale_cancelado'; folio: string }
+
+export async function restaurar(id: number): Promise<ResultadoRestaurar> {
+  return enTransaccion(async (tx) => {
+    const r = await tx.request()
+      .input('id', sql.Int, id)
+      .query(`
+        SELECT r.archivado_en, r.vale_id, vg.folio, vg.archivado_en AS vale_archivado,
+               otra.id AS otra_id
+        FROM recargas_combustible r WITH (UPDLOCK, HOLDLOCK)
+        LEFT JOIN vales_gasolina vg ON vg.id = r.vale_id
+        OUTER APPLY (
+          SELECT TOP 1 o.id FROM recargas_combustible o WITH (UPDLOCK, HOLDLOCK)
+          WHERE o.vale_id = r.vale_id AND o.id <> r.id AND o.archivado_en IS NULL
+        ) otra
+        WHERE r.id = @id`)
+    const fila = r.recordset[0]
+    if (!fila) return { estado: 'no_existe' } as const
+    if (fila.archivado_en == null) return { estado: 'no_archivada' } as const
+    if (fila.otra_id != null) {
+      return { estado: 'vale_usado', folio: fila.folio as string, recarga_id: fila.otra_id as number } as const
+    }
+    if (fila.vale_archivado != null) return { estado: 'vale_cancelado', folio: fila.folio as string } as const
+    await tx.request()
+      .input('id', sql.Int, id)
+      .query(`UPDATE recargas_combustible SET archivado_en = NULL, archivado_motivo = NULL WHERE id = @id`)
+    return { estado: 'restaurada' } as const
+  })
 }

@@ -14,7 +14,8 @@ export async function recargasListAll(
 ): Promise<HttpResponseInit> {
   try {
     const user = requireRole(request, 'admin', 'editor', 'lector', 'practicante', 'responsable')
-    const data = await service.getAll(await alcanceDe(user))
+    // `?archivadas=1`: solo las archivadas (migración 081), para restaurarlas.
+    const data = await service.getAll(await alcanceDe(user), request.query.get('archivadas') === '1')
     return { status: 200, jsonBody: { data } }
   } catch (err) {
     return handleError(err, context)

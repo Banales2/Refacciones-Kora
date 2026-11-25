@@ -50,6 +50,10 @@ export interface Recarga {
   desde_factura_folio: string | null
   // De 1 a TICKETS_MAX. `litros` y `costo` de arriba son su suma.
   tickets:       TicketRecarga[]
+  // Archivada: se capturó de más y ya no cuenta para nada. Los listados normales
+  // no la traen; ver `useRecargasArchivadas`.
+  archivado_en:     string | null
+  archivado_motivo: string | null
 }
 
 export interface RecargaPayload {
@@ -177,3 +181,48 @@ export function useUpdateRecarga() {
   })
 }
 
+
+// ─── Archivadas ─────────────────────────────────────────────────────────────
+// Una recarga capturada de más (el mismo papel dos veces) se archiva: se queda
+// en la base, deja de contar en todo y su vale queda libre. La API nunca las
+// revuelve con las demás —sumarían en totales y rendimiento sin que se viera—,
+// así que se piden aparte y solo cuando alguien abre la lista.
+
+/** Las archivadas de un vehículo, o de toda la flota visible con 'todas'. */
+export function useRecargasArchivadas(vehiculoId: number | 'todas', enabled: boolean) {
+  const url = vehiculoId === 'todas'
+    ? '/recargas?archivadas=1'
+    : `/vehiculos/${vehiculoId}/recargas?archivadas=1`
+  return useQuery({
+    queryKey: ['recargas', 'archivadas', vehiculoId],
+    queryFn: () => api.get<{ data: RecargaConVehiculo[] }>(url),
+    enabled,
+  })
+}
+
+// Archivar o restaurar mueve todo lo que cuenta recargas: costos, vales (el vale
+// queda libre u ocupado otra vez), facturas y el odómetro de la unidad.
+function invalidarTrasArchivar(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['recargas'] })
+  qc.invalidateQueries({ queryKey: ['vehiculos'] })
+  qc.invalidateQueries({ queryKey: ['dashboard'] })
+  qc.invalidateQueries({ queryKey: ['vales-gasolina'] })
+  qc.invalidateQueries({ queryKey: ['facturas-gasolina'] })
+}
+
+export function useArchivarRecarga() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, motivo }: { id: number; motivo: string }) =>
+      api.post<{ data: Recarga }>(`/recargas/${id}/archivar`, { motivo }),
+    onSuccess: () => invalidarTrasArchivar(qc),
+  })
+}
+
+export function useRestaurarRecarga() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.post<{ data: Recarga }>(`/recargas/${id}/restaurar`, {}),
+    onSuccess: () => invalidarTrasArchivar(qc),
+  })
+}

@@ -172,6 +172,7 @@ export async function sinFacturarViejas(dias: number): Promise<SinFacturarPorGas
       JOIN recargas_combustible rc ON rc.id = t.recarga_id
       JOIN gasolineras g ON g.id = rc.gasolinera_id
       WHERE NOT EXISTS (SELECT 1 FROM facturas_gasolina_renglones fgr WHERE fgr.ticket_id = t.id)
+        AND rc.archivado_en IS NULL
         AND rc.fecha < DATEADD(day, -@dias, CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'Central Standard Time (Mexico)' AS date))
       GROUP BY rc.gasolinera_id, g.nombre
       ORDER BY SUM(t.costo) DESC`)

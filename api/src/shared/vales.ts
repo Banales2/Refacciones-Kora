@@ -37,7 +37,8 @@ export function estadoDelVale(alias = 'vg'): string {
   return `
     CASE
       WHEN ${alias}.archivado_en IS NOT NULL THEN 'archivado'
-      WHEN EXISTS (SELECT 1 FROM recargas_combustible rc WHERE rc.vale_id = ${alias}.id)
+      WHEN EXISTS (SELECT 1 FROM recargas_combustible rc
+                   WHERE rc.vale_id = ${alias}.id AND rc.archivado_en IS NULL)
         THEN 'usado'
       WHEN ${alias}.fecha <= DATEADD(day, -${DIAS_PARA_PERDERSE},
              CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'Central Standard Time (Mexico)' AS date))

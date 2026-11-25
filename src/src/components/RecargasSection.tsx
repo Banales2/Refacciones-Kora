@@ -13,7 +13,8 @@ import {
   ActionIcon, Modal, Tooltip, NumberInput, Badge, Accordion, Radio,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
-import { IconAlertTriangle, IconPencil, IconPlus, IconX } from '@tabler/icons-react'
+import { IconAlertTriangle, IconArchive, IconPencil, IconPlus, IconX } from '@tabler/icons-react'
+import { ArchivarRecargaModal, RecargasArchivadasPanel } from './RecargasArchivadas'
 import {
   useRecargas, useCreateRecarga, useCreateRecargaEmergencia, useUpdateRecarga, TICKETS_MAX,
 } from '../hooks/useRecargas'
@@ -522,12 +523,16 @@ export function RecargaEmergenciaForm({
 // ── Tabla de las recargas de un mes ───────────────────────────────────────────
 
 export function RecargasTabla<T extends Recarga>({
-  items, rendimientos, onEdit, editable, vehiculo,
+  items, rendimientos, onEdit, editable, vehiculo, onArchivar, archivable,
 }: {
   items: T[]
   rendimientos: Map<number, number | null>
   /** Sin él la tabla es de consulta. */
   onEdit?: (r: T) => void
+  /** Archivar una capturada de más. Solo admin y editor (la API lo impone). */
+  onArchivar?: (r: T) => void
+  /** Qué renglones se pueden archivar; sin él, todos (si hay `onArchivar`). */
+  archivable?: (r: T) => boolean
   /** Qué renglones se pueden editar; sin él, todos (si hay `onEdit`). */
   editable?: (r: T) => boolean
   /**
@@ -648,6 +653,13 @@ export function RecargasTabla<T extends Recarga>({
                       </ActionIcon>
                     </Tooltip>
                   )}
+                  {onArchivar && (archivable?.(r) ?? true) && (
+                    <Tooltip label="Archivar (capturada de más)">
+                      <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => onArchivar(r)}>
+                        <IconArchive size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
                 </Group>
               </Table.Td>
             </Table.Tr>
@@ -719,7 +731,11 @@ export default function RecargasSection({
   // El responsable de sucursal registra cargas pero no las corrige; el
   // practicante, solo las que él capturó. Las de emergencia solo el admin las
   // registra y las corrige.
-  const { puedeEditar, esAdmin, esPracticante, puedeCorregirCaptura } = usePermisos()
+  const { puedeEditar, esAdmin, esPracticante, puedeCorregirCaptura, rol } = usePermisos()
+  // Archivar saca la recarga de los costos: quien firma el gasto. La de
+  // emergencia, igual que corregirla, solo el admin.
+  const puedeArchivar = esAdmin || rol === 'editor'
+  const [archivando, setArchivando] = useState<Recarga | null>(null)
 
   const totalLitros = items.reduce((s, r) => s + Number(r.litros), 0)
   const totalCosto  = items.reduce((s, r) => s + Number(r.costo), 0)
@@ -808,6 +824,8 @@ export default function RecargasSection({
                             items={m.items} rendimientos={rendimientos}
                             onEdit={puedeEditar || esPracticante ? openEdit : undefined}
                             editable={(r) => esAdmin || (!r.emergencia && puedeCorregirCaptura(r.capturado_por))}
+                            onArchivar={puedeArchivar ? setArchivando : undefined}
+                            archivable={(r) => esAdmin || !r.emergencia}
                           />
                         </Accordion.Panel>
                       </Accordion.Item>
@@ -827,6 +845,13 @@ export default function RecargasSection({
           </Group>
         </Stack>
       )}
+
+      {/* Fuera del "si hay recargas": la única pudo ser la archivada. */}
+      {!isLoading && !error && (
+        <RecargasArchivadasPanel vehiculoId={vehiculoId} puedeRestaurar={puedeArchivar} />
+      )}
+
+      <ArchivarRecargaModal recarga={archivando} onClose={() => setArchivando(null)} />
 
       <Modal
         opened={formOpen} onClose={() => setFormOpen(false)}

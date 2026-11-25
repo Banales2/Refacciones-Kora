@@ -13,7 +13,8 @@ export async function recargasList(
     const vehiculoId = parseInt(request.params.vehiculoId, 10)
     if (isNaN(vehiculoId)) return { status: 400, jsonBody: { error: 'ID de vehículo inválido' } }
     await exigirVehiculo(vehiculoId, await alcanceDe(user))
-    const data = await service.getByVehiculo(vehiculoId)
+    // `?archivadas=1`: solo las archivadas (migración 081), para restaurarlas.
+    const data = await service.getByVehiculo(vehiculoId, request.query.get('archivadas') === '1')
     return { status: 200, jsonBody: { data } }
   } catch (err) {
     return handleError(err, context)

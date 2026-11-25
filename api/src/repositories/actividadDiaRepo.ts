@@ -89,7 +89,7 @@ export async function findRecargasDelDia(fecha: string): Promise<RecargaDia[]> {
       LEFT JOIN gasolineras g ON g.id = rc.gasolinera_id
       JOIN conductores c ON c.id = rc.conductor_id
       LEFT JOIN vales_gasolina vg ON vg.id = rc.vale_id
-      WHERE rc.fecha = @fecha
+      WHERE rc.fecha = @fecha AND rc.archivado_en IS NULL
       ORDER BY rc.costo DESC
     `)
   return r.recordset
@@ -122,7 +122,7 @@ export async function findValesDelDia(fecha: string): Promise<ValeDia[]> {
       JOIN conductores c ON c.id = vg.conductor_id
       JOIN vehiculos v   ON v.id = vg.vehiculo_id
       JOIN modelos mo    ON mo.id = v.modelo_id
-      LEFT JOIN recargas_combustible rc ON rc.vale_id = vg.id
+      LEFT JOIN recargas_combustible rc ON rc.vale_id = vg.id AND rc.archivado_en IS NULL
       WHERE vg.fecha = @fecha
       ORDER BY vg.folio
     `)
@@ -313,7 +313,7 @@ export async function findActividadPorDia(start: string, end: string): Promise<A
         SELECT CONVERT(char(10), rc.fecha, 23), 0, 1, 0, 0, 0, 0, 0,
                CAST(0 AS DECIMAL(18,2)), CAST(0 AS DECIMAL(18,2)), rc.costo
         FROM recargas_combustible rc
-        WHERE rc.fecha BETWEEN @start AND @end
+        WHERE rc.fecha BETWEEN @start AND @end AND rc.archivado_en IS NULL
 
         UNION ALL
 

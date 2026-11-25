@@ -61,12 +61,14 @@ export async function getById(id: number): Promise<RecargaConGasolinera> {
   return recarga
 }
 
-export async function getAll(alcance: Alcance): Promise<RecargaConVehiculo[]> {
-  return repo.findAll(alcance)
+// `archivadas`: solo las archivadas, para poder restaurarlas. Sin él, solo las
+// que cuentan. Ver `findByVehiculo`.
+export async function getAll(alcance: Alcance, archivadas = false): Promise<RecargaConVehiculo[]> {
+  return repo.findAll(alcance, archivadas)
 }
 
-export async function getByVehiculo(vehiculoId: number): Promise<RecargaConGasolinera[]> {
-  return repo.findByVehiculo(vehiculoId)
+export async function getByVehiculo(vehiculoId: number, archivadas = false): Promise<RecargaConGasolinera[]> {
+  return repo.findByVehiculo(vehiculoId, archivadas)
 }
 
 // Cargar gasolina es, igual que un mantenimiento, una ocasión en que se lee el
@@ -112,6 +114,11 @@ export async function update(
 ): Promise<RecargaConGasolinera> {
   const actual = await repo.findById(id)
   if (!actual) throw new NotFoundError('Recarga')
+  // Corregirla archivada sería tocar algo que no cuenta, y al restaurarla
+  // volvería distinta de lo que se archivó.
+  if (actual.archivado_en != null) {
+    throw new ConflictError('La recarga está archivada: restáurala primero para corregirla')
+  }
 
   if (actual.emergencia) {
     if (!esAdmin) {
@@ -283,4 +290,58 @@ export async function validarKmPorFecha(
 /** Para avisar en el formulario mientras se captura, antes de guardar. */
 export async function kmVecinos(vehiculoId: number, fecha: string, excluir?: number) {
   return repo.kmVecinos(vehiculoId, fecha, excluir)
+}
+
+// ─── Archivar (migración 081) ───────────────────────────────────────────────
+//
+// Para la recarga que se capturó de más —el mismo papel dos veces, con el
+// folio mal tecleado— y no se quiere borrar: es historia. Archivada deja de
+// contar en todo y su vale queda libre, para cancelarlo si era el que no
+// existía. La de emergencia, igual que corregirla, es solo del admin.
+
+export async function archivar(id: number, motivo: string, esAdmin: boolean): Promise<void> {
+  const actual = await repo.findById(id)
+  if (!actual) throw new NotFoundError('Recarga')
+  if (actual.emergencia && !esAdmin) {
+    throw new AppError('Solo un admin puede archivar una recarga de emergencia', 403, 'FORBIDDEN')
+  }
+  const r = await repo.archivar(id, motivo)
+  switch (r.estado) {
+    case 'archivada':    return
+    case 'no_existe':    throw new NotFoundError('Recarga')
+    case 'ya_archivada': throw new ConflictError('La recarga ya estaba archivada')
+    case 'en_factura':
+      throw new ConflictError(
+        `La recarga está cuadrada en la factura ${r.folios}. Reabre la factura y suelta ` +
+        'el renglón (o pásalo a la recarga buena) antes de archivarla.'
+      )
+  }
+}
+
+export async function restaurar(id: number, esAdmin: boolean): Promise<void> {
+  const actual = await repo.findById(id)
+  if (!actual) throw new NotFoundError('Recarga')
+  if (actual.emergencia && !esAdmin) {
+    throw new AppError('Solo un admin puede restaurar una recarga de emergencia', 403, 'FORBIDDEN')
+  }
+  let r: repo.ResultadoRestaurar
+  try {
+    r = await repo.restaurar(id)
+  } catch (err) {
+    // Lo revisa el repo bajo candado; el índice es la última palabra.
+    if (esLlaveDuplicada(err, 'UQ_recargas_vale')) throw new ConflictError('Su vale ya lo usa otra recarga')
+    throw err
+  }
+  switch (r.estado) {
+    case 'restaurada':   return
+    case 'no_existe':    throw new NotFoundError('Recarga')
+    case 'no_archivada': throw new ConflictError('La recarga no estaba archivada')
+    case 'vale_usado':
+      throw new ConflictError(
+        `El vale ${r.folio} ya lo usa otra recarga (la ${r.recarga_id}): restaurarla dejaría ` +
+        'dos recargas con el mismo vale. Archiva primero esa otra.'
+      )
+    case 'vale_cancelado':
+      throw new ConflictError(`El vale ${r.folio} está cancelado. Quítale la cancelación primero.`)
+  }
 }

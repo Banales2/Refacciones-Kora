@@ -171,8 +171,9 @@ const SELECT_FACTURA = `
          ${TOTAL_SQL} AS total,
          CAST(CASE WHEN f.iva IS NULL AND f.tasa_iva IS NOT NULL THEN 1 ELSE 0 END AS BIT)
            AS total_estimado,
-         (SELECT COUNT(*) FROM recargas_combustible rd WHERE rd.desde_factura_id = f.id)
-           + (SELECT COUNT(*) FROM recargas_combustible_tickets td WHERE td.desde_factura_id = f.id)
+         (SELECT COUNT(*) FROM recargas_combustible rd WHERE rd.desde_factura_id = f.id AND rd.archivado_en IS NULL)
+           + (SELECT COUNT(*) FROM recargas_combustible_tickets td WHERE td.desde_factura_id = f.id
+              AND EXISTS (SELECT 1 FROM recargas_combustible rt WHERE rt.id = td.recarga_id AND rt.archivado_en IS NULL))
            AS registradas
   ${FROM_FACTURA}
 `
@@ -549,6 +550,8 @@ export async function candidatas(facturaId: number): Promise<TicketCandidato[]> 
       JOIN conductores  co ON co.id = rc.conductor_id
       LEFT JOIN vales_gasolina vg ON vg.id = rc.vale_id
       WHERE rc.gasolinera_id = f.gasolinera_id
+        -- Una archivada no cuenta para nadie, tampoco para casar (migración 081).
+        AND rc.archivado_en IS NULL
         AND rc.fecha <= DATEADD(day, @gracia, f.fecha)
         AND NOT EXISTS (
           SELECT 1 FROM facturas_gasolina_renglones otro
@@ -610,6 +613,7 @@ export async function ticketsEnOtraGasolinera(
       JOIN recargas_combustible rc
         ON rc.gasolinera_id <> f.gasolinera_id
        AND rc.fecha BETWEEN DATEADD(day, -@gracia, f.fecha) AND DATEADD(day, @gracia, f.fecha)
+       AND rc.archivado_en IS NULL
       JOIN recargas_combustible_tickets t ON t.recarga_id = rc.id
       JOIN gasolineras  g  ON g.id  = rc.gasolinera_id
       JOIN vehiculos    v  ON v.id  = rc.vehiculo_id
@@ -724,6 +728,7 @@ export async function guardarYSellar(
           JOIN recargas_combustible rc ON rc.id = t.recarga_id
           WHERE fr.id = @rid AND fr.factura_id = @fid
             AND rc.gasolinera_id = f.gasolinera_id
+            AND rc.archivado_en IS NULL
             AND rc.fecha <= DATEADD(day, @gracia, f.fecha)
             AND NOT EXISTS (
               SELECT 1 FROM facturas_gasolina_renglones otro
@@ -785,7 +790,9 @@ async function porQueNoCasa(
                WHERE otro.ticket_id = @tid AND otro.factura_id <> @fid) AS folio
       FROM facturas_gasolina_renglones fr
       JOIN facturas_gasolina f ON f.id = fr.factura_id
+      -- El ticket de una recarga archivada se da por inexistente (migración 081).
       LEFT JOIN recargas_combustible_tickets t ON t.id = @tid
+        AND EXISTS (SELECT 1 FROM recargas_combustible ra WHERE ra.id = t.recarga_id AND ra.archivado_en IS NULL)
       LEFT JOIN recargas_combustible rc ON rc.id = t.recarga_id
       LEFT JOIN gasolineras g ON g.id = rc.gasolinera_id
       WHERE fr.id = @rid AND fr.factura_id = @fid`)
@@ -888,6 +895,7 @@ export async function recargasSinFacturar(p: {
 
   const where = [
     `NOT EXISTS (SELECT 1 FROM facturas_gasolina_renglones fgr WHERE fgr.ticket_id = t.id)`,
+    'rc.archivado_en IS NULL',
   ]
   if (p.gasolinera_id) {
     req.input('gid', sql.Int, p.gasolinera_id)
@@ -1003,6 +1011,7 @@ export async function cobertura(
       LEFT JOIN vales_gasolina vg ON vg.id = rc.vale_id
       LEFT JOIN facturas_gasolina_renglones fr ON fr.ticket_id = t.id
       WHERE rc.gasolinera_id = @gid AND rc.fecha BETWEEN @desde AND @hasta
+        AND rc.archivado_en IS NULL
       ORDER BY rc.fecha, rc.id, t.id;
 
       SELECT f.id, f.folio, CONVERT(char(10), f.fecha, 23) AS fecha,
@@ -1149,7 +1158,7 @@ export async function registrarDesdeFactura(
       // recarga lo gastó entre tanto. UQ_recargas_vale es la última palabra.
       const usado = await tx.request()
         .input('vid', sql.Int, valeId)
-        .query('SELECT 1 FROM recargas_combustible WITH (UPDLOCK, HOLDLOCK) WHERE vale_id = @vid')
+        .query('SELECT 1 FROM recargas_combustible WITH (UPDLOCK, HOLDLOCK) WHERE vale_id = @vid AND archivado_en IS NULL')
       if (usado.recordset.length > 0) return salir({ estado: 'vale_usado' })
     }
 
@@ -1263,6 +1272,7 @@ export async function recargasParaTicket(
       ) aqui
       WHERE rc.gasolinera_id = f.gasolinera_id
         AND rc.fecha <= DATEADD(day, @gracia, f.fecha)
+        AND rc.archivado_en IS NULL
         AND (aqui.x IS NOT NULL OR rc.fecha >= DATEADD(day, -@atras, f.fecha))
         AND n.tickets < @max
       ORDER BY en_esta_factura DESC, rc.fecha DESC, rc.id DESC`)
@@ -1336,7 +1346,7 @@ export async function agregarTicketDesdeFactura(
                CAST(CASE WHEN rc.fecha <= DATEADD(day, @gracia, f.fecha) THEN 1 ELSE 0 END AS BIT) AS en_corte
         FROM recargas_combustible rc WITH (UPDLOCK, HOLDLOCK)
         JOIN facturas_gasolina f ON f.id = @fid
-        WHERE rc.id = @cid`)
+        WHERE rc.id = @cid AND rc.archivado_en IS NULL`)
     if (rc.recordset.length === 0) return salir({ estado: 'recarga_no_existe' })
     if (!rc.recordset[0].misma) return salir({ estado: 'otra_gasolinera' })
     if (!rc.recordset[0].en_corte) return salir({ estado: 'fuera_de_corte' })
@@ -1461,7 +1471,7 @@ export async function sinReportar(p: { desde?: string; hasta?: string }): Promis
       SELECT recarga_id, id, litros, costo, desde_factura_id
       FROM recargas_combustible_tickets WHERE desde_factura_id IS NOT NULL
     ) o
-    JOIN recargas_combustible r ON r.id = o.recarga_id
+    JOIN recargas_combustible r ON r.id = o.recarga_id AND r.archivado_en IS NULL
     JOIN facturas_gasolina f ON f.id = o.desde_factura_id
     JOIN vehiculos   v  ON v.id  = r.vehiculo_id
     JOIN modelos     mo ON mo.id = v.modelo_id
@@ -1547,7 +1557,7 @@ export async function buscarPorVale(
       JOIN conductores c  ON c.id = vg.conductor_id
       JOIN vehiculos   ve ON ve.id = vg.vehiculo_id
       JOIN modelos     m  ON m.id = ve.modelo_id
-      LEFT JOIN recargas_combustible rc ON rc.vale_id = vg.id
+      LEFT JOIN recargas_combustible rc ON rc.vale_id = vg.id AND rc.archivado_en IS NULL
       LEFT JOIN gasolineras g ON g.id = rc.gasolinera_id
       WHERE vg.folio LIKE @q
       -- El folio exacto primero: buscar "123" no debe enterrar al 123 bajo el 1234.

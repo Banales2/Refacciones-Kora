@@ -317,6 +317,7 @@ export async function findCombustibleEnRango(
       FROM recargas_combustible rc
       JOIN vehiculos v ON v.id = rc.vehiculo_id
       WHERE rc.fecha >= @start AND rc.fecha < @end
+        AND rc.archivado_en IS NULL
         -- Los personales cargan a cuenta de la empresa pero no son gasto de la
         -- flotilla (migración 061).
         AND v.uso_personal = 0`)

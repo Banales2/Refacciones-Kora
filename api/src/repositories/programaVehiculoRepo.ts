@@ -724,7 +724,7 @@ export async function findLecturasKmDeVehiculos(ids: number[]): Promise<LecturaK
           FROM chequeos WHERE lectura IS NOT NULL
         UNION ALL
         SELECT vehiculo_id, CAST(fecha AS date), kilometraje
-          FROM recargas_combustible WHERE kilometraje IS NOT NULL
+          FROM recargas_combustible WHERE kilometraje IS NOT NULL AND archivado_en IS NULL
         UNION ALL
         SELECT vehiculo_id, CAST(fecha AS date), km_actual
           FROM mantenimiento WHERE km_actual IS NOT NULL

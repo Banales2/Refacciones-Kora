@@ -75,9 +75,10 @@ const SELECT_VALE = `
   JOIN modelos     m ON m.id = v.modelo_id
   LEFT JOIN sucursales s ON s.id = vg.sucursal_id
   -- LEFT y no EXISTS porque además de saber si se usó hay que poder decir
-  -- dónde. El índice único UQ_recargas_vale garantiza que hay a lo sumo una,
-  -- así que este JOIN no puede multiplicar renglones.
-  LEFT JOIN recargas_combustible rc ON rc.vale_id = vg.id
+  -- dónde. El índice único UQ_recargas_vale garantiza que hay a lo sumo una
+  -- sin archivar, así que este JOIN no puede multiplicar renglones. La
+  -- archivada ya no gasta el vale (migración 081).
+  LEFT JOIN recargas_combustible rc ON rc.vale_id = vg.id AND rc.archivado_en IS NULL
   LEFT JOIN gasolineras g ON g.id = rc.gasolinera_id
   LEFT JOIN facturas_gasolina fd ON fd.id = vg.desde_factura_id
 `
