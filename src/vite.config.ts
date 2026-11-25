@@ -41,6 +41,11 @@ export default defineConfig({
       workbox: {
         // Cachear SOLO assets estáticos. Nada de datos de la API.
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // El bundle principal pasó de 2 MiB (el tope por defecto) y sin esto se
+        // queda fuera del precache y la build truena. Crece porque Layout importa
+        // todas las páginas de entrada; el arreglo de fondo es cargarlas con
+        // React.lazy, y entonces este tope puede volver a bajar.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         // NUNCA cachear llamadas a la API ni rutas de autenticación
         navigateFallbackDenylist: [/^\/api/, /^\/\.auth/],
         runtimeCaching: [

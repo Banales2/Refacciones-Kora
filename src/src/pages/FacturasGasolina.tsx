@@ -33,10 +33,12 @@ import {
   Tooltip,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
+import { useQueryClient } from '@tanstack/react-query'
 import {
-  IconAlertTriangle, IconCheck, IconFileImport, IconLockOpen, IconPlus, IconSearch, IconTrash,
+  IconAlertTriangle, IconCheck, IconFileImport, IconLockOpen, IconPlus, IconRefresh, IconSearch, IconTrash,
 } from '@tabler/icons-react'
 import {
+  claveCandidatas, fetchCandidatas,
   useCandidatas, useConciliar, useCorregirIvaFactura, useCrearFacturaGasolina,
   useFacturasGasolina,
   useReabrirFacturaGasolina, useRecargasSinFacturar, PRODUCTOS, RENGLONES_SIN_CASAR,
@@ -366,6 +368,43 @@ function CuadreFactura({
   const [registrando, setRegistrando] = useState<RenglonFactura | null>(null)
   const [registrados, setRegistrados] = useState<Record<number, Registro['tipo']>>({})
 
+  // "Buscar coincidencias otra vez": la propuesta de arriba se hizo al abrir, y
+  // la recarga que se registró después (el chofer la reportó tarde, o alguien
+  // la capturó con la factura abierta) no la alcanzaba: había que elegirla a
+  // mano. Se vuelve a pedir con lo que ya está elegido, para que el servidor no
+  // proponga un ticket ocupado, y solo se llenan los renglones vacíos.
+  const qc = useQueryClient()
+  const [buscando, setBuscando] = useState(false)
+  const [busqueda, setBusqueda] = useState<{ nuevos: number } | { error: string } | null>(null)
+
+  async function buscarOtraVez() {
+    setBuscando(true)
+    setBusqueda(null)
+    try {
+      const fresca = await fetchCandidatas(facturaId, eleccion)
+      // Con las recargas nuevas en la lista: sin esto, el ticket propuesto no
+      // estaría entre las opciones de su desplegable.
+      qc.setQueryData(claveCandidatas(facturaId), fresca)
+      const propuestos = fresca.data.renglones.filter(
+        (r) => eleccion[r.id] == null && r.sugerido_ticket_id != null,
+      )
+      if (propuestos.length > 0) {
+        setEleccion((p) => {
+          const n = { ...p }
+          // Solo si sigue vacío: pudo elegirse a mano mientras llegaba.
+          for (const r of propuestos) if (n[r.id] == null) n[r.id] = r.sugerido_ticket_id
+          return n
+        })
+        if (conciliar.error) conciliar.reset()
+      }
+      setBusqueda({ nuevos: propuestos.length })
+    } catch (e) {
+      setBusqueda({ error: (e as Error).message || 'No se pudo buscar.' })
+    } finally {
+      setBuscando(false)
+    }
+  }
+
   const porId = new Map(tickets.map((t) => [t.id, t]))
   const usadas = new Set(Object.values(eleccion).filter((v): v is number => v !== null))
 
@@ -490,6 +529,28 @@ function CuadreFactura({
               <b>{enOtraGasolinera}</b> de ellos sí {enOtraGasolinera === 1 ? 'parece estar capturado' : 'parecen estar capturados'},
               pero con otra gasolinera: abajo dice cuál.
             </Text>
+          )}
+          {esAdmin && (
+            <Group gap="sm" mt="xs" align="center" wrap="wrap">
+              <Button
+                size="compact-sm" variant="light" color="orange"
+                leftSection={<IconRefresh size={14} />}
+                loading={buscando}
+                onClick={buscarOtraVez}
+              >
+                Buscar coincidencias otra vez
+              </Button>
+              {busqueda && 'nuevos' in busqueda && (
+                <Text size="sm" c={busqueda.nuevos > 0 ? 'green.8' : 'dimmed'}>
+                  {busqueda.nuevos > 0
+                    ? `${busqueda.nuevos} renglón(es) ya tienen recarga propuesta. Revísalos y concilia.`
+                    : 'Ninguna recarga nueva coincide con los renglones vacíos.'}
+                </Text>
+              )}
+              {busqueda && 'error' in busqueda && (
+                <Text size="sm" c="red">{busqueda.error}</Text>
+              )}
+            </Group>
           )}
         </Alert>
       )}
@@ -723,8 +784,13 @@ function ConciliarModal({
   onClose:   () => void
   esAdmin:   boolean
 }) {
-  const { data, isLoading, isError } = useCandidatas(facturaId)
+  const { data, isLoading, isError, isFetchedAfterMount } = useCandidatas(facturaId)
   const factura = data?.data.factura
+  // El cuadre toma la propuesta una sola vez, al montarse. Con lo que había en
+  // caché arrancaba con la propuesta de la vez anterior, y la recarga registrada
+  // desde entonces se quedaba sin casar aunque la respuesta fresca sí la trajera.
+  // Se espera a la de ahora.
+  const fresca = isFetchedAfterMount
 
   return (
     <Modal
@@ -737,7 +803,7 @@ function ConciliarModal({
     >
       {isError ? (
         <Alert color="red" title="Error">No se pudo cargar la factura.</Alert>
-      ) : isLoading || !data || facturaId === null ? (
+      ) : isLoading || !data || !fresca || facturaId === null ? (
         <Center py="xl"><Loader /></Center>
       ) : (
         <CuadreFactura

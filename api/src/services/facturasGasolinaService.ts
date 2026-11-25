@@ -360,8 +360,13 @@ export interface RenglonSugerido extends RenglonFactura {
  * periodo que cobra. Los de los días de gracia (`DIAS_DE_GRACIA`) solo ganan si
  * no hay otro: son la carga del sábado registrada el lunes, pero también podrían
  * ser una carga de después. Se puede cambiar a mano.
+ *
+ * `elegidos` (renglón → ticket) es lo que la pantalla lleva elegido sin guardar,
+ * para "buscar coincidencias otra vez" con el cuadre a medias: esos renglones
+ * no se tocan y sus tickets no se le proponen a nadie más. Los que no vienen se
+ * tratan como vacíos. Sin él, manda lo guardado.
  */
-export async function candidatas(facturaId: number): Promise<{
+export async function candidatas(facturaId: number, elegidos?: Map<number, number>): Promise<{
   factura: repo.FacturaGasolina
   renglones: RenglonSugerido[]
   tickets: TicketCandidato[]
@@ -376,7 +381,9 @@ export async function candidatas(facturaId: number): Promise<{
     ...r, sugerido_ticket_id: null, sugerido_por: null, en_otra_gasolinera: [],
   }))
 
-  if (factura.conciliada_en === null) proponer(sugeridos, tickets)
+  if (factura.conciliada_en === null) {
+    proponer(sugeridos, tickets, elegidos ? (r) => elegidos.get(r.id) ?? null : (r) => r.ticket_id)
+  }
 
   // También en la ya conciliada: sus renglones sin casar son justo los que se
   // sellaron como "nadie la capturó", y puede que sí, en otra gasolinera.
@@ -396,9 +403,13 @@ export async function candidatas(facturaId: number): Promise<{
   return { factura, renglones: sugeridos, tickets }
 }
 
-function proponer(sugeridos: RenglonSugerido[], tickets: TicketCandidato[]): void {
+function proponer(
+  sugeridos: RenglonSugerido[], tickets: TicketCandidato[],
+  /** El ticket que ya tiene el renglón: el guardado, o el que lleva elegido la pantalla. */
+  actual: (r: RenglonSugerido) => number | null,
+): void {
   const tomados = new Set(
-    sugeridos.map((r) => r.ticket_id).filter((id): id is number => id !== null),
+    sugeridos.map(actual).filter((id): id is number => id !== null),
   )
 
   // Vienen del más reciente al más viejo; gana el registrado hasta la fecha de
@@ -409,7 +420,7 @@ function proponer(sugeridos: RenglonSugerido[], tickets: TicketCandidato[]): voi
   // Dos pasadas y no una: un renglón que casa por importe no debe llevarse el
   // ticket que otro renglón tenía por litros exactos.
   for (const r of sugeridos) {
-    if (r.ticket_id !== null) continue
+    if (actual(r) !== null) continue
     const match = elegir(tickets.filter(
       (c) => !tomados.has(c.id) && mismaCantidad(c.litros, r.cantidad),
     ))
@@ -420,7 +431,7 @@ function proponer(sugeridos: RenglonSugerido[], tickets: TicketCandidato[]): voi
     }
   }
   for (const r of sugeridos) {
-    if (r.ticket_id !== null || r.sugerido_ticket_id !== null || r.iva_estimado) continue
+    if (actual(r) !== null || r.sugerido_ticket_id !== null || r.iva_estimado) continue
     const match = elegir(tickets.filter(
       (c) => !tomados.has(c.id)
         && mismoImporte(c.costo, r.importe_con_iva)

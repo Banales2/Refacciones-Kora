@@ -163,12 +163,34 @@ export interface Candidatas {
   tickets:   TicketCandidato[]
 }
 
+export const claveCandidatas = (facturaId: number | null) => ['facturas-gasolina', 'candidatas', facturaId] as const
+
+/**
+ * Las candidatas otra vez, proponiendo contra lo que la pantalla lleva elegido
+ * sin guardar: esos renglones no se tocan y sus tickets no se le ofrecen a otro.
+ * Es el "buscar coincidencias otra vez" del cuadre, para la recarga que se
+ * registró con la factura ya abierta.
+ */
+export function fetchCandidatas(facturaId: number, elegidos: Record<number, number | null>) {
+  const pares = Object.entries(elegidos)
+    .filter(([, t]) => t != null)
+    .map(([r, t]) => `${r}:${t}`)
+    .join(',')
+  return api.get<{ data: Candidatas }>(
+    `/facturas-gasolina/${facturaId}/candidatas?elegidos=${encodeURIComponent(pares)}`,
+  )
+}
+
 /** Los renglones de la factura con su propuesta, y los tickets elegibles. */
 export function useCandidatas(facturaId: number | null) {
   return useQuery({
-    queryKey: ['facturas-gasolina', 'candidatas', facturaId],
+    queryKey: claveCandidatas(facturaId),
     queryFn: () => api.get<{ data: Candidatas }>(`/facturas-gasolina/${facturaId}/candidatas`),
     enabled: facturaId !== null,
+    // Siempre vieja: el cuadre espera la respuesta de ESTA apertura (ver
+    // ConciliarModal), y con los 30 s de siempre reabrir la misma factura no
+    // volvía a pedirla y se quedaba esperando.
+    staleTime: 0,
   })
 }
 
