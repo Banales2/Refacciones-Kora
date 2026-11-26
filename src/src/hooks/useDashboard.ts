@@ -509,6 +509,8 @@ export interface CargaEvidencia {
   fecha:       string
   conductor:   string
   gasolinera:  string | null
+  /** Folio del vale; null en las de emergencia o las que se cargaron sin vale. */
+  vale:        string | null
   kilometraje: number | null
   litros:      number
   costo:       number

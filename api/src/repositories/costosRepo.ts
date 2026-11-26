@@ -33,6 +33,7 @@ export interface RecargaCosto {
   conductor_id:    number
   conductor:       string
   vale_id:         number | null
+  vale_folio:      string | null
   fecha:           string
   litros:          number
   costo:           number
@@ -59,7 +60,7 @@ export async function findRecargasEnRango(start: string, end: string): Promise<R
              v.modelo_id, CONCAT(mo.marca, ' ', mo.nombre) AS modelo_nombre,
              rc.gasolinera_id, gs.nombre AS gasolinera,
              rc.conductor_id, co.nombre AS conductor,
-             rc.vale_id,
+             rc.vale_id, vg.folio AS vale_folio,
              CONVERT(char(10), rc.fecha, 23) AS fecha,
              rc.litros, rc.costo, rc.kilometraje, rc.emergencia, rc.producto,
              rc.desde_factura_id
@@ -68,6 +69,7 @@ export async function findRecargasEnRango(start: string, end: string): Promise<R
       JOIN modelos     mo ON mo.id = v.modelo_id
       LEFT JOIN gasolineras gs ON gs.id = rc.gasolinera_id
       JOIN conductores co ON co.id = rc.conductor_id
+      LEFT JOIN vales_gasolina vg ON vg.id = rc.vale_id
       ${JOINS_HIJAS}
       WHERE rc.fecha >= @start AND rc.fecha < @end
         AND ${EN_SEGUIMIENTO}

@@ -460,6 +460,8 @@ export interface CargaEvidencia {
   fecha:       string
   conductor:   string
   gasolinera:  string | null
+  /** Folio del vale; null en las de emergencia o las que se cargaron sin vale. */
+  vale:        string | null
   kilometraje: number | null
   litros:      number
   costo:       number
@@ -468,7 +470,7 @@ export interface CargaEvidencia {
 function evidenciaDe(r: repo.RecargaCosto): CargaEvidencia {
   return {
     recarga_id: r.id, fecha: r.fecha, conductor: r.conductor, gasolinera: r.gasolinera,
-    kilometraje: r.kilometraje, litros: r.litros, costo: r.costo,
+    vale: r.vale_folio, kilometraje: r.kilometraje, litros: r.litros, costo: r.costo,
   }
 }
 

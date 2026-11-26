@@ -98,6 +98,7 @@ export async function exportEvidenciaWord(
     const sinAnterior = 'Sin carga anterior en el periodo'
     const de = (f: (x: CargaEvidencia) => string) => (p ? f(p) : '—')
     const km = (x: CargaEvidencia) => (x.kilometraje != null ? `${formatNum(x.kilometraje)} km` : 'Sin capturar')
+    const vale = (x: CargaEvidencia) => x.vale ?? (x.gasolinera == null ? 'Emergencia, sin vale' : 'Sin vale')
     const avance = p?.kilometraje != null && c.kilometraje != null
       ? `${formatNum(c.kilometraje - p.kilometraje)} km desde la anterior`
       : null
@@ -117,6 +118,7 @@ export async function exportEvidenciaWord(
         renglon('Fecha', de((x) => formatFecha(x.fecha)), formatFecha(c.fecha)),
         renglon('Chofer', de((x) => x.conductor), c.conductor, p != null && p.conductor !== c.conductor),
         renglon('Gasolinera', de((x) => x.gasolinera ?? 'Emergencia'), c.gasolinera ?? 'Emergencia'),
+        renglon('Vale', de(vale), vale(c), c.vale == null),
         renglon('Km registrado', de(km), avance ? `${km(c)} (${avance})` : km(c), true),
         renglon('Litros', de((x) => `${formatLitros(x.litros)} L`), `${formatLitros(c.litros)} L`),
         renglon('Costo', de((x) => `${formatMXN(x.costo)} (${precioLitro(x)})`), `${formatMXN(c.costo)} (${precioLitro(c)})`),
